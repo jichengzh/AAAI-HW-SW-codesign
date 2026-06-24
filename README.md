@@ -29,7 +29,7 @@ H800 TVM evidence scripts require a local TVM/Relax/MetaSchedule build. The clas
 ## Layout
 
 ```text
-framework/stage1/                 Stage1 hardware scan, trace adapters, DepGraph scan, predictors, classifier
+framework/stage1/                 Stage1 hardware scan, trace boundary detection, DepGraph scan, predictors, classifier
 framework/capability_schema.py     optional hardware YAML validation
 framework/stage1_bridge.py         manifest-to-search-space adapter
 tools/configurable/depgraph_*.py   built-in Pyramid and V2X-ViT trace wrappers
@@ -75,14 +75,13 @@ This is a static capability description. To claim measured behavior on a new dev
 
 ## Scan A Model
 
-Register the model in `framework/stage1/adapters.py`. The adapter must provide:
+For built-in models, run the scanner directly:
 
-- `build_trace_net(device) -> (torch.nn.Module, dummy_input)`
-- `ignored_layers(net)` for output heads or fixed interface layers
-- `skipped_modules` or `skipped_subgraphs` for sparse, fusion, attention, routing, or custom parts outside the dense core
-- `semantic_bucket(layer_name)` if the default buckets are insufficient
+```bash
+PYTHONPATH=. python -m framework.stage1.run_scan --model all --device cpu --profile-latency off
+```
 
-Then run:
+For one model:
 
 ```bash
 PYTHONPATH=. python -m framework.stage1.run_scan \
@@ -100,6 +99,8 @@ framework/partitions/<registry_name>_partition.yaml
 ```
 
 Use `--device cpu --profile-latency off` for a structure-only scan.
+
+The scan loads the model, builds or detects a dense trace candidate, runs forward dry-run, builds a `torch-pruning` DepGraph, performs a 0.5 pruning dry-run, and writes included / ignored / skipped / rejected trace-boundary metadata into the manifest.
 
 ## Classify
 
@@ -144,7 +145,17 @@ PYTHONPATH=. python scripts/phase2/stage1_s4_three_arm_validation.py --help
 
 ## Add A New Model
 
-Use either `TraceAdapter` in `framework/stage1/adapters.py` or the implemented `AutoTraceAdapter` in `framework/stage1/auto_trace.py`. `run_scan` supports both registries.
+Preferred path: add a small `AutoTraceAdapter` registration in `framework/stage1/auto_trace.py`.
+
+For a new family, the user supplies:
+
+- model name
+- config path
+- checkpoint path
+- a minimal loader that returns the full `torch.nn.Module`
+- optional input-shape hints if the config cannot be parsed
+
+Stage1 then scans the module tree, proposes dense candidate paths, excludes sparse / fusion / routing / postprocess regions by heuristics, synthesizes a wrapper candidate, runs dry-run validation, builds the DepGraph, and emits the trace-boundary manifest. The user reviews the manifest. Manual `TraceAdapter` / hand-written wrapper is the fallback when the automatic candidate is wrong.
 
 See the adapter tutorial: [docs/add-new-model-adapter.zh-CN.md](docs/add-new-model-adapter.zh-CN.md).
 
@@ -156,8 +167,9 @@ Add a hardware YAML and run the scan with `--hw`. Static YAML is enough for stru
 
 ## Current Limits
 
-- The scanner operates on the traceable dense core, not automatically on every full-model subgraph.
-- Sparse VFE, geometry projection, multi-agent fusion, routing, attention, and custom operators must be traced explicitly or recorded as blockers.
+- The scanner validates the traceable dense candidate, not full-model accuracy/AP.
+- Sparse VFE, geometry projection, multi-agent fusion, routing, attention, and custom operators are usually excluded and recorded as skipped subgraphs unless a model-specific plugin supports them.
+- Automatic trace-boundary detection is implemented for the current built-in cooperative-perception families, but new architectures still require manifest review and may need a detector/plugin override.
 - Hardware YAML is a static capability layer; it is not a substitute for measurement on an unseen device.
 - Existing built-in model paths require local HEAL/V2Xverse source and checkpoint roots.
 - Classifier rules are conservative evidence combiners, not a learned universal classifier for arbitrary unseen architectures.

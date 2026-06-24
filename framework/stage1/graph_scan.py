@@ -27,6 +27,7 @@ import torch_pruning as tp
 
 from framework.stage1.hardware_scan import HwCapability
 from framework.stage1.adapters import TraceAdapter
+from framework.stage1.trace_plan import attach_runtime_validation
 
 _PRUNABLE_TYPES = (nn.Conv2d, nn.ConvTranspose2d, nn.Linear, nn.BatchNorm2d)
 _ROOT_TYPES = [nn.Conv2d, nn.ConvTranspose2d, nn.Linear]
@@ -520,6 +521,22 @@ def _resolve_profile(mode: str, device: str) -> bool:
     return str(device).startswith("cuda")   # auto
 
 
+def _output_shapes(out) -> list[list[int]]:
+    if torch.is_tensor(out):
+        return [list(out.shape)]
+    if isinstance(out, dict):
+        shapes: list[list[int]] = []
+        for item in out.values():
+            shapes.extend(_output_shapes(item))
+        return shapes
+    if isinstance(out, (list, tuple)):
+        shapes = []
+        for item in out:
+            shapes.extend(_output_shapes(item))
+        return shapes
+    return []
+
+
 def scan(adapter: TraceAdapter, hw: HwCapability, device: str = "cpu",
          profile_latency_mode: str = "auto",
          lat_warmup: int = 30, lat_measure: int = 100) -> dict:
@@ -529,6 +546,39 @@ def scan(adapter: TraceAdapter, hw: HwCapability, device: str = "cpu",
 
     # S0 + S1
     net, x = adapter.build_trace_net(device)
+    trace_plan = getattr(adapter, "trace_plan", None)
+    if trace_plan is None and hasattr(adapter, "build_trace_plan"):
+        try:
+            trace_plan = adapter.build_trace_plan(device=device)
+        except Exception as e:  # noqa: BLE001
+            trace_plan = {
+                "schema": "stage1_trace_plan_v1",
+                "model": adapter.name,
+                "detector": "trace_plan_builder_failed",
+                "manual_override_used": True,
+                "trace_confidence": "low",
+                "coverage_scope": "unknown",
+                "review_required": True,
+                "review_reasons": ["trace_plan_builder_failed"],
+                "selected_candidate": {
+                    "candidate_id": "trace_plan_builder_failed",
+                    "status": "rejected",
+                    "validation": {"full_model_module_tree_scan": "fail"},
+                },
+                "included_modules": [],
+                "ignored_layers": [],
+                "skipped_subgraphs": [],
+                "rejected_candidates": [
+                    {
+                        "candidate_id": "trace_plan_builder_failed",
+                        "status": "rejected",
+                        "failed_at": "trace_plan_builder",
+                        "error": f"{type(e).__name__}: {str(e)[:200]}",
+                        "suggested_override": "fall back to legacy TraceAdapter registry",
+                    }
+                ],
+                "module_inventory": [],
+            }
     ignored = adapter.ignored_layers(net)
     with torch.no_grad():
         out0 = net(x)
@@ -551,6 +601,14 @@ def scan(adapter: TraceAdapter, hw: HwCapability, device: str = "cpu",
 
     # S5
     checks = stats_and_validate(adapter, b1, hw, device)
+    trace_plan = attach_runtime_validation(
+        trace_plan,
+        forward_status="ok",
+        depgraph_status="ok",
+        prune_status=str(checks["dryrun_prune05"].get("status") or "unknown"),
+        n_prunable_groups=n_groups_raw,
+        output_shapes=_output_shapes(out0),
+    )
     print(f"  [S5] dryrun_prune05={checks['dryrun_prune05'].get('status')}  "
           f"param_dist={checks['param_dist']}")
 
@@ -588,6 +646,7 @@ def scan(adapter: TraceAdapter, hw: HwCapability, device: str = "cpu",
             "skipped_subgraphs": skipped_subgraphs,
             "note": adapter.trace_note,
         },
+        "trace_plan": trace_plan,
         "prune_object": "channel",   # 设计裁剪: 锁定, 不搜 2:4/element
         "stats": {"params_total": checks["params_total"], "param_dist": checks["param_dist"]},
         "search_space_summary": {

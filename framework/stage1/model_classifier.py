@@ -21,6 +21,7 @@ from framework.stage1.coupling_predictor import (
     find_overpromotions,
     predict_manifests,
 )
+from framework.stage1.trace_plan import legacy_trace_plan_from_manifest
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -195,8 +196,27 @@ def normalize_manifest_for_predictor(manifest: dict[str, Any]) -> dict[str, Any]
     """Return a classifier-ready manifest without mutating the input."""
 
     data = deepcopy(manifest)
+    trace_plan = data.get("trace_plan")
+    if not isinstance(trace_plan, dict):
+        trace_plan = legacy_trace_plan_from_manifest(data)
+    data["trace_plan"] = trace_plan
+
     trace = dict(data.get("trace", {}) or {})
     trace.setdefault("skipped_modules", [])
+    plan_skips = [
+        dict(item)
+        for item in _as_list(trace_plan.get("skipped_subgraphs"))
+        if isinstance(item, dict)
+    ]
+    if plan_skips:
+        trace["skipped_subgraphs"] = [
+            *[
+                dict(item)
+                for item in _as_list(trace.get("skipped_subgraphs"))
+                if isinstance(item, dict)
+            ],
+            *plan_skips,
+        ]
     trace["skipped_subgraphs"] = _normalize_skipped_subgraphs({**data, "trace": trace})
     data["trace"] = trace
 
@@ -310,7 +330,9 @@ def _classification_for_model(model: str) -> str:
 
 def _acceleration_class_for_model(model: str, base: dict[str, Any]) -> str:
     ckpt_status = str(base.get("ckpt_status") or "")
-    if ckpt_status == "missing_architecture_scan_only":
+    trace_plan = base.get("trace_plan", {}) if isinstance(base.get("trace_plan"), dict) else {}
+    trace_ckpt_status = str(trace_plan.get("ckpt_status") or "")
+    if ckpt_status == "missing_architecture_scan_only" or "missing" in trace_ckpt_status:
         return "SCAN_FAILED"
     if model == "codriving":
         return "SEPARABLE_ACCELERATION"
@@ -393,6 +415,7 @@ def _unsupported_for_model(model: str, base: dict[str, Any]) -> list[str]:
 
 def _model_record(base: dict[str, Any], evidence_dir: Path) -> dict[str, Any]:
     model = str(base.get("model", "unknown"))
+    trace_plan = base.get("trace_plan", {}) if isinstance(base.get("trace_plan"), dict) else {}
     classification = _classification_for_model(model)
     blockers = sorted(
         set(str(item) for item in _as_list(base.get("blockers")) + _extra_blockers(model) if item)
@@ -414,6 +437,28 @@ def _model_record(base: dict[str, Any], evidence_dir: Path) -> dict[str, Any]:
         "scope": base.get("scope"),
         "backend_policy": BACKEND_POLICY,
         "evidence_level": evidence_level,
+        "trace_confidence": trace_plan.get("trace_confidence"),
+        "coverage_scope": trace_plan.get("coverage_scope"),
+        "manual_override_used": bool(trace_plan.get("manual_override_used", False)),
+        "review_required": bool(trace_plan.get("review_required", False)),
+        "included_modules": trace_plan.get("included_modules", []),
+        "ignored_layers": trace_plan.get("ignored_layers", []),
+        "skipped_subgraphs": trace_plan.get("skipped_subgraphs", []),
+        "rejected_candidates": trace_plan.get("rejected_candidates", []),
+        "trace_plan": {
+            "schema": trace_plan.get("schema"),
+            "detector": trace_plan.get("detector"),
+            "trace_confidence": trace_plan.get("trace_confidence"),
+            "coverage_scope": trace_plan.get("coverage_scope"),
+            "manual_override_used": bool(trace_plan.get("manual_override_used", False)),
+            "review_required": bool(trace_plan.get("review_required", False)),
+            "review_reasons": _as_list(trace_plan.get("review_reasons")),
+            "selected_candidate": trace_plan.get("selected_candidate"),
+            "included_modules": trace_plan.get("included_modules", []),
+            "ignored_layers": trace_plan.get("ignored_layers", []),
+            "skipped_subgraphs": trace_plan.get("skipped_subgraphs", []),
+            "rejected_candidates": trace_plan.get("rejected_candidates", []),
+        },
         "evidence_sources": _common_sources(base, evidence_dir),
         "historical_evidence_sources": historical_sources,
         "historical_labels": historical_labels,
@@ -494,6 +539,23 @@ def render_classification_md(report: dict[str, Any]) -> str:
         lines.append(
             f"| `{item['model']}` | `{item['acceleration_class']}` | "
             f"{item['acceleration_class_label']} | {item['acceleration_class_reason']} |"
+        )
+
+    lines.extend(["", "## Trace Plan Summary", ""])
+    lines.extend([
+        "| model | detector | candidate | confidence | coverage | manual_override | review_required | skipped | rejected |",
+        "|---|---|---|---|---|---|---|---|---|",
+    ])
+    for item in report["models"]:
+        plan = item.get("trace_plan", {}) or {}
+        candidate = plan.get("selected_candidate", {}) or {}
+        skipped = len(plan.get("skipped_subgraphs", []) or [])
+        rejected = len(plan.get("rejected_candidates", []) or [])
+        lines.append(
+            f"| `{item['model']}` | `{plan.get('detector')}` | "
+            f"`{candidate.get('candidate_id')}` | `{item.get('trace_confidence')}` | "
+            f"`{item.get('coverage_scope')}` | `{item.get('manual_override_used')}` | "
+            f"`{item.get('review_required')}` | `{skipped}` | `{rejected}` |"
         )
 
     lines.extend(["", "## Historical Evidence", ""])

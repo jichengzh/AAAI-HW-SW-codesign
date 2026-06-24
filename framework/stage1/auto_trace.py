@@ -48,6 +48,11 @@ _DISCO_FUSE_FALLBACKS = [
 from framework.stage1.adapters import (
     TraceAdapter, _add_path, _generic_bucket, _first_conv_in_channels
 )
+from framework.stage1.trace_plan import (
+    TraceBoundaryDetector,
+    WrapperSynthesizer,
+    legacy_trace_plan_from_manifest,
+)
 
 
 def _use_heal_opencood():
@@ -134,6 +139,7 @@ class AutoTraceAdapter(TraceAdapter):
         skipped_desc: Optional[list] = None,
         trace_note: str = "",
         ignored_attr_names: Optional[list] = None,
+        trace_plan: Optional[dict] = None,
     ):
         self.name = name
         self.model_class = model_class
@@ -146,6 +152,7 @@ class AutoTraceAdapter(TraceAdapter):
         self.skipped_subgraphs = self.typed_skipped_subgraphs()
         self.trace_note = trace_note
         self._ignored_attr_names = ignored_attr_names
+        self.trace_plan = trace_plan
 
     # -----------------------------------------------------------------------
     # TraceAdapter 接口实现
@@ -153,8 +160,31 @@ class AutoTraceAdapter(TraceAdapter):
 
     def build_trace_net(self, device: str):
         net = self._build_fn(self.config_path, self.ckpt_path, device)
+        if hasattr(net, "_stage1_trace_plan"):
+            self.trace_plan = getattr(net, "_stage1_trace_plan")
         x = torch.zeros(self._bev_shape, device=device)
         return net, x
+
+    def build_trace_plan(self, device: str = "cpu") -> dict:
+        """Return the auditable trace-boundary plan used by graph_scan."""
+
+        if isinstance(self.trace_plan, dict):
+            return self.trace_plan
+        return legacy_trace_plan_from_manifest(
+            {
+                "model": self.name,
+                "model_class": self.model_class,
+                "config": self.config_path,
+                "ckpt": self.ckpt_path,
+                "ckpt_status": self.ckpt_status,
+                "trace": {
+                    "entry_shape": list(self._bev_shape),
+                    "skipped_modules": list(self.skipped_modules),
+                    "skipped_subgraphs": list(self.skipped_subgraphs),
+                    "note": self.trace_note,
+                },
+            }
+        )
 
     def ignored_layers(self, net: nn.Module) -> list:
         """自动探测 ignored 层 (输出头), 或按 ignored_attr_names 显式取。"""
@@ -387,19 +417,26 @@ def _build_v2xvit(config_path: str, ckpt_path: str, device: str) -> nn.Module:
     return V2XViTBackboneTraceNet(full).to(device).eval()
 
 
-def _build_heter_baseline(config_path: str, ckpt_path: str, device: str) -> nn.Module:
-    """通用 HEAL HeterModelBaseline builder.
+def _infer_heter_model_key(config_path: str, model_args: Optional[dict] = None) -> str:
+    text = f"{config_path} {model_args or {}}".lower()
+    for key in ("where2comm", "v2vnet", "disconet", "attfuse", "fcooper"):
+        if key in text:
+            return key
+    if "att" in text and "fusion" in text:
+        return "attfuse"
+    return Path(config_path).stem or "heter_baseline"
 
-    F-Cooper / AttFuse 有本地 ckpt; Where2comm / V2VNet / DiscoNet 当前只有
-    config 时仍允许 architecture-only scan。Stage1 只需要构图、参数桶和
-    dry-run pruning, 缺 ckpt 时使用 random init 并由 adapter.ckpt_status 标注。
-    """
+
+def _load_heter_baseline_full_model(config_path: str, ckpt_path: str, device: str) -> tuple[nn.Module, dict, str]:
+    """Load a HEAL HeterModelBaseline full model without making trace decisions."""
+
     _use_heal_opencood()
     os.chdir(str(_HEAL))
     from opencood.hypes_yaml.yaml_utils import load_yaml
     hypes = load_yaml(config_path)
     model_args = hypes["model"]["args"]
-    if "disconet" in model_args:
+    model_key = _infer_heter_model_key(config_path, model_args)
+    if "disconet" in model_args or model_key == "disconet":
         _ensure_disco_fuse_compat()
     from opencood.models.heter_model_baseline import HeterModelBaseline
     full = HeterModelBaseline(model_args)
@@ -410,8 +447,29 @@ def _build_heter_baseline(config_path: str, ckpt_path: str, device: str) -> nn.M
         print(f"  [ckpt {Path(config_path).parent.name}] missing={len(miss)} unexpected={len(unexp)}")
     else:
         print(f"  [ckpt {Path(config_path).parent.name}] missing ckpt -> random-init architecture scan")
-    full = full.to(device).eval()
-    return _HeterBaselineTraceNet(full).to(device).eval()
+    return full.to(device).eval(), hypes, model_key
+
+
+def _build_heter_baseline(config_path: str, ckpt_path: str, device: str) -> nn.Module:
+    """Build an auto-detected dense candidate from a full HeterModelBaseline."""
+
+    full, _hypes, model_key = _load_heter_baseline_full_model(config_path, ckpt_path, device)
+    ckpt_status = "ok" if ckpt_path and Path(ckpt_path).is_file() else "missing_architecture_scan_only"
+    try:
+        input_shape = _infer_heter_bev_shape(config_path)
+    except Exception:
+        input_shape = None
+    trace_plan = TraceBoundaryDetector().detect(
+        full,
+        model_name=model_key,
+        config_path=config_path,
+        ckpt_path=ckpt_path,
+        ckpt_status=ckpt_status,
+        input_shape=input_shape,
+    )
+    net = WrapperSynthesizer().synthesize(full, trace_plan["selected_candidate"]).to(device).eval()
+    net._stage1_trace_plan = trace_plan
+    return net
 
 
 def _infer_heter_bev_shape(config_path: str) -> tuple:

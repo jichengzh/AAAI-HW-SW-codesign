@@ -29,7 +29,7 @@ H800 TVM 证据脚本需要本地 TVM/Relax/MetaSchedule 环境。TRT 在分类�
 ## 目录
 
 ```text
-framework/stage1/                 Stage1 硬件扫描、trace adapter、DepGraph 扫描、预测器、分类器
+framework/stage1/                 Stage1 硬件扫描、trace 边界检测、DepGraph 扫描、预测器、分类器
 framework/capability_schema.py     硬件 YAML 校验
 framework/stage1_bridge.py         manifest 到搜索空间的转换
 tools/configurable/depgraph_*.py   Pyramid 与 V2X-ViT trace wrapper
@@ -75,14 +75,13 @@ memory:
 
 ## 扫描模型
 
-在 `framework/stage1/adapters.py` 注册模型。每个 adapter 至少提供：
+内置模型可以直接扫描：
 
-- `build_trace_net(device) -> (torch.nn.Module, dummy_input)`
-- `ignored_layers(net)`：输出头或需要冻结的接口层
-- `skipped_modules` 或 `skipped_subgraphs`：dense core 外的 sparse、fusion、attention、routing、自定义子图
-- `semantic_bucket(layer_name)`：默认语义桶不够时再覆盖
+```bash
+PYTHONPATH=. python -m framework.stage1.run_scan --model all --device cpu --profile-latency off
+```
 
-运行：
+单模型运行：
 
 ```bash
 PYTHONPATH=. python -m framework.stage1.run_scan \
@@ -108,6 +107,8 @@ PYTHONPATH=. python -m framework.stage1.run_scan \
   --device cpu \
   --profile-latency off
 ```
+
+扫描时框架会加载模型，构造或自动识别 dense trace candidate，执行 forward dry-run，构建 `torch-pruning` DepGraph，执行 0.5 剪枝 dry-run，并把 included / ignored / skipped / rejected trace 边界信息写入 manifest。
 
 ## 模型分类
 
@@ -152,7 +153,17 @@ PYTHONPATH=. python scripts/phase2/stage1_s4_three_arm_validation.py --help
 
 ## 添加新模型
 
-可以使用 `framework/stage1/adapters.py` 中的 `TraceAdapter`，也可以使用已经实现的 `framework/stage1/auto_trace.py` 中的 `AutoTraceAdapter`。`run_scan` 已同时支持两个 registry。
+推荐路径是在 `framework/stage1/auto_trace.py` 中新增一个很薄的 `AutoTraceAdapter` 注册。
+
+用户需要提供：
+
+- 模型名
+- config 路径
+- checkpoint 路径
+- 一个返回完整 `torch.nn.Module` 的最小加载函数
+- 如果配置无法自动解析，再提供 input-shape hint
+
+之后 Stage1 会自动扫描模块树，识别 dense candidate path，按启发式排除 sparse / fusion / routing / postprocess 区域，生成 wrapper candidate，执行 dry-run validation 和 DepGraph 验证，最后输出 trace-boundary manifest。用户主要负责审核 manifest 是否合理。只有自动候选不合理时，才使用手写 `TraceAdapter` 或手写 wrapper 兜底。
 
 新增 adapter 教程见：[docs/add-new-model-adapter.zh-CN.md](docs/add-new-model-adapter.zh-CN.md)。
 
@@ -164,8 +175,9 @@ PYTHONPATH=. python scripts/phase2/stage1_s4_three_arm_validation.py --help
 
 ## 当前局限
 
-- 当前扫描对象是可 trace 的 dense core，不自动覆盖完整模型所有子图。
-- sparse VFE、几何投影、多车 fusion、routing、attention、自定义算子需要显式 trace 或记录为 blocker。
+- 当前 validation 验证的是可 trace dense candidate，不是完整模型 AP/精度。
+- sparse VFE、几何投影、多车 fusion、routing、attention、自定义算子通常会被排除并记录为 skipped subgraph；除非提供模型专用插件，否则不会自动进入 dense DepGraph。
+- 自动 trace 边界检测已覆盖当前内置协同感知模型族，但新架构仍需要用户审核 manifest，必要时提供 detector/plugin override。
 - 硬件 YAML 不是实测数据，不能替代新硬件上的 probe。
 - 内置模型依赖用户本地提供 HEAL/V2Xverse 源码和 checkpoint。
 - 分类器是保守的证据合并器，不是可直接泛化到任意未知架构的学习型分类模型。

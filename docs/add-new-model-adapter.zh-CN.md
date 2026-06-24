@@ -1,49 +1,50 @@
 # 新增模型 Adapter 教程
 
-Stage1 支持两种 adapter：
+Stage1 的目标不是让用户手工指定 dense core，而是让用户提供模型入口后，由框架自动产生可审计的扫描边界。
 
-- `TraceAdapter`：正式底层接口，写在 `framework/stage1/adapters.py`。适合模型结构特殊、需要手写 wrapper 的情况。
-- `AutoTraceAdapter`：已经实现，写在 `framework/stage1/auto_trace.py`。它可以自动处理 dummy input、ignored head 探测和语义桶复用，但仍需要你提供一个 `build_fn`，返回已经包装好的 trace-ready dense net。
+正确流程是：
 
-`AutoTraceAdapter` 不是“任意 PyTorch 模型输入后自动识别完整 dense core”的系统。当前自动化边界是：你负责把模型加载、checkpoint 加载、dense-core wrapper、不可 trace 子图说明写清楚；Stage1 负责 DepGraph 扫描、结构特征提取、硬件约束过滤和 manifest 输出。
+```text
+用户提供 config + checkpoint + model name
+        ↓
+Stage1 加载完整模型
+        ↓
+自动扫描模块树
+        ↓
+自动识别 dense candidate path
+        ↓
+自动排除 sparse / fusion / routing / postprocess
+        ↓
+自动生成 wrapper candidate
+        ↓
+forward dry-run
+        ↓
+torch-pruning DepGraph 验证
+        ↓
+0.5 pruning dry-run 验证
+        ↓
+生成 included / ignored / skipped / rejected manifest
+        ↓
+分类器保守读取 manifest 和后续证据
+```
+
+用户仍然需要写一小段加载代码，因为框架无法预先知道任意研究仓库的 config parser、model factory 和 checkpoint 格式。这段代码只负责“如何加载完整模型”，不负责手工选择要扫描哪些层。
 
 ## 推荐路径：AutoTraceAdapter
 
-### 1. 写 trace-ready wrapper
+### 1. 写完整模型加载器
 
-假设原模型完整 forward 依赖 sparse VFE、scatter、fusion 或多车输入，Stage1 不直接 trace 完整 forward。你需要写一个 wrapper，让它只接收 dense BEV tensor。
-
-示例：
+在 `framework/stage1/auto_trace.py` 中新增一个 build 函数。这个函数应加载完整模型，然后调用 `TraceBoundaryDetector` 自动生成 trace candidate。
 
 ```python
-class MyModelTraceNet(nn.Module):
-    def __init__(self, full):
-        super().__init__()
-        self.backbone = full.backbone
-        self.neck = full.neck
-        self.cls_head = full.cls_head
-        self.reg_head = full.reg_head
+from pathlib import Path
 
-    def forward(self, spatial_features):
-        x = self.backbone({"spatial_features": spatial_features})["spatial_features_2d"]
-        x = self.neck(x)
-        return self.cls_head(x), self.reg_head(x)
-```
+import torch
 
-规则：
+from framework.stage1.trace_plan import TraceBoundaryDetector, WrapperSynthesizer
 
-- wrapper 输入必须是固定 shape 的 dense tensor，例如 `(1, 64, 256, 512)`。
-- sparse VFE、scatter、geometry projection、multi-agent fusion、attention、routing 如果不进入 wrapper，必须记录为 skipped subgraph。
-- 输出 head 通常不剪枝，应该被 `ignored_layers` 捕获或显式指定。
 
-### 2. 写 build_fn
-
-在 `framework/stage1/auto_trace.py` 中新增一个构建函数：
-
-```python
 def _build_my_model(config_path: str, ckpt_path: str, device: str):
-    _add_path("/path/to/model/repo")
-
     from my_project.config import load_config
     from my_project.models import build_model
 
@@ -53,16 +54,26 @@ def _build_my_model(config_path: str, ckpt_path: str, device: str):
     raw = torch.load(ckpt_path, map_location="cpu")
     state_dict = raw.get("model_state_dict", raw) if isinstance(raw, dict) else raw
     full.load_state_dict(state_dict, strict=False)
-
     full = full.to(device).eval()
-    return MyModelTraceNet(full).to(device).eval()
+
+    trace_plan = TraceBoundaryDetector().detect(
+        full,
+        model_name="my_model",
+        config_path=config_path,
+        ckpt_path=ckpt_path,
+        ckpt_status="ok" if Path(ckpt_path).is_file() else "missing_architecture_scan_only",
+        input_shape=(1, 64, 256, 512),
+    )
+    net = WrapperSynthesizer().synthesize(full, trace_plan["selected_candidate"]).to(device).eval()
+    net._stage1_trace_plan = trace_plan
+    return net
 ```
 
-如果模型没有可用 checkpoint，不要把随机初始化结果写成训练模型扫描。应设置 `ckpt_status="missing"` 或 `ckpt_status="missing_architecture_scan_only"`，分类器会保守处理。
+这里的 `input_shape` 是 dense BEV 或 dense feature 入口的形状 hint。它不是手工指定扫描层，只是帮助 wrapper dry-run 构造输入。
 
-### 3. 注册 AutoTraceAdapter
+### 2. 注册 AutoTraceAdapter
 
-在 `AUTO_REGISTRY` 中加入：
+仍在 `framework/stage1/auto_trace.py` 的 `AUTO_REGISTRY` 中注册：
 
 ```python
 AUTO_REGISTRY["my_model"] = AutoTraceAdapter(
@@ -74,42 +85,17 @@ AUTO_REGISTRY["my_model"] = AutoTraceAdapter(
     bev_shape=(1, 64, 256, 512),
     ckpt_status="ok",
     skipped_desc=[
-        "pillar_vfe (sparse VFE, not traced)",
-        "scatter (sparse scatter, not traced)",
-        "fusion_net (multi-agent fusion, not traced)",
+        "pillar_vfe (sparse VFE, auto-skip)",
+        "scatter (sparse scatter, auto-skip)",
+        "fusion_net (multi-agent fusion, auto-skip)",
     ],
-    trace_note=(
-        "trace core = backbone -> neck -> cls/reg heads; "
-        "sparse preprocessing and fusion are skipped"
-    ),
-    ignored_attr_names=["cls_head", "reg_head"],
+    trace_note="full model loaded; TraceBoundaryDetector selects dense candidate",
 )
 ```
 
-如果 head 名称符合 `cls_head/reg_head/dir_head/single_head`，可以省略 `ignored_attr_names`，让 `AutoTraceAdapter` 自动探测。
+`skipped_desc` 是给报告的初始语义提示。最终 manifest 还会包含 `TraceBoundaryDetector` 生成的 typed `skipped_subgraphs`、`included_modules`、`ignored_layers` 和 `rejected_candidates`。
 
-`bev_shape` 不会在导入时自动读取外部配置，目的是让没有安装外部模型仓库的用户也能打开 CLI help。添加新模型时请根据模型真实 dense BEV 入口显式填写。
-
-### 4. 运行 Stage1 扫描
-
-`framework.stage1.run_scan` 已同时支持 `REGISTRY` 和 `AUTO_REGISTRY`：
-
-```bash
-PYTHONPATH=. python -m framework.stage1.run_scan \
-  --model my_model \
-  --hw configs/hardware/rtx3090.yaml \
-  --device cuda \
-  --out-dir framework/partitions \
-  --profile-latency auto
-```
-
-输出：
-
-```text
-framework/partitions/my_model_partition.yaml
-```
-
-如果只验证结构：
+### 3. 运行扫描
 
 ```bash
 PYTHONPATH=. python -m framework.stage1.run_scan \
@@ -119,25 +105,44 @@ PYTHONPATH=. python -m framework.stage1.run_scan \
   --profile-latency off
 ```
 
-### 5. 运行分类器
+输出：
 
-```bash
-PYTHONPATH=. python scripts/stage1_classify_models.py \
-  --manifest framework/partitions/my_model_partition.yaml \
-  --evidence-dir results/stage1_model_predict \
-  --out-json results/stage1_model_predict/model_classifier/my_model_classification.json \
-  --out-md results/stage1_model_predict/model_classifier/my_model_classification.md
+```text
+framework/partitions/my_model_partition.yaml
 ```
 
-如果没有 S2/S2.5/S3/S4 证据，分类器会保守输出 blocker 和下一步 gate/probe，而不是直接给 full-model separability 结论。
+关键字段：
 
-## 备选路径：手写 TraceAdapter
+```yaml
+trace_plan:
+  detector: TraceBoundaryDetector
+  selected_candidate:
+    validation:
+      wrapper_forward_dryrun: ok
+      depgraph_build: ok
+      prune_dryrun: ok
+      boundary_validator: BoundaryValidator.graph_scan_integrated_v1
+  included_modules: [...]
+  ignored_layers: [...]
+  skipped_subgraphs: [...]
+  rejected_candidates: [...]
+```
 
-如果模型需要更强控制，可以在 `framework/stage1/adapters.py` 直接继承 `TraceAdapter`：
+用户主要审核这些问题：
+
+- included 是否确实是 dense backbone / neck / head candidate。
+- skipped 是否覆盖 sparse VFE、scatter、fusion、routing、postprocess、自定义算子。
+- ignored 是否包含输出 head、接口保护层或不应被剪枝的层。
+- rejected candidate 的失败原因是否合理。
+- validation 是否至少通过 forward、DepGraph 和 pruning dry-run。
+
+## 手工兜底：TraceAdapter
+
+如果自动候选明显错误，可以临时使用 `framework/stage1/adapters.py` 中的 `TraceAdapter` 兜底。手写 adapter 应被视为 override，而不是默认路径。
 
 ```python
 class MyModelAdapter(TraceAdapter):
-    name = "my_model"
+    name = "my_model_manual"
     model_class = "MyModel"
     config_path = "/path/to/config.yaml"
     ckpt_path = "/path/to/checkpoint.pth"
@@ -146,39 +151,52 @@ class MyModelAdapter(TraceAdapter):
         "pillar_vfe (sparse VFE)",
         "fusion_net (multi-agent fusion)",
     ]
-    trace_note = "trace core = backbone -> neck -> heads"
+    trace_note = "manual override: backbone -> neck -> heads"
 
     def build_trace_net(self, device):
         full = build_my_full_model(self.config_path, self.ckpt_path, device)
-        net = MyModelTraceNet(full).to(device).eval()
-        x = torch.randn(1, 64, 256, 512, device=device)
+        net = MyManualTraceNet(full).to(device).eval()
+        x = torch.zeros(1, 64, 256, 512, device=device)
         return net, x
 
     def ignored_layers(self, net):
         return [net.cls_head, net.reg_head]
 ```
 
-然后注册：
+使用手工兜底时，manifest / classifier 会把它视为需要 review 的低自动化边界；不要把它包装成自动扫描成功。
+
+## 没有 Checkpoint 怎么办
+
+没有 checkpoint 时可以做 architecture-only scan，但必须设置：
 
 ```python
-REGISTRY["my_model"] = MyModelAdapter
+ckpt_status="missing_architecture_scan_only"
 ```
+
+这类扫描只能证明结构路径能否被扫描，不能代表训练模型分类，也不能作为精度或真实性能结论。
+
+## 新硬件怎么办
+
+新增硬件先写 `configs/hardware/<name>.yaml`，再用 `--hw` 指定。硬件 YAML 只提供静态 capability，如 SM 架构、支持精度、INT8 channel alignment、pack factor、DLA/NPU/GPU IP 和 op whitelist。
+
+如果要声称新硬件上的实测延迟、吞吐或 AP，需要把该硬件接入本地环境并运行 probe。静态 YAML 不能替代实测。
 
 ## 检查清单
 
-新增模型前后检查这些点：
-
-- `build_trace_net` 或 `build_fn` 返回的是 `eval()` 模式下的 `nn.Module`。
-- dummy input shape 与真实 dense BEV 入口一致。
-- `net(dummy_input)` 可以在 CPU 上跑通。
-- 输出 head、固定接口层、fusion 输入维度保护层已加入 ignored。
-- 所有未 trace 的 sparse/fusion/attention/routing/custom 子图都写入 skipped 描述。
-- 没有 checkpoint 时不要写成 trained checkpoint scan。
-- 分类器输出中的 `unsupported_conclusions` 和 `blockers` 不应被手动删除。
+- 完整模型能通过 config + checkpoint 加载。
+- `TraceBoundaryDetector` 产生了 `selected_candidate`。
+- `wrapper_forward_dryrun == ok`。
+- `depgraph_build == ok`。
+- `prune_dryrun == ok`。
+- manifest 中有 typed `skipped_subgraphs`。
+- 没有 checkpoint 时没有写成 trained checkpoint scan。
+- 分类器输出中的 `unsupported_conclusions` 和 `blockers` 没有被手工删除。
 
 ## 常见错误
 
-- 只写 `groups=1` 或 “no cliff”，但跳过了 fusion/attention 子图：这不能证明模型级可分离。
-- 用随机初始化 fusion timing 代表训练模型：不允许。
-- 用静态硬件 YAML 代表新硬件实测：不允许。
-- 把 TRT 当作新增测量后端：不允许。当前新增实测后端策略是 H800 TVM/Relax/MetaSchedule。
+- 把“需要提供模型加载器”误解为“需要手工指定扫描层”。
+- 用随机初始化 timing 代表训练模型。
+- 只因为 `groups=1` 或 no-cliff 就声称模型级可分离。
+- 跳过 fusion / attention / routing 后仍声称 full-model separability。
+- 用静态硬件 YAML 代表新硬件实测。
+- 把 TRT 当作新增测量后端。当前新增实测后端策略是 H800 TVM/Relax/MetaSchedule。

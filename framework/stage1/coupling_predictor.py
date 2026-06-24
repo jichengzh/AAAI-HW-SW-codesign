@@ -14,6 +14,8 @@ from typing import Any, Iterable
 
 import yaml
 
+from framework.stage1.trace_plan import legacy_trace_plan_from_manifest
+
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_EVIDENCE_DIR = ROOT / "results/stage1_model_predict"
@@ -242,6 +244,36 @@ def _normalize_skipped_subgraphs(manifest: dict[str, Any]) -> list[dict[str, Any
     return deduped
 
 
+def _normalize_trace_plan(manifest: dict[str, Any]) -> dict[str, Any]:
+    trace_plan = manifest.get("trace_plan")
+    if isinstance(trace_plan, dict) and trace_plan.get("schema") == "stage1_trace_plan_v1":
+        return dict(trace_plan)
+    return legacy_trace_plan_from_manifest(manifest)
+
+
+def _manifest_with_trace_plan(manifest: dict[str, Any]) -> dict[str, Any]:
+    data = dict(manifest)
+    trace_plan = _normalize_trace_plan(data)
+    trace = dict(data.get("trace", {}) or {})
+    plan_skips = [
+        dict(item)
+        for item in _as_list(trace_plan.get("skipped_subgraphs"))
+        if isinstance(item, dict)
+    ]
+    if plan_skips:
+        trace["skipped_subgraphs"] = [
+            *[
+                dict(item)
+                for item in _as_list(trace.get("skipped_subgraphs"))
+                if isinstance(item, dict)
+            ],
+            *plan_skips,
+        ]
+    data["trace"] = trace
+    data["trace_plan"] = trace_plan
+    return data
+
+
 def _blocking_skip_gates(skipped: Iterable[dict[str, Any]]) -> list[str]:
     blockers: list[str] = []
     for item in skipped:
@@ -445,6 +477,7 @@ def _finalize_report(
         "evidence_sources": _evidence_sources(model, manifest_path),
         "evidence": evidence_lines,
         "normalized_skipped_subgraphs": skipped,
+        "trace_plan": manifest.get("trace_plan"),
     }
 
 
@@ -487,6 +520,7 @@ def predict_manifest(
     else:
         manifest_path = Path(manifest)
         data = _load_yaml(manifest_path)
+    data = _manifest_with_trace_plan(data)
 
     model = str(data.get("model", "unknown"))
     evidence = _load_evidence(evidence_dir)
@@ -499,6 +533,18 @@ def predict_manifest(
     blockers = list(skip_blockers)
     required_next = list(required)
     confidence = 0.45
+    trace_plan = data.get("trace_plan", {}) if isinstance(data.get("trace_plan"), dict) else {}
+    if trace_plan.get("manual_override_used"):
+        blockers.append("trace_manual_override_used_review_required")
+        required_next.append("review_stage1_trace_plan_boundary")
+    if str(trace_plan.get("trace_confidence")) == "low":
+        blockers.append("trace_boundary_confidence_low")
+        required_next.append("provide_trace_boundary_override_or_detector_plugin")
+    if trace_plan.get("review_required"):
+        required_next.append("review_stage1_trace_plan_boundary")
+    if "missing" in str(trace_plan.get("ckpt_status") or data.get("ckpt_status") or ""):
+        blockers.append("missing_checkpoint_architecture_only")
+        required_next.append("provide_trained_checkpoint_for_model_scan")
 
     if model == "codriving" and _codriving_has_anchor(evidence):
         verdict = VERDICT_ANCHOR_PROBED_LOW_RISK
