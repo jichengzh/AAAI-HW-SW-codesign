@@ -10,6 +10,7 @@ import pytest
 import yaml
 
 from framework.stage2.contracts import (
+    _manifest_identity,
     Stage2EvidenceDelta,
     Stage2EvidenceRecord,
     Stage2Input,
@@ -72,7 +73,8 @@ def _classification(
 
 
 def _write_inputs(tmp_path: Path, classification: dict | None = None) -> tuple[Path, Path]:
-    manifest_path = tmp_path / "pyramid_lidar_partition.yaml"
+    manifest_path = tmp_path / "framework" / "partitions" / "pyramid_lidar_partition.yaml"
+    manifest_path.parent.mkdir(parents=True)
     manifest_path.write_text(yaml.safe_dump(_manifest(), sort_keys=False), encoding="utf-8")
     classification_path = tmp_path / "classification.json"
     report = _classification() if classification is None else classification
@@ -131,6 +133,49 @@ def test_classifier_record_with_same_basename_but_different_manifest_path_fails_
         tmp_path,
         _classification(manifest="different/pyramid_lidar_partition.yaml"),
     )
+
+    decision = apply_stage1_gate(manifest_path, classification_path)
+
+    assert decision.allowed is False
+    assert decision.reason == "model_identity_mismatch"
+
+
+def test_manifest_identity_normalizes_absolute_and_relative_partition_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    demo_root = tmp_path / "demo"
+    manifest_path, classification_path = _write_inputs(demo_root)
+    expected_identity = "framework/partitions/pyramid_lidar_partition.yaml"
+
+    absolute_decision = apply_stage1_gate(manifest_path, classification_path)
+
+    monkeypatch.chdir(tmp_path)
+    demo_relative_path = Path("demo/framework/partitions/pyramid_lidar_partition.yaml")
+    demo_relative_decision = apply_stage1_gate(demo_relative_path, classification_path)
+    demo_relative_identity = _manifest_identity(demo_relative_path)
+
+    monkeypatch.chdir(demo_root)
+    partition_relative_path = Path("framework/partitions/pyramid_lidar_partition.yaml")
+    partition_relative_decision = apply_stage1_gate(partition_relative_path, classification_path)
+    partition_relative_identity = _manifest_identity(partition_relative_path)
+
+    assert absolute_decision.allowed is True
+    assert demo_relative_decision.allowed is True
+    assert partition_relative_decision.allowed is True
+    assert {
+        _manifest_identity(manifest_path),
+        demo_relative_identity,
+        partition_relative_identity,
+    } == {expected_identity}
+
+
+def test_classifier_record_with_same_manifest_path_but_different_digest_fails_closed(
+    tmp_path: Path,
+) -> None:
+    manifest_path, classification_path = _write_inputs(tmp_path)
+    report = json.loads(classification_path.read_text(encoding="utf-8"))
+    report["models"][0]["manifest_digest"] = "0" * 64
+    classification_path.write_text(json.dumps(report), encoding="utf-8")
 
     decision = apply_stage1_gate(manifest_path, classification_path)
 

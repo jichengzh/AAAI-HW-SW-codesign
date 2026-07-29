@@ -134,16 +134,15 @@ def _manifest_identity(path: str | Path) -> str:
     """Return the portable Stage1 manifest identity used by classifier records."""
     value = Path(path)
     if value.is_absolute():
-        resolved = value.resolve(strict=True)
-        parts = resolved.parts
-        for index in range(len(parts) - 1):
-            if parts[index : index + 2] == ("framework", "partitions"):
-                return Path(*parts[index:]).as_posix()
-        return resolved.as_posix()
-    normalized = Path(value.as_posix())
-    if normalized.is_absolute() or ".." in normalized.parts:
+        parts = value.resolve(strict=True).parts
+    else:
+        parts = value.parts
+    if ".." in parts:
         raise ValueError(f"invalid manifest identity: {path}")
-    return normalized.as_posix()
+    for index in range(len(parts) - 1):
+        if parts[index : index + 2] == ("framework", "partitions"):
+            return Path(*parts[index:]).as_posix()
+    raise ValueError(f"invalid manifest identity: {path}")
 
 
 def _manifest_model(path: str | Path) -> str:
