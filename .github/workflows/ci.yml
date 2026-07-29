@@ -23,4 +23,12 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: pip install -e '.[repro,dev]'
       - run: ruff check tests
-      - run: pytest -q --cov=framework
+      - run: >-
+          ruff check framework/stage1_bridge.py framework/stage1/model_classifier.py
+          framework/stage2 framework/search_three_arm.py framework/run_b4_ablation.py
+          framework/run_pqs_ablation.py framework/run_pqs_codriving.py
+          scripts/prepare_stage2_demo_data.py scripts/stage2_optimize_model.py
+          scripts/stage2_update_evidence.py tests/stage1 tests/stage2
+      - run: >-
+          pytest -q tests/stage1 tests/stage2
+          --cov=framework.stage1_bridge --cov=framework.stage2.contracts

@@ -32,13 +32,10 @@ S2_COMPLETION_PATH = STAGE1_DIR / "s2_probe_results/stage1_s2_probe_completion_v
 S2_5_PATH = STAGE1_DIR / "s2_5_coverage_gates/stage1_s2_5_coverage_gate_closure_v1.json"
 S3_PATH = STAGE1_DIR / "s3_quant_sensitivity/stage1_s3_quant_sensitivity_v1.json"
 S4_PATH = STAGE1_DIR / "s4_three_arm_validation/stage1_s4_three_arm_validation_v1.json"
+STAGE2_DELTA_DIR = STAGE1_DIR / "stage2_evidence_delta"
 
-DEFAULT_OUT_JSON = (
-    STAGE1_DIR / "model_classifier/stage1_model_classification_v1.json"
-)
-DEFAULT_OUT_MD = (
-    STAGE1_DIR / "model_classifier/stage1_model_classification_v1.md"
-)
+DEFAULT_OUT_JSON = STAGE1_DIR / "model_classifier/stage1_model_classification_v1.json"
+DEFAULT_OUT_MD = STAGE1_DIR / "model_classifier/stage1_model_classification_v1.md"
 
 DEFAULT_MANIFESTS = [
     ROOT / "framework/partitions/codriving_partition.yaml",
@@ -145,21 +142,10 @@ def _fallback_b1_feature(group: dict[str, Any]) -> dict[str, Any]:
 
 def _rollup_feature(groups: list[dict[str, Any]]) -> dict[str, Any]:
     features = [g.get("feature", {}) or {} for g in groups]
-    ic_bn = [
-        float(f["ic_bn"])
-        for f in features
-        if f.get("ic_bn") is not None
-    ]
-    max_groups = max(
-        [int(f.get("groups") or 1) for f in features] or [1]
-    )
+    ic_bn = [float(f["ic_bn"]) for f in features if f.get("ic_bn") is not None]
+    max_groups = max([int(f.get("groups") or 1) for f in features] or [1])
     op_types = sorted(
-        {
-            str(op)
-            for feature in features
-            for op in _as_list(feature.get("op_types"))
-            if op
-        }
+        {str(op) for feature in features for op in _as_list(feature.get("op_types")) if op}
     )
     fanout = sorted(
         {
@@ -241,11 +227,7 @@ def normalize_manifest_for_predictor(manifest: dict[str, Any]) -> dict[str, Any]
             if str(group_id) in by_group_id
         ]
         if not members and b1_groups:
-            members = [
-                g
-                for g in b1_groups
-                if g.get("bucket") == item.get("bucket")
-            ]
+            members = [g for g in b1_groups if g.get("bucket") == item.get("bucket")]
         item.setdefault("feature", _rollup_feature(members))
         search_groups.append(item)
     data["view_b1_search_groups"] = search_groups
@@ -261,14 +243,11 @@ def normalize_manifest_for_predictor(manifest: dict[str, Any]) -> dict[str, Any]
 def _evidence_inputs(evidence_dir: Path) -> dict[str, str]:
     paths = {
         "s2": evidence_dir / "s2_schedule_anchor_audit_v1.json",
-        "s2_completion": evidence_dir
-        / "s2_probe_results/stage1_s2_probe_completion_v1.json",
-        "s2_5": evidence_dir
-        / "s2_5_coverage_gates/stage1_s2_5_coverage_gate_closure_v1.json",
-        "s3": evidence_dir
-        / "s3_quant_sensitivity/stage1_s3_quant_sensitivity_v1.json",
-        "s4": evidence_dir
-        / "s4_three_arm_validation/stage1_s4_three_arm_validation_v1.json",
+        "s2_completion": evidence_dir / "s2_probe_results/stage1_s2_probe_completion_v1.json",
+        "s2_5": evidence_dir / "s2_5_coverage_gates/stage1_s2_5_coverage_gate_closure_v1.json",
+        "s3": evidence_dir / "s3_quant_sensitivity/stage1_s3_quant_sensitivity_v1.json",
+        "s4": evidence_dir / "s4_three_arm_validation/stage1_s4_three_arm_validation_v1.json",
+        "stage2_evidence_delta": evidence_dir / "stage2_evidence_delta",
     }
     return {key: _rel(path) for key, path in paths.items()}
 
@@ -295,7 +274,9 @@ def _measured_h800_for_model(model: str, evidence_dir: Path) -> dict[str, Any]:
             "measurement_type": "latency",
             "sources": [
                 _rel(evidence_dir / "s2_schedule_anchor_audit_v1.json"),
-                _rel(evidence_dir / "s4_three_arm_validation/stage1_s4_three_arm_validation_v1.json"),
+                _rel(
+                    evidence_dir / "s4_three_arm_validation/stage1_s4_three_arm_validation_v1.json"
+                ),
             ],
             "scope": "synthetic_dense_anchor_latency_only",
         }
@@ -531,10 +512,12 @@ def render_classification_md(report: dict[str, Any]) -> str:
         )
 
     lines.extend(["", "## Three-Class Summary", ""])
-    lines.extend([
-        "| model | acceleration_class | label | reason |",
-        "|---|---|---|---|",
-    ])
+    lines.extend(
+        [
+            "| model | acceleration_class | label | reason |",
+            "|---|---|---|---|",
+        ]
+    )
     for item in report["models"]:
         lines.append(
             f"| `{item['model']}` | `{item['acceleration_class']}` | "
@@ -542,10 +525,12 @@ def render_classification_md(report: dict[str, Any]) -> str:
         )
 
     lines.extend(["", "## Trace Plan Summary", ""])
-    lines.extend([
-        "| model | detector | candidate | confidence | coverage | manual_override | review_required | skipped | rejected |",
-        "|---|---|---|---|---|---|---|---|---|",
-    ])
+    lines.extend(
+        [
+            "| model | detector | candidate | confidence | coverage | manual_override | review_required | skipped | rejected |",
+            "|---|---|---|---|---|---|---|---|---|",
+        ]
+    )
     for item in report["models"]:
         plan = item.get("trace_plan", {}) or {}
         candidate = plan.get("selected_candidate", {}) or {}

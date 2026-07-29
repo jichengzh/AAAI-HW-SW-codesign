@@ -11,7 +11,7 @@ git clone <repo-url>
 cd stage1-model-scanner-aaai
 python -m venv .venv
 source .venv/bin/activate
-pip install torch torch-pruning pyyaml pydantic numpy
+pip install torch torch-pruning pyyaml pydantic numpy matplotlib scipy
 export PYTHONPATH=.
 ```
 
@@ -32,9 +32,16 @@ H800 TVM evidence scripts require a local TVM/Relax/MetaSchedule build. The clas
 framework/stage1/                 Stage1 hardware scan, trace boundary detection, DepGraph scan, predictors, classifier
 framework/capability_schema.py     optional hardware YAML validation
 framework/stage1_bridge.py         manifest-to-search-space adapter
+framework/stage2/                 thin Stage2 contracts, classifier gate, evidence delta
+framework/search_three_arm.py      Stage2 P/S and P/Q/S three-arm search kernel
+framework/run_b4_ablation.py       Stage2 Pyramid P/S three-arm driver
+framework/run_pqs_ablation.py      Stage2 Pyramid P/Q/S driver
+framework/run_pqs_codriving.py     Stage2 CoDriving separability driver
 tools/configurable/depgraph_*.py   built-in Pyramid and V2X-ViT trace wrappers
 scripts/stage1_*.py                report/classifier CLIs
+scripts/stage2_*.py                Stage2 thin optimization and evidence-delta CLIs
 scripts/phase2/stage1_*.py         optional S2/S2.5/S3/S4 evidence utilities
+scripts/prepare_stage2_demo_data.py local demo data generator for Stage2 smoke runs
 ```
 
 Create local input/output directories before running:
@@ -122,6 +129,101 @@ The classifier emits three coarse classes:
 
 It also emits detailed verdicts, blockers, next gates/probes, evidence sources, historical evidence sources, unsupported conclusions, and `no_overpromotion`.
 
+## Run Stage2 Optimization
+
+The public Stage2 entrypoint consumes only:
+
+```text
+manifest_path
+model_classification_path
+```
+
+Hardware context is derived from `manifest.hw_capability`; do not pass a separate hardware target to Stage2. Search policy is derived internally from the Stage1 classifier and the model-level Stage2 search space; do not expose it as a user parameter. Stage2 writes scoped output and an optional `stage2_evidence_delta` for Stage1 evidence refresh.
+
+The included smoke path is self-contained: it generates demo manifests, a demo classifier report, and small demo LUT/AP files locally.
+
+Create demo inputs under a caller-owned temporary directory (the command rejects `/`,
+the repository root, symlink escapes, and an existing non-demo directory):
+
+```bash
+DEMO_ROOT="$(mktemp -d)/stage2-demo"
+PYTHONPATH=. python scripts/prepare_stage2_demo_data.py --output-root "$DEMO_ROOT"
+```
+
+Run the integrated Stage2 CLI:
+
+```bash
+PYTHONPATH=. python scripts/stage2_optimize_model.py \
+  --manifest "$DEMO_ROOT/framework/partitions/pyramid_lidar_partition.yaml" \
+  --classification "$DEMO_ROOT/results/model_classifier.json" \
+  --out-json "$DEMO_ROOT/out/pyramid-stage2.json" \
+  --evidence-delta-out "$DEMO_ROOT/out/pyramid-evidence-delta.json"
+```
+
+CoDriving uses the same interface:
+
+```bash
+PYTHONPATH=. python scripts/stage2_optimize_model.py \
+  --manifest "$DEMO_ROOT/framework/partitions/codriving_partition.yaml" \
+  --classification "$DEMO_ROOT/results/model_classifier.json" \
+  --out-json "$DEMO_ROOT/out/codriving-stage2.json"
+```
+
+Run the P/S three-arm search kernel:
+
+```bash
+PYTHONPATH=. python -m framework.search_three_arm \
+  --seeds 2 --budget 20 --pop 4
+```
+
+Run the Pyramid P/S ablation driver:
+
+```bash
+PYTHONPATH=. python -m framework.run_b4_ablation \
+  --seeds 2 --budget 20 --pop 4 --quiet
+```
+
+Run the Pyramid P/Q/S driver using the demo Stage1 manifest:
+
+```bash
+PYTHONPATH=. python -m framework.run_pqs_ablation \
+  --manifest framework/partitions/pyramid_lidar_partition.yaml \
+  --seeds 2 --budget 20 --pop 4 --quiet
+```
+
+Run the CoDriving standard-conv separability control:
+
+```bash
+PYTHONPATH=. python -m framework.run_pqs_codriving \
+  --seeds 2 --budget 20 --pop 4 --quiet
+```
+
+Typical outputs:
+
+```text
+results/b4_ablation_results.json
+results/pqs_ablation_results.json
+results/coupling_map/C0c_codriving_pqs.json
+multi_agent/figure/*.png
+```
+
+For a real model, replace the demo files with your own artifacts:
+
+```text
+framework/partitions/<model>_partition.yaml       Stage1 manifest
+results/gap1_grid_corrected.json                 seed width grid
+results/latency_lut_pyramid.json                 measured latency LUT
+results/ap70_model_pyramid.json                  AP/accuracy anchors
+results/latency_lut_pyramid_q.json               optional quantization latency evidence
+```
+
+The Stage2 bridge reads `view_b1_search_groups`, `hw_capability`, and `int8_buildable_align` from the manifest, derives legal widths and INT8 buildability, and exposes a model-level `model_search_policy` such as `joint`, `serial`, or `noS/default`. Per-knob `dispatch_plan` output is legacy diagnostic material, not the current public Stage2 contract.
+
+See also:
+
+- [docs/stage2-evidence-delta.zh-CN.md](docs/stage2-evidence-delta.zh-CN.md)
+- [docs/stage2-new-hardware.zh-CN.md](docs/stage2-new-hardware.zh-CN.md)
+
 ## Optional Evidence
 
 Place optional evidence under `results/stage1_model_predict/`:
@@ -168,8 +270,10 @@ Add a hardware YAML and run the scan with `--hw`. Static YAML is enough for stru
 ## Current Limits
 
 - The scanner validates the traceable dense candidate, not full-model accuracy/AP.
+- Stage2 demo data is only for verifying the optimization pipeline; replace it with measured latency/AP evidence before making claims.
 - Sparse VFE, geometry projection, multi-agent fusion, routing, attention, and custom operators are usually excluded and recorded as skipped subgraphs unless a model-specific plugin supports them.
 - Automatic trace-boundary detection is implemented for the current built-in cooperative-perception families, but new architectures still require manifest review and may need a detector/plugin override.
 - Hardware YAML is a static capability layer; it is not a substitute for measurement on an unseen device.
 - Existing built-in model paths require local HEAL/V2Xverse source and checkpoint roots.
 - Classifier rules are conservative evidence combiners, not a learned universal classifier for arbitrary unseen architectures.
+- Stage2 currently optimizes the traced dense core. Full-model optimization requires explicit evidence for skipped sparse/fusion/routing/postprocess subgraphs.
