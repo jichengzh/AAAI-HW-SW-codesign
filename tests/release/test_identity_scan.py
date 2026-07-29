@@ -89,12 +89,14 @@ def test_public_package_identity_is_portable_and_apache_licensed() -> None:
 def test_public_release_metadata_has_no_identity_or_secret_leaks(
     built_artifacts: tuple[Path, Path],
 ) -> None:
-    """Published metadata files and artifact headers remain portable and anonymous."""
+    """Published metadata files and complete artifact metadata remain portable."""
     wheel_path, sdist_path = built_artifacts
     source_metadata = [
         (REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8"),
         (REPOSITORY_ROOT / "CITATION.cff").read_text(encoding="utf-8"),
         (REPOSITORY_ROOT / "LICENSE").read_text(encoding="utf-8"),
+        (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8"),
+        (REPOSITORY_ROOT / "README.zh-CN.md").read_text(encoding="utf-8"),
     ]
     for text in source_metadata:
         _assert_no_release_identity_leaks(text)
@@ -104,17 +106,40 @@ def test_public_release_metadata_has_no_identity_or_secret_leaks(
 
     with zipfile.ZipFile(wheel_path) as wheel:
         wheel_metadata = next(name for name in wheel.namelist() if name.endswith(".dist-info/METADATA"))
-        wheel_headers = _metadata_headers(wheel.read(wheel_metadata).decode("utf-8"))
+        wheel_metadata_text = wheel.read(wheel_metadata).decode("utf-8")
     with tarfile.open(sdist_path) as sdist:
         pkg_info = next(member for member in sdist.getmembers() if member.name.endswith("/PKG-INFO"))
         extracted = sdist.extractfile(pkg_info)
         assert extracted is not None
-        sdist_headers = _metadata_headers(extracted.read().decode("utf-8"))
+        sdist_metadata_text = extracted.read().decode("utf-8")
 
-    for headers in (wheel_headers, sdist_headers):
-        _assert_no_release_identity_leaks("\n".join(f"{key}: {value}" for key, value in headers.items()))
+    readme_title = "# Stage1 Model Scanner"
+    for metadata_text in (wheel_metadata_text, sdist_metadata_text):
+        assert readme_title in metadata_text
+        _assert_no_release_identity_leaks(metadata_text)
+
+        headers = _metadata_headers(metadata_text)
         assert "author" not in headers
         assert "author-email" not in headers
+
+
+@pytest.mark.parametrize(
+    "description_body",
+    [
+        "Local checkout: /home/alice/private-release",
+        "Local checkout: /Users/alice/private-release",
+        r"Local checkout: C:\Users\alice\private-release",
+        "Credential: " + "github_pat_" + "abcdefghijklmnopqrstuvwxyz123456",
+        "Contact: alice@example.com",
+    ],
+)
+def test_release_leak_scanner_rejects_leaks_in_description_body(description_body: str) -> None:
+    """Leaks in the non-header metadata body are rejected, not merely parsed away."""
+    metadata_text = f"Metadata-Version: 2.4\nName: gear_codesign\n\n{description_body}"
+
+    assert _metadata_headers(metadata_text)["name"] == "gear_codesign"
+    with pytest.raises(AssertionError):
+        _assert_no_release_identity_leaks(metadata_text)
 
 
 def test_real_artifacts_include_existing_framework_stage2_package(
