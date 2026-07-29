@@ -32,8 +32,8 @@ Pure-Python + matplotlib + (scipy if present, else exact permutation fallback).
 from __future__ import annotations
 
 import argparse
-import json
 import random
+from io import BytesIO
 from pathlib import Path
 
 try:
@@ -61,12 +61,25 @@ from framework.search_three_arm import (
     load_seed_grid,
 )
 from framework.run_b4_ablation import wilcoxon_signed_rank
+from framework.stage2.contracts import (
+    resolve_safe_output_root,
+    safe_output_path,
+    write_bytes_idempotent,
+    write_json_idempotent,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "results"
 FIGDIR = ROOT / "multi_agent" / "figure"
 
 UNIFORM_INT8_SPEEDUP = QLookup.MEASURED_INT8_SPEEDUP  # 1.449 (real H800 stage0)
+
+
+def _save_figure_idempotent(fig, path: Path) -> None:
+    buffer = BytesIO()
+    fig.savefig(buffer, dpi=140)
+    write_bytes_idempotent(path, buffer.getvalue())
+    plt.close(fig)
 
 
 # ---------------------------------------------------------------------------
@@ -80,7 +93,7 @@ def plot_hv_boxplot(hv: dict, ref_hv: float, path: Path):
     data = [hv[a] for a in arms]
     bp = ax.boxplot(
         data,
-        labels=[a.replace("-PQS", "") for a in arms],
+        tick_labels=[a.replace("-PQS", "") for a in arms],
         patch_artist=True,
         widths=0.55,
         medianprops=dict(color="black"),
@@ -95,8 +108,7 @@ def plot_hv_boxplot(hv: dict, ref_hv: float, path: Path):
     ax.set_title("P×Q×S ablation: per-arm HV distribution over seeds")
     ax.legend(fontsize=8, loc="lower right")
     fig.tight_layout()
-    fig.savefig(path, dpi=140)
-    plt.close(fig)
+    _save_figure_idempotent(fig, path)
 
 
 def plot_pareto_int8(joint_visited, serial_visited, apm, lut, qlut, q_pairs, hv_ref, path: Path):
@@ -189,21 +201,31 @@ def plot_pareto_int8(joint_visited, serial_visited, apm, lut, qlut, q_pairs, hv_
     )
     ax.legend(fontsize=7.2, loc="lower left")
     fig.tight_layout()
-    fig.savefig(path, dpi=140)
-    plt.close(fig)
+    _save_figure_idempotent(fig, path)
 
 
 # ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
-def run(n_seeds=12, budget=60, pop=8, verbose=True, manifest=None):
+def run(
+    n_seeds=12, budget=60, pop=8, verbose=True, manifest=None, output_root=None, input_root=None
+):
+    if output_root is None:
+        raise ValueError("output_root is required")
+    output_root = resolve_safe_output_root(output_root, ROOT)
+    inputs = Path(input_root) if input_root is not None else RESULTS
     if manifest:
         # Bridge-native path: space + int8 buildability auto-derived from the
         # stage1 manifest (cur_width keys, key_scale×). Legacy path (manifest=None)
         # is bit-identical to pre-bridge.
         from framework.search_three_arm import build_from_manifest
 
-        b = build_from_manifest(manifest)
+        b = build_from_manifest(
+            manifest,
+            seed_path=inputs / "gap1_grid_corrected.json",
+            lut_path=inputs / "latency_lut_pyramid.json",
+            ap_path=inputs / "ap70_model_pyramid.json",
+        )
         lut, apm, qlut, key_scale = b["lut"], b["apm"], b["qlut"], b["key_scale"]
         if verbose:
             g = b["gating_knob"]
@@ -221,8 +243,8 @@ def run(n_seeds=12, budget=60, pop=8, verbose=True, manifest=None):
                 )
             print(f"  [dispatch] 联合搜旋钮 = {b['joint_knobs']} (其余串行, 省内环预算)")
     else:
-        lut = LatencyLUT()
-        apm = APModel()
+        lut = LatencyLUT(inputs / "latency_lut_pyramid.json", inputs / "gap1_grid_corrected.json")
+        apm = APModel(inputs / "ap70_model_pyramid.json", inputs / "gap1_grid_corrected.json")
         qlut = QLookup()
         key_scale = 1
     # Wire the structural int8 constraint + H800-pure uniform int8 speedup.
@@ -230,7 +252,7 @@ def run(n_seeds=12, budget=60, pop=8, verbose=True, manifest=None):
     qlut.uniform_int8_speedup = UNIFORM_INT8_SPEEDUP
 
     grid = candidate_widths(lut, apm)
-    seed_grid = load_seed_grid(key_scale=key_scale)
+    seed_grid = load_seed_grid(inputs / "gap1_grid_corrected.json", key_scale=key_scale)
     hv_ref = compute_hv_ref_pqs(grid, lut, apm, qlut)
 
     # P×S rank-flip pairs (schedule axis) and the categorical Q pairs.
@@ -349,9 +371,8 @@ def run(n_seeds=12, budget=60, pop=8, verbose=True, manifest=None):
     )
 
     # ---- plots ----
-    FIGDIR.mkdir(parents=True, exist_ok=True)
-    p_box = FIGDIR / "pqs_hv_boxplot.png"
-    p_par = FIGDIR / "pqs_pareto_int8.png"
+    p_box = safe_output_path(output_root, "multi_agent/figure/pqs_hv_boxplot.png")
+    p_par = safe_output_path(output_root, "multi_agent/figure/pqs_pareto_int8.png")
     plot_hv_boxplot(hv, hv_ref_scalar := _ref_hv_scalar(grid, lut, apm, qlut, hv_ref), p_box)
     plot_pareto_int8(joint_visited, serial_visited, apm, lut, qlut, q_pairs, hv_ref, p_par)
 
@@ -454,8 +475,8 @@ def run(n_seeds=12, budget=60, pop=8, verbose=True, manifest=None):
         },
         "figures": {"hv_boxplot": str(p_box), "pareto_int8": str(p_par)},
     }
-    out_json = RESULTS / "pqs_ablation_results.json"
-    out_json.write_text(json.dumps(results, indent=2))
+    out_json = safe_output_path(output_root, "results/pqs_ablation_results.json")
+    write_json_idempotent(out_json, results)
 
     if verbose:
         _print_report(results)
@@ -523,6 +544,8 @@ if __name__ == "__main__":
     ap.add_argument("--seeds", type=int, default=12)
     ap.add_argument("--budget", type=int, default=60)
     ap.add_argument("--pop", type=int, default=8)
+    ap.add_argument("--output-root", required=True)
+    ap.add_argument("--input-root", default=None)
     ap.add_argument(
         "--manifest",
         default=None,
@@ -537,4 +560,6 @@ if __name__ == "__main__":
         pop=args.pop,
         verbose=not args.quiet,
         manifest=args.manifest,
+        output_root=args.output_root,
+        input_root=args.input_root,
     )

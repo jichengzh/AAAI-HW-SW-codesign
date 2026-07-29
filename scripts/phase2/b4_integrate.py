@@ -1,22 +1,20 @@
-"""B4 integration: build direct-grid latency LUT + consolidated real-AP table
-from gap1 (8 widths) + grid2 relaunch (new H800 latencies) + DepGraph AP expansion.
+"""Build B4 direct-grid LUT and consolidated AP inputs without mutating inputs."""
 
-Direct grid (NOT additive — additive failed). Excludes failed (-1) tuned rows.
-Real-AP table = seed anchors (gap1 stage_a) + expansion (mix_b/mix_d + padded
-partners s1_64/s2_128 by weight-identity).  Pairs:
-  pair1 trap25/pad64  @AP0.5905   (gap1)
-  pair2 mix_b/s1_64   @AP0.6362   (expansion)
-  pair3 mix_d/s2_128  @AP0.6369   (s2_128 latency FAILED -> incomplete)
-"""
+from __future__ import annotations
 
-import json
+import argparse
 import csv
+import json
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent.parent
-R = ROOT / "results"
+from framework.stage2.contracts import (
+    resolve_safe_output_root,
+    safe_output_path,
+    write_json_idempotent,
+)
 
-# label -> num_filters (the grid2 widths)
+
+ROOT = Path(__file__).resolve().parents[2]
 LABEL_W = {
     "s0_16": [16, 128, 256],
     "s0_32": [32, 128, 256],
@@ -32,71 +30,74 @@ LABEL_W = {
     "mix_f": [32, 64, 64],
 }
 
-# ---- 1. direct-grid latency LUT ----
-gap1 = json.loads((R / "gap1_grid_corrected.json").read_text())
-widths = {}  # num_filters tuple-str -> row
-for g in gap1["grid"]:
-    w = tuple(int(x) for x in g["num_filters"])
-    widths[w] = {
-        "num_filters": list(w),
-        "label": g["label"],
-        "default_us": float(g["default_us"]),
-        "tuned_us": float(g["tuned_us"]),
-    }
 
-# grid2 csv (take LAST valid row per label; skip tuned<=0)
-for row in csv.DictReader((R / "lut_results_grid.csv").read_text().splitlines()):
-    lab = row["label"]
-    tun = float(row["tuned_us"])
-    if lab not in LABEL_W or tun <= 0:
-        continue
-    w = tuple(LABEL_W[lab])
-    widths[w] = {
-        "num_filters": list(w),
-        "label": lab,
-        "default_us": float(row["default_us"]),
-        "tuned_us": tun,
-    }
-
-lut = {
-    "_format": "direct grid (per-width real H800 tuned/default us)",
-    "_source": "gap1_grid_corrected + lut_results_grid (relaunch); -1 rows excluded",
-    "widths": sorted(widths.values(), key=lambda r: r["num_filters"]),
-}
-(R / "latency_lut_pyramid.json").write_text(json.dumps(lut, indent=2))
-print(f"[LUT] {len(widths)} priceable widths -> latency_lut_pyramid.json")
-for r in lut["widths"]:
-    print(
-        f"   {r['num_filters']} {r['label']:8s} def={r['default_us']:.0f} tun={r['tuned_us']:.0f} ratio={r['default_us'] / r['tuned_us']:.2f}"
-    )
-
-# ---- 2. consolidated real-AP table ----
-exp = json.loads((R / "ap70_depgraph_expansion.json").read_text())
-
-
-def find_ap(tag):
-    for fp in exp.get("results", []):
-        if fp.get("tag") == tag:
-            return round(float(fp["ap70"]), 4)
+def _find_ap(expansion: dict, tag: str) -> float | None:
+    for item in expansion.get("results", []):
+        if item.get("tag") == tag:
+            return round(float(item["ap70"]), 4)
     return None
 
 
-ap_mixb = find_ap("mix_b")
-ap_mixd = find_ap("mix_d")
+def main(output_root: str | Path | None = None, input_root: str | Path | None = None) -> None:
+    if output_root is None:
+        raise ValueError("output_root is required")
+    output_root = resolve_safe_output_root(output_root, ROOT)
+    inputs = Path(input_root) if input_root is not None else ROOT / "results"
+    gap1 = json.loads((inputs / "gap1_grid_corrected.json").read_text(encoding="utf-8"))
+    widths = {
+        tuple(int(value) for value in row["num_filters"]): {
+            "num_filters": [int(value) for value in row["num_filters"]],
+            "label": row["label"],
+            "default_us": float(row["default_us"]),
+            "tuned_us": float(row["tuned_us"]),
+        }
+        for row in gap1["grid"]
+    }
+    for row in csv.DictReader(
+        (inputs / "lut_results_grid.csv").read_text(encoding="utf-8").splitlines()
+    ):
+        label, tuned = row["label"], float(row["tuned_us"])
+        if label in LABEL_W and tuned > 0:
+            widths[tuple(LABEL_W[label])] = {
+                "num_filters": LABEL_W[label],
+                "label": label,
+                "default_us": float(row["default_us"]),
+                "tuned_us": tuned,
+            }
+    lut = {
+        "_format": "direct grid (per-width real H800 tuned/default us)",
+        "_source": "gap1_grid_corrected + lut_results_grid (relaunch); -1 rows excluded",
+        "widths": sorted(widths.values(), key=lambda row: row["num_filters"]),
+    }
+    expansion = json.loads((inputs / "ap70_depgraph_expansion.json").read_text(encoding="utf-8"))
+    ap_mixb, ap_mixd = _find_ap(expansion, "mix_b"), _find_ap(expansion, "mix_d")
+    apm = json.loads((inputs / "ap70_model_pyramid.json").read_text(encoding="utf-8"))
+    apm["table"] = [
+        {"num_filters": [64, 128, 256], "ap70": 0.6309, "src": "stage_a"},
+        {"num_filters": [32, 64, 128], "ap70": 0.5641, "src": "stage_a"},
+        {"num_filters": [16, 32, 64], "ap70": 0.5300, "src": "stage_a"},
+        {"num_filters": [48, 96, 192], "ap70": 0.5905, "src": "stage_a trap25 W_g(pair1)"},
+        {"num_filters": [64, 96, 192], "ap70": 0.5905, "src": "pad64 P_g(pair1) weight-identity"},
+        {"num_filters": [48, 64, 256], "ap70": ap_mixb, "src": "expansion mix_b W_g(pair2)"},
+        {"num_filters": [64, 64, 256], "ap70": ap_mixb, "src": "s1_64 P_g(pair2) weight-identity"},
+        {"num_filters": [48, 128, 128], "ap70": ap_mixd, "src": "expansion mix_d W_g(pair3)"},
+        {
+            "num_filters": [64, 128, 128],
+            "ap70": ap_mixd,
+            "src": "s2_128 P_g(pair3) weight-identity",
+        },
+    ]
+    lut_out = safe_output_path(output_root, "results/latency_lut_pyramid.json")
+    ap_out = safe_output_path(output_root, "results/ap70_model_pyramid.json")
+    write_json_idempotent(lut_out, lut)
+    write_json_idempotent(ap_out, apm)
+    print(f"[LUT] {len(widths)} priceable widths -> {lut_out}")
+    print(f"[AP] consolidated table = {len(apm['table'])} real-AP widths -> {ap_out}")
 
-table = [
-    {"num_filters": [64, 128, 256], "ap70": 0.6309, "src": "stage_a"},
-    {"num_filters": [32, 64, 128], "ap70": 0.5641, "src": "stage_a"},
-    {"num_filters": [16, 32, 64], "ap70": 0.5300, "src": "stage_a"},
-    {"num_filters": [48, 96, 192], "ap70": 0.5905, "src": "stage_a trap25 W_g(pair1)"},
-    {"num_filters": [64, 96, 192], "ap70": 0.5905, "src": "pad64 P_g(pair1) weight-identity"},
-    {"num_filters": [48, 64, 256], "ap70": ap_mixb, "src": "expansion mix_b W_g(pair2)"},
-    {"num_filters": [64, 64, 256], "ap70": ap_mixb, "src": "s1_64 P_g(pair2) weight-identity"},
-    {"num_filters": [48, 128, 128], "ap70": ap_mixd, "src": "expansion mix_d W_g(pair3)"},
-    {"num_filters": [64, 128, 128], "ap70": ap_mixd, "src": "s2_128 P_g(pair3) weight-identity"},
-]
-apm = json.loads((R / "ap70_model_pyramid.json").read_text())
-apm["table"] = table  # _load_b2 reads data["table"] as EXACT points
-(R / "ap70_model_pyramid.json").write_text(json.dumps(apm, indent=2))
-print(f"\n[AP] consolidated table = {len(table)} real-AP widths (mix_b={ap_mixb}, mix_d={ap_mixd})")
-print("[AP] note: s2_128 has AP but NO latency (crashed) -> candidate_widths will drop it")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output-root", required=True)
+    parser.add_argument("--input-root", default=None)
+    arguments = parser.parse_args()
+    main(arguments.output_root, arguments.input_root)

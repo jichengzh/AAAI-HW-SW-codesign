@@ -9,6 +9,7 @@ TRT is retained as historical evidence.
 from __future__ import annotations
 
 import json
+import hashlib
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Iterable
@@ -406,9 +407,19 @@ def _model_record(base: dict[str, Any], evidence_dir: Path) -> dict[str, Any]:
     measured = _measured_h800_for_model(model, evidence_dir)
     evidence_level = _evidence_level_for_model(model, base)
     acceleration_class = _acceleration_class_for_model(model, base)
+    manifest = base.get("manifest")
+    manifest_path = Path(str(manifest)) if manifest else None
+    if manifest_path is not None and not manifest_path.is_absolute():
+        manifest_path = ROOT / manifest_path
+    manifest_digest = (
+        hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+        if manifest_path is not None and manifest_path.is_file()
+        else None
+    )
     return {
         "model": model,
-        "manifest": base.get("manifest"),
+        "manifest": manifest,
+        "manifest_digest": manifest_digest,
         "ckpt_status": base.get("ckpt_status"),
         "acceleration_class": acceleration_class,
         "acceleration_class_label": ACCELERATION_CLASS_LABELS[acceleration_class],

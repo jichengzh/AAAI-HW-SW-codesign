@@ -19,8 +19,8 @@ Pure-Python audit, no GPU. Writes results/b5_convergence_verification.json.
 
 from __future__ import annotations
 
-import json
 import random
+import argparse
 from pathlib import Path
 
 from framework.search_three_arm import (
@@ -32,6 +32,11 @@ from framework.search_three_arm import (
     run_joint,
     run_serial,
     run_noS,
+)
+from framework.stage2.contracts import (
+    resolve_safe_output_root,
+    safe_output_path,
+    write_json_idempotent,
 )
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -64,9 +69,13 @@ def _real_ap(apm: APModel, w) -> dict:
     }
 
 
-def main() -> None:
-    lut = LatencyLUT()
-    apm = APModel()
+def main(output_root: str | Path | None = None, input_root: str | Path | None = None) -> None:
+    if output_root is None:
+        raise ValueError("output_root is required")
+    output_root = resolve_safe_output_root(output_root, ROOT)
+    inputs = Path(input_root) if input_root is not None else RESULTS
+    lut = LatencyLUT(inputs / "latency_lut_pyramid.json", inputs / "gap1_grid_corrected.json")
+    apm = APModel(inputs / "ap70_model_pyramid.json", inputs / "gap1_grid_corrected.json")
     grid = candidate_widths(lut, apm)
     pairs = detect_wg_pg_pairs(grid, lut, apm)
     hv_ref = compute_hv_ref(grid, lut, apm)
@@ -183,8 +192,8 @@ def main() -> None:
         "real_measured_audit": audit,
         "per_pair_convergence_story": pair_story,
     }
-    out_path = RESULTS / "b5_convergence_verification.json"
-    out_path.write_text(json.dumps(out, indent=2))
+    out_path = safe_output_path(output_root, "results/b5_convergence_verification.json")
+    write_json_idempotent(out_path, out)
 
     # ---- console ----
     print("=" * 78)
@@ -207,4 +216,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output-root", required=True)
+    parser.add_argument("--input-root", default=None)
+    arguments = parser.parse_args()
+    main(arguments.output_root, arguments.input_root)

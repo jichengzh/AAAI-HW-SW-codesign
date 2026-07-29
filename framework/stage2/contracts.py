@@ -46,6 +46,56 @@ def _json_copy(value: Any) -> Any:
     return deepcopy(value)
 
 
+def resolve_safe_output_root(value: str | Path, repository_root: str | Path) -> Path:
+    """Resolve a caller-owned output root without permitting path escapes."""
+    requested = Path(value).expanduser()
+    lexical = requested.absolute()
+    resolved = requested.resolve(strict=False)
+    repository = Path(repository_root).resolve()
+    if lexical != resolved:
+        raise ValueError("output-root must not traverse a symlink or parent escape")
+    if resolved in {Path("/"), repository}:
+        raise ValueError("output-root must not be the filesystem or repository root")
+    if resolved.exists() and not resolved.is_dir():
+        raise ValueError("output-root must be a directory")
+    resolved.mkdir(parents=True, exist_ok=True)
+    return resolved
+
+
+def safe_output_path(output_root: str | Path, relative_path: str | Path) -> Path:
+    """Return a non-symlink output path strictly below a safe output root."""
+    root = Path(output_root).resolve(strict=True)
+    relative = Path(relative_path)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError("output path must be relative and must not escape output-root")
+    candidate = root / relative
+    resolved = candidate.resolve(strict=False)
+    if not resolved.is_relative_to(root) or candidate.is_symlink():
+        raise ValueError("output path must not traverse a symlink or parent escape")
+    return candidate
+
+
+def write_bytes_idempotent(path: str | Path, payload: bytes) -> None:
+    """Write once or accept only a byte-identical rerun; never overwrite data."""
+    output = Path(path)
+    if output.absolute() != output.resolve(strict=False):
+        raise ValueError("output path must not traverse a symlink or parent escape")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if output.is_symlink() or (output.exists() and not output.is_file()):
+        raise ValueError(f"refusing to write non-file output: {output}")
+    if output.exists():
+        if output.read_bytes() != payload:
+            raise ValueError(f"refusing to overwrite existing output: {output}")
+        return
+    output.write_bytes(payload)
+
+
+def write_json_idempotent(path: str | Path, payload: dict[str, Any]) -> None:
+    write_bytes_idempotent(
+        path, (json.dumps(payload, indent=2, ensure_ascii=False) + "\n").encode()
+    )
+
+
 def _path_or_none(value: str | Path | None) -> Path | None:
     if value is None:
         return None
@@ -78,6 +128,22 @@ def _manifest_digest(path: str | Path) -> str:
     except OSError as exc:
         raise ValueError(f"invalid manifest path: {path}") from exc
     return hashlib.sha256(data).hexdigest()
+
+
+def _manifest_identity(path: str | Path) -> str:
+    """Return the portable Stage1 manifest identity used by classifier records."""
+    value = Path(path)
+    if value.is_absolute():
+        resolved = value.resolve(strict=True)
+        parts = resolved.parts
+        for index in range(len(parts) - 1):
+            if parts[index : index + 2] == ("framework", "partitions"):
+                return Path(*parts[index:]).as_posix()
+        return resolved.as_posix()
+    normalized = Path(value.as_posix())
+    if normalized.is_absolute() or ".." in normalized.parts:
+        raise ValueError(f"invalid manifest identity: {path}")
+    return normalized.as_posix()
 
 
 def _manifest_model(path: str | Path) -> str:
@@ -113,7 +179,8 @@ def _find_model_record(
     classification: dict[str, Any],
 ) -> tuple[dict[str, Any] | None, bool]:
     model = _manifest_model(manifest_path)
-    manifest_name = Path(manifest_path).name
+    manifest_identity = _manifest_identity(manifest_path)
+    manifest_digest = _manifest_digest(manifest_path)
     records = classification.get("models", [])
     if not isinstance(records, list):
         raise ValueError("classification models must be a list")
@@ -123,10 +190,16 @@ def _find_model_record(
             raise ValueError("classification model records must be objects")
         item_manifest = item.get("manifest")
         same_model = str(item.get("model")) == model
-        same_manifest = bool(item_manifest) and Path(str(item_manifest)).name == manifest_name
-        if same_model and (not item_manifest or same_manifest):
+        try:
+            same_manifest = (
+                bool(item_manifest) and _manifest_identity(item_manifest) == manifest_identity
+            )
+        except (OSError, RuntimeError, ValueError):
+            same_manifest = False
+        same_digest = item.get("manifest_digest") == manifest_digest
+        if same_model and same_manifest and same_digest:
             return deepcopy(item), False
-        if same_model or same_manifest:
+        if same_model or same_manifest or item.get("manifest_digest") == manifest_digest:
             identity_mismatch = True
     return None, identity_mismatch
 

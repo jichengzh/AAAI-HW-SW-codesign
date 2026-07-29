@@ -10,6 +10,7 @@ fresh clone.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -264,7 +265,7 @@ def _codriving_manifest() -> dict[str, Any]:
     }
 
 
-def _classification_report() -> dict[str, Any]:
+def _classification_report(manifest_digests: dict[str, str]) -> dict[str, Any]:
     return {
         "schema": "stage1_model_classification_v1",
         "generated_on": "demo",
@@ -288,6 +289,7 @@ def _classification_report() -> dict[str, Any]:
             {
                 "model": "pyramid_lidar",
                 "manifest": "framework/partitions/pyramid_lidar_partition.yaml",
+                "manifest_digest": manifest_digests["pyramid_lidar"],
                 "ckpt_status": "demo_synthetic",
                 "acceleration_class": "CO_ACCELERATION_REQUIRED",
                 "classification": "DEMO_P_IC_BN_HUB_CONTEXT",
@@ -303,6 +305,7 @@ def _classification_report() -> dict[str, Any]:
             {
                 "model": "codriving",
                 "manifest": "framework/partitions/codriving_partition.yaml",
+                "manifest_digest": manifest_digests["codriving"],
                 "ckpt_status": "demo_synthetic",
                 "acceleration_class": "SEPARABLE_ACCELERATION",
                 "classification": "DEMO_STANDARD_CONV_DENSE_ENVELOPE",
@@ -345,7 +348,17 @@ def main() -> None:
     _write_json(outputs["codriving_ap"], _ap_model("codriving", CODRIVING_GRID))
     _write_yaml(outputs["pyramid_manifest"], _pyramid_manifest())
     _write_yaml(outputs["codriving_manifest"], _codriving_manifest())
-    _write_json(outputs["classification"], _classification_report())
+    _write_json(
+        outputs["classification"],
+        _classification_report(
+            {
+                "pyramid_lidar": hashlib.sha256(
+                    outputs["pyramid_manifest"].read_bytes()
+                ).hexdigest(),
+                "codriving": hashlib.sha256(outputs["codriving_manifest"].read_bytes()).hexdigest(),
+            }
+        ),
+    )
 
     print("stage2_demo_data_ready")
     for path in outputs.values():

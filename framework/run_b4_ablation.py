@@ -33,9 +33,9 @@ Pure-Python + matplotlib (+ scipy if present; clean permutation fallback else).
 from __future__ import annotations
 
 import argparse
-import json
 import math
 import random
+from io import BytesIO
 from pathlib import Path
 
 try:
@@ -63,10 +63,23 @@ from scripts.phase2.closedloop_objective_query import (
     backbone_to_e2e_latency,
     driving_score,
 )
+from framework.stage2.contracts import (
+    resolve_safe_output_root,
+    safe_output_path,
+    write_bytes_idempotent,
+    write_json_idempotent,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "results"
 FIGDIR = ROOT / "multi_agent" / "figure"
+
+
+def _save_figure_idempotent(fig, path: Path) -> None:
+    buffer = BytesIO()
+    fig.savefig(buffer, dpi=140)
+    write_bytes_idempotent(path, buffer.getvalue())
+    plt.close(fig)
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +254,7 @@ def plot_hv_boxplot(hv: dict, ref_hv: float, path: Path):
     arms = ["A-joint", "A-serial", "A-noS"]
     data = [hv[a] for a in arms]
     bp = ax.boxplot(
-        data, labels=arms, patch_artist=True, widths=0.55, medianprops=dict(color="black")
+        data, tick_labels=arms, patch_artist=True, widths=0.55, medianprops=dict(color="black")
     )
     for patch, c in zip(bp["boxes"], ["#2c7fb8", "#d95f0e", "#999999"]):
         patch.set_facecolor(c)
@@ -253,8 +266,7 @@ def plot_hv_boxplot(hv: dict, ref_hv: float, path: Path):
     ax.set_title("B4 layer-2: per-arm HV distribution over seeds")
     ax.legend(fontsize=8, loc="lower right")
     fig.tight_layout()
-    fig.savefig(path, dpi=140)
-    plt.close(fig)
+    _save_figure_idempotent(fig, path)
 
 
 def plot_convergence(conv: dict, ref_hv: float, path: Path):
@@ -274,8 +286,7 @@ def plot_convergence(conv: dict, ref_hv: float, path: Path):
     ax.set_title("B4 layer-2/4: convergence (mean±[min,max] band over seeds)")
     ax.legend(fontsize=8, loc="lower right")
     fig.tight_layout()
-    fig.savefig(path, dpi=140)
-    plt.close(fig)
+    _save_figure_idempotent(fig, path)
 
 
 def plot_point_cloud(
@@ -381,8 +392,7 @@ def plot_point_cloud(
     )
     ax.legend(fontsize=7.5, loc="lower left")
     fig.tight_layout()
-    fig.savefig(path, dpi=140)
-    plt.close(fig)
+    _save_figure_idempotent(fig, path)
 
 
 # ---------------------------------------------------------------------------
@@ -457,12 +467,16 @@ def _closedloop_report(pairs: list, rep: dict, apm: APModel, lut: LatencyLUT) ->
 # ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
-def run(n_seeds=12, budget=60, pop=8, n_starts=3, verbose=True):
-    lut = LatencyLUT()
-    apm = APModel()
+def run(n_seeds=12, budget=60, pop=8, n_starts=3, verbose=True, output_root=None, input_root=None):
+    if output_root is None:
+        raise ValueError("output_root is required")
+    output_root = resolve_safe_output_root(output_root, ROOT)
+    inputs = Path(input_root) if input_root is not None else RESULTS
+    lut = LatencyLUT(inputs / "latency_lut_pyramid.json", inputs / "gap1_grid_corrected.json")
+    apm = APModel(inputs / "ap70_model_pyramid.json", inputs / "gap1_grid_corrected.json")
     grid = candidate_widths(lut, apm)
     pairs = detect_wg_pg_pairs(grid, lut, apm)  # auto W_g/P_g rank-flip pairs
-    seed_grid = load_seed_grid()
+    seed_grid = load_seed_grid(inputs / "gap1_grid_corrected.json")
     hv_ref = compute_hv_ref(grid, lut, apm)
     ref_front, ref_hv = reference_pareto(grid, lut, apm, hv_ref)
 
@@ -605,10 +619,9 @@ def run(n_seeds=12, budget=60, pop=8, n_starts=3, verbose=True):
     closedloop = _closedloop_report(pairs, rep, apm, lut)
 
     # ---- plots ----
-    FIGDIR.mkdir(parents=True, exist_ok=True)
-    p_box = FIGDIR / "b4_hv_boxplot.png"
-    p_conv = FIGDIR / "b4_convergence.png"
-    p_cloud = FIGDIR / "b4_pointcloud.png"
+    p_box = safe_output_path(output_root, "multi_agent/figure/b4_hv_boxplot.png")
+    p_conv = safe_output_path(output_root, "multi_agent/figure/b4_convergence.png")
+    p_cloud = safe_output_path(output_root, "multi_agent/figure/b4_pointcloud.png")
     plot_hv_boxplot(hv, ref_hv, p_box)
     plot_convergence(conv_agg, ref_hv, p_conv)
     plot_point_cloud(joint_visited, serial_visited, ref_front, apm, lut, seed_grid, pairs, p_cloud)
@@ -696,8 +709,8 @@ def run(n_seeds=12, budget=60, pop=8, n_starts=3, verbose=True):
             "point_cloud": str(p_cloud),
         },
     }
-    out_json = RESULTS / "b4_ablation_results.json"
-    out_json.write_text(json.dumps(results, indent=2))
+    out_json = safe_output_path(output_root, "results/b4_ablation_results.json")
+    write_json_idempotent(out_json, results)
 
     if verbose:
         _print_report(results, ref_hv)
@@ -774,6 +787,8 @@ if __name__ == "__main__":
     ap.add_argument("--budget", type=int, default=60)
     ap.add_argument("--pop", type=int, default=8)
     ap.add_argument("--starts", type=int, default=3)
+    ap.add_argument("--output-root", required=True)
+    ap.add_argument("--input-root", default=None)
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
     run(
@@ -782,4 +797,6 @@ if __name__ == "__main__":
         pop=args.pop,
         n_starts=args.starts,
         verbose=not args.quiet,
+        output_root=args.output_root,
+        input_root=args.input_root,
     )

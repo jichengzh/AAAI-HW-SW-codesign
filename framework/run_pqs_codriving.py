@@ -23,14 +23,13 @@ Data (REAL where noted):
   * int8     : uniform proxy 1.37x (mean of measured 1.42x/1.32x); all widths
                buildable.  CATEGORICAL claim is N/A for standard conv.
 
-Run: PYTHONPATH=/home/jichengzhi/V2X python -m framework.run_pqs_codriving
+Run: python -m framework.run_pqs_codriving --output-root /tmp/stage2-codriving
 Pure-Python; no GPU.  Output: results/coupling_map/C0c_codriving_pqs.json
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import random
 from pathlib import Path
 
@@ -50,6 +49,11 @@ from framework.search_three_arm import (
     nondominated_idx,
 )
 from framework.run_b4_ablation import wilcoxon_signed_rank
+from framework.stage2.contracts import (
+    resolve_safe_output_root,
+    safe_output_path,
+    write_json_idempotent,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "results"
@@ -86,12 +90,22 @@ def _ref_hv_scalar(grid, lut, apm, qlut, hv_ref) -> float:
     return hypervolume_2d([pts[i] for i in keep], hv_ref)
 
 
-def run(n_seeds=12, budget=60, pop=8, verbose=True):
+def run(
+    n_seeds=12, budget=60, pop=8, verbose=True, output_root=None, input_root=None, manifest=None
+):
+    if output_root is None:
+        raise ValueError("output_root is required")
+    output_root = resolve_safe_output_root(output_root, ROOT)
+    inputs = Path(input_root) if input_root is not None else RESULTS
+    manifest_path = Path(manifest) if manifest is not None else MANIFEST_COD
     # int8 buildability + space from the stage1 bridge (manifest), not a subclass.
     # CoDriving groups=1 → int8_buildable_align=4 → all widths buildable (= old
     # QLookupCoDriving). key_scale=1 (no bottleneck expansion → cur_width=num_filters).
     b = build_from_manifest(
-        MANIFEST_COD, lut_path=LUT_COD, ap_path=AP_COD, q_path=Path("/nonexistent")
+        manifest_path,
+        seed_path=inputs / "gap1_grid_corrected.json",
+        lut_path=inputs / "latency_lut_codriving.json",
+        ap_path=inputs / "ap70_model_codriving.json",
     )  # skip Pyramid Q-LUT
     lut, apm, qlut = b["lut"], b["apm"], b["qlut"]
     qlut.enforce_int8_buildable = True
@@ -200,9 +214,8 @@ def run(n_seeds=12, budget=60, pop=8, verbose=True):
             ),
         },
     }
-    COUPLING.mkdir(parents=True, exist_ok=True)
-    out = COUPLING / "C0c_codriving_pqs.json"
-    out.write_text(json.dumps(results, indent=2))
+    out = safe_output_path(output_root, "results/coupling_map/C0c_codriving_pqs.json")
+    write_json_idempotent(out, results)
 
     if verbose:
         print("--- HV distribution (mean over seeds; % of A-joint) ---")
@@ -224,6 +237,17 @@ if __name__ == "__main__":
     ap.add_argument("--seeds", type=int, default=12)
     ap.add_argument("--budget", type=int, default=60)
     ap.add_argument("--pop", type=int, default=8)
+    ap.add_argument("--output-root", required=True)
+    ap.add_argument("--input-root", default=None)
+    ap.add_argument("--manifest", default=None)
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
-    run(n_seeds=args.seeds, budget=args.budget, pop=args.pop, verbose=not args.quiet)
+    run(
+        n_seeds=args.seeds,
+        budget=args.budget,
+        pop=args.pop,
+        verbose=not args.quiet,
+        output_root=args.output_root,
+        input_root=args.input_root,
+        manifest=args.manifest,
+    )

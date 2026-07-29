@@ -41,19 +41,40 @@ def _load_and_validate(path: Path) -> Stage2EvidenceDelta:
         raise ValueError("evidence delta JSON must decode to an object")
     if data.get("schema") != STAGE2_EVIDENCE_DELTA_SCHEMA:
         raise ValueError(f"unexpected schema: {data.get('schema')}")
-    records = [
-        Stage2EvidenceRecord(
-            backend=record["backend"],
-            hardware=record["hardware"],
-            scope=record["scope"],
-            evidence_kind=record["evidence_kind"],
-            provenance=record["provenance"],
-            candidate_config=record["candidate_config"],
-            metric=record["metric"],
+    model = data.get("model")
+    records_data = data.get("records")
+    if not isinstance(model, str) or not model.strip():
+        raise ValueError("evidence delta model must be a non-empty string")
+    if not isinstance(records_data, list):
+        raise ValueError("evidence delta records must be a list")
+    required_strings = ("backend", "hardware", "scope", "evidence_kind", "provenance")
+    records = []
+    for index, record in enumerate(records_data):
+        if not isinstance(record, dict):
+            raise ValueError(f"evidence delta records[{index}] must be an object")
+        for field in required_strings:
+            value = record.get(field)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(
+                    f"evidence delta records[{index}].{field} must be a non-empty string"
+                )
+        for field in ("candidate_config", "metric"):
+            if not isinstance(record.get(field), dict) or not record[field]:
+                raise ValueError(
+                    f"evidence delta records[{index}].{field} must be a non-empty object"
+                )
+        records.append(
+            Stage2EvidenceRecord(
+                backend=record["backend"],
+                hardware=record["hardware"],
+                scope=record["scope"],
+                evidence_kind=record["evidence_kind"],
+                provenance=record["provenance"],
+                candidate_config=record["candidate_config"],
+                metric=record["metric"],
+            )
         )
-        for record in data.get("records", [])
-    ]
-    return Stage2EvidenceDelta(model=str(data.get("model", "unknown")), records=records)
+    return Stage2EvidenceDelta(model=model, records=records)
 
 
 def _safe_archive_path(out_dir: str | Path, filename: str) -> Path:
@@ -62,8 +83,8 @@ def _safe_archive_path(out_dir: str | Path, filename: str) -> Path:
     resolved = requested.resolve(strict=False)
     if lexical != resolved:
         raise ValueError("out-dir must not traverse a symlink or parent escape")
-    if resolved == Path("/"):
-        raise ValueError("out-dir must not be the filesystem root")
+    if resolved in {Path("/"), ROOT.resolve()}:
+        raise ValueError("out-dir must not be the filesystem or repository root")
     resolved.mkdir(parents=True, exist_ok=True)
     output = resolved / filename
     if output.is_symlink() or (output.exists() and not output.is_file()):
