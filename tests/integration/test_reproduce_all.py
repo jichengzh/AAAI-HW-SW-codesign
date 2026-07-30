@@ -308,6 +308,7 @@ def _reproduction_module() -> object:
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -348,7 +349,9 @@ def test_smoke_reproduction_is_cpu_only_demo_only_and_content_identical_across_r
     assert first_identity["stage7_selected"]["acquisition"]["selected_row_ids"]
     manifest = _read_json(first_root / "run_manifest.json")
     reproduce_all = _reproduction_module()
-    assert reproduce_all._claim_output_root(first_root, "smoke")["status"] == "completed"
+    claim = reproduce_all._claim_output_root(first_root, "smoke")
+    assert claim.writable is False
+    assert claim.existing_manifest["status"] == "completed"
     with pytest.raises(reproduce_all.PublicReproductionError, match="safe explicit"):
         reproduce_all._safe_output_root(str(REPOSITORY_ROOT))
     assert manifest["paper_evidence"] is False
@@ -384,3 +387,70 @@ def test_verified_reproduction_fails_closed_without_required_evidence(
     assert manifest["paper_evidence"] is True
     assert not (output_root / "stage5").exists()
     assert not (output_root / "stage6").exists()
+
+
+def test_unclaimed_existing_or_symlink_output_root_is_never_modified(tmp_path: Path) -> None:
+    """Unsafe and foreign roots fail without adding a failure manifest or changing bytes."""
+    existing_root = tmp_path / "foreign-root"
+    existing_root.mkdir()
+    existing_file = existing_root / "existing.txt"
+    existing_file.write_bytes(b"caller-owned\n")
+    before_entries = sorted(path.name for path in existing_root.iterdir())
+    before_bytes = existing_file.read_bytes()
+
+    existing = _run_reproduction("--mode", "smoke", "--output-root", str(existing_root))
+
+    assert existing.returncode != 0
+    assert sorted(path.name for path in existing_root.iterdir()) == before_entries
+    assert existing_file.read_bytes() == before_bytes
+    assert not (existing_root / "run_manifest.json").exists()
+
+    target_root = tmp_path / "symlink-target"
+    target_root.mkdir()
+    target_file = target_root / "target.txt"
+    target_file.write_bytes(b"must-not-change\n")
+    symlink_root = tmp_path / "unsafe-link"
+    symlink_root.symlink_to(target_root, target_is_directory=True)
+
+    symlink = _run_reproduction("--mode", "smoke", "--output-root", str(symlink_root))
+
+    assert symlink.returncode != 0
+    assert target_file.read_bytes() == b"must-not-change\n"
+    assert sorted(path.name for path in target_root.iterdir()) == ["target.txt"]
+    assert not (target_root / "run_manifest.json").exists()
+
+    dangerous_manifest = REPOSITORY_ROOT / "run_manifest.json"
+    assert not dangerous_manifest.exists()
+    dangerous = _run_reproduction("--mode", "smoke", "--output-root", str(REPOSITORY_ROOT))
+
+    assert dangerous.returncode != 0
+    assert not dangerous_manifest.exists()
+
+
+def test_verified_failure_manifest_retains_completed_audit_and_unavailable_stages(
+    tmp_path: Path,
+) -> None:
+    """Verified unavailable is auditable partial state, never an empty failure shell."""
+    output_root = tmp_path / "verified-partial"
+
+    result = _run_reproduction("--mode", "verified", "--output-root", str(output_root))
+
+    assert result.returncode != 0
+    manifest = _read_json(output_root / "run_manifest.json")
+    assert manifest["status"] == "unavailable"
+    stages = {stage["name"]: stage for stage in manifest["stages"]}
+    assert stages["verified_artifact_audit"]["status"] == "completed"
+    assert stages["stage4_verified_analysis"]["status"] == "completed"
+    assert stages["stage6_representative_selection"]["status"] == "unavailable"
+    assert stages["stage7_formal_aggregate"]["status"] == "unavailable"
+    assert manifest["outputs"] == []
+    expected_ids = {
+        "verified-artifact-manifest",
+        "stage4-cost-model-selection-report",
+        "stage4-nested-cv-folds",
+    }
+    assert {item["artifact_id"] for item in manifest["inputs"]} == expected_ids
+    for item in manifest["inputs"]:
+        assert SHA256_PATTERN.fullmatch(item["sha256"])
+        assert item["schema"]
+        assert item["verification_status"]

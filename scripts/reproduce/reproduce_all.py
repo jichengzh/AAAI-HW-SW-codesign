@@ -16,6 +16,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -38,6 +39,29 @@ VERIFIED_ARTIFACT_CONTRACTS = {
 
 class PublicReproductionError(ValueError):
     """A public failure that intentionally does not expose local paths."""
+
+
+@dataclass(frozen=True)
+class OutputRootClaim:
+    """Explicit ownership state required before this invocation may write."""
+
+    writable: bool
+    existing_manifest: dict[str, Any] | None = None
+
+
+class ReproductionUnavailable(PublicReproductionError):
+    """A fail-closed result that preserves completed public audit state."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        stages: Sequence[Mapping[str, Any]],
+        inputs: Sequence[Mapping[str, str]],
+    ) -> None:
+        super().__init__(message)
+        self.stages = [dict(stage) for stage in stages]
+        self.inputs = [dict(item) for item in inputs]
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -129,24 +153,24 @@ def _write_new(path: Path, data: bytes) -> None:
     _atomic_write(path, data)
 
 
-def _claim_output_root(root: Path, mode: str) -> dict[str, Any] | None:
+def _claim_output_root(root: Path, mode: str) -> OutputRootClaim:
     if not root.exists():
         root.mkdir(parents=True, exist_ok=False)
-        return None
+        return OutputRootClaim(writable=True)
     entries = list(root.iterdir())
     if not entries:
-        return None
+        return OutputRootClaim(writable=True)
     manifest_path = root / "run_manifest.json"
     if len(entries) == 1 and manifest_path.is_file() and not manifest_path.is_symlink():
         existing = _read_json(manifest_path, label="existing run manifest")
         if isinstance(existing, Mapping) and existing.get("mode") == mode:
             _validate_reusable_manifest(root, existing)
-            return dict(existing)
+            return OutputRootClaim(writable=False, existing_manifest=dict(existing))
     if manifest_path.is_file() and not manifest_path.is_symlink():
         existing = _read_json(manifest_path, label="existing run manifest")
         if isinstance(existing, Mapping) and existing.get("mode") == mode:
             _validate_reusable_manifest(root, existing)
-            return dict(existing)
+            return OutputRootClaim(writable=False, existing_manifest=dict(existing))
     raise PublicReproductionError("output-root already contains different content")
 
 
@@ -607,8 +631,16 @@ def _verified(root: Path) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     entries = manifest.get("artifacts")
     if not isinstance(entries, list) or not entries:
         raise PublicReproductionError("verified artifact manifest is unavailable")
-    inputs = [{"path": _relative(VERIFIED_MANIFEST), "sha256": _sha256_file(VERIFIED_MANIFEST)}]
-    stage4_inputs: list[Path] = []
+    inputs = [
+        {
+            "artifact_id": "verified-artifact-manifest",
+            "path": _relative(VERIFIED_MANIFEST),
+            "sha256": _sha256_file(VERIFIED_MANIFEST),
+            "schema": str(manifest["schema"]),
+            "verification_status": "verified_manifest",
+        }
+    ]
+    stage4_inputs: list[dict[str, str]] = []
     artifact_ids: set[str] = set()
     for entry in entries:
         required = {"artifact_id", "path", "sha256", "schema", "verification_status"}
@@ -634,9 +666,16 @@ def _verified(root: Path) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
         path = (ROOT / relative_path).resolve()
         if path.is_symlink() or not path.is_file() or not path.is_relative_to(ROOT) or _sha256_file(path) != digest:
             raise PublicReproductionError("verified artifact manifest is unavailable")
-        inputs.append({"path": _relative(path), "sha256": digest})
+        metadata = {
+            "artifact_id": artifact_id,
+            "path": _relative(path),
+            "sha256": digest,
+            "schema": schema,
+            "verification_status": status,
+        }
+        inputs.append(metadata)
         if artifact_id.startswith("stage4-"):
-            stage4_inputs.append(path)
+            stage4_inputs.append(metadata)
     stages = [
         {
             "name": "verified_artifact_audit",
@@ -647,14 +686,18 @@ def _verified(root: Path) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
         {
             "name": "stage4_verified_analysis",
             "status": "completed" if stage4_inputs else "unavailable",
-            "inputs": [{"path": _relative(path), "sha256": _sha256_file(path)} for path in stage4_inputs],
+            "inputs": stage4_inputs,
             "outputs": [],
         },
         {"name": "stage6_representative_selection", "status": "unavailable", "inputs": [], "outputs": []},
         {"name": "stage7_formal_aggregate", "status": "unavailable", "inputs": [], "outputs": []},
     ]
     if not any(artifact_id.startswith("stage6-") for artifact_id in artifact_ids) or not any(artifact_id.startswith("stage7-") for artifact_id in artifact_ids):
-        raise PublicReproductionError("verified Stage6 evidence or Stage7 formal aggregate unavailable")
+        raise ReproductionUnavailable(
+            "verified Stage6 evidence or Stage7 formal aggregate unavailable",
+            stages=stages,
+            inputs=inputs,
+        )
     return stages, inputs
 
 
@@ -690,29 +733,47 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     started_at = _utc_now()
     root: Path | None = None
+    claim: OutputRootClaim | None = None
     try:
         root = _safe_output_root(args.output_root)
-        existing = _claim_output_root(root, args.mode)
-        if existing is not None:
-            status = existing.get("status")
+        claim = _claim_output_root(root, args.mode)
+        if claim.existing_manifest is not None:
+            status = claim.existing_manifest.get("status")
             if status == "completed":
                 print(f"reproduction completed: {args.mode}")
                 return 0
-            print(f"error: {existing.get('error', 'reproduction unavailable')}", file=sys.stderr)
+            print(
+                f"error: {claim.existing_manifest.get('error', 'reproduction unavailable')}",
+                file=sys.stderr,
+            )
             return 2
         stages, inputs = _smoke(root) if args.mode == "smoke" else _verified(root)
         manifest = _manifest(mode=args.mode, status="completed", started_at=started_at, stages=stages, inputs=inputs, root=root)
         _atomic_write(root / "run_manifest.json", _render_json(manifest))
         print(f"reproduction completed: {args.mode}")
         return 0
+    except ReproductionUnavailable as exc:
+        if root is not None and claim is not None and claim.writable:
+            failure = _manifest(
+                mode=args.mode,
+                status="unavailable",
+                started_at=started_at,
+                stages=exc.stages,
+                inputs=exc.inputs,
+                root=root,
+                error=str(exc),
+            )
+            _atomic_write(root / "run_manifest.json", _render_json(failure))
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     except PublicReproductionError as exc:
-        if root is not None and root.exists() and not (root / "run_manifest.json").exists():
+        if root is not None and claim is not None and claim.writable:
             failure = _manifest(mode=args.mode, status="unavailable", started_at=started_at, stages=[], inputs=[], root=root, error=str(exc))
             _atomic_write(root / "run_manifest.json", _render_json(failure))
         print(f"error: {exc}", file=sys.stderr)
         return 2
     except (KeyError, OSError, TypeError, ValueError):
-        if root is not None and root.exists() and not (root / "run_manifest.json").exists():
+        if root is not None and claim is not None and claim.writable:
             failure = _manifest(mode=args.mode, status="unavailable", started_at=started_at, stages=[], inputs=[], root=root, error="reproduction unavailable")
             _atomic_write(root / "run_manifest.json", _render_json(failure))
         print("error: reproduction unavailable", file=sys.stderr)
