@@ -1,9 +1,11 @@
 # GEAR Co-design reproducibility package
 
-This repository provides a CPU-only smoke workflow, a small verified Stage4
-artifact set, and the Stage1–7 selection and analysis contracts used to audit
-the submission. It does not bundle or execute external hardware measurements,
-AP evaluation, model checkpoints, ONNX files, compiled engines, TVM, or TensorRT.
+This repository is a scoped reproducibility artifact for the submission. It
+provides a deterministic CPU-only smoke workflow, a small verified cost-model
+selection audit, and public interfaces for candidate selection, evidence
+validation, result aggregation, and release inspection. It does not bundle or
+execute external hardware measurements, AP evaluation, model checkpoints, ONNX
+files, compiled engines, TVM, or TensorRT.
 
 For evidence boundaries, see [REPRODUCIBILITY.md](REPRODUCIBILITY.md) and
 [ARTIFACTS.md](ARTIFACTS.md). The reviewer-facing anonymous entry point is
@@ -34,35 +36,33 @@ python scripts/reproduce/reproduce_all.py --mode verified --output-root ./repro-
 ```
 
 This command is intentionally expected to exit non-zero today. It verifies the
-available Stage4 artifact bytes, then reports `unavailable` because the required
-Stage6 evidence and Stage7 formal aggregate are not in the package. Treat that
-non-zero result as an auditable availability check, not a successful paper run.
+available cost-model audit bytes, then reports `unavailable` because the
+hardware-backed representative results and formal online-ablation aggregate are
+not in the package. Treat that non-zero result as an auditable availability
+check, not a successful paper run.
 
 ## What is included
 
 ```text
 data/demo/                     Deterministic smoke-only fixtures
-artifacts/verified/            Small, sanitized Stage4 audit artifacts and SHA-256 manifest
-framework/stage1/              Model scanning and classification contracts
-framework/stage4/              Nested grouped cost-model selection
-framework/stage5/              Selection and measurement-request contracts
-framework/stage6/              External-evidence paper-table adapter
-framework/stage7/              Selection-only online-ablation contracts and statistics
+artifacts/verified/            Small, sanitized cost-model audit and SHA-256 manifest
+framework/                     Scanning, selection, validation, and aggregation modules
 scripts/reproduce/             CPU-only smoke and verified-boundary entry points
 tests/                         Unit, integration, and release checks
 ```
 
-The smoke workflow invokes the public Stage4 selector, Stage5 selection request,
-Stage6 representative-selection adapter, and one fixed Stage7 selection-only
-round. It never runs a device backend or claims a measured result.
+The smoke workflow exercises cost-model selection, a candidate measurement
+request, representative-result validation, and one fixed online-ablation
+selection request. It never runs a device backend or claims a measured result.
 
 ## Scope and external boundary
 
-Stage1–7 code is released as input-validation, selection, aggregation, and
-audit logic. A hardware latency, energy, AP, TVM, TensorRT, checkpoint, ONNX,
-or engine result becomes evidence only when separately supplied with its own
-provenance, immutable inputs, and verified hashes. This repository neither
-downloads those materials nor substitutes synthetic data for them.
+The included modules are released as input-validation, selection-interface,
+aggregation, and audit logic. A hardware latency, energy, AP, TVM, TensorRT,
+checkpoint, ONNX, or engine result becomes evidence only when separately
+supplied with its own provenance, immutable inputs, and verified hashes. This
+repository neither downloads those materials nor substitutes synthetic data
+for them.
 
 The bundled demo data is not a dataset access path. Access to full datasets,
 model source trees, trained checkpoints, and hardware systems is external and
@@ -72,14 +72,15 @@ anonymous/public package.
 
 ## Reproducibility rules
 
-The frozen Stage4 selection seed is `20260716`; Stage5 uses `20260717`; formal
-Stage7 trajectories use `20260718`, `20260719`, and `20260720`. A seed makes a
-selection or analysis deterministic, but it does not create a hardware run.
-An algorithm run is one complete execution of a specified selection/analysis
-procedure on fixed inputs. Timing iterations, compiler retries, cache probes,
-and repeated device measurements are observations within an external execution,
-not additional algorithm runs. See the evidence matrix for the precise counts
-and status in [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
+The frozen cost-model selection seed is `20260716`; the deterministic
+selection/request exercise uses `20260717`; formal online-ablation trajectories
+use `20260718`, `20260719`, and `20260720`. A seed makes a selection or analysis
+deterministic, but it does not create a hardware run. An algorithm run is one
+complete execution of a specified selection/analysis procedure on fixed inputs.
+Timing iterations, compiler retries, cache probes, and repeated device
+measurements are observations within an external execution, not additional
+algorithm runs. See the evidence matrix for the precise counts and status in
+[REPRODUCIBILITY.md](REPRODUCIBILITY.md).
 
 ## Development checks
 
@@ -93,6 +94,25 @@ Use `python scripts/reproduce/reproduce_all.py --help` to inspect the supported
 reproduction arguments. The complete test suite may exercise additional Python
 dependencies; the smoke quick start above needs only the declared `repro` and
 `dev` extras.
+
+## Scope of the released implementation
+
+This repository is not the complete training and hardware-search implementation
+used for every result in the paper. The released code is intended to let
+reviewers inspect data contracts, grouped cost-model selection, deterministic
+candidate-request construction, evidence boundaries, and result aggregation.
+The included lightweight deterministic selection policy exercises the public
+candidate and feedback interfaces; it is not a replacement for, or an
+equivalence claim about, the complete evolutionary candidate generator
+described in the paper.
+
+The current artifact also omits the full model materialization and training
+stack, hardware scheduling and measurement executors, paper-specific online
+ablation pipelines, and their complete trajectory and terminal-evidence
+manifests. Consequently, the smoke workflow validates interfaces and
+provenance handling but does not reproduce the paper's hardware tables or full
+online-ablation results. We plan to release the complete implementation and the
+corresponding experiment manifests upon publication.
 
 ## License and citation
 
