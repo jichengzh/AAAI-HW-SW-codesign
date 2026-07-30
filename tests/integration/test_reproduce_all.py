@@ -23,7 +23,10 @@ FORBIDDEN_PUBLIC_PATTERNS = (
     re.compile(r"\b[^\s@]+@[^\s@]+\.[^\s@]+\b"),
     re.compile(r"\b(?:github_pat_[A-Za-z0-9_]{20,}|ghp_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9_-]{16,})\b"),
     re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
+    re.compile(r"\bprivate_user_\d+\b", re.IGNORECASE),
+    re.compile(r"\bgithub\.com/[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9][A-Za-z0-9_.-]*", re.IGNORECASE),
 )
+DEMO_JSON_RECORD_CONTAINERS = {"demo-capability-profiles": "profiles"}
 
 
 def _read_json(path: Path) -> dict[str, object]:
@@ -42,6 +45,48 @@ def _walk_strings(value: object) -> list[str]:
     if isinstance(value, dict):
         return [item for child in value.values() for item in _walk_strings(child)]
     return []
+
+
+def _load_demo_records(manifest: dict[str, object]) -> dict[str, list[dict[str, object]]]:
+    """Load real demo records while respecting JSON metadata and JSONL row boundaries."""
+    artifacts = manifest.get("artifacts")
+    assert isinstance(artifacts, list) and artifacts
+    records_by_artifact: dict[str, list[dict[str, object]]] = {}
+    for artifact in artifacts:
+        assert isinstance(artifact, dict)
+        artifact_id = artifact.get("artifact_id")
+        relative_path = artifact.get("path")
+        assert isinstance(artifact_id, str) and artifact_id
+        assert isinstance(relative_path, str) and not Path(relative_path).is_absolute()
+        path = REPOSITORY_ROOT / relative_path
+        if path.suffix == ".json":
+            document = _read_json(path)
+            assert document.get("paper_evidence") is False
+            assert document.get("intended_use") == "smoke_test_only"
+            container = DEMO_JSON_RECORD_CONTAINERS.get(artifact_id)
+            assert container is not None
+            records = document.get(container)
+            assert isinstance(records, list) and records
+        else:
+            assert path.suffix == ".jsonl"
+            records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+            assert records
+        assert all(isinstance(record, dict) for record in records)
+        records_by_artifact[artifact_id] = records
+    return records_by_artifact
+
+
+def _assert_demo_records_are_smoke_only(records_by_artifact: dict[str, list[dict[str, object]]]) -> None:
+    assert records_by_artifact
+    for records in records_by_artifact.values():
+        assert records
+        for record in records:
+            assert record.get("paper_evidence") is False
+
+
+def _assert_no_forbidden_public_patterns(text: str) -> None:
+    for pattern in FORBIDDEN_PUBLIC_PATTERNS:
+        assert not pattern.search(text), "forbidden public pattern detected"
 
 
 def _assert_demo_manifest_is_smoke_only(manifest: dict[str, object]) -> None:
@@ -102,6 +147,32 @@ def test_demo_manifest_rejects_records_marked_as_paper_evidence() -> None:
 
     with pytest.raises(AssertionError):
         _assert_demo_manifest_is_smoke_only(invalid_manifest)
+
+
+def test_every_actual_demo_record_is_explicitly_non_evidence() -> None:
+    """Every JSON/JSONL demo record, not just the manifest, is smoke-only."""
+    records_by_artifact = _load_demo_records(_read_json(DEMO_MANIFEST_PATH))
+
+    _assert_demo_records_are_smoke_only(records_by_artifact)
+
+
+@pytest.mark.parametrize(
+    "artifact_id",
+    [
+        "demo-capability-profiles",
+        "demo-coldstart-graph-features",
+        "demo-coldstart-measurements",
+        "demo-candidate-pool",
+    ],
+)
+def test_demo_record_validator_rejects_paper_evidence_in_each_source(artifact_id: str) -> None:
+    """Changing any source's actual first record to evidence must fail validation."""
+    records_by_artifact = _load_demo_records(_read_json(DEMO_MANIFEST_PATH))
+    invalid_records = copy.deepcopy(records_by_artifact)
+    invalid_records[artifact_id][0]["paper_evidence"] = True
+
+    with pytest.raises(AssertionError):
+        _assert_demo_records_are_smoke_only(invalid_records)
 
 
 def test_verified_manifest_has_complete_portable_entries_and_matching_hashes() -> None:
@@ -185,9 +256,21 @@ def test_public_data_and_artifact_files_contain_no_private_identity_or_secret_pa
     ]
     assert public_files
     for path in public_files:
-        text = path.read_text(encoding="utf-8")
-        for pattern in FORBIDDEN_PUBLIC_PATTERNS:
-            assert not pattern.search(text), f"forbidden public pattern in {path}: {pattern.pattern}"
+        _assert_no_forbidden_public_patterns(path.read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize(
+    "fixture_text",
+    [
+        "created by private_user_123",
+        "https://github.com/private-owner/private-repository",
+    ],
+    ids=["bare-private-identity", "github-owner-repository"],
+)
+def test_public_leak_scanner_rejects_identity_and_github_repository_shapes(fixture_text: str) -> None:
+    """Scanner rejects synthetic identity and repository fixtures without echoing them."""
+    with pytest.raises(AssertionError, match="forbidden public pattern"):
+        _assert_no_forbidden_public_patterns(fixture_text)
 
 
 def test_ci_runs_only_the_current_manifest_integration_scope() -> None:
