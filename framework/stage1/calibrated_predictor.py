@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from framework.stage1.coupling_predictor import BACKEND_POLICY, find_overpromotions
 

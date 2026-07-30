@@ -11,7 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from framework.stage1.calibrated_predictor import write_reports
+# This import must follow the direct-script `sys.path` bootstrap above.
+from framework.stage1.calibrated_predictor import write_reports  # noqa: E402
 
 
 def main() -> int:

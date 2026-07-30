@@ -32,6 +32,13 @@ from typing import Callable, Optional
 import torch
 import torch.nn as nn
 
+from framework.stage1.adapters import TraceAdapter, _add_path, _generic_bucket
+from framework.stage1.trace_plan import (
+    TraceBoundaryDetector,
+    WrapperSynthesizer,
+    legacy_trace_plan_from_manifest,
+)
+
 _REPO = Path(os.environ.get("STAGE1_REPO_ROOT", Path(__file__).resolve().parents[2]))
 _HEAL = Path(os.environ.get("HEAL_ROOT", _REPO.parent / "HEAL"))
 _HEAL_CKPT_ROOT = Path(os.environ.get("HEAL_CKPT_ROOT", _HEAL.parent / "checkpoints"))
@@ -43,17 +50,6 @@ _DISCO_FUSE_FALLBACKS = [
     _HEAL_CKPT_ROOT / "stage1/Pyramid_m1_base_2023_08_14_04_28_12/scripts/models/fuse_modules/disco_fuse.py",
     _HEAL_CKPT_ROOT / "baselines_hf/HeterBaseline_opv2v_lidar_attfuse_2023_08_06_19_58_00/scripts/models/fuse_modules/disco_fuse.py",
 ]
-
-# 复用 adapters.py 的工具函数
-from framework.stage1.adapters import (
-    TraceAdapter, _add_path, _generic_bucket, _first_conv_in_channels
-)
-from framework.stage1.trace_plan import (
-    TraceBoundaryDetector,
-    WrapperSynthesizer,
-    legacy_trace_plan_from_manifest,
-)
-
 
 def _use_heal_opencood():
     """清除 V2Xverse opencood 缓存, 确保接下来 import opencood 用 HEAL 版本。"""

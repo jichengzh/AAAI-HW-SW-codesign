@@ -24,11 +24,12 @@ _REPO = Path(__file__).resolve().parents[1]
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
-import yaml
+# These imports must follow the direct-script `sys.path` bootstrap above.
+import yaml  # noqa: E402
 
-from framework.stage1.auto_trace import AUTO_REGISTRY, get_auto_adapter
-from framework.stage1.hardware_scan import HwCapability
-from framework.stage1 import graph_scan
+from framework.stage1.auto_trace import AUTO_REGISTRY, get_auto_adapter  # noqa: E402
+from framework.stage1.hardware_scan import HwCapability  # noqa: E402
+from framework.stage1 import graph_scan  # noqa: E402
 
 _A0_MODELS = ["codriving", "pyramid_lidar", "v2xvit"]  # pyramid_camera 可选 (仅 OPV2V ckpt)
 _A1_MODELS = ["fcooper", "attfuse"]

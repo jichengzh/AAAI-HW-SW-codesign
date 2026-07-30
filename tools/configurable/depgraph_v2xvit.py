@@ -227,7 +227,6 @@ def prune_and_save(ratio: float, out_dir: Path, device: str) -> dict:
     print("[post] ✓ 输出头 shape 不变 (anchor format 保持)")
 
     # 验证 shrinker 输出通道 = 256 (fusion_net 输入兼容)
-    shrinker_out_ch = outs_after[0].shape[1] if False else None
     # 直接查 shrinker 最后 conv 输出通道
     for nm, mod in net.shrinker_m1.named_modules():
         if isinstance(mod, nn.Conv2d) and "double_conv.2" in nm:
@@ -300,7 +299,7 @@ def prune_and_save(ratio: float, out_dir: Path, device: str) -> dict:
 
 def write_finetune_yaml(out_dir: Path, meta: dict):
     """在 out_dir 生成 finetune 用的 config.yaml (修改 backbone num_filters)。"""
-    import shutil, re
+    import shutil
     src_yaml = CONFIG_YAML
     dst_yaml = out_dir / "config_finetune.yaml"
     shutil.copy(src_yaml, dst_yaml)
@@ -313,8 +312,8 @@ def write_finetune_yaml(out_dir: Path, meta: dict):
            f"# ckpt: {meta['ckpt_out']}\n\n")
     dst_yaml.write_text(hdr + txt)
     print(f"[yaml] finetune config → {dst_yaml}")
-    print(f"       Note: manually adjust num_filters in yaml if train.py "
-          f"instantiates model from scratch (needed if pruned arch ≠ yaml arch)")
+    print("       Note: manually adjust num_filters in yaml if train.py "
+          "instantiates model from scratch (needed if pruned arch ≠ yaml arch)")
 
 
 # ---------------------------------------------------------------------------
@@ -338,12 +337,12 @@ def main():
 
     print("\n" + "="*72)
     print("NEXT STEP (ISS-009): finetune 必须在剪枝后运行才算有效数据")
-    print(f"  参考命令:")
-    print(f"  CUDA_VISIBLE_DEVICES=1 python opencood/tools/train.py \\")
+    print("  参考命令:")
+    print("  CUDA_VISIBLE_DEVICES=1 python opencood/tools/train.py \\")
     print(f"      --hypes_yaml {out_dir}/config_finetune.yaml \\")
-    print(f"      --model_dir <finetune_output_dir>")
-    print(f"  注: 若 train.py 从 YAML 重建模型, 须先确认 YAML num_filters 与剪枝后一致")
-    print(f"      (或使用 load_saved_model strict=False + resume)")
+    print("      --model_dir <finetune_output_dir>")
+    print("  注: 若 train.py 从 YAML 重建模型, 须先确认 YAML num_filters 与剪枝后一致")
+    print("      (或使用 load_saved_model strict=False + resume)")
     print("="*72)
 
 

@@ -47,6 +47,28 @@ PUBLIC_DOCUMENTATION = (
     "ARTIFACTS.md",
     "README.anonymous.md",
 )
+ANONYMOUS_ARCHIVE_DOCUMENTATION = ("README.md", "REPRODUCIBILITY.md", "ARTIFACTS.md")
+
+
+def _is_anonymous_reviewer_archive() -> bool:
+    """Distinguish the mapped anonymous ZIP root from the public source tree."""
+    root_readme = REPOSITORY_ROOT / "README.md"
+    return (
+        (REPOSITORY_ROOT / "tools/release/anonymous_allowlist.txt").is_file()
+        and not (REPOSITORY_ROOT / "README.anonymous.md").exists()
+        and root_readme.is_file()
+        and root_readme.read_text(encoding="utf-8").startswith("# Anonymous AAAI Submission")
+    )
+
+
+def _release_documentation() -> tuple[str, ...]:
+    if _is_anonymous_reviewer_archive():
+        return ANONYMOUS_ARCHIVE_DOCUMENTATION
+    return PUBLIC_DOCUMENTATION
+
+
+def _anonymous_readme_path() -> Path:
+    return REPOSITORY_ROOT / ("README.md" if _is_anonymous_reviewer_archive() else "README.anonymous.md")
 
 
 def _public_metadata() -> dict[str, object]:
@@ -228,7 +250,7 @@ def test_public_package_identity_is_portable_and_apache_licensed() -> None:
 
 def test_anonymous_readme_has_no_public_identity_or_network_locations() -> None:
     """The reviewer-facing README must stand alone without public-project identity."""
-    anonymous_readme = (REPOSITORY_ROOT / "README.anonymous.md").read_text(encoding="utf-8")
+    anonymous_readme = _anonymous_readme_path().read_text(encoding="utf-8")
 
     _assert_no_release_identity_leaks(anonymous_readme)
     assert "github.com" not in anonymous_readme.lower()
@@ -236,12 +258,12 @@ def test_anonymous_readme_has_no_public_identity_or_network_locations() -> None:
     assert "https://" not in anonymous_readme.lower()
 
 
-def test_public_documentation_commands_and_relative_links_resolve_locally() -> None:
-    """A copied quick-start command or local link must work from a clean checkout."""
+def test_release_documentation_commands_and_relative_links_resolve_locally() -> None:
+    """Each artifact's documented quick-start commands resolve in that artifact."""
     documents: dict[str, str] = {}
-    for relative_name in PUBLIC_DOCUMENTATION:
+    for relative_name in _release_documentation():
         path = REPOSITORY_ROOT / relative_name
-        assert path.is_file(), f"missing public documentation: {relative_name}"
+        assert path.is_file(), f"missing release documentation: {relative_name}"
         documents[relative_name] = path.read_text(encoding="utf-8")
 
     for relative_name, document in documents.items():
@@ -249,16 +271,32 @@ def test_public_documentation_commands_and_relative_links_resolve_locally() -> N
         for script_name in DOCUMENTED_PYTHON_SCRIPT_PATTERN.findall(document):
             script_path = REPOSITORY_ROOT / script_name
             assert script_path.is_file(), f"{relative_name} documents missing script {script_name}"
-        for target in MARKDOWN_LINK_PATTERN.findall(document):
-            local_target = target.split("#", maxsplit=1)[0]
-            if not local_target or "://" in local_target or local_target.startswith("mailto:"):
-                continue
-            assert not Path(local_target).is_absolute(), (
-                f"{relative_name} links outside the checkout"
-            )
-            assert (REPOSITORY_ROOT / local_target).exists(), (
-                f"{relative_name} has a broken relative link: {target}"
-            )
+        if not _is_anonymous_reviewer_archive():
+            for target in MARKDOWN_LINK_PATTERN.findall(document):
+                local_target = target.split("#", maxsplit=1)[0]
+                if not local_target or "://" in local_target or local_target.startswith("mailto:"):
+                    continue
+                assert not Path(local_target).is_absolute(), (
+                    f"{relative_name} links outside the checkout"
+                )
+                assert (REPOSITORY_ROOT / local_target).exists(), (
+                    f"{relative_name} has a broken relative link: {target}"
+                )
+
+
+def test_release_readme_contract_is_unambiguous_for_its_artifact_mode() -> None:
+    """The reviewer ZIP must never carry a public README alongside its anonymous root."""
+    root_readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
+    anonymous_path = REPOSITORY_ROOT / "README.anonymous.md"
+
+    if _is_anonymous_reviewer_archive():
+        assert root_readme.startswith("# Anonymous AAAI Submission")
+        assert not anonymous_path.exists()
+        assert "# GEAR Co-design reproducibility package" not in root_readme
+    else:
+        assert root_readme.startswith("# GEAR Co-design reproducibility package")
+        assert anonymous_path.is_file()
+        assert anonymous_path.read_text(encoding="utf-8").startswith("# Anonymous AAAI Submission")
 
 
 def test_documented_command_validator_rejects_a_missing_pytest_target() -> None:
@@ -341,16 +379,22 @@ def test_public_release_metadata_has_no_identity_or_secret_leaks(
     wheel_path, sdist_path = built_artifacts
     source_metadata = [
         (REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8"),
-        (REPOSITORY_ROOT / "CITATION.cff").read_text(encoding="utf-8"),
         (REPOSITORY_ROOT / "LICENSE").read_text(encoding="utf-8"),
         (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8"),
-        (REPOSITORY_ROOT / "README.zh-CN.md").read_text(encoding="utf-8"),
     ]
+    if not _is_anonymous_reviewer_archive():
+        source_metadata.extend(
+            [
+                (REPOSITORY_ROOT / "CITATION.cff").read_text(encoding="utf-8"),
+                (REPOSITORY_ROOT / "README.zh-CN.md").read_text(encoding="utf-8"),
+            ]
+        )
     for text in source_metadata:
         _assert_no_release_identity_leaks(text)
 
-    citation = yaml.safe_load(source_metadata[1])
-    assert citation["authors"] == [{"name": "GEAR Co-design Collective"}]
+    if not _is_anonymous_reviewer_archive():
+        citation = yaml.safe_load((REPOSITORY_ROOT / "CITATION.cff").read_text(encoding="utf-8"))
+        assert citation["authors"] == [{"name": "GEAR Co-design Collective"}]
 
     with zipfile.ZipFile(wheel_path) as wheel:
         wheel_metadata = next(
@@ -365,7 +409,11 @@ def test_public_release_metadata_has_no_identity_or_secret_leaks(
         assert extracted is not None
         sdist_metadata_text = extracted.read().decode("utf-8")
 
-    readme_title = "# GEAR Co-design reproducibility package"
+    readme_title = (
+        "# Anonymous AAAI Submission: Code and Data"
+        if _is_anonymous_reviewer_archive()
+        else "# GEAR Co-design reproducibility package"
+    )
     for metadata_text in (wheel_metadata_text, sdist_metadata_text):
         assert readme_title in metadata_text
         _assert_no_release_identity_leaks(metadata_text)
@@ -420,12 +468,17 @@ def test_real_artifacts_include_existing_framework_stage2_package(
         assert expected_wheel_paths <= sdist_paths
 
 
-def test_ci_lints_only_the_task_one_test_scope() -> None:
-    """The staged CI lint check does not claim to lint historical source directories."""
+def test_ci_enforces_release_source_quality_and_global_coverage() -> None:
+    """The release workflow checks every shipped source directory with one global gate."""
     workflow = (REPOSITORY_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    assert "ruff check tests" in workflow
-    assert "ruff check framework scripts tests tools" not in workflow
+    assert "ruff check framework scripts tests tools" in workflow
+    assert "python -m compileall -q framework scripts tools" in workflow
+    assert re.search(
+        r"pytest -q --cov=framework --cov=scripts/reproduce\s+"
+        r"--cov-report=term-missing --cov-report=xml --cov-fail-under=80",
+        workflow,
+    )
 
 
 def test_gitignore_protects_local_environment_secret_files() -> None:

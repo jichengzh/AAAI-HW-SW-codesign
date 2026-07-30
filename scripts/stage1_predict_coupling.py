@@ -13,7 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from framework.stage1.coupling_predictor import markdown_report, predict_manifests
+# This import must follow the direct-script `sys.path` bootstrap above.
+from framework.stage1.coupling_predictor import markdown_report, predict_manifests  # noqa: E402
 
 
 def _parse_args() -> argparse.Namespace:

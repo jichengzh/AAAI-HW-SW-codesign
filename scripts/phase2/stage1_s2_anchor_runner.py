@@ -99,7 +99,6 @@ def _selected_anchors(value: str) -> list[AnchorSpec]:
 
 
 def _build_mod(anchor: AnchorSpec, precision: str, batch: int, width: int):
-    import tvm
     from tvm import relax
 
     dtype = "int8" if precision == "int8" else "float16"
@@ -462,7 +461,8 @@ def main() -> None:
     work_root.mkdir(parents=True, exist_ok=True)
 
     import tvm
-    import tvm.s_tir.tensor_intrin.cuda  # noqa: registers cuda tensor intrinsics
+    # Register CUDA tensor intrinsics for their import-time side effect.
+    import tvm.s_tir.tensor_intrin.cuda  # noqa: F401
 
     dev = tvm.cuda(0)
     target = tvm.target.Target.from_device(dev)

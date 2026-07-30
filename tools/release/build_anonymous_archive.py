@@ -105,9 +105,12 @@ DENIED_PATH_PARTS = frozenset(
     {".git", ".github", "__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", "build", "dist", "results", "cache", "checkpoint", "checkpoints", "engine", "engines", "model", "models"}
 )
 DENIED_SUFFIXES = frozenset({".pyc", ".pyo", ".so", ".dll", ".dylib", ".onnx", ".engine", ".pt", ".pth", ".ckpt", ".zip", ".tar", ".gz", ".whl"})
+ANONYMOUS_HIDDEN_ALLOWLIST = frozenset({".github/workflows/ci.yml", ".gitignore"})
 
 
 def _is_denied_source_path(relative_path: str) -> bool:
+    if relative_path in ANONYMOUS_HIDDEN_ALLOWLIST:
+        return False
     parts = Path(relative_path).parts
     filename = parts[-1].lower()
     return (

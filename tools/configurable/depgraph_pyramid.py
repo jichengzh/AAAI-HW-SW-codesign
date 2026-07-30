@@ -446,7 +446,7 @@ def write_report(args, p0, n_groups, n_convs, n_gconv, rC, rD, rE, rF):
     A = lines.append
     A("# Pyramid 全网络可剪范围 — DepGraph 真实验报告 v1")
     A("")
-    A(f"> 工具: `tools/configurable/depgraph_pyramid.py`  ")
+    A("> 工具: `tools/configurable/depgraph_pyramid.py`  ")
     A(f"> torch {torch.__version__} + torch_pruning {tp.__version__}, "
       f"device={args.device}, ckpt={args.orig_dir}  ")
     A(f"> 剪枝率 ratio={args.ratio}, importance=L1, round_to=32, granularity=local  ")
@@ -469,7 +469,7 @@ def write_report(args, p0, n_groups, n_convs, n_gconv, rC, rD, rE, rF):
     A("")
     A("| 项 | 值 | 结论 |")
     A("|----|----|----|")
-    A(f"| build_dependency trace | 通 | [实测] 整个稠密网络一次 trace |")
+    A("| build_dependency trace | 通 | [实测] 整个稠密网络一次 trace |")
     A(f"| 全网依赖组数 | {n_groups} | [实测] |")
     A(f"| 全网 Conv2d 层数 | {n_convs} | [实测] |")
     A(f"| grouped-conv (groups=32) 层数 | {n_gconv} | [实测] ResNeXt conv2 |")
@@ -486,10 +486,10 @@ def write_report(args, p0, n_groups, n_convs, n_gconv, rC, rD, rE, rF):
     A("```")
     A("")
     if rC.get("status") == "ok":
-        A(f"[实测] 关键: `round_to=32` 让 ResNeXt grouped-conv(groups=32) 的输出通道"
-          f"剪后仍 %32==0, DepGraph 依赖图自动把同组的 conv1→conv2→conv3→残差 identity"
-          f"→downsample→跨 stage conv1 一并联剪, forward 通 (无 size mismatch)。"
-          f"这正是之前 §6 报 `size 32 must match 64` 失败的点 —— 现在解决了。")
+        A("[实测] 关键: `round_to=32` 让 ResNeXt grouped-conv(groups=32) 的输出通道"
+          "剪后仍 %32==0, DepGraph 依赖图自动把同组的 conv1→conv2→conv3→残差 identity"
+          "→downsample→跨 stage conv1 一并联剪, forward 通 (无 size mismatch)。"
+          "这正是之前 §6 报 `size 32 must match 64` 失败的点 —— 现在解决了。")
     A("")
     A("## 3. 逐依赖组 (模块) 实测可剪范围")
     A("")

@@ -23,9 +23,10 @@ _REPO = Path(__file__).resolve().parents[2]
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
-from framework.stage1.adapters import REGISTRY, get_adapter
-from framework.stage1.auto_trace import AUTO_REGISTRY, get_auto_adapter
-from framework.stage1.hardware_scan import HwCapability
+# These imports must follow the direct-script `sys.path` bootstrap above.
+from framework.stage1.adapters import REGISTRY, get_adapter  # noqa: E402
+from framework.stage1.auto_trace import AUTO_REGISTRY, get_auto_adapter  # noqa: E402
+from framework.stage1.hardware_scan import HwCapability  # noqa: E402
 
 
 ALL_MODELS = sorted(dict.fromkeys([*REGISTRY, *AUTO_REGISTRY]))

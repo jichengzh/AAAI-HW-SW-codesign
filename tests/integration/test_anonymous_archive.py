@@ -41,9 +41,19 @@ def anonymous_repo(tmp_path: Path) -> Path:
     _write(root / "scripts/prepare_stage2_demo_data.py")
     _write(root / "scripts/stage1_classify_models.py")
     _write(root / "scripts/stage2_optimize_model.py")
+    _write(root / "scripts/phase2/b4_integrate.py")
+    _write(root / "scripts/phase2/b5_verify_convergence.py")
+    _write(root / "scripts/phase2/closedloop_objective_query.py")
+    _write(root / "scripts/stage2_update_evidence.py")
     _write(root / "data/demo.json", "{}\n")
     _write(root / "artifacts/verified.json", "{}\n")
     _write(root / "tests/test_smoke.py")
+    _write(root / ".gitignore", ".venv/\n")
+    _write(root / ".github/workflows/ci.yml", "name: anonymous-ci\n")
+    _write(root / "tools/release/build_anonymous_archive.py", "# archive builder\n")
+    _write(root / "tools/release/verify_archive.py", "# archive verifier\n")
+    _write(root / "tools/release/anonymous_allowlist.txt", "framework/**\n")
+    _write(root / "tools/release/forbidden_patterns.txt", "token\tforbidden\n")
     return root
 
 
@@ -80,7 +90,7 @@ def test_builder_emits_only_anonymous_allowlisted_deterministic_files(
 ) -> None:
     """Removing allowlist filtering or README renaming breaks this archive contract."""
     _write(anonymous_repo / "README.md", "public material\n")
-    _write(anonymous_repo / ".github/workflows/ci.yml")
+    _write(anonymous_repo / ".github/workflows/other.yml")
     _write(anonymous_repo / "cache/ignored.txt")
     first = tmp_path / "one"
     second = tmp_path / "two"
@@ -105,10 +115,46 @@ def test_builder_emits_only_anonymous_allowlisted_deterministic_files(
     assert "README.md" in names
     assert "README.anonymous.md" not in names
     assert "README.md" == names[0] or "README.md" in names
-    assert not {name for name in names if name.startswith((".github/", "cache/"))}
+    assert ".github/workflows/ci.yml" in names
+    assert ".gitignore" in names
+    assert "scripts/phase2/closedloop_objective_query.py" in names
+    assert ".github/workflows/other.yml" not in names
+    assert not {name for name in names if name.startswith("cache/")}
     assert all(not name.startswith((".git/", "dist/", "results/")) for name in names)
     assert sorted(names) == names
     assert {entry["path"] for entry in manifest["members"]} == set(names)
+
+
+def test_builder_includes_release_tools_required_by_archive_tests(
+    anonymous_repo: Path, tmp_path: Path
+) -> None:
+    """An extracted archive keeps its own builder/verifier import and lint paths."""
+    result = _run_builder(anonymous_repo, tmp_path / "output")
+
+    assert result.returncode == 0, result.stderr
+    with zipfile.ZipFile(tmp_path / "output" / ARCHIVE_NAME) as archive:
+        names = set(archive.namelist())
+    assert {
+        "tools/release/build_anonymous_archive.py",
+        "tools/release/verify_archive.py",
+        "tools/release/anonymous_allowlist.txt",
+        "tools/release/forbidden_patterns.txt",
+    } <= names
+
+
+def test_builder_allows_only_the_anonymous_ci_hidden_path(anonymous_repo: Path, tmp_path: Path) -> None:
+    """The anonymous CI file is allowed, while other hidden paths remain excluded."""
+    _write(anonymous_repo / ".env", "not selected\n")
+    _write(anonymous_repo / ".github/ISSUE_TEMPLATE/bug.yml", "not selected\n")
+
+    result = _run_builder(anonymous_repo, tmp_path / "output")
+
+    assert result.returncode == 0, result.stderr
+    with zipfile.ZipFile(tmp_path / "output" / ARCHIVE_NAME) as archive:
+        names = set(archive.namelist())
+    assert ".github/workflows/ci.yml" in names
+    assert ".env" not in names
+    assert ".github/ISSUE_TEMPLATE/bug.yml" not in names
 
 
 @pytest.mark.parametrize("kind", ["local_path", "owner_url", "email", "ipv4", "token", "filename", "large"])

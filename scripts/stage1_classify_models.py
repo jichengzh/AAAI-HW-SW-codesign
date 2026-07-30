@@ -12,7 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from framework.stage1.model_classifier import (
+# This import must follow the direct-script `sys.path` bootstrap above.
+from framework.stage1.model_classifier import (  # noqa: E402
     DEFAULT_MANIFESTS,
     DEFAULT_OUT_JSON,
     DEFAULT_OUT_MD,

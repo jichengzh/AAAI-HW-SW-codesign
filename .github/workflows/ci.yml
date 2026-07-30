@@ -22,7 +22,14 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: pip install -e '.[repro,dev]'
-      - run: ruff check tests
+      - name: Lint release source and tests
+        run: ruff check framework scripts tests tools
+      - name: Compile release source and tools
+        run: python -m compileall -q framework scripts tools
+      - name: Enforce global repository coverage gate
+        run: >-
+          pytest -q --cov=framework --cov=scripts/reproduce
+          --cov-report=term-missing --cov-report=xml --cov-fail-under=80
       - name: Check public demo and verified artifact manifests
         run: pytest -q tests/integration/test_reproduce_all.py
       - name: Validate reviewer ZIP and enforce release-tool coverage
