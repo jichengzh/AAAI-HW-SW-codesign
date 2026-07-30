@@ -33,6 +33,16 @@ SECRET_PATTERN = re.compile(
     r"|\b(?:sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}"
     r"|AKIA[A-Z0-9]{16})\b)"
 )
+DOCUMENTED_PYTHON_SCRIPT_PATTERN = re.compile(
+    r"\bpython(?:3)?\s+([A-Za-z0-9_./-]+\.py)\b"
+)
+MARKDOWN_LINK_PATTERN = re.compile(r"\[[^]]+\]\(([^)]+)\)")
+PUBLIC_DOCUMENTATION = (
+    "README.md",
+    "README.zh-CN.md",
+    "REPRODUCIBILITY.md",
+    "ARTIFACTS.md",
+)
 
 
 def _public_metadata() -> dict[str, object]:
@@ -96,6 +106,55 @@ def test_anonymous_readme_has_no_public_identity_or_network_locations() -> None:
     assert "https://" not in anonymous_readme.lower()
 
 
+def test_public_documentation_commands_and_relative_links_resolve_locally() -> None:
+    """A copied quick-start command or local link must work from a clean checkout."""
+    documents: dict[str, str] = {}
+    for relative_name in PUBLIC_DOCUMENTATION:
+        path = REPOSITORY_ROOT / relative_name
+        assert path.is_file(), f"missing public documentation: {relative_name}"
+        documents[relative_name] = path.read_text(encoding="utf-8")
+
+    for relative_name, document in documents.items():
+        for script_name in DOCUMENTED_PYTHON_SCRIPT_PATTERN.findall(document):
+            script_path = REPOSITORY_ROOT / script_name
+            assert script_path.is_file(), f"{relative_name} documents missing script {script_name}"
+        for target in MARKDOWN_LINK_PATTERN.findall(document):
+            local_target = target.split("#", maxsplit=1)[0]
+            if not local_target or "://" in local_target or local_target.startswith("mailto:"):
+                continue
+            assert not Path(local_target).is_absolute(), f"{relative_name} links outside the checkout"
+            assert (REPOSITORY_ROOT / local_target).exists(), (
+                f"{relative_name} has a broken relative link: {target}"
+            )
+
+
+def test_public_reproducibility_matrix_states_evidence_boundaries() -> None:
+    """Removing an evidence field would make paper readiness look stronger than it is."""
+    reproducibility = (REPOSITORY_ROOT / "REPRODUCIBILITY.md").read_text(encoding="utf-8")
+    artifacts_path = REPOSITORY_ROOT / "ARTIFACTS.md"
+    assert artifacts_path.is_file(), "artifact classes need a public index"
+    artifacts = artifacts_path.read_text(encoding="utf-8")
+
+    for field in ("Code", "Input artifact", "Seed", "Algorithm runs", "Evidence status"):
+        assert field in reproducibility
+    for evidence_class in ("demo", "verified", "external", "unavailable"):
+        assert evidence_class in reproducibility.lower()
+        assert evidence_class in artifacts.lower()
+    for required_fact in (
+        "176 measurements",
+        "44 groups",
+        "5 outer",
+        "3 inner",
+        "20260716",
+        "20260718",
+        "20260719",
+        "20260720",
+        "12 trajectories",
+        "192 selected events",
+    ):
+        assert required_fact in reproducibility
+
+
 def test_public_release_metadata_has_no_identity_or_secret_leaks(
     built_artifacts: tuple[Path, Path],
 ) -> None:
@@ -112,7 +171,7 @@ def test_public_release_metadata_has_no_identity_or_secret_leaks(
         _assert_no_release_identity_leaks(text)
 
     citation = yaml.safe_load(source_metadata[1])
-    assert citation["authors"] == [{"name": "The GEAR Authors"}]
+    assert citation["authors"] == [{"name": "GEAR Co-design Collective"}]
 
     with zipfile.ZipFile(wheel_path) as wheel:
         wheel_metadata = next(name for name in wheel.namelist() if name.endswith(".dist-info/METADATA"))
@@ -123,7 +182,7 @@ def test_public_release_metadata_has_no_identity_or_secret_leaks(
         assert extracted is not None
         sdist_metadata_text = extracted.read().decode("utf-8")
 
-    readme_title = "# Stage1 Model Scanner"
+    readme_title = "# GEAR Co-design reproducibility package"
     for metadata_text in (wheel_metadata_text, sdist_metadata_text):
         assert readme_title in metadata_text
         _assert_no_release_identity_leaks(metadata_text)

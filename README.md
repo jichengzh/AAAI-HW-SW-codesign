@@ -1,279 +1,100 @@
-# Stage1 Model Scanner
+# GEAR Co-design reproducibility package
 
-This repository contains the Stage1 Python runtime for dense-core graph scanning, hardware-capability filtering, evidence ingestion, and model classification.
+This repository provides a CPU-only smoke workflow, a small verified Stage4
+artifact set, and the Stage1–7 selection and analysis contracts used to audit
+the submission. It does not bundle or execute external hardware measurements,
+AP evaluation, model checkpoints, ONNX files, compiled engines, TVM, or TensorRT.
 
-## Install
+For evidence boundaries, see [REPRODUCIBILITY.md](REPRODUCIBILITY.md) and
+[ARTIFACTS.md](ARTIFACTS.md). The reviewer-facing anonymous entry point is
+`README.anonymous.md`; it intentionally is not the public project README.
 
-Use Python 3.10+.
+## Quick start: CPU-only smoke
 
-```bash
-git clone <repo-url>
-cd stage1-model-scanner-aaai
-python -m venv .venv
-source .venv/bin/activate
-pip install torch torch-pruning pyyaml pydantic numpy matplotlib scipy
-export PYTHONPATH=.
-```
-
-For built-in CoDriving/Pyramid/V2X-ViT/HEAL adapters, also install the corresponding `opencood` codebase and set local paths:
+Use Python 3.10 or later. From a source checkout, install the reproducibility
+and development extras, then choose a new or empty output directory:
 
 ```bash
-export HEAL_ROOT=/path/to/HEAL
-export HEAL_CKPT_ROOT=/path/to/heal/checkpoints
-export V2XVERSE_ROOT=/path/to/V2Xverse
-export V2XVERSE_CKPT_ROOT=/path/to/V2Xverse/checkpoints
+python --version
+pip install -e '.[repro,dev]'
+python scripts/reproduce/reproduce_all.py --mode smoke --output-root ./repro-smoke-output
 ```
 
-H800 TVM evidence scripts require a local TVM/Relax/MetaSchedule build. The classifier treats TRT only as historical evidence, not as a new measurement backend.
+Smoke is deterministic, offline, CPU-only, and uses only the small fixtures in
+`data/demo/`. Its output is a contract exercise, not paper evidence: every
+source record is explicitly marked `paper_evidence: false`. The resulting
+`run_manifest.json` records input and output SHA-256 identities, source hashes,
+frozen seeds, and execution boundaries. Re-running a matching completed output
+directory is a no-op; a directory containing different data is rejected.
 
-## Layout
+The checked-in verified bundle can be audited with the same entry point:
+
+```bash
+python scripts/reproduce/reproduce_all.py --mode verified --output-root ./repro-verified-output
+```
+
+This command is intentionally expected to exit non-zero today. It verifies the
+available Stage4 artifact bytes, then reports `unavailable` because the required
+Stage6 evidence and Stage7 formal aggregate are not in the package. Treat that
+non-zero result as an auditable availability check, not a successful paper run.
+
+## What is included
 
 ```text
-framework/stage1/                 Stage1 hardware scan, trace boundary detection, DepGraph scan, predictors, classifier
-framework/capability_schema.py     optional hardware YAML validation
-framework/stage1_bridge.py         manifest-to-search-space adapter
-framework/stage2/                 thin Stage2 contracts, classifier gate, evidence delta
-framework/search_three_arm.py      Stage2 P/S and P/Q/S three-arm search kernel
-framework/run_b4_ablation.py       Stage2 Pyramid P/S three-arm driver
-framework/run_pqs_ablation.py      Stage2 Pyramid P/Q/S driver
-framework/run_pqs_codriving.py     Stage2 CoDriving separability driver
-tools/configurable/depgraph_*.py   built-in Pyramid and V2X-ViT trace wrappers
-scripts/stage1_*.py                report/classifier CLIs
-scripts/stage2_*.py                Stage2 thin optimization and evidence-delta CLIs
-scripts/phase2/stage1_*.py         optional S2/S2.5/S3/S4 evidence utilities
-scripts/prepare_stage2_demo_data.py local demo data generator for Stage2 smoke runs
+data/demo/                     Deterministic smoke-only fixtures
+artifacts/verified/            Small, sanitized Stage4 audit artifacts and SHA-256 manifest
+framework/stage1/              Model scanning and classification contracts
+framework/stage4/              Nested grouped cost-model selection
+framework/stage5/              Selection and measurement-request contracts
+framework/stage6/              External-evidence paper-table adapter
+framework/stage7/              Selection-only online-ablation contracts and statistics
+scripts/reproduce/             CPU-only smoke and verified-boundary entry points
+tests/                         Unit, integration, and release checks
 ```
 
-Create local input/output directories before running:
+The smoke workflow invokes the public Stage4 selector, Stage5 selection request,
+Stage6 representative-selection adapter, and one fixed Stage7 selection-only
+round. It never runs a device backend or claims a measured result.
+
+## Scope and external boundary
+
+Stage1–7 code is released as input-validation, selection, aggregation, and
+audit logic. A hardware latency, energy, AP, TVM, TensorRT, checkpoint, ONNX,
+or engine result becomes evidence only when separately supplied with its own
+provenance, immutable inputs, and verified hashes. This repository neither
+downloads those materials nor substitutes synthetic data for them.
+
+The bundled demo data is not a dataset access path. Access to full datasets,
+model source trees, trained checkpoints, and hardware systems is external and
+subject to the relevant provider's terms. Attach such inputs only through the
+explicit command interfaces and keep their provenance separate from this
+anonymous/public package.
+
+## Reproducibility rules
+
+The frozen Stage4 selection seed is `20260716`; Stage5 uses `20260717`; formal
+Stage7 trajectories use `20260718`, `20260719`, and `20260720`. A seed makes a
+selection or analysis deterministic, but it does not create a hardware run.
+An algorithm run is one complete execution of a specified selection/analysis
+procedure on fixed inputs. Timing iterations, compiler retries, cache probes,
+and repeated device measurements are observations within an external execution,
+not additional algorithm runs. See the evidence matrix for the precise counts
+and status in [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
+
+## Development checks
+
+The release-oriented documentation and identity checks are runnable locally:
 
 ```bash
-mkdir -p configs/hardware framework/partitions results/stage1_model_predict
+pytest tests/release/test_identity_scan.py -q
 ```
 
-## Hardware YAML
+Use `python scripts/reproduce/reproduce_all.py --help` to inspect the supported
+reproduction arguments. The complete test suite may exercise additional Python
+dependencies; the smoke quick start above needs only the declared `repro` and
+`dev` extras.
 
-Put a capability file at `configs/hardware/<name>.yaml`, or pass `--hw`.
+## License and citation
 
-Minimal example:
-
-```yaml
-name: rtx3090
-arch: Ampere sm86
-ips:
-  gpu:
-    precisions: [FP32, TF32, FP16, INT8]
-    tensor_core_gen: 3
-    sparse_tc: true
-alignment:
-  int8_channel: 32
-  fp16_channel: 8
-  int8_pack_factor: 4
-  alignment_enforcement: hard
-quant_constraints:
-  bit_widths_w: [8, 16]
-  granularity_w: [per_tensor, per_channel]
-  per_channel_activation_supported: false
-  symmetric_only: true
-memory:
-  capacity_gb: 24
-```
-
-This is a static capability description. To claim measured behavior on a new device, attach that hardware and run local probes/evidence generation.
-
-## Scan A Model
-
-For built-in models, run the scanner directly:
-
-```bash
-PYTHONPATH=. python -m framework.stage1.run_scan --model all --device cpu --profile-latency off
-```
-
-For one model:
-
-```bash
-PYTHONPATH=. python -m framework.stage1.run_scan \
-  --model <registry_name> \
-  --hw configs/hardware/<name>.yaml \
-  --device cuda \
-  --out-dir framework/partitions \
-  --profile-latency auto
-```
-
-Output:
-
-```text
-framework/partitions/<registry_name>_partition.yaml
-```
-
-Use `--device cpu --profile-latency off` for a structure-only scan.
-
-The scan loads the model, builds or detects a dense trace candidate, runs forward dry-run, builds a `torch-pruning` DepGraph, performs a 0.5 pruning dry-run, and writes included / ignored / skipped / rejected trace-boundary metadata into the manifest.
-
-## Classify
-
-Manifest-only classification:
-
-```bash
-PYTHONPATH=. python scripts/stage1_classify_models.py \
-  --manifest framework/partitions/<registry_name>_partition.yaml \
-  --evidence-dir results/stage1_model_predict \
-  --out-json results/stage1_model_predict/model_classifier/stage1_model_classification_v1.json \
-  --out-md results/stage1_model_predict/model_classifier/stage1_model_classification_v1.md
-```
-
-The classifier emits three coarse classes:
-
-- `CO_ACCELERATION_REQUIRED`: needs joint/co-optimized acceleration
-- `SEPARABLE_ACCELERATION`: separable acceleration is supported within the stated scope
-- `SCAN_FAILED`: trained-checkpoint model scan is unavailable or failed
-
-It also emits detailed verdicts, blockers, next gates/probes, evidence sources, historical evidence sources, unsupported conclusions, and `no_overpromotion`.
-
-## Run Stage2 Optimization
-
-The public Stage2 entrypoint consumes only:
-
-```text
-manifest_path
-model_classification_path
-```
-
-Hardware context is derived from `manifest.hw_capability`; do not pass a separate hardware target to Stage2. Search policy is derived internally from the Stage1 classifier and the model-level Stage2 search space; do not expose it as a user parameter. Stage2 writes scoped output and an optional `stage2_evidence_delta` for Stage1 evidence refresh.
-
-The included smoke path is self-contained: it generates demo manifests, a demo classifier report, and small demo LUT/AP files locally.
-
-Create demo inputs under a caller-owned temporary directory (the command rejects `/`,
-the repository root, symlink escapes, and an existing non-demo directory):
-
-```bash
-DEMO_ROOT="$(mktemp -d)/stage2-demo"
-PYTHONPATH=. python scripts/prepare_stage2_demo_data.py --output-root "$DEMO_ROOT"
-```
-
-Run the integrated Stage2 CLI:
-
-```bash
-PYTHONPATH=. python scripts/stage2_optimize_model.py \
-  --manifest "$DEMO_ROOT/framework/partitions/pyramid_lidar_partition.yaml" \
-  --classification "$DEMO_ROOT/results/model_classifier.json" \
-  --out-json "$DEMO_ROOT/out/pyramid-stage2.json" \
-  --evidence-delta-out "$DEMO_ROOT/out/pyramid-evidence-delta.json"
-```
-
-CoDriving uses the same interface:
-
-```bash
-PYTHONPATH=. python scripts/stage2_optimize_model.py \
-  --manifest "$DEMO_ROOT/framework/partitions/codriving_partition.yaml" \
-  --classification "$DEMO_ROOT/results/model_classifier.json" \
-  --out-json "$DEMO_ROOT/out/codriving-stage2.json"
-```
-
-Run the P/S three-arm search kernel:
-
-```bash
-PYTHONPATH=. python -m framework.search_three_arm \
-  --seeds 2 --budget 20 --pop 4
-```
-
-Run the Pyramid P/S ablation driver:
-
-```bash
-PYTHONPATH=. python -m framework.run_b4_ablation \
-  --seeds 2 --budget 20 --pop 4 --quiet
-```
-
-Run the Pyramid P/Q/S driver using the demo Stage1 manifest:
-
-```bash
-PYTHONPATH=. python -m framework.run_pqs_ablation \
-  --manifest framework/partitions/pyramid_lidar_partition.yaml \
-  --seeds 2 --budget 20 --pop 4 --quiet
-```
-
-Run the CoDriving standard-conv separability control:
-
-```bash
-PYTHONPATH=. python -m framework.run_pqs_codriving \
-  --seeds 2 --budget 20 --pop 4 --quiet
-```
-
-Typical outputs:
-
-```text
-results/b4_ablation_results.json
-results/pqs_ablation_results.json
-results/coupling_map/C0c_codriving_pqs.json
-multi_agent/figure/*.png
-```
-
-For a real model, replace the demo files with your own artifacts:
-
-```text
-framework/partitions/<model>_partition.yaml       Stage1 manifest
-results/gap1_grid_corrected.json                 seed width grid
-results/latency_lut_pyramid.json                 measured latency LUT
-results/ap70_model_pyramid.json                  AP/accuracy anchors
-results/latency_lut_pyramid_q.json               optional quantization latency evidence
-```
-
-The Stage2 bridge reads `view_b1_search_groups`, `hw_capability`, and `int8_buildable_align` from the manifest, derives legal widths and INT8 buildability, and exposes a model-level `model_search_policy` such as `joint`, `serial`, or `noS/default`. Per-knob `dispatch_plan` output is legacy diagnostic material, not the current public Stage2 contract.
-
-See also:
-
-- [docs/stage2-evidence-delta.zh-CN.md](docs/stage2-evidence-delta.zh-CN.md)
-- [docs/stage2-new-hardware.zh-CN.md](docs/stage2-new-hardware.zh-CN.md)
-
-## Optional Evidence
-
-Place optional evidence under `results/stage1_model_predict/`:
-
-```text
-s2_schedule_anchor_audit_v1.json
-s2_probe_results/stage1_s2_probe_completion_v1.json
-s2_5_coverage_gates/stage1_s2_5_coverage_gate_closure_v1.json
-s3_quant_sensitivity/stage1_s3_quant_sensitivity_v1.json
-s4_three_arm_validation/stage1_s4_three_arm_validation_v1.json
-```
-
-Generate or refresh evidence with:
-
-```bash
-PYTHONPATH=. python scripts/phase2/stage1_s2_anchor_runner.py --help
-PYTHONPATH=. python scripts/phase2/stage1_s2_probe_completion_report.py --help
-PYTHONPATH=. python scripts/phase2/stage1_s2_5_s3_evidence_report.py --help
-PYTHONPATH=. python scripts/phase2/stage1_s4_three_arm_validation.py --help
-```
-
-## Add A New Model
-
-Preferred path: add a small `AutoTraceAdapter` registration in `framework/stage1/auto_trace.py`.
-
-For a new family, the user supplies:
-
-- model name
-- config path
-- checkpoint path
-- a minimal loader that returns the full `torch.nn.Module`
-- optional input-shape hints if the config cannot be parsed
-
-Stage1 then scans the module tree, proposes dense candidate paths, excludes sparse / fusion / routing / postprocess regions by heuristics, synthesizes a wrapper candidate, runs dry-run validation, builds the DepGraph, and emits the trace-boundary manifest. The user reviews the manifest. Manual `TraceAdapter` / hand-written wrapper is the fallback when the automatic candidate is wrong.
-
-See the adapter tutorial: [docs/add-new-model-adapter.zh-CN.md](docs/add-new-model-adapter.zh-CN.md).
-
-For a new model family, extend `framework/stage1/model_classifier.py` if the default low-confidence rule is not specific enough.
-
-## Add A New Hardware Target
-
-Add a hardware YAML and run the scan with `--hw`. Static YAML is enough for structural legality checks. Measured latency/AP evidence requires the target hardware locally attached and a matching local probe backend. New measured backend policy is H800 TVM/Relax/MetaSchedule unless you deliberately update the policy and classifier tests.
-
-## Current Limits
-
-- The scanner validates the traceable dense candidate, not full-model accuracy/AP.
-- Stage2 demo data is only for verifying the optimization pipeline; replace it with measured latency/AP evidence before making claims.
-- Sparse VFE, geometry projection, multi-agent fusion, routing, attention, and custom operators are usually excluded and recorded as skipped subgraphs unless a model-specific plugin supports them.
-- Automatic trace-boundary detection is implemented for the current built-in cooperative-perception families, but new architectures still require manifest review and may need a detector/plugin override.
-- Hardware YAML is a static capability layer; it is not a substitute for measurement on an unseen device.
-- Existing built-in model paths require local HEAL/V2Xverse source and checkpoint roots.
-- Classifier rules are conservative evidence combiners, not a learned universal classifier for arbitrary unseen architectures.
-- Stage2 currently optimizes the traced dense core. Full-model optimization requires explicit evidence for skipped sparse/fusion/routing/postprocess subgraphs.
+The package is distributed under the [Apache-2.0 license](LICENSE). If you use
+the software, cite the collective metadata in [CITATION.cff](CITATION.cff).
