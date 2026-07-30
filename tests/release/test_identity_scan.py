@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
+import shlex
 import subprocess
 import sys
 import tarfile
@@ -33,20 +35,24 @@ SECRET_PATTERN = re.compile(
     r"|\b(?:sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}"
     r"|AKIA[A-Z0-9]{16})\b)"
 )
-DOCUMENTED_PYTHON_SCRIPT_PATTERN = re.compile(
-    r"\bpython(?:3)?\s+([A-Za-z0-9_./-]+\.py)\b"
-)
+DOCUMENTED_PYTHON_SCRIPT_PATTERN = re.compile(r"\bpython(?:3)?\s+([A-Za-z0-9_./-]+\.py)\b")
 MARKDOWN_LINK_PATTERN = re.compile(r"\[[^]]+\]\(([^)]+)\)")
+SHELL_FENCE_PATTERN = re.compile(
+    r"^```(?:bash|sh|shell)\s*$\n(.*?)^```\s*$", re.IGNORECASE | re.MULTILINE | re.DOTALL
+)
 PUBLIC_DOCUMENTATION = (
     "README.md",
     "README.zh-CN.md",
     "REPRODUCIBILITY.md",
     "ARTIFACTS.md",
+    "README.anonymous.md",
 )
 
 
 def _public_metadata() -> dict[str, object]:
-    return tomllib.loads((REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    return tomllib.loads((REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
+        "project"
+    ]
 
 
 def _assert_no_release_identity_leaks(text: str) -> None:
@@ -57,6 +63,122 @@ def _assert_no_release_identity_leaks(text: str) -> None:
 def _metadata_headers(text: str) -> dict[str, str]:
     message = Parser().parsestr(text)
     return {name.lower(): value for name, value in message.items()}
+
+
+def _shell_command_argvs(document: str) -> list[list[str]]:
+    """Parse every documented shell command, joining normal backslash continuations."""
+    commands: list[list[str]] = []
+    for block in SHELL_FENCE_PATTERN.findall(document):
+        pending = ""
+        for source_line in block.splitlines():
+            line = source_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.endswith("\\"):
+                pending += line[:-1] + " "
+                continue
+            command_line = pending + line
+            pending = ""
+            lexer = shlex.shlex(command_line, posix=True, punctuation_chars=";&|")
+            lexer.whitespace_split = True
+            lexer.commenters = "#"
+            current: list[str] = []
+            for token in lexer:
+                if token in {";", "&&", "||", "|"}:
+                    if current:
+                        commands.append(current)
+                        current = []
+                else:
+                    current.append(token)
+            if current:
+                commands.append(current)
+        assert not pending, "documented shell block ends with an unfinished continuation"
+    return commands
+
+
+def _is_documented_repository_path(token: str) -> bool:
+    normalized = token.removeprefix("./")
+    return (
+        normalized
+        in {
+            "README.md",
+            "README.zh-CN.md",
+            "README.anonymous.md",
+            "REPRODUCIBILITY.md",
+            "ARTIFACTS.md",
+        }
+        or normalized in {"docs", "scripts", "tests", "tools"}
+        or normalized.startswith(("docs/", "scripts/", "tests/", "tools/"))
+    )
+
+
+def _assert_documented_repository_path(document_name: str, token: str) -> None:
+    if not _is_documented_repository_path(token):
+        return
+    path = REPOSITORY_ROOT / token.removeprefix("./")
+    assert path.exists(), f"{document_name} has a missing repository path: {token}"
+
+
+def _module_resolves(module: str) -> bool:
+    if not re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", module):
+        return False
+    try:
+        if importlib.util.find_spec(module) is not None:
+            return True
+    except (ImportError, ModuleNotFoundError, ValueError):
+        pass
+    module_path = REPOSITORY_ROOT.joinpath(*module.split("."))
+    return module_path.with_suffix(".py").is_file() or (module_path / "__init__.py").is_file()
+
+
+def _command_start(command: list[str]) -> int:
+    index = 0
+    while index < len(command) and re.fullmatch(r"[A-Za-z_]\w*=.*", command[index]):
+        index += 1
+    return index
+
+
+def _assert_pytest_paths(document_name: str, arguments: list[str]) -> None:
+    for argument in arguments:
+        if not argument.startswith("-"):
+            _assert_documented_repository_path(document_name, argument)
+
+
+def _assert_relative_python_script(document_name: str, token: str) -> None:
+    path = Path(token)
+    if path.is_absolute():
+        return
+    assert (REPOSITORY_ROOT / path).is_file(), (
+        f"{document_name} has a missing repository path: {token}"
+    )
+
+
+def _assert_documented_command_paths(document_name: str, document: str) -> None:
+    """Ensure examples name resolvable Python, pytest, tool, test, and document paths."""
+    for command in _shell_command_argvs(document):
+        for token in command:
+            _assert_documented_repository_path(document_name, token)
+        start = _command_start(command)
+        if start == len(command):
+            continue
+        executable = command[start]
+        arguments = command[start + 1 :]
+        if executable in {"pytest", "py.test"}:
+            _assert_pytest_paths(document_name, arguments)
+            continue
+        if executable not in {"python", "python3"}:
+            continue
+        if len(arguments) >= 2 and arguments[0] == "-m":
+            module = arguments[1]
+            assert _module_resolves(module), (
+                f"{document_name} has an unresolvable Python module: {module}"
+            )
+            if module in {"pytest", "py.test"}:
+                _assert_pytest_paths(document_name, arguments[2:])
+            continue
+        for argument in arguments:
+            if argument.endswith(".py"):
+                _assert_relative_python_script(document_name, argument)
 
 
 @pytest.fixture(scope="module")
@@ -115,6 +237,7 @@ def test_public_documentation_commands_and_relative_links_resolve_locally() -> N
         documents[relative_name] = path.read_text(encoding="utf-8")
 
     for relative_name, document in documents.items():
+        _assert_documented_command_paths(relative_name, document)
         for script_name in DOCUMENTED_PYTHON_SCRIPT_PATTERN.findall(document):
             script_path = REPOSITORY_ROOT / script_name
             assert script_path.is_file(), f"{relative_name} documents missing script {script_name}"
@@ -122,10 +245,43 @@ def test_public_documentation_commands_and_relative_links_resolve_locally() -> N
             local_target = target.split("#", maxsplit=1)[0]
             if not local_target or "://" in local_target or local_target.startswith("mailto:"):
                 continue
-            assert not Path(local_target).is_absolute(), f"{relative_name} links outside the checkout"
+            assert not Path(local_target).is_absolute(), (
+                f"{relative_name} links outside the checkout"
+            )
             assert (REPOSITORY_ROOT / local_target).exists(), (
                 f"{relative_name} has a broken relative link: {target}"
             )
+
+
+def test_documented_command_validator_rejects_a_missing_pytest_target() -> None:
+    """A stale test path in a shell example must block the public documentation."""
+    document = "```bash\npytest tests/does-not-exist.py -q\n```\n"
+
+    with pytest.raises(AssertionError, match="missing repository path"):
+        _assert_documented_command_paths("fixture.md", document)
+
+
+def test_documented_command_validator_rejects_a_missing_anonymous_script() -> None:
+    """The anonymous README receives the same command-path validation as public docs."""
+    document = "```shell\npython scripts/reproduce/does-not-exist.py --mode smoke\n```\n"
+
+    with pytest.raises(AssertionError, match="missing repository path"):
+        _assert_documented_command_paths("README.anonymous.md", document)
+
+
+def test_documented_command_validator_handles_continuations_modules_and_tool_paths() -> None:
+    """Shell fences accept valid continued Python/module, pytest, and tool examples."""
+    document = """```sh
+python -m framework.stage4 \\
+  --help
+pytest \\
+  tests/release -q
+python tools/release/verify_archive.py \\
+  --help
+```
+"""
+
+    _assert_documented_command_paths("fixture.md", document)
 
 
 def test_public_reproducibility_matrix_states_evidence_boundaries() -> None:
@@ -174,10 +330,14 @@ def test_public_release_metadata_has_no_identity_or_secret_leaks(
     assert citation["authors"] == [{"name": "GEAR Co-design Collective"}]
 
     with zipfile.ZipFile(wheel_path) as wheel:
-        wheel_metadata = next(name for name in wheel.namelist() if name.endswith(".dist-info/METADATA"))
+        wheel_metadata = next(
+            name for name in wheel.namelist() if name.endswith(".dist-info/METADATA")
+        )
         wheel_metadata_text = wheel.read(wheel_metadata).decode("utf-8")
     with tarfile.open(sdist_path) as sdist:
-        pkg_info = next(member for member in sdist.getmembers() if member.name.endswith("/PKG-INFO"))
+        pkg_info = next(
+            member for member in sdist.getmembers() if member.name.endswith("/PKG-INFO")
+        )
         extracted = sdist.extractfile(pkg_info)
         assert extracted is not None
         sdist_metadata_text = extracted.read().decode("utf-8")
@@ -231,7 +391,9 @@ def test_real_artifacts_include_existing_framework_stage2_package(
     with zipfile.ZipFile(wheel_path) as wheel:
         assert expected_wheel_paths <= set(wheel.namelist())
     with tarfile.open(sdist_path) as sdist:
-        sdist_paths = {member.name.split("/", 1)[1] for member in sdist.getmembers() if "/" in member.name}
+        sdist_paths = {
+            member.name.split("/", 1)[1] for member in sdist.getmembers() if "/" in member.name
+        }
         assert expected_wheel_paths <= sdist_paths
 
 
