@@ -151,12 +151,68 @@ def test_core_rejects_missing_duplicate_or_leaky_capability_context() -> None:
         encode_rows(rows, graph_leak, profiles)
 
 
+def test_core_validation_errors_do_not_disclose_measurement_or_context_identities() -> None:
+    """Catches public validation errors that expose caller-supplied identities."""
+    rows = _fixture_rows()
+    rows[0].update(
+        {
+            "row_id": "secret-job-123",
+            "group_id": "secret-group",
+            "capability_profile_id": "secret-profile",
+        }
+    )
+    rows[1]["row_id"] = "secret-job-123"
+    with pytest.raises(ValueError) as duplicate_error:
+        encode_rows(rows, _graph_features(), _capability_profiles())
+
+    missing_rows = _fixture_rows()
+    for row in missing_rows:
+        row["group_id"] = "secret-group"
+        row["capability_profile_id"] = "secret-profile"
+    with pytest.raises(ValueError) as missing_error:
+        encode_rows(missing_rows, [], [])
+
+    duplicate_profiles = _capability_profiles()
+    duplicate_profiles[0]["capability_profile_id"] = "secret-profile"
+    duplicate_profiles.append(dict(duplicate_profiles[0]))
+    with pytest.raises(ValueError) as profile_error:
+        encode_rows(_fixture_rows(), _graph_features(), duplicate_profiles)
+
+    for error in (duplicate_error, missing_error, profile_error):
+        rendered = str(error.value)
+        assert "secret-job-123" not in rendered
+        assert "secret-group" not in rendered
+        assert "secret-profile" not in rendered
+
+
+@pytest.mark.parametrize(
+    ("width", "expected_error"),
+    [
+        ([float("nan")], "finite numbers"),
+        ([float("inf")], "finite numbers"),
+        (["3"], "finite numbers"),
+        ([], "one to five"),
+        ([1, 2, 3, 4, 5, 6], "one to five"),
+    ],
+)
+def test_core_rejects_invalid_width_before_feature_encoding(
+    width: list[Any], expected_error: str
+) -> None:
+    """Catches invalid width axes before they can enter the feature matrix."""
+    rows = _fixture_rows()
+    rows[0]["width"] = width
+
+    with pytest.raises(ValueError, match=expected_error):
+        encode_rows(rows, _graph_features(), _capability_profiles())
+
+
 @pytest.mark.parametrize(
     ("mutate", "expected_error"),
     [
         (lambda rows: rows.__setitem__(0, {key: value for key, value in rows[0].items() if key != "row_id"}), "requires manifest_job_id or row_id"),
         (lambda rows: rows.__setitem__(0, ["not", "an", "object"]), "must be a JSON object"),
         (lambda rows: rows[0].__setitem__("energy_j", float("nan")), "must be finite"),
+        (lambda rows: rows[0].__setitem__("width", [float("nan")]), "finite numbers"),
     ],
 )
 def test_cli_rejects_missing_identity_non_object_and_nonfinite_labels(
@@ -193,6 +249,47 @@ def test_cli_rejects_missing_identity_non_object_and_nonfinite_labels(
 
     assert result.returncode != 0
     assert expected_error in result.stderr
+
+
+def test_cli_stderr_does_not_disclose_secret_input_identities(tmp_path: Path) -> None:
+    """Catches CLI forwarding of row, group, or profile identities in public errors."""
+    measurements = tmp_path / "measurements.jsonl"
+    graph_features = tmp_path / "graph-features.jsonl"
+    profiles = tmp_path / "capability-profiles.jsonl"
+    rows = _fixture_rows()
+    rows[0].update(
+        {
+            "row_id": "secret-job-123",
+            "group_id": "secret-group",
+            "capability_profile_id": "secret-profile",
+        }
+    )
+    rows[1]["row_id"] = "secret-job-123"
+    _write_jsonl(measurements, rows)
+    _write_jsonl(graph_features, _graph_features())
+    _write_jsonl(profiles, _capability_profiles())
+
+    result = subprocess.run(
+        [
+            sys.executable, str(CLI),
+            "--measurements", str(measurements),
+            "--graph-features", str(graph_features),
+            "--capability-profiles", str(profiles),
+            "--measurements-provenance", "measured-v1",
+            "--graph-features-provenance", "scanner-v1",
+            "--capability-profiles-provenance", "hardware-profile-v1",
+            "--output-root", str(tmp_path / "outputs"),
+        ],
+        cwd=REPOSITORY_ROOT,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "duplicate measurement identity" in result.stderr
+    assert "secret-job-123" not in result.stderr
+    assert "secret-group" not in result.stderr
+    assert "secret-profile" not in result.stderr
 
 
 def test_cli_reads_three_jsonl_inputs_writes_stable_artifacts_and_records_provenance(

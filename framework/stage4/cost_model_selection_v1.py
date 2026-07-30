@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from numbers import Real
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
@@ -93,7 +94,7 @@ def _require_unique_records(
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"{context}[{index}].{identity} must be a non-empty string")
         if value in seen:
-            raise ValueError(f"duplicate {identity} in {context}: {value}")
+            raise ValueError(f"duplicate {identity} in {context}")
         seen.add(value)
 
 
@@ -106,14 +107,19 @@ def _validate_rows(rows: Sequence[Mapping[str, Any]]) -> None:
         if not isinstance(identity, str) or not identity.strip():
             raise ValueError(f"measurements[{index}] requires manifest_job_id or row_id")
         if identity in identities:
-            raise ValueError(f"duplicate measurement identity: {identity}")
+            raise ValueError("duplicate measurement identity in measurements")
         identities.add(identity)
         for field in ("group_id", "capability_profile_id", "model", "q_mode"):
             value = row.get(field)
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"measurements[{index}].{field} must be a non-empty string")
-        if not isinstance(row.get("width"), Sequence) or isinstance(row["width"], str):
+        width = row.get("width")
+        if not isinstance(width, Sequence) or isinstance(width, (str, bytes)):
             raise ValueError(f"measurements[{index}].width must be an array")
+        if not 1 <= len(width) <= 5:
+            raise ValueError(f"measurements[{index}].width must contain one to five axes")
+        if any(not isinstance(axis, Real) or not math.isfinite(float(axis)) for axis in width):
+            raise ValueError(f"measurements[{index}].width must contain only finite numbers")
         for target in TARGETS:
             if not _finite(row.get(target)):
                 raise ValueError(f"measurements[{index}].{target} must be finite")
@@ -205,7 +211,8 @@ def encode_rows(
     } - set(profile_by_id)
     if missing_graph or missing_profile:
         raise ValueError(
-            f"missing feature context: graph={sorted(missing_graph)}, profile={sorted(missing_profile)}"
+            "missing feature context: "
+            f"graph_count={len(missing_graph)}, profile_count={len(missing_profile)}"
         )
 
     graph_names = _numeric_feature_names(
