@@ -122,6 +122,48 @@ def test_encoding_excludes_targets_and_run_selects_predictors_deterministically(
     )
 
 
+def test_feature_encoding_accepts_unlabeled_candidates_with_identical_schema_and_order() -> None:
+    """Catches shared feature encoding accidentally requiring measurement targets."""
+    labeled = _fixture_rows()
+    unlabeled = [
+        {
+            key: value
+            for key, value in row.items()
+            if key not in {"latency_ms", "energy_j", "ap70"}
+        }
+        for row in labeled
+    ]
+
+    labeled_encoding = encode_rows(labeled, _graph_features(), _capability_profiles())
+    candidate_encoding = encode_rows(
+        unlabeled, _graph_features(), _capability_profiles()
+    )
+
+    assert candidate_encoding.feature_names == labeled_encoding.feature_names
+    assert candidate_encoding.matrix.tolist() == labeled_encoding.matrix.tolist()
+
+
+@pytest.mark.parametrize(
+    "target_value",
+    [None, float("nan"), float("inf"), -float("inf")],
+)
+def test_training_entry_rejects_missing_or_nonfinite_targets(target_value: Any) -> None:
+    """Catches moving target validation out of the actual training boundary."""
+    rows = _fixture_rows()
+    if target_value is None:
+        rows[0].pop("latency_ms")
+    else:
+        rows[0]["latency_ms"] = target_value
+
+    with pytest.raises(ValueError, match="latency_ms.*finite"):
+        run_nested_selection(
+            rows,
+            _graph_features(),
+            _capability_profiles(),
+            candidates=("extra_trees_raw",),
+        )
+
+
 def test_selection_rejects_fewer_than_five_groups() -> None:
     """Catches silent reduction of the preregistered five-fold outer protocol."""
     with pytest.raises(ValueError, match="number of groups"):

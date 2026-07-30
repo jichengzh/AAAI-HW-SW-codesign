@@ -120,6 +120,11 @@ def _validate_rows(rows: Sequence[Mapping[str, Any]]) -> None:
             raise ValueError(f"measurements[{index}].width must contain one to five axes")
         if any(not isinstance(axis, Real) or not math.isfinite(float(axis)) for axis in width):
             raise ValueError(f"measurements[{index}].width must contain only finite numbers")
+
+
+def _validate_training_targets(rows: Sequence[Mapping[str, Any]]) -> None:
+    """Require complete finite labels only at the model-training boundary."""
+    for index, row in enumerate(rows):
         for target in TARGETS:
             if not _finite(row.get(target)):
                 raise ValueError(f"measurements[{index}].{target} must be finite")
@@ -450,6 +455,7 @@ def run_nested_selection(
 ) -> dict[str, Any]:
     source_rows = [dict(row) for row in rows]
     encoded = encode_rows(source_rows, graph_features, capability_profiles)
+    _validate_training_targets(source_rows)
     outer_folds = grouped_folds(source_rows, n_splits=outer_splits, seed=seed)
     target_reports: dict[str, Any] = {}
 
