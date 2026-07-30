@@ -40,8 +40,13 @@ requirements in [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
 The package contains no full dataset, trained model, private model source,
 checkpoint, ONNX file, compiled engine, device cache, TVM/TensorRT build output,
 latency/energy trace, AP evaluation output, or final Stage6/Stage7 paper
-aggregate. Those absences are intentional release boundaries, not implicit
-permissions to reconstruct or infer missing numbers.
+aggregate. It also does not contain the complete paper-specific evolutionary
+candidate generator, model materialization and training stack, hardware
+scheduling and measurement executors, complete online-ablation pipelines,
+formal trajectories, or terminal-evidence manifests. Those absences are
+intentional release boundaries, not implicit permissions to reconstruct or
+infer missing numbers. The complete implementation and corresponding reviewed
+experiment manifests are planned for release upon publication.
 
 ## License and citation
 

@@ -54,6 +54,21 @@ hardware measurement or create a Stage7 result. In particular, the existence of
 selection contracts, 12 trajectories, or 192 selected events must not be read as
 evidence that a formal aggregate has been verified.
 
+## Method-to-artifact mapping
+
+The public smoke path uses `predicted_frontier_diversity` as a deterministic,
+lightweight exercise of candidate-selection and feedback interfaces. It is not
+the complete NSGA-II candidate generator described in the manuscript and does
+not establish algorithmic or numerical equivalence with that generator.
+
+Likewise, the included online-ablation modules expose selection-only contracts,
+variant input projections, request identities, and descriptive aggregation
+logic. They are not the complete paper-specific ablation pipelines and cannot
+reproduce the manuscript's online-ablation table without the missing formal
+trajectories, terminal evidence, model bundles, and hardware execution records.
+The presence of these interfaces does not expand the verified evidence scope
+beyond the small Stage4 audit listed above.
+
 ## Seed and repetition rules
 
 - Stage4 uses seed `20260716`. The nested procedure has 5 outer grouped folds
@@ -90,7 +105,9 @@ selection and the Stage7 formal aggregate are unavailable, so this archive
 cannot reproduce a hardware/AP/energy paper table or an ablation aggregate.
 The smoke workflow demonstrates interfaces, not numerical conclusions. It does
 not validate any device, backend, compiler, cache, dataset, checkpoint, ONNX,
-or engine result.
+or engine result. The complete paper implementation, formal execution
+manifests, and the corresponding reviewed experimental artifacts are planned
+for release upon publication.
 
 ## License and citation
 
