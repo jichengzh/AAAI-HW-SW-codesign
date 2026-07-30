@@ -200,8 +200,11 @@ def _validate_graph_payload(
     if forbidden:
         raise ValueError("label-like graph features are forbidden")
     group_id = payload.get("group_id")
-    if expected_group_id is not None and group_id is not None and group_id != expected_group_id:
-        raise ValueError("graph feature group identity mismatch")
+    if expected_group_id is not None:
+        if not isinstance(group_id, str) or not group_id.strip():
+            raise ValueError("graph feature group identity missing")
+        if group_id != expected_group_id:
+            raise ValueError("graph feature group identity mismatch")
     numeric_feature_count = 0
     for name, value in payload.items():
         if name in GRAPH_METADATA_FIELDS:
@@ -718,7 +721,7 @@ def _candidate_matrix(
             continue
         seen.add(group_id)
         source = row.get("graph_features") or {}
-        _validate_graph_payload(source)
+        _validate_graph_payload(source, expected_group_id=group_id)
         graph = {
             "group_id": group_id,
             "model": row["model"],

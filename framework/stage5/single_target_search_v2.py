@@ -28,6 +28,8 @@ from framework.stage5.production_search_v1 import (
     _quantile,
     _stable_calibration_groups,
     _validate_candidate_context,
+    _validate_graph_features,
+    _validate_graph_payload,
     _validate_prediction_payload,
     validate_source_contract,
 )
@@ -221,6 +223,7 @@ def build_task_candidate_manifest(
             continue
         if not isinstance(group.get("graph_features"), Mapping):
             raise ValueError("candidate graph features missing")
+        _validate_graph_payload(group["graph_features"], expected_group_id=group_id)
         group["source_contract"] = source_contract
         for q_mode in ("fp16", "int8"):
             profile_id = str(profile["capability_profile_id"])
@@ -319,7 +322,7 @@ def select_task_batch(
     task: SearchTask,
 ) -> dict[str, Any]:
     """Select independent genomes; q_mode is a feature, never a quota or pair rule."""
-    del measured_graph_features  # Candidate rows already carry the canonical graph features.
+    _validate_graph_features(measured_graph_features)
     contract = validate_search_task(task)
     candidates = [copy.deepcopy(dict(row)) for row in predicted_rows]
     if len(candidates) < task.batch_size:
@@ -339,11 +342,30 @@ def select_task_batch(
             raise ValueError("candidate drift from fixed search task")
         if forbidden & set(row):
             raise ValueError("candidate labels visible before measurement")
+        _validate_graph_payload(
+            row.get("graph_features"),
+            expected_group_id=str(row["group_id"]),
+        )
         _validate_candidate_context(row)
         if str(row.get("q_mode")) not in ALLOWED_Q_MODES:
             raise ValueError("unsupported q_mode")
         _validate_prediction_payload(row)
-    all_rows = [*candidates, *[dict(row) for row in measured_rows if row.get("model") == task.target_model]]
+    measured_for_task: list[dict[str, Any]] = []
+    for measured_row in measured_rows:
+        if not isinstance(measured_row, Mapping):
+            raise ValueError("measured row validation failed")
+        row = copy.deepcopy(dict(measured_row))
+        if row.get("model") != task.target_model:
+            continue
+        group_id = row.get("group_id")
+        if not isinstance(group_id, str) or not group_id.strip():
+            raise ValueError("measured graph identity validation failed")
+        _validate_graph_payload(
+            row.get("graph_features"),
+            expected_group_id=group_id,
+        )
+        measured_for_task.append(row)
+    all_rows = [*candidates, *measured_for_task]
     vectors = [_feature_vector(row) for row in all_rows]
     width = max(vector.size for vector in vectors)
     padded = np.vstack([np.pad(vector, (0, width - vector.size)) for vector in vectors])

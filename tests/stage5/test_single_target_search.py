@@ -264,6 +264,99 @@ def test_single_target_selection_is_ordered_unique_and_rejects_nonfinite_values(
         )
 
 
+@pytest.mark.parametrize(
+    "graph_payload",
+    [
+        {},
+        {"conv_count": 1},
+        {"group_id": "different", "conv_count": 1},
+        {"group_id": "pyramid|40x80x160", "observed_latency_ms": 1.0},
+        {"group_id": "pyramid|40x80x160", "cache_status": 1.0},
+        {"group_id": "pyramid|40x80x160", "terminal_status": 1.0},
+        {"group_id": "pyramid|40x80x160", "conv_count": float("nan")},
+    ],
+)
+def test_single_target_selection_rejects_invalid_candidate_graph_payload(
+    graph_payload: dict[str, Any],
+) -> None:
+    """Catches absent identity, leakage, and malformed candidate graph context."""
+    manifest = single.build_task_candidate_manifest(
+        registry(), task=task(), measured_row_ids=set()
+    )
+    candidates = candidate_predictions(manifest["rows"])
+    candidates[0]["graph_features"] = graph_payload
+
+    with pytest.raises(ValueError, match="graph"):
+        single.select_task_batch(
+            candidates, measured_rows=[], measured_graph_features=[], task=task()
+        )
+
+
+@pytest.mark.parametrize(
+    "measured_graph_features",
+    [
+        ["not-an-object"],
+        [{"conv_count": 1}],
+        [{"group_id": "measured", "model": "pyramid", "width": [1, 2, 3]}],
+        [{"group_id": "measured", "observed_latency_ms": 1.0}],
+        [{"group_id": "measured", "cache_status": 1.0}],
+        [{"group_id": "measured", "terminal_status": 1.0}],
+        [{"group_id": "measured", "conv_count": float("nan")}],
+    ],
+)
+def test_single_target_selection_validates_direct_measured_graph_features(
+    measured_graph_features: list[Any],
+) -> None:
+    """Catches ignored malformed or label-derived measured graph records."""
+    manifest = single.build_task_candidate_manifest(
+        registry(), task=task(), measured_row_ids=set()
+    )
+
+    with pytest.raises(ValueError, match="graph"):
+        single.select_task_batch(
+            candidate_predictions(manifest["rows"]),
+            measured_rows=[],
+            measured_graph_features=measured_graph_features,
+            task=task(),
+        )
+
+
+@pytest.mark.parametrize(
+    "graph_payload",
+    [
+        {},
+        {"conv_count": 1},
+        {"group_id": "different", "conv_count": 1},
+        {"group_id": "pyramid|16x32x64", "observed_latency_ms": 1.0},
+        {"group_id": "pyramid|16x32x64", "cache_status": 1.0},
+        {"group_id": "pyramid|16x32x64", "terminal_status": 1.0},
+        {"group_id": "pyramid|16x32x64", "conv_count": float("nan")},
+    ],
+)
+def test_single_target_selection_rejects_invalid_nested_measured_row_graph(
+    graph_payload: dict[str, Any],
+) -> None:
+    """Catches measured-row graph leakage before maximin vector construction."""
+    manifest = single.build_task_candidate_manifest(
+        registry(), task=task(), measured_row_ids=set()
+    )
+    measured_row = {
+        "group_id": "pyramid|16x32x64",
+        "model": "pyramid",
+        "width": [16, 32, 64],
+        "q_mode": "fp16",
+        "graph_features": graph_payload,
+    }
+
+    with pytest.raises(ValueError, match="graph"):
+        single.select_task_batch(
+            candidate_predictions(manifest["rows"]),
+            measured_rows=[measured_row],
+            measured_graph_features=[],
+            task=task(),
+        )
+
+
 def test_fcooper_task_and_candidate_manifest_preserve_five_axis_genome() -> None:
     """Catches regression from scanner-derived F-Cooper identity to a triplet."""
     profile = profiles()[1]

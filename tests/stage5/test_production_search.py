@@ -442,6 +442,7 @@ def test_selection_rejects_invalid_direct_measured_graph_features(
         None,
         {},
         "not-an-object",
+        {"conv_count": 1},
         {"group_id": "different", "conv_count": 1},
     ],
 )
@@ -462,6 +463,32 @@ def test_selection_requires_nonempty_group_bound_candidate_graph_payload(
             measured_graph_features=[],
             group_budget_by_model={"pyramid": 1},
         )
+
+
+def test_candidate_manifest_and_prediction_require_group_bound_graph_payload() -> None:
+    """Catches graph identity loss in registry expansion or prediction encoding."""
+    source_registry = registry()
+    source_registry["groups"][0]["graph_features"].pop("group_id")
+    with pytest.raises(ValueError, match="graph"):
+        search.build_candidate_manifest(
+            source_registry,
+            measured_group_ids=set(),
+            frozen_holdout={"groups": []},
+            capability_profiles=profiles(),
+        )
+
+    rows, graphs = training_data()
+    bundle = search.fit_production_bundle(rows, graphs, profiles(), closure(), seed=7)
+    manifest = search.build_candidate_manifest(
+        registry(),
+        measured_group_ids=set(),
+        frozen_holdout={"groups": []},
+        capability_profiles=profiles(),
+    )
+    for row in manifest["rows"]:
+        row["graph_features"].pop("group_id")
+    with pytest.raises(ValueError, match="graph"):
+        search.predict_candidate_rows(bundle, manifest["rows"], profiles())
 
 
 def test_diversity_is_the_documented_tie_break_before_uncertainty_and_identity() -> None:
