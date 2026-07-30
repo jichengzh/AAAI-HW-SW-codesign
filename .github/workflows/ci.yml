@@ -32,7 +32,8 @@ jobs:
           framework/stage5 scripts/reproduce/cost_model_selection.py
           scripts/reproduce/stage5_selection.py framework/stage6
           scripts/reproduce/stage6_table.py
-          tests/stage1 tests/stage2 tests/stage4 tests/stage5 tests/stage6
+          framework/stage7 scripts/reproduce/stage7_selection.py
+          tests/stage1 tests/stage2 tests/stage4 tests/stage5 tests/stage6 tests/stage7
       - run: >-
           pytest -q tests/stage1 tests/stage2 tests/stage4
           --cov=framework.stage1_bridge --cov=framework.stage2.contracts
@@ -78,6 +79,30 @@ jobs:
           expected = (
               "framework/stage6/paper_table_v1.py",
               "scripts/reproduce/stage6_table.py",
+          )
+          for path in expected:
+              percent = report["files"][path]["summary"]["percent_covered"]
+              if percent < 80.0:
+                  raise SystemExit(f"{path} coverage {percent:.2f}% is below 80%")
+          PY
+      - name: Test Stage7 selection/statistics core with coverage
+        run: |
+          coverage erase
+          coverage run -m pytest -q tests/stage7
+          coverage report -m --include='*/framework/stage7/online_component_ablation_v1.py,*/framework/stage7/search_policy_v1.py,*/framework/stage7/ablation_statistics_v2.py,*/scripts/reproduce/stage7_selection.py'
+          coverage json -o stage7-coverage.json --include='*/framework/stage7/online_component_ablation_v1.py,*/framework/stage7/search_policy_v1.py,*/framework/stage7/ablation_statistics_v2.py,*/scripts/reproduce/stage7_selection.py'
+      - name: Enforce Stage7 per-module coverage
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("stage7-coverage.json").read_text(encoding="utf-8"))
+          expected = (
+              "framework/stage7/online_component_ablation_v1.py",
+              "framework/stage7/search_policy_v1.py",
+              "framework/stage7/ablation_statistics_v2.py",
+              "scripts/reproduce/stage7_selection.py",
           )
           for path in expected:
               percent = report["files"][path]["summary"]["percent_covered"]
