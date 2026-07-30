@@ -192,7 +192,7 @@ def test_gitignore_protects_local_environment_secret_files() -> None:
             [
                 "pandas>=2.0,<3",
                 "scipy>=1.10,<2",
-                "scikit-learn>=1.5,<2",
+                "scikit-learn>=1.6,<2",
                 "lightgbm>=4.0,<5",
             ],
         ),

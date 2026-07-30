@@ -23,7 +23,7 @@ scan = ["torch>=2.0", "torch-pruning>=1.4"]
 repro = [
   "pandas>=2.0,<3",
   "scipy>=1.10,<2",
-  "scikit-learn>=1.5,<2",
+  "scikit-learn>=1.6,<2",
   "lightgbm>=4.0,<5",
 ]
 dev = [
