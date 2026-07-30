@@ -102,7 +102,7 @@ def scan_file(path: Path, root: Path, patterns: Iterable[tuple[str, re.Pattern[s
 
 
 DENIED_PATH_PARTS = frozenset(
-    {".git", ".github", "__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", "build", "dist", "results", "cache", "checkpoint", "checkpoints", "engine", "engines"}
+    {".git", ".github", "__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", "build", "dist", "results", "cache", "checkpoint", "checkpoints", "engine", "engines", "model", "models"}
 )
 DENIED_SUFFIXES = frozenset({".pyc", ".pyo", ".so", ".dll", ".dylib", ".onnx", ".engine", ".pt", ".pth", ".ckpt", ".zip", ".tar", ".gz", ".whl"})
 

@@ -213,6 +213,18 @@ def test_builder_excludes_cache_products_and_rejects_unknown_binary(anonymous_re
     assert "unsafe input" in rejected.stderr
 
 
+@pytest.mark.parametrize("directory", ["models", "MODELS"])
+def test_builder_excludes_model_directories_with_case_insensitive_policy(
+    anonymous_repo: Path, tmp_path: Path, directory: str
+) -> None:
+    """Model-directory fixtures are excluded even when their text payload is harmless."""
+    _write(anonymous_repo / "framework" / directory / "config.json", "{}\n")
+    output = tmp_path / "output"
+    assert _run_builder(anonymous_repo, output).returncode == 0
+    with zipfile.ZipFile(output / ARCHIVE_NAME) as archive:
+        assert not any(member.casefold().startswith("framework/models/") for member in archive.namelist())
+
+
 def test_verifier_requires_complete_sidecar_and_manifest(anonymous_repo: Path, tmp_path: Path) -> None:
     """A standalone ZIP cannot establish its expected member set or integrity."""
     output = tmp_path / "output"
