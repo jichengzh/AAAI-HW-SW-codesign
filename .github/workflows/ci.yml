@@ -25,6 +25,29 @@ jobs:
       - run: ruff check tests
       - name: Check public demo and verified artifact manifests
         run: pytest -q tests/integration/test_reproduce_all.py
+      - name: Test Task8 reproduction entrypoint coverage
+        run: |
+          smoke_root="$(mktemp -d)"
+          verified_root="$(mktemp -d)"
+          coverage erase
+          coverage run scripts/reproduce/reproduce_all.py --mode smoke --output-root "$smoke_root"
+          if coverage run --append scripts/reproduce/reproduce_all.py --mode verified --output-root "$verified_root"; then
+            echo "verified reproduction unexpectedly succeeded"
+            exit 1
+          fi
+          coverage run --append -m pytest -q \
+            tests/integration/test_reproduce_all.py::test_smoke_reproduction_is_cpu_only_demo_only_and_content_identical_across_roots
+          coverage report -m --include='*/scripts/reproduce/reproduce_all.py'
+          coverage json -o reproduce-all-coverage.json --include='*/scripts/reproduce/reproduce_all.py'
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("reproduce-all-coverage.json").read_text(encoding="utf-8"))
+          percent = report["files"]["scripts/reproduce/reproduce_all.py"]["summary"]["percent_covered"]
+          if percent < 80.0:
+              raise SystemExit(f"scripts/reproduce/reproduce_all.py coverage {percent:.2f}% is below 80%")
+          PY
       - run: >-
           ruff check framework/stage1_bridge.py framework/stage1/model_classifier.py
           framework/stage2 framework/search_three_arm.py framework/run_b4_ablation.py
@@ -35,6 +58,7 @@ jobs:
           scripts/reproduce/stage5_selection.py framework/stage6
           scripts/reproduce/stage6_table.py
           framework/stage7 scripts/reproduce/stage7_selection.py
+          scripts/reproduce/reproduce_all.py
           tests/stage1 tests/stage2 tests/stage4 tests/stage5 tests/stage6 tests/stage7
       - run: >-
           pytest -q tests/stage1 tests/stage2 tests/stage4

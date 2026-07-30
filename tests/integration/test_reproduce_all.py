@@ -5,8 +5,11 @@ from __future__ import annotations
 import copy
 import csv
 import hashlib
+import importlib.util
 import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -273,9 +276,111 @@ def test_public_leak_scanner_rejects_identity_and_github_repository_shapes(fixtu
         _assert_no_forbidden_public_patterns(fixture_text)
 
 
-def test_ci_runs_only_the_current_manifest_integration_scope() -> None:
-    """The Task7 CI stage executes these boundary checks without later release gates."""
+def test_ci_runs_task8_reproduction_integration_without_later_release_gates() -> None:
+    """CI exercises the Task8 entrypoint without enabling archive or global coverage work."""
     workflow = (REPOSITORY_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     assert "pytest -q tests/integration/test_reproduce_all.py" in workflow
+    assert "scripts/reproduce/reproduce_all.py" in workflow
+    assert "anonymous archive" not in workflow.lower()
     assert "tests/integration --cov" not in workflow
+
+
+def _run_reproduction(*args: str) -> subprocess.CompletedProcess[str]:
+    """Execute the public entrypoint as an external user would."""
+    return subprocess.run(
+        [
+            sys.executable,
+            str(REPOSITORY_ROOT / "scripts/reproduce/reproduce_all.py"),
+            *args,
+        ],
+        cwd=REPOSITORY_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def _reproduction_module() -> object:
+    spec = importlib.util.spec_from_file_location(
+        "reproduce_all_integration_module",
+        REPOSITORY_ROOT / "scripts/reproduce/reproduce_all.py",
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _content_identity(output_root: Path) -> dict[str, object]:
+    """Return deterministic reproduction identity, excluding run timestamps."""
+    manifest = _read_json(output_root / "run_manifest.json")
+    return {
+        "schema_version": manifest["schema_version"],
+        "mode": manifest["mode"],
+        "status": manifest["status"],
+        "stages": manifest["stages"],
+        "outputs": manifest["outputs"],
+        "stage5_selected": _read_json(output_root / "stage5/selected_ids.json"),
+        "stage7_selected": _read_json(output_root / "stage7/selection.json"),
+    }
+
+
+def test_smoke_reproduction_is_cpu_only_demo_only_and_content_identical_across_roots(
+    tmp_path: Path,
+) -> None:
+    """Run every public selection stage twice without paper evidence or hardware execution."""
+    first_root = tmp_path / "smoke-first"
+    second_root = tmp_path / "smoke-second"
+
+    first = _run_reproduction("--mode", "smoke", "--output-root", str(first_root))
+    second = _run_reproduction("--mode", "smoke", "--output-root", str(second_root))
+    repeat = _run_reproduction("--mode", "smoke", "--output-root", str(first_root))
+
+    assert first.returncode == 0, first.stderr
+    assert second.returncode == 0, second.stderr
+    assert repeat.returncode == 0, repeat.stderr
+    first_identity = _content_identity(first_root)
+    second_identity = _content_identity(second_root)
+    assert first_identity == second_identity
+    assert first_identity["status"] == "completed"
+    assert first_identity["stage5_selected"]["ordered_selected_ids"]
+    assert first_identity["stage7_selected"]["acquisition"]["selected_row_ids"]
+    manifest = _read_json(first_root / "run_manifest.json")
+    reproduce_all = _reproduction_module()
+    assert reproduce_all._claim_output_root(first_root, "smoke")["status"] == "completed"
+    with pytest.raises(reproduce_all.PublicReproductionError, match="safe explicit"):
+        reproduce_all._safe_output_root(str(REPOSITORY_ROOT))
+    assert manifest["paper_evidence"] is False
+    assert manifest["execution"] == {
+        "network": False,
+        "gpu": False,
+        "hardware_execution": False,
+        "cache_execution": False,
+        "tvm_or_ap_execution": False,
+    }
+    assert all(stage["status"] == "completed" for stage in manifest["stages"])
+    for item in manifest["outputs"]:
+        assert SHA256_PATTERN.fullmatch(item["sha256"])
+        assert _file_sha256(first_root / item["path"]) == item["sha256"]
+    assert all(item["path"] != "run_manifest.json" for item in manifest["outputs"])
+
+
+def test_verified_reproduction_fails_closed_without_required_evidence(
+    tmp_path: Path,
+) -> None:
+    """Verified mode never substitutes demo data when Stage6/Stage7 evidence is absent."""
+    output_root = tmp_path / "verified"
+
+    result = _run_reproduction("--mode", "verified", "--output-root", str(output_root))
+
+    assert result.returncode != 0
+    assert "unavailable" in result.stderr.lower()
+    assert "Traceback" not in result.stderr
+    assert str(output_root) not in result.stderr
+    manifest = _read_json(output_root / "run_manifest.json")
+    assert manifest["mode"] == "verified"
+    assert manifest["status"] == "unavailable"
+    assert manifest["paper_evidence"] is True
+    assert not (output_root / "stage5").exists()
+    assert not (output_root / "stage6").exists()
