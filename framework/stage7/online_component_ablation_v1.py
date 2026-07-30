@@ -116,7 +116,7 @@ def _is_sha(value: Any) -> bool:
     return len(text) == 64 and all(character in "0123456789abcdef" for character in text)
 
 
-def _contains_label(value: Any) -> bool:
+def _contains_label(value: Any, *, predicted: bool = False) -> bool:
     if isinstance(value, Mapping):
         def forbidden_key(key: Any) -> bool:
             name = _canon(key)
@@ -126,9 +126,16 @@ def _contains_label(value: Any) -> bool:
                 or name.startswith("map")
                 or any(part == "ap" or re.fullmatch(r"ap[0-9]+", part) for part in name.split("_") if part)
             )
-        return any(forbidden_key(key) or _contains_label(item) for key, item in value.items())
+        return any(
+            (not predicted and forbidden_key(key))
+            or _contains_label(
+                item,
+                predicted=predicted or str(key) in {"predictions", "prediction_intervals"},
+            )
+            for key, item in value.items()
+        )
     if isinstance(value, (list, tuple)):
-        return any(_contains_label(item) for item in value)
+        return any(_contains_label(item, predicted=predicted) for item in value)
     return False
 
 
@@ -174,7 +181,7 @@ def project_backend_blind_features(rows: Sequence[Mapping[str, Any]]) -> dict[st
                     raise ValueError(f"{container} feature provenance is unknown: {name}")
                 if any(token in _canon(name) or token in _canon(source_name) for token in _BACKEND_TOKENS):
                     removed.add(feature)
-                features[feature] = float(value)
+                features[feature] = float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0.0
         full_rows.append(features)
     full_schema = sorted({name for row in full_rows for name in row})
     blind_schema = [name for name in full_schema if name not in removed]

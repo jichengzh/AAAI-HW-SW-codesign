@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+from .test_search_policy import _candidates, _profile
+
 
 ROOT = Path(__file__).resolve().parents[2]
 CLI = ROOT / "scripts" / "reproduce" / "stage7_selection.py"
@@ -28,17 +30,30 @@ def _run(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run([sys.executable, str(CLI), *args], cwd=ROOT, text=True, capture_output=True, check=False)
 
 
-def test_select_requires_explicit_files_and_is_idempotent(tmp_path: Path) -> None:
-    """Catches implicit input discovery or overwriting a prior different artifact."""
+def _selection_inputs(tmp_path: Path) -> tuple[str, ...]:
     candidates = tmp_path / "candidates.json"
     selected = tmp_path / "selected.json"
-    output = tmp_path / "request.json"
-    candidates.write_text(json.dumps([
-        {"row_id": f"candidate-{index}", "score": index, "width": [16, 32, 64], "q_mode": "fp16"}
-        for index in range(5)
-    ]), encoding="utf-8")
+    task = tmp_path / "search-task.json"
+    measured_rows = tmp_path / "measured-rows.json"
+    measured_graphs = tmp_path / "measured-graphs.json"
+    candidates.write_text(json.dumps(_candidates()), encoding="utf-8")
     selected.write_text("[]", encoding="utf-8")
-    command = ("select", "--variant", "full", "--seed", "20260718", "--round", "0", "--candidates", str(candidates), "--selected-ids", str(selected), "--output-json", str(output))
+    task.write_text(json.dumps({
+        "task_id": "S7-PYR-TVM", "target_model": "pyramid", "hardware_id": "h800",
+        "capability_profile": _profile(), "sample_budget": 16, "batch_size": 4, "round_count": 4,
+    }), encoding="utf-8")
+    measured_rows.write_text("[]", encoding="utf-8")
+    measured_graphs.write_text("[]", encoding="utf-8")
+    return (
+        "--candidates", str(candidates), "--selected-ids", str(selected), "--search-task", str(task),
+        "--measured-rows", str(measured_rows), "--measured-graph-features", str(measured_graphs),
+    )
+
+
+def test_select_requires_explicit_files_and_is_idempotent(tmp_path: Path) -> None:
+    """Catches implicit input discovery or overwriting a prior different artifact."""
+    output = tmp_path / "request.json"
+    command = ("select", "--variant", "full", "--seed", "20260718", "--round", "0", *_selection_inputs(tmp_path), "--output-json", str(output))
 
     first = _run(*command)
     second = _run(*command)
@@ -65,18 +80,11 @@ def test_summarize_fails_closed_when_terminal_matrix_is_incomplete(tmp_path: Pat
 def test_cli_module_runs_selection_and_rejects_unsafe_output(tmp_path: Path) -> None:
     """Catches a CLI adapter bypassing its path or JSON validation when imported."""
     cli = _module()
-    candidates = tmp_path / "candidates.json"
-    selected = tmp_path / "selected.json"
     output = tmp_path / "direct.json"
-    candidates.write_text(json.dumps([
-        {"row_id": f"row-{index}", "score": index, "width": [16, 32, 64], "q_mode": "int8"}
-        for index in range(4)
-    ]), encoding="utf-8")
-    selected.write_text("[]", encoding="utf-8")
 
     args = cli._parse_args([
         "select", "--variant", "without_surrogate", "--seed", "20260719", "--round", "0",
-        "--candidates", str(candidates), "--selected-ids", str(selected), "--output-json", str(output),
+        *_selection_inputs(tmp_path), "--output-json", str(output),
     ])
     result = cli.run(args)
 
@@ -114,17 +122,12 @@ def test_cli_module_summarizes_complete_jsonl_matrix(tmp_path: Path) -> None:
 def test_cli_module_accepts_explicit_a2_feedback_and_frozen_bundle(tmp_path: Path) -> None:
     """Catches later A2 CLI rounds dropping an explicit frozen or feedback input."""
     cli = _module()
-    candidates = tmp_path / "candidates.json"
-    selected = tmp_path / "selected.json"
     initial_output = tmp_path / "initial.json"
-    candidates.write_text(json.dumps([
-        {"row_id": f"row-{index}", "score": index, "width": [16, 32, 64], "q_mode": "fp16"}
-        for index in range(8)
-    ]), encoding="utf-8")
-    selected.write_text("[]", encoding="utf-8")
+    inputs = _selection_inputs(tmp_path)
+    selected = tmp_path / "selected.json"
     initial = cli.run(cli._parse_args([
         "select", "--variant", "without_measured_feedback", "--seed", "20260718", "--round", "0",
-        "--candidates", str(candidates), "--selected-ids", str(selected), "--output-json", str(initial_output),
+        *inputs, "--output-json", str(initial_output),
     ]))
     selected.write_text(json.dumps(initial["acquisition"]["selected_row_ids"]), encoding="utf-8")
     frozen = tmp_path / "frozen.json"
@@ -137,7 +140,7 @@ def test_cli_module_accepts_explicit_a2_feedback_and_frozen_bundle(tmp_path: Pat
 
     later = cli.run(cli._parse_args([
         "select", "--variant", "without_measured_feedback", "--seed", "20260718", "--round", "1",
-        "--candidates", str(candidates), "--selected-ids", str(selected), "--feedback", str(feedback),
+        *inputs, "--feedback", str(feedback),
         "--previous-request", str(initial_output), "--a2-frozen", str(frozen),
         "--a2-frozen-sha256", initial["a2_frozen"]["frozen_payload_sha256"], "--output-json", str(tmp_path / "later.json"),
     ]))
@@ -150,10 +153,23 @@ def test_cli_module_accepts_explicit_a2_feedback_and_frozen_bundle(tmp_path: Pat
     with pytest.raises(ValueError, match="identity"):
         cli.run(cli._parse_args([
             "select", "--variant", "without_measured_feedback", "--seed", "20260718", "--round", "1",
-            "--candidates", str(candidates), "--selected-ids", str(selected), "--feedback", str(feedback),
+            *inputs, "--feedback", str(feedback),
             "--previous-request", str(initial_output), "--a2-frozen", str(frozen),
             "--a2-frozen-sha256", initial["a2_frozen"]["frozen_payload_sha256"], "--output-json", str(tmp_path / "bad.json"),
         ]))
+    forged = tmp_path / "forged-request.json"
+    forged_payload = json.loads(initial_output.read_text(encoding="utf-8"))
+    forged_payload["measurement_request"]["rows"].reverse()
+    forged.write_text(json.dumps(forged_payload), encoding="utf-8")
+    rejected = _run(
+        "select", "--variant", "without_measured_feedback", "--seed", "20260718", "--round", "1",
+        *inputs, "--feedback", str(feedback), "--previous-request", str(forged), "--a2-frozen", str(frozen),
+        "--a2-frozen-sha256", initial["a2_frozen"]["frozen_payload_sha256"], "--output-json", str(tmp_path / "forged-output.json"),
+    )
+    assert rejected.returncode != 0
+    assert "Traceback" not in rejected.stderr
+    assert str(forged) not in rejected.stderr
+    assert "canonical" in rejected.stderr
     cli._write_idempotent(initial_output, initial_output.read_bytes())
     with pytest.raises(cli.PublicInputError, match="different output"):
         cli._write_idempotent(initial_output, b"different")

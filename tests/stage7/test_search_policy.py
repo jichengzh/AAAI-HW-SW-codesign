@@ -3,25 +3,72 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 
 import pytest
 
+from framework.stage2.canonical_search_v3 import build_capability_profile
+from framework.stage5 import single_target_search_v2 as single
 from framework.stage7 import search_policy_v1 as policy
 
 
+def _task() -> single.SearchTask:
+    return single.SearchTask("S7-PYR-TVM", "pyramid", "h800", _profile())
+
+
+def _profile() -> dict[str, object]:
+    return build_capability_profile(
+        capability_profile_id="h800-tvm", hardware_target="h800",
+        compiler_fingerprint=hashlib.sha256(b"tvm").hexdigest(), dispatch_key="tvm_auto",
+        features={"int8_propagation": 0.0, "qdq_fold": 0.0},
+    )
+
+
+def _source_group(width: list[int]) -> dict[str, object]:
+    group_id = f"pyramid|{'x'.join(map(str, width))}"
+    evidence = hashlib.sha256(group_id.encode()).hexdigest()
+    contract = {
+        "schema_version": "stage5_source_contract_v1", "group_id": group_id, "model": "pyramid",
+        "width": width, "artifact_id": f"fixture-{width[0]}", "source_status": "ready",
+        "source_evidence_sha256": evidence, "materialization_scope": "public_test_fixture",
+    }
+    contract_sha = hashlib.sha256(json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return {
+        "group_id": group_id, "model": "pyramid", "width": width, "source_status": "ready",
+        "source_evidence_sha256": evidence, "source_contract": contract, "source_contract_sha256": contract_sha,
+        "graph_features": {"group_id": group_id, "model": "pyramid", "width": width, "conv_count": 20, "conv_macs": float(width[0] * width[1] * width[2])},
+    }
+
+
 def _candidates() -> list[dict[str, object]]:
-    return [
-        {"row_id": f"candidate-{number}", "score": float(number), "width": [16, 32, 64], "q_mode": "fp16"}
-        for number in range(8)
-    ]
+    source = {"schema_version": "stage5_candidate_source_registry_v1", "groups": [
+        _source_group(list(width)) for width in ([40, 80, 160], [48, 96, 192], [56, 112, 224], [64, 128, 256])
+    ]}
+    manifest = single.build_task_candidate_manifest(source, task=_task(), measured_row_ids=set())
+    candidates: list[dict[str, object]] = []
+    for index, row in enumerate(manifest["rows"]):
+        predicted = copy.deepcopy(row)
+        values = {"latency_ms": 1.0 + index, "energy_j": 0.2 + index / 10, "ap70": 0.8 - index / 100}
+        predicted["predictions"] = values
+        predicted["prediction_intervals"] = {
+            key: {"lower": value - 0.1, "median": value, "upper": value + 0.1}
+            for key, value in values.items()
+        }
+        candidates.append(predicted)
+    return candidates
+
+
+def _select(**kwargs: object) -> dict[str, object]:
+    return policy.select_stage7_round(task=_task(), measured_rows=[], measured_graph_features=[], **kwargs)
 
 
 def test_round_zero_selection_excludes_existing_ids_and_is_deterministic() -> None:
     """Catches reselecting measured work or allowing score ordering to vary by input order."""
-    first = policy.select_stage7_round(
+    first = _select(
         variant="full", seed=20260718, round_index=0, candidate_pool=_candidates(), selected_ids={"candidate-7"}
     )
-    second = policy.select_stage7_round(
+    second = _select(
         variant="full", seed=20260718, round_index=0, candidate_pool=list(reversed(_candidates())), selected_ids={"candidate-7"}
     )
 
@@ -32,10 +79,10 @@ def test_round_zero_selection_excludes_existing_ids_and_is_deterministic() -> No
 
 def test_a2_later_round_reuses_exact_frozen_bundle() -> None:
     """Catches A2 accepting a different later-round prediction or bundle identity."""
-    first = policy.select_stage7_round(
+    first = _select(
         variant="without_measured_feedback", seed=20260718, round_index=0, candidate_pool=_candidates()
     )
-    later = policy.select_stage7_round(
+    later = _select(
         variant="without_measured_feedback", seed=20260718, round_index=1, candidate_pool=_candidates(),
         selected_ids=set(first["acquisition"]["selected_row_ids"]), a2_frozen=first["a2_frozen"],
         expected_a2_frozen_sha256=first["a2_frozen"]["frozen_payload_sha256"],
@@ -53,7 +100,7 @@ def test_a2_later_round_reuses_exact_frozen_bundle() -> None:
         for row_id in first["acquisition"]["selected_row_ids"]
     ]
     with pytest.raises(ValueError, match="A2"):
-        policy.select_stage7_round(
+        _select(
             variant="without_measured_feedback", seed=20260718, round_index=1,
             candidate_pool=_candidates(), selected_ids=set(first["acquisition"]["selected_row_ids"]), a2_frozen=tampered,
             expected_a2_frozen_sha256=first["a2_frozen"]["frozen_payload_sha256"],
@@ -63,7 +110,7 @@ def test_a2_later_round_reuses_exact_frozen_bundle() -> None:
 
 def test_a2_requires_the_explicit_round_zero_frozen_identity() -> None:
     """Catches a self-hashed replacement bundle changing later A2 selection."""
-    first = policy.select_stage7_round(
+    first = _select(
         variant="without_measured_feedback", seed=20260718, round_index=0, candidate_pool=_candidates()
     )
     replacement = copy.deepcopy(first["a2_frozen"])
@@ -73,7 +120,7 @@ def test_a2_requires_the_explicit_round_zero_frozen_identity() -> None:
     replacement["frozen_payload_sha256"] = policy.canonical_sha256(unsigned)
 
     with pytest.raises(ValueError, match="frozen identity"):
-        policy.select_stage7_round(
+        _select(
             variant="without_measured_feedback", seed=20260718, round_index=1, candidate_pool=_candidates(),
             selected_ids=set(first["acquisition"]["selected_row_ids"]), a2_frozen=replacement,
             expected_a2_frozen_sha256=first["a2_frozen"]["frozen_payload_sha256"],
@@ -87,7 +134,7 @@ def test_a2_requires_the_explicit_round_zero_frozen_identity() -> None:
 
 def test_feedback_requires_exact_request_identity_and_complete_unique_rows() -> None:
     """Catches feedback from another request, duplicate rows, or partial completions."""
-    selection = policy.select_stage7_round(
+    selection = _select(
         variant="full", seed=20260718, round_index=0, candidate_pool=_candidates()
     )
     request = selection["measurement_request"]
@@ -106,12 +153,12 @@ def test_feedback_requires_exact_request_identity_and_complete_unique_rows() -> 
         policy.validate_feedback_jsonl(rows[:3], request)
 
     with pytest.raises(ValueError, match="previous request"):
-        policy.select_stage7_round(
+        _select(
             variant="full", seed=20260718, round_index=1, candidate_pool=_candidates(), feedback_rows=rows,
         )
     wrong[0]["terminal_status"] = "completed"
     with pytest.raises(ValueError, match="identity"):
-        policy.select_stage7_round(
+        _select(
             variant="full", seed=20260718, round_index=1, candidate_pool=_candidates(), feedback_rows=wrong,
             previous_measurement_request=request,
         )
@@ -119,20 +166,17 @@ def test_feedback_requires_exact_request_identity_and_complete_unique_rows() -> 
 
 def test_backend_blind_selection_cannot_consume_score_or_derived_features() -> None:
     """Catches backend-blind selection being driven by unprojected backend scores."""
-    rows = [
-        {
-            "row_id": f"candidate-{index}", "score": float(index), "width": [16 + index, 32, 64], "q_mode": "fp16",
-            "model_features": {"capability_score": float(index), "static_depth": 2.0},
-            "feature_provenance": {"capability_score": "capability_profile-derived", "static_depth": "static_config"},
-        }
-        for index in range(5)
-    ]
+    rows = _candidates()
+    for index, row in enumerate(rows):
+        row["model_features"] = {"capability_score": float(index), "static_depth": 2.0}
+        row["feature_provenance"] = {"capability_score": "capability_profile-derived", "static_depth": "static_config"}
+        row["score"] = float(index)
     altered = copy.deepcopy(rows)
     for row in altered:
         row["score"] = -float(row["score"])
 
-    first = policy.select_stage7_round(variant="backend_blind", seed=20260718, round_index=0, candidate_pool=rows)
-    second = policy.select_stage7_round(variant="backend_blind", seed=20260718, round_index=0, candidate_pool=altered)
+    first = _select(variant="backend_blind", seed=20260718, round_index=0, candidate_pool=rows)
+    second = _select(variant="backend_blind", seed=20260718, round_index=0, candidate_pool=altered)
 
     assert first["acquisition"]["selected_row_ids"] == second["acquisition"]["selected_row_ids"]
     assert "model:capability_score" in first["backend_blind_audit"]["removed_names"]
@@ -144,7 +188,7 @@ def test_request_binding_rejects_trajectory_identity_drift() -> None:
         variant="full", seed=20260718, result_root="/tmp/stage7",
         frozen_input_sha256="a" * 64, candidate_pool_sha256="b" * 64,
     )
-    selection = policy.select_stage7_round(
+    selection = _select(
         variant="full", seed=20260718, round_index=0, candidate_pool=_candidates()
     )
     binding = policy.build_request_binding(trajectory, selection["measurement_request"], round_index=0)
@@ -152,3 +196,45 @@ def test_request_binding_rejects_trajectory_identity_drift() -> None:
     drifted = dict(trajectory, variant="backend_blind")
     with pytest.raises(ValueError, match="identity"):
         policy.validate_request_binding(binding, selection["measurement_request"], drifted)
+
+
+def test_a2_uses_frozen_prediction_order_and_excludes_selected_ids() -> None:
+    """Catches A2 rebuilding ranks from a reordered caller pool or retaining selected IDs."""
+    first = _select(variant="without_measured_feedback", seed=20260718, round_index=0, candidate_pool=_candidates())
+    feedback = [
+        {"row_id": row_id, "request_identity": first["measurement_request"]["request_identity"], "terminal_status": "completed"}
+        for row_id in first["acquisition"]["selected_row_ids"]
+    ]
+    common = {
+        "variant": "without_measured_feedback", "seed": 20260718, "round_index": 1,
+        "selected_ids": set(first["acquisition"]["selected_row_ids"]), "a2_frozen": first["a2_frozen"],
+        "expected_a2_frozen_sha256": first["a2_frozen"]["frozen_payload_sha256"],
+        "previous_measurement_request": first["measurement_request"], "feedback_rows": feedback,
+    }
+    normal = _select(candidate_pool=_candidates(), **common)
+    reordered = _select(candidate_pool=list(reversed(_candidates())), **common)
+
+    assert normal["acquisition"]["selected_row_ids"] == reordered["acquisition"]["selected_row_ids"]
+    assert not set(normal["acquisition"]["selected_row_ids"]) & set(first["acquisition"]["selected_row_ids"])
+
+
+@pytest.mark.parametrize("field", ["rows", "variant", "seed", "round_index"])
+def test_feedback_rejects_forged_canonical_request_body(field: str) -> None:
+    """Catches a 64-hex request identity being reused after its body has changed."""
+    selection = _select(variant="full", seed=20260718, round_index=0, candidate_pool=_candidates())
+    forged = copy.deepcopy(selection["measurement_request"])
+    if field == "rows":
+        forged["rows"] = list(reversed(forged["rows"]))
+    elif field == "variant":
+        forged[field] = "backend_blind"
+    elif field == "seed":
+        forged[field] = 20260719
+    else:
+        forged[field] = 1
+    feedback = [
+        {"row_id": row["row_id"], "request_identity": forged["request_identity"], "terminal_status": "completed"}
+        for row in forged["rows"]
+    ]
+
+    with pytest.raises(ValueError, match="canonical"):
+        policy.validate_feedback_jsonl(feedback, forged)

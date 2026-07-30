@@ -96,8 +96,33 @@ def _write_idempotent(path: Path, data: bytes) -> None:
     path.write_bytes(data)
 
 
+def _stage7_task(path: Path) -> Any:
+    payload = _load_json(path, label="search-task")
+    required = {
+        "task_id", "target_model", "hardware_id", "capability_profile",
+        "sample_budget", "batch_size", "round_count",
+    }
+    if not isinstance(payload, Mapping) or set(payload) != required:
+        raise PublicInputError("search-task must contain exactly the Stage7 task fields")
+    if (
+        payload.get("task_id") != "S7-PYR-TVM"
+        or payload.get("target_model") != "pyramid"
+        or payload.get("hardware_id") != "h800"
+        or (payload.get("sample_budget"), payload.get("batch_size"), payload.get("round_count")) != (16, 4, 4)
+        or not isinstance(payload.get("capability_profile"), Mapping)
+    ):
+        raise PublicInputError("search-task is not the frozen Stage7 task")
+    try:
+        return policy.build_stage7_task(dict(payload["capability_profile"]))
+    except (TypeError, ValueError) as exc:
+        raise PublicInputError("search-task capability profile is invalid") from exc
+
+
 def _select(args: argparse.Namespace) -> dict[str, Any]:
     candidates = _load_rows(_safe_path(args.candidates, label="candidates", require_file=True), label="candidates")
+    task = _stage7_task(_safe_path(args.search_task, label="search-task", require_file=True))
+    measured_rows = _load_rows(_safe_path(args.measured_rows, label="measured-rows", require_file=True), label="measured-rows")
+    measured_graph_features = _load_rows(_safe_path(args.measured_graph_features, label="measured-graph-features", require_file=True), label="measured-graph-features")
     selected_payload = _load_json(_safe_path(args.selected_ids, label="selected-ids", require_file=True), label="selected-ids")
     if not isinstance(selected_payload, list) or any(not isinstance(value, str) for value in selected_payload):
         raise PublicInputError("selected-ids must be a JSON array of identities")
@@ -123,7 +148,7 @@ def _select(args: argparse.Namespace) -> dict[str, Any]:
         raise PublicInputError("later rounds require explicit previous-request")
     if args.round > 0 and args.variant == "without_measured_feedback" and (frozen is None or args.a2_frozen_sha256 is None):
         raise PublicInputError("A2 later rounds require explicit frozen bundle and SHA identity")
-    return policy.select_stage7_round(variant=args.variant, seed=args.seed, round_index=args.round, candidate_pool=candidates, selected_ids=set(selected_payload), feedback_rows=feedback, previous_measurement_request=previous_request, a2_frozen=frozen, expected_a2_frozen_sha256=args.a2_frozen_sha256)
+    return policy.select_stage7_round(variant=args.variant, seed=args.seed, round_index=args.round, task=task, candidate_pool=candidates, measured_rows=measured_rows, measured_graph_features=measured_graph_features, selected_ids=set(selected_payload), feedback_rows=feedback, previous_measurement_request=previous_request, a2_frozen=frozen, expected_a2_frozen_sha256=args.a2_frozen_sha256)
 
 
 def _summarize(args: argparse.Namespace) -> dict[str, Any]:
@@ -145,6 +170,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     select.add_argument("--round", required=True, type=int, choices=range(4))
     select.add_argument("--candidates", required=True)
     select.add_argument("--selected-ids", required=True)
+    select.add_argument("--search-task", required=True)
+    select.add_argument("--measured-rows", required=True)
+    select.add_argument("--measured-graph-features", required=True)
     select.add_argument("--feedback")
     select.add_argument("--previous-request")
     select.add_argument("--a2-frozen")

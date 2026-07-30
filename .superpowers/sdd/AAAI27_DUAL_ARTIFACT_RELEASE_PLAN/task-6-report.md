@@ -115,4 +115,42 @@ ac2785f86f9cbeeac8d623eeb47bce762966e58f99b4637f134b6971e2af8960  online_compone
 
 ## 提交
 
-待最终验证后以要求的提交信息创建：`feat: publish online ablation selection contracts`。
+初始提交：`cac69b410a376c492afcb73a777852519011107d`（`feat: publish online ablation selection contracts`）。
+
+## Fix Round 1（独立复审修复）
+
+独立复审确认初版存在四个问题：A2 later round 由调用者 pool 顺序重建排名；request/feedback 只检查 64 位摘要形状；full/A2/backend-blind 没有调用 Stage5 的真实 acquisition；以及 backend-blind 只在隔离 helper 中投影。本轮先完成根因确认：`framework.stage5.single_target_search_v2.select_task_batch` 是仓库中 `predicted_frontier_diversity` 的唯一实现，负责 predicted frontier、objective anchors、uncertainty 和 feature diversity；它需要验证过的 `SearchTask`、预测候选、measured rows 与 graph features。旧 Stage7 的 `score`/numeric-sum 排序绕开了该实现。
+
+### 新增 RED → GREEN
+
+1. 将 `tests/stage7/test_search_policy.py` 改为构造完整的 Stage5-compatible S7 task/candidate/prediction fixture，并增加：A2 反转 caller pool 不变、later 排除已选 ID、伪造 request rows/variant/seed/round 拒绝、backend-blind 不消费 caller score。
+   - RED：`pytest tests/stage7/test_search_policy.py -q`
+   - 结果：`11 failed`，均为旧 API 没有 task 与真实 Stage5 selection 合同。
+2. 将 CLI 测试改为显式传入 `--search-task`、`--measured-rows`、`--measured-graph-features`。
+   - RED：`pytest tests/stage7/test_selection_cli.py -q`
+   - 结果：`3 failed`，CLI 尚未接受新的显式输入。
+3. 修复后：`pytest tests/stage7 -q` → `26 passed`。
+
+### 修复内容
+
+- `select_stage7_round` 现在必须接收冻结的 Stage7 `SearchTask` 与显式 measured rows/graph features。full、A2、backend-blind 均直接调用 `framework.stage5.single_target_search_v2.select_task_batch`；Stage7 没有复制、重写或 fallback 到 score/sum acquisition。
+- A2 round 0 冻结按 row identity 排序的 predictions、frozen measured views 及 round-0 Stage5 acquisition；later round 先校验 caller candidate identity set 与 frozen payload SHA，再只从 frozen candidate predictions 中排除已选 ID，并以冻结 measured views 调用同一 `select_task_batch`。caller pool 反转不会影响结果。
+- backend-blind 先删除 backend/capability/profile/dispatch 派生 graph/model/features/provenance，再将投影后的候选和 measured inputs 交给同一 Stage5 selector；caller `score` 未被 Stage7 acquisition 消费。
+- Stage7 request 的 `request_identity` 与 `measurement_request_sha256` 都明确表示同一 canonical body（schema、variant、seed、round、task SHA、Stage5 request SHA、rows、selected row IDs）。`validate_measurement_request` 每次重算两者；feedback 与 request binding 均先调用它。伪造 rows/variant/seed/round 或任一 identity 均 fail-closed。
+- CLI 新增三个严格的显式 JSON 输入。伪造 previous request 的 CLI 回归验证非零退出，不含 traceback 或调用者路径。
+
+### Fix Round 1 验证
+
+| 命令 | 结果 |
+|---|---|
+| `pytest tests/stage7 -q` | `26 passed in 8.87s` |
+| `coverage run -m pytest -q tests/stage7` | `26 passed` |
+| `pytest -q tests/stage1 tests/stage2 tests/stage4 tests/stage5 tests/stage6 tests/stage7` | `224 passed in 68.25s` |
+| Stage7 per-file coverage | ablation 85.96%、policy 88.89%、statistics 89.23%、CLI 82.91% |
+| `ruff check framework/stage7 scripts/reproduce/stage7_selection.py tests/stage7` | `All checks passed!` |
+| `python -m compileall -q framework/stage7 scripts/reproduce/stage7_selection.py` | 退出 0 |
+| 三个 CLI help 命令与 `git diff --check` | 退出 0 |
+
+Fix Round 1 commit：`fix: preserve stage7 acquisition identities`（最终 SHA 由本次提交后的版本控制历史记录）。
+
+Fix Round 1 独立只读复审：无新增 finding；复审确认三条非 A1 路径均经 `_stage5_acquisition` 调用 Stage5 `select_task_batch`，A2 SHA/候选 identity/exclusion 生效，canonical feedback 验证与 CLI 脱敏测试均覆盖。
