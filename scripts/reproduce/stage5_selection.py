@@ -23,7 +23,7 @@ from framework.stage5 import genome_contract_v1 as genome  # noqa: E402
 from framework.stage5 import single_target_search_v2 as single  # noqa: E402
 
 
-FROZEN_SOURCES = {
+MIGRATION_LINEAGE_MODULE_SHA256 = {
     "canonical_search_v3.py": (
         "bab5ddf6f2427d168c4785050f1963c9d99991bdf64f53ce531ced0a539ac183"
     ),
@@ -36,6 +36,26 @@ FROZEN_SOURCES = {
     "single_target_search_v2.py": (
         "7d3694a82cee4e9f9265471fd32371d1012279a71a6c150bf8443240b870df35"
     ),
+}
+EXPECTED_MODULE_SHA256 = {
+    "canonical_search_v3.py": (
+        "12b384d5f455d6d978a2e49280be7c34eeef3ca5771848bf282d40b300494718"
+    ),
+    "genome_contract_v1.py": (
+        "3b2666576822a42d3bd7079e9b65070ab1d2b476089ee78254961b875c863b46"
+    ),
+    "production_search_v1.py": (
+        "b4d128bfac5a3aa2cf19dd99816a38e58c0b2dc263c9c93a76d08ac8ab30bdb1"
+    ),
+    "single_target_search_v2.py": (
+        "5c75cbb66fcfa9182f5b02f38431b98e47dea74c1b319092888da8a0dd60ed37"
+    ),
+}
+SOURCE_MODULES = {
+    "canonical_search_v3.py": canonical,
+    "genome_contract_v1.py": genome,
+    "production_search_v1.py": production,
+    "single_target_search_v2.py": single,
 }
 INPUT_NAMES = (
     "measurements",
@@ -266,6 +286,16 @@ def _module_sha256(module: Any) -> str:
     return _sha256(Path(module.__file__).read_bytes())
 
 
+def _verify_source_identity() -> dict[str, str]:
+    current = {
+        filename: _module_sha256(module)
+        for filename, module in SOURCE_MODULES.items()
+    }
+    if current != EXPECTED_MODULE_SHA256:
+        raise PublicInputError("source identity verification failed")
+    return current
+
+
 def _build_production_request(
     *,
     task: single.SearchTask,
@@ -343,19 +373,16 @@ def _manifest(
     request: Mapping[str, Any],
     selected_bytes: bytes,
     request_bytes: bytes,
+    current_module_sha256: Mapping[str, str],
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "schema_version": "stage5_selection_manifest_v1",
         "inputs": inputs,
         "seed": seed,
         "dependency_versions": _dependency_versions(),
-        "frozen_sources": dict(FROZEN_SOURCES),
-        "published_module_sha256": {
-            "canonical_search_v3.py": _module_sha256(canonical),
-            "genome_contract_v1.py": _module_sha256(genome),
-            "production_search_v1.py": _module_sha256(production),
-            "single_target_search_v2.py": _module_sha256(single),
-        },
+        "expected_module_sha256": dict(EXPECTED_MODULE_SHA256),
+        "current_module_sha256": dict(current_module_sha256),
+        "migration_lineage_module_sha256": dict(MIGRATION_LINEAGE_MODULE_SHA256),
         "selection_interface": (
             "framework.stage5.production_search_v1."
             "select_predicted_frontier_diversity"
@@ -396,6 +423,7 @@ def _write_artifacts(output_root: Path, artifacts: Mapping[str, bytes]) -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
+        current_module_sha256 = _verify_source_identity()
         seed = _seed(args.seed)
         paths = {
             name: _safe_path(
@@ -481,6 +509,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 request=request,
                 selected_bytes=selected_bytes,
                 request_bytes=request_bytes,
+                current_module_sha256=current_module_sha256,
             )
         )
         _write_artifacts(

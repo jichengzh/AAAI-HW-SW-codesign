@@ -6,8 +6,8 @@
 
 | 制品 | 审计对象 | 结果 |
 | --- | --- | --- |
-| 公开源码树 | 以 `330b003f487db69ec94db47ac2ba1270137ea273` 为基准的最终发布工作树 | 源树全局测试、静态检查和编译通过；在修复后的 pytest 9 环境中全局覆盖率 **80.65%**。 |
-| 匿名评审 ZIP | `aaai27_code_data_anonymous.zip` | SHA-256 `470f3b09e0813cc80f9a8c3f97a90f1db1d277ed90dd649d62ffc6b3de89347d`；第五个全新虚拟环境验收通过；全局覆盖率 **80.65%**。 |
+| 公开源码树 | 以 `330b003f487db69ec94db47ac2ba1270137ea273` 为基准、包含本轮 Stage4/Stage5 源身份加固的发布候选工作树 | 源树全局测试、静态检查和编译通过；在 pytest 9 环境中全局覆盖率 **82.13%**。 |
+| 匿名评审 ZIP | `aaai27_code_data_anonymous.zip` | SHA-256 `f4b573e1950e9f6a3fae7a3a4f4b333ca1fc28e3d8bbfa997949b618cc881ff7`；本轮全新解包 venv 验收通过，338 tests、全局覆盖率 **80.71%**。 |
 
 审计起点为 `5f56fcaa3e23e7a4eea51398207636a6f3ee57c4`。本文件记录发布前最终源代码树和 ZIP 哈希；最终审计提交由 Git 历史记录，不在文件中自引用其尚未生成的提交哈希。
 
@@ -15,7 +15,7 @@
 
 ## 可复现环境与命令
 
-第五个全新环境从最终 ZIP 解压后创建，运行时移除了 `PYTHONPATH`，并设置 `CUDA_VISIBLE_DEVICES=''`。环境为 Python 3.13.12、pip 26.2；关键已解析版本为：
+本轮全新环境从最终 ZIP 解压后创建，运行时移除了 `PYTHONPATH`，并设置 `CUDA_VISIBLE_DEVICES=''`。环境为 Python 3.13.12、pip 26.2；editable 安装和 `framework` 导入均解析至该新解包目录，而非源码树或旧 venv。关键已解析版本为：
 
 | 包 | 版本 |
 | --- | --- |
@@ -41,7 +41,7 @@ env -u PYTHONPATH CUDA_VISIBLE_DEVICES='' python -m compileall -q framework scri
 env -u PYTHONPATH CUDA_VISIBLE_DEVICES='' pytest -q --cov=framework --cov=scripts/reproduce --cov-report=term-missing --cov-report=xml --cov-fail-under=80
 ```
 
-最终源树和最终匿名 ZIP 的同一精确 pytest 命令均退出码为 0：`332 passed`，7,769 条语句中 1,503 条未覆盖，覆盖率 **80.65%**。两者均由相同的全局 `--cov-fail-under=80` 门禁约束。此前在 pytest 8.4.2 下的源树运行曾测得 **82.07%**（1,393 条未覆盖）；该历史值保留为覆盖率整改证据，但不是最终依赖约束下的发布值。
+本轮发布候选源树的精确 pytest 命令退出码为 0：`338 passed`，7,783 条语句中 1,391 条未覆盖，覆盖率 **82.13%**。同一精确命令在新解包 ZIP venv 中退出码也为 0：`338 passed`，7,783 条语句中 1,501 条未覆盖，覆盖率 **80.71%**。两者均由全局 `--cov-fail-under=80` 门禁约束；差异仅记录为两个独立环境的实测覆盖率，不改变 80% 发布门槛结论。
 
 为使声明的 `.[repro,dev]` 真正覆盖 Stage1 公共测试入口，`dev` extra 现显式包含 `torch>=2.0` 与 `torch-pruning>=1.4`，并将已知漏洞版本的 pytest 约束升级为 `pytest>=9.0.3,<10`；`scan` extra 保留相同扫描依赖。pytest 9.1.1 与 pytest-cov 6.3.0 已由完整门禁验证兼容。未使用 `omit`、`no cover`、全局 `noqa` 或合成模块来规避覆盖率门禁。
 
@@ -55,6 +55,7 @@ env -u PYTHONPATH CUDA_VISIBLE_DEVICES='' pytest -q --cov=framework --cov=script
 - `python -m compileall -q framework scripts tools`；
 - 精确的全局 80% 覆盖率命令。
 - 在安装依赖前显式升级 `pip>=26.1.2`。
+- Stage4 与 Stage5 发布 CLI 在读取输入或写入制品前，先比较当前模块 SHA-256 与明确的期望 SHA-256；manifest 分别记录 `expected`、`current` 与仅作迁移谱系的历史 SHA-256，失配即失败关闭。
 
 ### 匿名评审 ZIP
 
@@ -73,7 +74,7 @@ scripts/stage2_update_evidence.py
 
 隐藏路径例外仅为两个字面路径 `.github/workflows/ci.yml` 与 `.gitignore`。回归测试确认 `.env` 和 `.github/ISSUE_TEMPLATE/*` 仍被排除。模型、检查点、ONNX、引擎、缓存、结果目录、公开身份 README、中文 README 和引用元数据不进入匿名 ZIP。
 
-最终 ZIP 有 96 个成员；归档 verifier、manifest 与 `.sha256` sidecar 一致。逐成员禁用模式扫描结果为：本地路径、代码托管 URL、邮箱、IPv4、令牌和符号链接均为 0。
+本轮最终 ZIP 有 96 个成员；归档 verifier、manifest 与 `.sha256` sidecar 一致。逐成员禁用模式扫描结果为：本地路径、代码托管 URL、邮箱、IPv4、令牌和符号链接均为 0。
 
 ## 闭包失败与修复记录
 
@@ -102,10 +103,10 @@ scripts/stage2_update_evidence.py
 ## 安全与供应链检查
 
 - `git diff --check` 退出码为 0。
-- 当前变更与新增文件的本地路径、代码托管 URL、邮箱、IPv4 与令牌扫描均为 0。完整 tracked 树仅有一个既存的代码托管 URL 命中：`docs/AAAI27_DUAL_ARTIFACT_RELEASE_PLAN.md`；它不属于本次变更，也不在匿名 ZIP。
+- 当前变更与新增文件的本地路径、邮箱、IPv4 与令牌扫描均为 0。完整 tracked 树的唯一代码托管 URL 命中位于本次新增并有意保留在公开源码树中的 `docs/AAAI27_DUAL_ARTIFACT_RELEASE_PLAN.md`；该文件被匿名 ZIP 排除，且匿名 ZIP 的逐成员代码托管 URL 扫描结果为 0。
 - 共享 Conda host 的 `python -m pip_audit` 退出码为 1，报告 18 个包中的 59 项已知漏洞及若干不可审计 Conda 包。这是 host finding，不代表最终 ZIP 环境的依赖结论。
 - 第四个干净 ZIP venv 的 scoped audit 曾报告 bootstrap `pip 25.3` 的 5 项漏洞以及 direct dev dependency `pytest 8.4.2` 的 `PYSEC-2026-1845`（修复版本 9.0.3）。这是已修复的历史 finding：CI 和验收命令先升级 `pip>=26.1.2`，开发依赖改为 `pytest>=9.0.3,<10`，并由 pytest 9.1.1 完整门禁验证。
-- 对第五个干净 ZIP venv 执行 `pip_audit --path <venv-site-packages>`：严格模式退出 1 的唯一原因是 editable `gear-codesign` 未发布到 PyPI、因而不可审计；非严格模式退出 0，输出 `No known vulnerabilities found`。已解析的 direct 与 transitive declared dependencies 均未报告已知漏洞。
+- 对本轮干净 ZIP venv 执行 `pip-audit --path <venv-site-packages>`：`--strict` 退出 1 的唯一原因是 editable `gear-codesign` 未发布到 PyPI、因而不可审计；`--skip-editable` 退出 0，输出 `No known vulnerabilities found`。已解析的 direct 与 transitive declared dependencies 均未报告已知漏洞。
 
 因此，当前 scoped declared-dependency audit **不阻断**匿名 ZIP 的 CPU runtime/repro 验收，也没有已知开发依赖漏洞。CI 尚未把 pip-audit 设为持续门禁；这是低优先级后续改进项，不在本次将审计工具加入开发 extra，避免形成审计工具自依赖。
 

@@ -12,6 +12,8 @@ from scipy.stats import spearmanr
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.model_selection import GroupKFold
 
+from framework.stage2.canonical_search_v3 import validate_capability_profile
+
 
 TARGETS = ("latency_ms", "energy_j", "ap70")
 DEFAULT_CANDIDATES = (
@@ -133,16 +135,17 @@ def _validate_training_targets(rows: Sequence[Mapping[str, Any]]) -> None:
 def _validate_feature_context(
     graph_features: Sequence[Mapping[str, Any]],
     capability_profiles: Sequence[Mapping[str, Any]],
-) -> None:
+) -> tuple[dict[str, Any], ...]:
     _require_unique_records(graph_features, identity="group_id", context="graph_features")
+    validated_profiles = tuple(
+        validate_capability_profile(profile) for profile in capability_profiles
+    )
     _require_unique_records(
-        capability_profiles,
+        validated_profiles,
         identity="capability_profile_id",
         context="capability_profiles",
     )
-    for index, profile in enumerate(capability_profiles):
-        if not isinstance(profile.get("features"), Mapping):
-            raise ValueError(f"capability_profiles[{index}].features must be an object")
+    return validated_profiles
 
 
 def grouped_folds(
@@ -205,10 +208,10 @@ def encode_rows(
     capability_profiles: Sequence[Mapping[str, Any]],
 ) -> EncodedRows:
     _validate_rows(rows)
-    _validate_feature_context(graph_features, capability_profiles)
+    validated_profiles = _validate_feature_context(graph_features, capability_profiles)
     graph_by_group = {str(item["group_id"]): item for item in graph_features}
     profile_by_id = {
-        str(item["capability_profile_id"]): item for item in capability_profiles
+        str(item["capability_profile_id"]): item for item in validated_profiles
     }
     missing_graph = {str(row["group_id"]) for row in rows} - set(graph_by_group)
     missing_profile = {

@@ -20,7 +20,10 @@ if str(ROOT) not in sys.path:
 from framework.stage4 import cost_model_selection_v1 as selection  # noqa: E402
 
 
-FROZEN_SOURCE_SHA256 = "e93b42b0d659f1ecaa7ecbf6ba7e847c21da37922eec15e312f07074c414c784"
+MIGRATION_LINEAGE_MODULE_SHA256 = (
+    "e93b42b0d659f1ecaa7ecbf6ba7e847c21da37922eec15e312f07074c414c784"
+)
+EXPECTED_SOURCE_SHA256 = "c8b32769cf1b2fd9b75c7fdb30c810237b071ae7d3c187dcbb887667dd8c3af9"
 OUTPUT_NAMES = ("report.json", "folds.csv", "manifest.json")
 
 
@@ -152,6 +155,13 @@ def _dependency_versions() -> dict[str, str]:
     return {name: importlib.metadata.version(name) for name in names}
 
 
+def _verify_source_identity() -> str:
+    current = _sha256(Path(selection.__file__).read_bytes())
+    if current != EXPECTED_SOURCE_SHA256:
+        raise ValueError("source identity verification failed")
+    return current
+
+
 def _safe_output_root(value: str) -> Path:
     root = _safe_path(value, label="output-root", require_file=False)
     root.mkdir(parents=True, exist_ok=True)
@@ -183,8 +193,8 @@ def _manifest(
     input_metadata: Mapping[str, Mapping[str, str]],
     report_sha256: str,
     folds_sha256: str,
+    current_source_sha256: str,
 ) -> dict[str, Any]:
-    source_bytes = Path(selection.__file__).read_bytes()
     payload: dict[str, Any] = {
         "schema_version": "stage4_cost_model_selection_manifest_v1",
         "inputs": input_metadata,
@@ -193,8 +203,9 @@ def _manifest(
         "group_count": report["group_count"],
         "dependency_versions": _dependency_versions(),
         "source": {
-            "module_sha256": _sha256(source_bytes),
-            "frozen_source_sha256": FROZEN_SOURCE_SHA256,
+            "expected_module_sha256": EXPECTED_SOURCE_SHA256,
+            "current_module_sha256": current_source_sha256,
+            "migration_lineage_module_sha256": MIGRATION_LINEAGE_MODULE_SHA256,
             "migration_source": "framework/stage4/cost_model_selection_v1.py",
         },
         "outputs": {
@@ -214,6 +225,7 @@ def _manifest(
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
+        current_source_sha256 = _verify_source_identity()
         measurements_path = _safe_path(args.measurements, label="measurements", require_file=True)
         graph_path = _safe_path(args.graph_features, label="graph-features", require_file=True)
         profiles_path = _safe_path(
@@ -250,6 +262,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 input_metadata=inputs,
                 report_sha256=_sha256(report_bytes),
                 folds_sha256=_sha256(folds_bytes),
+                current_source_sha256=current_source_sha256,
             )
         )
         artifacts = dict(zip(OUTPUT_NAMES, (report_bytes, folds_bytes, manifest_bytes)))

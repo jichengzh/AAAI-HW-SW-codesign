@@ -532,18 +532,22 @@ def test_selection_only_cli_is_byte_stable_and_records_complete_lineage(
         "candidate_registry",
         "search_task",
     }
-    assert set(manifest["frozen_sources"]) == {
+    assert set(manifest["expected_module_sha256"]) == {
         "canonical_search_v3.py",
         "genome_contract_v1.py",
         "production_search_v1.py",
         "single_target_search_v2.py",
     }
-    assert set(manifest["published_module_sha256"]) == {
+    assert set(manifest["current_module_sha256"]) == {
         "canonical_search_v3.py",
         "genome_contract_v1.py",
         "production_search_v1.py",
         "single_target_search_v2.py",
     }
+    assert manifest["expected_module_sha256"] == manifest["current_module_sha256"]
+    assert set(manifest["migration_lineage_module_sha256"]) == set(
+        manifest["expected_module_sha256"]
+    )
     assert manifest["selection_interface"] == (
         "framework.stage5.production_search_v1.select_predicted_frontier_diversity"
     )
@@ -583,6 +587,20 @@ def test_selection_only_cli_is_byte_stable_and_records_complete_lineage(
         "latency_result",
         "energy_result",
     } & set(manifest)
+
+
+def test_selection_only_cli_fails_closed_when_source_identity_mismatches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Catches publication when a frozen Stage5 module no longer matches its SHA256."""
+    arguments, output_root = cli_fixture(tmp_path)
+    expected = dict(getattr(stage5_cli, "EXPECTED_MODULE_SHA256", {}))
+    expected["canonical_search_v3.py"] = "0" * 64
+    monkeypatch.setattr(stage5_cli, "EXPECTED_MODULE_SHA256", expected, raising=False)
+
+    assert stage5_cli.main(arguments) == 2
+    assert "source identity verification failed" in capsys.readouterr().err
+    assert not (output_root / "manifest.json").exists()
 
 
 def test_selection_only_cli_fails_closed_on_missing_lineage_and_safe_output_rules(

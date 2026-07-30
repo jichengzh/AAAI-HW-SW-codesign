@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import importlib.util
 import json
 import subprocess
 import sys
@@ -12,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from framework.stage2.canonical_search_v3 import build_capability_profile
 from framework.stage4.cost_model_selection_v1 import (
     DEFAULT_CANDIDATES,
     derive_seed,
@@ -23,6 +25,18 @@ from framework.stage4.cost_model_selection_v1 import (
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 CLI = REPOSITORY_ROOT / "scripts" / "reproduce" / "cost_model_selection.py"
+
+
+def _load_stage4_cli() -> Any:
+    spec = importlib.util.spec_from_file_location("cost_model_selection_cli", CLI)
+    if spec is None or spec.loader is None:
+        raise AssertionError("unable to load Stage4 cost-model selection CLI")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+stage4_cli = _load_stage4_cli()
 
 
 def _fixture_rows() -> list[dict[str, Any]]:
@@ -51,10 +65,15 @@ def _graph_features() -> list[dict[str, Any]]:
 
 def _capability_profiles() -> list[dict[str, Any]]:
     return [
-        {
-            "capability_profile_id": f"device-{index}",
-            "features": {"compute_tflops": 100.0 + index, "memory_gb": 24.0 + index},
-        }
+        build_capability_profile(
+            capability_profile_id=f"device-{index}",
+            hardware_target=f"accelerator-{index}",
+            compiler_fingerprint=hashlib.sha256(
+                f"compiler-{index}".encode("utf-8")
+            ).hexdigest(),
+            dispatch_key=f"accelerator-{index}-int8",
+            features={"compute_tflops": 100.0 + index, "memory_gb": 24.0 + index},
+        )
         for index in range(2)
     ]
 
@@ -185,12 +204,44 @@ def test_core_rejects_missing_duplicate_or_leaky_capability_context() -> None:
         encode_rows(rows, _graph_features(), [*profiles, profiles[0]])
     leaky = [*profiles]
     leaky[0] = {**leaky[0], "features": {"latency_ms": 1.0}}
-    with pytest.raises(ValueError, match="label-like fields"):
+    with pytest.raises(ValueError, match="target-derived performance feature"):
         encode_rows(rows, _graph_features(), leaky)
     graph_leak = _graph_features()
     graph_leak[0]["observed_latency_ms"] = 1.0
     with pytest.raises(ValueError, match="label-like fields"):
         encode_rows(rows, graph_leak, profiles)
+
+
+@pytest.mark.parametrize(
+    ("mutate", "expected_error"),
+    [
+        (
+            lambda profile: profile.pop("schema_version"),
+            "capability profile missing fields",
+        ),
+        (
+            lambda profile: profile.update(schema_version="stage4-profile-v1"),
+            "unexpected capability profile schema",
+        ),
+        (
+            lambda profile: profile.update(compiler_fingerprint="not-a-sha256"),
+            "compiler_fingerprint must be a SHA256 digest",
+        ),
+        (
+            lambda profile: profile.update(capability_digest="0" * 64),
+            "capability_digest mismatch",
+        ),
+    ],
+)
+def test_core_reuses_canonical_capability_profile_validation(
+    mutate: Any, expected_error: str
+) -> None:
+    """Catches Stage4 accepting profile fragments that Stage2 rejects."""
+    profiles = _capability_profiles()
+    mutate(profiles[0])
+
+    with pytest.raises(ValueError, match=expected_error):
+        encode_rows(_fixture_rows(), _graph_features(), profiles)
 
 
 def test_core_validation_errors_do_not_disclose_measurement_or_context_identities() -> None:
@@ -365,6 +416,8 @@ def test_cli_reads_three_jsonl_inputs_writes_stable_artifacts_and_records_proven
     report = json.loads(second["report.json"])
     assert manifest["inputs"]["capability_profiles"]["provenance"] == "hardware-profile-v1"
     assert manifest["inputs"]["capability_profiles"]["sha256"] == hashlib.sha256(profiles.read_bytes()).hexdigest()
+    assert manifest["source"]["expected_module_sha256"] == manifest["source"]["current_module_sha256"]
+    assert manifest["source"]["migration_lineage_module_sha256"] != manifest["source"]["current_module_sha256"]
     assert manifest["outputs"]["report.json"] == hashlib.sha256(second["report.json"]).hexdigest()
     assert manifest["outputs"]["folds.csv"] == hashlib.sha256(second["folds.csv"]).hexdigest()
     assert manifest["outputs"]["manifest.json"]["sha256_scope"] == "manifest_body_before_self_digest"
@@ -372,6 +425,33 @@ def test_cli_reads_three_jsonl_inputs_writes_stable_artifacts_and_records_proven
     assert str(tmp_path) not in second["manifest.json"].decode("utf-8")
     with (output_root / "folds.csv").open(newline="", encoding="utf-8") as handle:
         assert len(list(csv.DictReader(handle))) == 15
+
+
+def test_cli_fails_closed_when_stage4_source_identity_mismatches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Catches publication of artifacts when Stage4 bytes differ from the frozen identity."""
+    measurements = tmp_path / "measurements.jsonl"
+    graph_features = tmp_path / "graph-features.jsonl"
+    profiles = tmp_path / "capability-profiles.jsonl"
+    output_root = tmp_path / "outputs"
+    _write_jsonl(measurements, _fixture_rows())
+    _write_jsonl(graph_features, _graph_features())
+    _write_jsonl(profiles, _capability_profiles())
+    arguments = (
+        "--measurements", str(measurements),
+        "--graph-features", str(graph_features),
+        "--capability-profiles", str(profiles),
+        "--measurements-provenance", "measured-v1",
+        "--graph-features-provenance", "scanner-v1",
+        "--capability-profiles-provenance", "hardware-profile-v1",
+        "--output-root", str(output_root),
+    )
+    monkeypatch.setattr(stage4_cli, "EXPECTED_SOURCE_SHA256", "0" * 64, raising=False)
+
+    assert stage4_cli.main(arguments) == 2
+    assert "source identity verification failed" in capsys.readouterr().err
+    assert not (output_root / "manifest.json").exists()
 
 
 def test_cli_rejects_invalid_jsonl_identity_labels_and_profile_references(tmp_path: Path) -> None:
