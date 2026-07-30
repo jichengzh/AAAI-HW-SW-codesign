@@ -107,8 +107,8 @@ def _is_documented_repository_path(token: str) -> bool:
             "REPRODUCIBILITY.md",
             "ARTIFACTS.md",
         }
-        or normalized in {"docs", "scripts", "tests", "tools"}
-        or normalized.startswith(("docs/", "scripts/", "tests/", "tools/"))
+        or normalized in {"docs", "framework", "scripts", "tests", "tools"}
+        or normalized.startswith(("docs/", "framework/", "scripts/", "tests/", "tools/"))
     )
 
 
@@ -119,16 +119,24 @@ def _assert_documented_repository_path(document_name: str, token: str) -> None:
     assert path.exists(), f"{document_name} has a missing repository path: {token}"
 
 
-def _module_resolves(module: str) -> bool:
+def _module_is_executable(module: str) -> bool:
+    """Return whether ``python -m module`` can execute a Python implementation."""
     if not re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", module):
         return False
     try:
-        if importlib.util.find_spec(module) is not None:
-            return True
+        spec = importlib.util.find_spec(module)
     except (ImportError, ModuleNotFoundError, ValueError):
-        pass
+        spec = None
+    if spec is not None:
+        if spec.submodule_search_locations is not None:
+            return any(
+                (Path(location) / "__main__.py").is_file()
+                for location in spec.submodule_search_locations
+            )
+        origin = spec.origin
+        return isinstance(origin, str) and origin.endswith(".py") and Path(origin).is_file()
     module_path = REPOSITORY_ROOT.joinpath(*module.split("."))
-    return module_path.with_suffix(".py").is_file() or (module_path / "__init__.py").is_file()
+    return module_path.with_suffix(".py").is_file() or (module_path / "__main__.py").is_file()
 
 
 def _command_start(command: list[str]) -> int:
@@ -170,8 +178,8 @@ def _assert_documented_command_paths(document_name: str, document: str) -> None:
             continue
         if len(arguments) >= 2 and arguments[0] == "-m":
             module = arguments[1]
-            assert _module_resolves(module), (
-                f"{document_name} has an unresolvable Python module: {module}"
+            assert _module_is_executable(module), (
+                f"{document_name} has a Python module that is not executable: {module}"
             )
             if module in {"pytest", "py.test"}:
                 _assert_pytest_paths(document_name, arguments[2:])
@@ -269,11 +277,18 @@ def test_documented_command_validator_rejects_a_missing_anonymous_script() -> No
         _assert_documented_command_paths("README.anonymous.md", document)
 
 
+def test_documented_command_validator_rejects_an_importable_nonexecutable_package() -> None:
+    """An importable package without ``__main__.py`` cannot be documented with ``python -m``."""
+    document = "```bash\npython -m framework.stage4 --help\n```\n"
+
+    with pytest.raises(AssertionError, match="not executable"):
+        _assert_documented_command_paths("fixture.md", document)
+
+
 def test_documented_command_validator_handles_continuations_modules_and_tool_paths() -> None:
     """Shell fences accept valid continued Python/module, pytest, and tool examples."""
     document = """```sh
-python -m framework.stage4 \\
-  --help
+python -m compileall --help framework
 pytest \\
   tests/release -q
 python tools/release/verify_archive.py \\
@@ -282,6 +297,14 @@ python tools/release/verify_archive.py \\
 """
 
     _assert_documented_command_paths("fixture.md", document)
+    result = subprocess.run(
+        [sys.executable, "-m", "compileall", "--help", "framework"],
+        cwd=REPOSITORY_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_public_reproducibility_matrix_states_evidence_boundaries() -> None:
