@@ -30,8 +30,9 @@ jobs:
           scripts/prepare_stage2_demo_data.py scripts/stage2_optimize_model.py
           scripts/stage2_update_evidence.py framework/stage4
           framework/stage5 scripts/reproduce/cost_model_selection.py
-          scripts/reproduce/stage5_selection.py
-          tests/stage1 tests/stage2 tests/stage4 tests/stage5
+          scripts/reproduce/stage5_selection.py framework/stage6
+          scripts/reproduce/stage6_table.py
+          tests/stage1 tests/stage2 tests/stage4 tests/stage5 tests/stage6
       - run: >-
           pytest -q tests/stage1 tests/stage2 tests/stage4
           --cov=framework.stage1_bridge --cov=framework.stage2.contracts
@@ -55,6 +56,28 @@ jobs:
               "framework/stage5/production_search_v1.py",
               "framework/stage5/single_target_search_v2.py",
               "scripts/reproduce/stage5_selection.py",
+          )
+          for path in expected:
+              percent = report["files"][path]["summary"]["percent_covered"]
+              if percent < 80.0:
+                  raise SystemExit(f"{path} coverage {percent:.2f}% is below 80%")
+          PY
+      - name: Test Stage6 paper-table selection with coverage
+        run: |
+          coverage erase
+          coverage run -m pytest -q tests/stage6
+          coverage report -m --include='*/framework/stage6/paper_table_v1.py,*/scripts/reproduce/stage6_table.py'
+          coverage json -o stage6-coverage.json --include='*/framework/stage6/paper_table_v1.py,*/scripts/reproduce/stage6_table.py'
+      - name: Enforce Stage6 per-module coverage
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("stage6-coverage.json").read_text(encoding="utf-8"))
+          expected = (
+              "framework/stage6/paper_table_v1.py",
+              "scripts/reproduce/stage6_table.py",
           )
           for path in expected:
               percent = report["files"][path]["summary"]["percent_covered"]
