@@ -290,17 +290,32 @@ def _build_production_request(
         "dispatch_key",
         "source_status",
         "source_contract",
+        "source_contract_sha256",
         "source_evidence_sha256",
         "graph_features",
     )
-    rows = [
-        {key: copy.deepcopy(row[key]) for key in identity_fields if key in row}
-        for row in selection["selected_rows"]
-    ]
+    selection_policy = "predicted_frontier_diversity"
+    rows = []
+    for selected_row in selection["selected_rows"]:
+        candidate_identity = {
+            key: copy.deepcopy(selected_row[key])
+            for key in identity_fields
+            if key in selected_row
+        }
+        rows.append(
+            {
+                **candidate_identity,
+                "task_id": task.task_id,
+                "task_sha256": task_contract["task_sha256"],
+                "hardware_id": task.hardware_id,
+                "round_index": round_index,
+                "selection_policy": selection_policy,
+            }
+        )
     row_sha = {str(row["row_id"]): _contract_sha256(row) for row in rows}
     payload = {
         "schema_version": "stage5_production_selection_request_v1",
-        "policy": "predicted_frontier_diversity",
+        "policy": selection_policy,
         "selection_interface": (
             "framework.stage5.production_search_v1."
             "select_predicted_frontier_diversity"

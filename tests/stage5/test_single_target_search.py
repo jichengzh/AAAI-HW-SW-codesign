@@ -8,6 +8,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +17,13 @@ import pytest
 from framework.stage2.canonical_search_v3 import build_capability_profile
 from framework.stage5 import single_target_search_v2 as single
 
-from .test_production_search import closure, profiles, registry, training_data
+from .test_production_search import (
+    closure,
+    profiles,
+    registry,
+    source_lineage,
+    training_data,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -68,9 +75,7 @@ def fcooper_registry() -> dict[str, Any]:
                 "width": list(width),
                 "width_schema": schema,
                 "structure_widths": structure,
-                "source_status": "ready",
-                "source_evidence_sha256": "b" * 64,
-                "source_contract": {"artifact_id": f"public-fco-{width[0]}"},
+                **source_lineage(group_id, "fcooper", list(width)),
                 "graph_features": {
                     "group_id": group_id,
                     "model": "fcooper",
@@ -141,6 +146,75 @@ def test_search_task_and_measurement_request_have_exact_deterministic_identity()
     with pytest.raises(ValueError, match="task"):
         single.build_measurement_request(
             task=search_task, selected_rows=mutated, round_index=0
+        )
+
+
+def test_production_request_row_hash_binds_task_hardware_round_and_policy() -> None:
+    """Catches replay of a candidate row under a different execution request."""
+    search_task = task()
+    task_contract = single.validate_search_task(search_task)
+    manifest = single.build_task_candidate_manifest(
+        registry(), task=search_task, measured_row_ids=set()
+    )
+    selection = {
+        "selected_group_ids": [manifest["rows"][0]["group_id"]],
+        "selected_rows": manifest["rows"][:4],
+    }
+
+    baseline = stage5_cli._build_production_request(
+        task=search_task,
+        task_contract=task_contract,
+        selection=selection,
+        round_index=0,
+    )
+    task_changed = replace(search_task, task_id="S5-PYR-TVM-OTHER")
+    alternate_profile = build_capability_profile(
+        capability_profile_id="h100-tvm",
+        hardware_target="h100",
+        compiler_fingerprint=hashlib.sha256(b"h100-tvm").hexdigest(),
+        dispatch_key="tvm_auto",
+        features={"int8_propagation": 0.0, "qdq_fold": 0.0},
+    )
+    hardware_changed = replace(
+        search_task, hardware_id="h100", capability_profile=alternate_profile
+    )
+    variants = [
+        stage5_cli._build_production_request(
+            task=task_changed,
+            task_contract=single.validate_search_task(task_changed),
+            selection=selection,
+            round_index=0,
+        ),
+        stage5_cli._build_production_request(
+            task=hardware_changed,
+            task_contract=single.validate_search_task(hardware_changed),
+            selection=selection,
+            round_index=0,
+        ),
+        stage5_cli._build_production_request(
+            task=search_task,
+            task_contract=task_contract,
+            selection=selection,
+            round_index=1,
+        ),
+    ]
+
+    for row in baseline["rows"]:
+        assert row["task_id"] == search_task.task_id
+        assert row["task_sha256"] == task_contract["task_sha256"]
+        assert row["hardware_id"] == search_task.hardware_id
+        assert row["round_index"] == 0
+        assert row["selection_policy"] == "predicted_frontier_diversity"
+        canonical = json.dumps(
+            row, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+        ).encode()
+        assert baseline["row_sha256"][row["row_id"]] == hashlib.sha256(
+            canonical
+        ).hexdigest()
+    for variant in variants:
+        assert all(
+            variant["row_sha256"][row_id] != digest
+            for row_id, digest in baseline["row_sha256"].items()
         )
 
 
@@ -495,6 +569,38 @@ def test_selection_only_cli_fails_closed_when_candidate_source_identity_is_missi
 
     assert result != 0
     assert "selection contract validation failed" in captured.err
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda group: group.update(source_contract="secret-contract-string"),
+        lambda group: group["source_contract"].pop("schema_version"),
+        lambda group: group["source_contract"].update(group_id="secret-drift"),
+        lambda group: group.update(source_contract_sha256="0" * 64),
+        lambda group: group["source_contract"].update(
+            source_evidence_sha256=hashlib.sha256(b"secret-evidence-drift").hexdigest()
+        ),
+    ],
+)
+def test_selection_only_cli_fails_closed_on_source_contract_drift(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    mutation,
+) -> None:
+    """Catches CLI acceptance or disclosure of malformed source contracts."""
+    arguments, _ = cli_fixture(tmp_path)
+    registry_path = Path(arguments[arguments.index("--candidate-registry") + 1])
+    payload = json.loads(registry_path.read_text(encoding="utf-8"))
+    mutation(payload["groups"][0])
+    write_json(registry_path, payload)
+
+    result = stage5_cli.main(arguments)
+    captured = capsys.readouterr()
+
+    assert result != 0
+    assert captured.err == "error: selection contract validation failed\n"
+    assert "secret" not in captured.err
 
 
 def test_selection_only_cli_accepts_capability_profiles_jsonl(

@@ -42,6 +42,16 @@ EXPECTED_ARMS = {
 ALLOWED_SOURCES = {"initial_coldstart", "online_feedback"}
 GRAPH_METADATA_FIELDS = {"group_id", "model", "width", "input_dims"}
 FORBIDDEN_LABEL_FIELDS = {"latency_ms", "energy_j", "ap30", "ap50", "ap70"}
+SOURCE_CONTRACT_SCHEMA = "stage5_source_contract_v1"
+SOURCE_CONTRACT_REQUIRED_FIELDS = {
+    "schema_version",
+    "group_id",
+    "model",
+    "width",
+    "artifact_id",
+    "source_status",
+    "source_evidence_sha256",
+}
 FORBIDDEN_CANDIDATE_CONTEXT_TOKENS = (
     "latency",
     "energy",
@@ -52,6 +62,13 @@ FORBIDDEN_CANDIDATE_CONTEXT_TOKENS = (
     "terminal_status",
     "measurement_status",
     "performance_status",
+)
+FORBIDDEN_GRAPH_TOKENS = (
+    "latency",
+    "energy",
+    "cache",
+    "status",
+    "terminal",
 )
 
 
@@ -111,22 +128,89 @@ def _validate_profiles(profiles: Sequence[Mapping[str, Any]]) -> list[dict[str, 
     return validated
 
 
-def _validate_graph_payload(payload: Mapping[str, Any]) -> None:
+def validate_source_contract(group: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate and detach a registry source contract bound to its outer identity."""
+    contract = group.get("source_contract")
+    if not isinstance(contract, Mapping):
+        raise ValueError("candidate source contract validation failed")
+    if not SOURCE_CONTRACT_REQUIRED_FIELDS <= set(contract):
+        raise ValueError("candidate source contract validation failed")
+    if contract.get("schema_version") != SOURCE_CONTRACT_SCHEMA:
+        raise ValueError("candidate source contract validation failed")
+    if not isinstance(contract.get("artifact_id"), str) or not str(
+        contract["artifact_id"]
+    ).strip():
+        raise ValueError("candidate source contract validation failed")
+    if "materialization_scope" in contract and (
+        not isinstance(contract["materialization_scope"], str)
+        or not contract["materialization_scope"].strip()
+    ):
+        raise ValueError("candidate source contract validation failed")
+    width = contract.get("width")
+    if (
+        not isinstance(width, (list, tuple))
+        or not width
+        or any(
+            isinstance(value, bool) or not isinstance(value, int) or value <= 0
+            for value in width
+        )
+    ):
+        raise ValueError("candidate source contract validation failed")
+    evidence_sha = group.get("source_evidence_sha256")
+    contract_sha = group.get("source_contract_sha256")
+    if (
+        not _is_sha256(evidence_sha)
+        or not _is_sha256(contract.get("source_evidence_sha256"))
+        or not _is_sha256(contract_sha)
+    ):
+        raise ValueError("candidate source contract SHA256 validation failed")
+    if (
+        contract.get("group_id") != group.get("group_id")
+        or contract.get("model") != group.get("model")
+        or list(width) != group.get("width")
+        or contract.get("source_status") != group.get("source_status")
+        or contract.get("source_evidence_sha256")
+        != group.get("source_evidence_sha256")
+    ):
+        raise ValueError("candidate source contract identity mismatch")
+    detached = copy.deepcopy(dict(contract))
+    if _sha(detached) != contract_sha:
+        raise ValueError("candidate source contract SHA256 mismatch")
+    return detached
+
+
+def _forbidden_graph_field(name: Any) -> bool:
+    lowered = str(name).lower()
+    return (
+        lowered in FORBIDDEN_LABEL_FIELDS
+        or lowered == "ap"
+        or lowered.startswith(("ap_", "target_", "observed_", "measured_"))
+        or any(token in lowered for token in FORBIDDEN_GRAPH_TOKENS)
+    )
+
+
+def _validate_graph_payload(
+    payload: Any,
+    *,
+    expected_group_id: str | None = None,
+) -> None:
     if not isinstance(payload, Mapping):
         raise ValueError("graph feature record must be an object")
-    forbidden = {
-        str(name)
-        for name in payload
-        if str(name).lower() in FORBIDDEN_LABEL_FIELDS
-        or str(name).lower().startswith(("target_", "observed_", "measured_"))
-    }
+    forbidden = {str(name) for name in payload if _forbidden_graph_field(name)}
     if forbidden:
         raise ValueError("label-like graph features are forbidden")
+    group_id = payload.get("group_id")
+    if expected_group_id is not None and group_id is not None and group_id != expected_group_id:
+        raise ValueError("graph feature group identity mismatch")
+    numeric_feature_count = 0
     for name, value in payload.items():
         if name in GRAPH_METADATA_FIELDS:
             continue
         if not _finite(value):
             raise ValueError("graph feature values must be finite numeric values")
+        numeric_feature_count += 1
+    if numeric_feature_count == 0:
+        raise ValueError("graph feature payload must contain numeric features")
 
 
 def _validate_graph_features(graph_features: Sequence[Mapping[str, Any]]) -> None:
@@ -361,6 +445,8 @@ def build_candidate_manifest(
     excluded: list[dict[str, str]] = []
     observed_ids: set[str] = set()
     for source in groups:
+        if not isinstance(source, Mapping):
+            raise ValueError("candidate source registry group validation failed")
         group = copy.deepcopy(dict(source))
         group_id = str(group.get("group_id") or "")
         if not group_id or group_id in observed_ids:
@@ -372,6 +458,7 @@ def build_candidate_manifest(
             raise ValueError("invalid candidate identity")
         if group_id != f"{model}|{'x'.join(map(str, width))}":
             raise ValueError("candidate group identity mismatch")
+        source_contract = validate_source_contract(group)
         if group_id in measured_group_ids:
             excluded.append({"group_id": group_id, "reason": "already_measured"})
             continue
@@ -383,9 +470,8 @@ def build_candidate_manifest(
             continue
         if not isinstance(group.get("graph_features"), Mapping):
             raise ValueError("candidate graph features missing")
-        evidence_sha = str(group.get("source_evidence_sha256") or "")
-        if not _is_sha256(evidence_sha):
-            raise ValueError("candidate source evidence SHA256 is invalid")
+        _validate_graph_payload(group["graph_features"], expected_group_id=group_id)
+        group["source_contract"] = source_contract
         eligible.append(group)
     rows = []
     for group in eligible:
@@ -410,6 +496,7 @@ def build_candidate_manifest(
                         "capability_digest": profile["capability_digest"],
                         "source_status": group["source_status"],
                         "source_contract": copy.deepcopy(group["source_contract"]),
+                        "source_contract_sha256": group["source_contract_sha256"],
                         "source_evidence_sha256": group["source_evidence_sha256"],
                         "graph_features": copy.deepcopy(group["graph_features"]),
                     }
@@ -749,13 +836,17 @@ def select_predicted_frontier_diversity(
 ) -> dict[str, Any]:
     candidates = [copy.deepcopy(dict(row)) for row in predicted_rows]
     _validate_complete_groups(candidates)
+    _validate_graph_features(measured_graph_features)
     for row in candidates:
         leaked = FORBIDDEN_LABEL_FIELDS & set(row)
         if leaked:
             raise ValueError(f"candidate labels visible before measurement: {sorted(leaked)}")
         _validate_candidate_context(row)
         _validate_prediction_payload(row)
-        _validate_graph_payload(row.get("graph_features") or {})
+        _validate_graph_payload(
+            row.get("graph_features"),
+            expected_group_id=str(row["group_id"]),
+        )
     groups = _group_rows(candidates)
     all_feature_rows = [*candidates, *[dict(row) for row in measured_rows]]
     vectors = _group_feature_vectors(all_feature_rows, measured_graph_features)

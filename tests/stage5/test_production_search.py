@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 import math
 from typing import Any
 
@@ -37,6 +38,40 @@ def graph(group_id: str, model: str, width: list[int]) -> dict[str, Any]:
         "conv_count": 24 if model == "codriving" else 27,
         "conv_macs": float(np.prod(width)),
         "group_conv_count": 0 if model == "codriving" else 3,
+    }
+
+
+def source_lineage(
+    group_id: str,
+    model: str,
+    width: list[int],
+    *,
+    source_status: str = "ready",
+) -> dict[str, Any]:
+    """Build fixture-only public lineage bound to stable synthetic evidence."""
+    evidence_sha = hashlib.sha256(
+        f"stage5-test-fixture-lineage:{group_id}".encode()
+    ).hexdigest()
+    contract = {
+        "schema_version": "stage5_source_contract_v1",
+        "group_id": group_id,
+        "model": model,
+        "width": list(width),
+        "artifact_id": f"public-{model}-{width[0]}",
+        "source_status": source_status,
+        "source_evidence_sha256": evidence_sha,
+        "materialization_scope": "external_public_test_fixture",
+    }
+    contract_sha = hashlib.sha256(
+        json.dumps(
+            contract, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+        ).encode()
+    ).hexdigest()
+    return {
+        "source_status": source_status,
+        "source_evidence_sha256": evidence_sha,
+        "source_contract": contract,
+        "source_contract_sha256": contract_sha,
     }
 
 
@@ -111,9 +146,7 @@ def registry() -> dict[str, Any]:
                     "group_id": group_id,
                     "model": model,
                     "width": width,
-                    "source_status": "ready",
-                    "source_evidence_sha256": "a" * 64,
-                    "source_contract": {"artifact_id": f"public-{model}-{width[0]}"},
+                    **source_lineage(group_id, model, width),
                     "graph_features": graph(group_id, model, width),
                 }
             )
@@ -337,6 +370,98 @@ def test_candidate_source_sha_must_be_hex_and_errors_redact_group_identity() -> 
             capability_profiles=profiles(),
         )
     assert "secret-group-identity" not in str(redacted.value)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda group: group.update(source_contract="not-an-object"),
+        lambda group: group["source_contract"].pop("artifact_id"),
+        lambda group: group["source_contract"].update(group_id="drifted"),
+        lambda group: group["source_contract"].update(model="codriving"),
+        lambda group: group["source_contract"].update(width=[1, 2, 3]),
+        lambda group: group["source_contract"].update(source_status="materializable"),
+        lambda group: group["source_contract"].update(
+            source_evidence_sha256=hashlib.sha256(b"different-evidence").hexdigest()
+        ),
+        lambda group: group.update(
+            source_contract_sha256=hashlib.sha256(b"different-contract").hexdigest()
+        ),
+    ],
+)
+def test_candidate_source_contract_is_object_identity_and_digest_bound(mutation) -> None:
+    """Catches missing, drifted, or digest-unbound public source contracts."""
+    source_registry = registry()
+    mutation(source_registry["groups"][0])
+
+    with pytest.raises(ValueError) as captured:
+        search.build_candidate_manifest(
+            source_registry,
+            measured_group_ids=set(),
+            frozen_holdout={"groups": []},
+            capability_profiles=profiles(),
+        )
+
+    assert source_registry["groups"][0]["group_id"] not in str(captured.value)
+
+
+@pytest.mark.parametrize(
+    "measured_graph_features",
+    [
+        ["not-an-object"],
+        [{"conv_count": 1}],
+        [{"group_id": "measured", "model": "pyramid", "width": [1, 2, 3]}],
+        [{"group_id": "measured", "observed_latency_ms": 1.0}],
+        [{"group_id": "measured", "measured_energy_j": 1.0}],
+        [{"group_id": "measured", "cache_status": 1.0}],
+        [{"group_id": "measured", "terminal_status": 1.0}],
+        [{"group_id": "measured", "conv_count": float("nan")}],
+    ],
+)
+def test_selection_rejects_invalid_direct_measured_graph_features(
+    measured_graph_features: list[Any],
+) -> None:
+    """Catches direct-API graph leakage, empty payloads, and malformed records."""
+    candidates = [
+        *predicted_group("pyramid|40x80x160", width=[40, 80, 160]),
+        *predicted_group("pyramid|48x96x192", width=[48, 96, 192]),
+    ]
+
+    with pytest.raises(ValueError, match="graph"):
+        search.select_predicted_frontier_diversity(
+            candidates,
+            measured_rows=[],
+            measured_graph_features=measured_graph_features,
+            group_budget_by_model={"pyramid": 1},
+        )
+
+
+@pytest.mark.parametrize(
+    "graph_payload",
+    [
+        None,
+        {},
+        "not-an-object",
+        {"group_id": "different", "conv_count": 1},
+    ],
+)
+def test_selection_requires_nonempty_group_bound_candidate_graph_payload(
+    graph_payload: Any,
+) -> None:
+    """Catches candidates with absent, empty, malformed, or cross-group graph data."""
+    candidates = [
+        *predicted_group("pyramid|40x80x160", width=[40, 80, 160]),
+        *predicted_group("pyramid|48x96x192", width=[48, 96, 192]),
+    ]
+    candidates[0]["graph_features"] = graph_payload
+
+    with pytest.raises(ValueError, match="graph"):
+        search.select_predicted_frontier_diversity(
+            candidates,
+            measured_rows=[],
+            measured_graph_features=[],
+            group_budget_by_model={"pyramid": 1},
+        )
 
 
 def test_diversity_is_the_documented_tie_break_before_uncertainty_and_identity() -> None:

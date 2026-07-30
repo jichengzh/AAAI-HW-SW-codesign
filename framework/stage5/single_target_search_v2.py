@@ -23,13 +23,13 @@ from framework.stage5.production_search_v1 import (
     ProductionBundle,
     _extra_trees,
     _graph_feature_names,
-    _is_sha256,
     _lgbm_huber,
     _predict_model,
     _quantile,
     _stable_calibration_groups,
     _validate_candidate_context,
     _validate_prediction_payload,
+    validate_source_contract,
 )
 
 
@@ -199,11 +199,14 @@ def build_task_candidate_manifest(
     excluded: list[dict[str, str]] = []
     observed: set[str] = set()
     for source in groups:
+        if not isinstance(source, Mapping):
+            raise ValueError("candidate source registry group validation failed")
         group = copy.deepcopy(dict(source))
         group_id = str(group.get("group_id") or "")
         if not group_id or group_id in observed:
             raise ValueError("empty or duplicate source group_id")
         observed.add(group_id)
+        source_contract = validate_source_contract(group)
         if str(group.get("model")) != task.target_model:
             continue
         identity = validate_structure_identity(group)
@@ -218,8 +221,7 @@ def build_task_candidate_manifest(
             continue
         if not isinstance(group.get("graph_features"), Mapping):
             raise ValueError("candidate graph features missing")
-        if not _is_sha256(group.get("source_evidence_sha256")):
-            raise ValueError("candidate source evidence SHA256 is invalid")
+        group["source_contract"] = source_contract
         for q_mode in ("fp16", "int8"):
             profile_id = str(profile["capability_profile_id"])
             row_id = f"{group_id}|q={q_mode}|profile={profile_id}"
@@ -249,6 +251,7 @@ def build_task_candidate_manifest(
                     "materialization_kind": group.get("materialization_kind"),
                     "source_evidence_kind": group.get("source_evidence_kind"),
                     "source_contract": copy.deepcopy(group["source_contract"]),
+                    "source_contract_sha256": group["source_contract_sha256"],
                     "source_evidence_sha256": group["source_evidence_sha256"],
                     "graph_features": copy.deepcopy(group["graph_features"]),
                 }
@@ -586,6 +589,7 @@ def build_measurement_request(
         "materialization_kind",
         "source_evidence_kind",
         "source_contract",
+        "source_contract_sha256",
         "source_evidence_sha256",
         "graph_features",
     )
