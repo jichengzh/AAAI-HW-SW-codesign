@@ -6,6 +6,8 @@ public adapter validates and copies external records before invoking them.
 
 from __future__ import annotations
 
+import hashlib
+import inspect
 import math
 from typing import Any, Mapping, Sequence
 
@@ -19,6 +21,7 @@ DEFAULT_ARMS = (
 )
 LATENCY_CLOSE_FRACTION = 0.01
 PUBLIC_DELTA_AP70 = 0.10
+FROZEN_SOURCE_SHA256 = "a929e6bf58637f5ee74a7232f2a923474b9ed64c8623d0f53a61bd5d967e7b58"
 
 
 class PublicInputError(ValueError):
@@ -198,6 +201,33 @@ def build_backend_tables(
     }
 
 
+def _frozen_selection_contract_sha256() -> str:
+    payload = "\n".join(
+        (
+            repr(DEFAULT_ARMS),
+            repr(LATENCY_CLOSE_FRACTION),
+            inspect.getsource(_finite),
+            inspect.getsource(_trusted),
+            inspect.getsource(_select),
+            inspect.getsource(_fastest_trusted),
+            inspect.getsource(build_backend_tables),
+        )
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+FROZEN_SELECTION_CONTRACT_SHA256 = "2141f006b2facae3b8761210f891f0c8346ebced043dd744958ad08be7465539"
+_FROZEN_SOURCE_CONTRACTS = {FROZEN_SOURCE_SHA256: FROZEN_SELECTION_CONTRACT_SHA256}
+
+
+def verify_frozen_source(source_sha256: str, *, contract_sha256: str | None = None) -> None:
+    """Fail closed unless the public source identity binds the frozen selection contract."""
+    expected = _FROZEN_SOURCE_CONTRACTS.get(source_sha256)
+    actual = _frozen_selection_contract_sha256() if contract_sha256 is None else contract_sha256
+    if expected is None or actual != expected:
+        raise PublicInputError("frozen source verification failed")
+
+
 _MEASUREMENT_FIELDS = frozenset(
     {
         "evidence_id",
@@ -213,6 +243,7 @@ _MEASUREMENT_FIELDS = frozenset(
     }
 )
 _CELL_FIELDS = frozenset({"model", "backend", "method", "status"})
+_PUBLIC_REPRESENTATIVE_FIELDS = ("evidence_id", "AP70", "latency_ms", "energy_j")
 
 
 def _public_metric(value: Any, *, field: str) -> float:
@@ -251,7 +282,7 @@ def _validated_measurements(measurements: Sequence[Mapping[str, Any]]) -> list[d
         if identity in evidence_ids:
             raise PublicInputError("duplicate evidence_id in measurements")
         evidence_ids.add(identity)
-        copied_row = dict(row)
+        copied_row: dict[str, Any] = {}
         for field in ("model", "backend", "method", "terminal_status"):
             copied_row[field] = _public_string(row[field])
         copied_row["evidence_id"] = identity
@@ -261,6 +292,8 @@ def _validated_measurements(measurements: Sequence[Mapping[str, Any]]) -> list[d
             raise PublicInputError("independent_validation_passed must be boolean")
         if not isinstance(row["evidence_sha_verified"], bool):
             raise PublicInputError("evidence_sha_verified must be boolean")
+        copied_row["independent_validation_passed"] = row["independent_validation_passed"]
+        copied_row["evidence_sha_verified"] = row["evidence_sha_verified"]
         copied.append(copied_row)
     return copied
 
@@ -282,6 +315,12 @@ def _validated_cells(cells: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]
         identities.add(identity)
         copied.append(normalized)
     return copied
+
+
+def _public_representative(point: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    if point is None:
+        return None
+    return {field: point[field] for field in _PUBLIC_REPRESENTATIVE_FIELDS}
 
 
 def select_representative_points(
@@ -341,7 +380,7 @@ def select_representative_points(
                 "cell": dict(cell),
                 "status": status,
                 "outcome": outcome,
-                "representative": dict(representative) if representative is not None else None,
+                "representative": _public_representative(representative),
                 "ap_constraint_violated": violation,
                 "delta_ap_max": PUBLIC_DELTA_AP70,
                 "ap70_floor": floor,

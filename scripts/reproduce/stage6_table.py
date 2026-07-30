@@ -233,6 +233,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     measurement_path = _safe_path(args.measurements, label="measurements", require_file=True)
     evidence_path = _safe_path(args.evidence, label="evidence", require_file=True)
     cell_path = _safe_path(args.cells, label="cells", require_file=True)
+    selection.verify_frozen_source(FROZEN_SOURCE_SHA256)
     output_root = _safe_output_root(args.output_root)
     provenances = {
         "measurements": _provenance(args.measurements_provenance, label="measurements-provenance"),

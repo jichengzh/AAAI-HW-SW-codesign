@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 
+from framework.stage6 import paper_table_v1 as paper_table
 from framework.stage6.paper_table_v1 import (  # type: ignore[import-not-found]
     DEFAULT_ARMS,
     PublicInputError,
@@ -391,7 +392,15 @@ def test_cli_writes_idempotent_artifacts_and_binds_output_rows_to_evidence(tmp_p
     evidence = tmp_path / "evidence.jsonl"
     cells = tmp_path / "cells.json"
     output_root = tmp_path / "artifacts"
-    _write_json(measurements, [_baseline(), _row("trusted", latency_ms=10.0)])
+    trusted = _row("trusted", latency_ms=10.0)
+    trusted.update(
+        {
+            "private_abs_path": "/private/release/measurement.json",
+            "internal_note": "do-not-publish",
+            "arbitrary_extra": {"unpublished": "identity"},
+        }
+    )
+    _write_json(measurements, [_baseline(), trusted])
     evidence.write_text(json.dumps({"evidence_id": "baseline", "sha256_status": "verified"}) + "\n" + json.dumps({"evidence_id": "trusted", "sha256_status": "verified"}) + "\n", encoding="utf-8")
     _write_json(cells, [_cells()[0]])
     arguments = (
@@ -421,6 +430,51 @@ def test_cli_writes_idempotent_artifacts_and_binds_output_rows_to_evidence(tmp_p
     assert body_sha256 == hashlib.sha256(
         (json.dumps(manifest_body, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8")
     ).hexdigest()
+    for data in first_bytes.values():
+        rendered = data.decode("utf-8")
+        assert "/private/release/measurement.json" not in rendered
+        assert "do-not-publish" not in rendered
+        assert "unpublished" not in rendered
+    assert "trusted" in first_bytes["paper_table.raw.json"].decode("utf-8")
+
+
+def test_frozen_source_verification_rejects_unknown_or_drifted_sha() -> None:
+    """Catches a CLI accepting an unrecognized frozen source identity or changed core contract."""
+    with pytest.raises(PublicInputError, match="frozen source verification failed"):
+        paper_table.verify_frozen_source("0" * 64)
+    with pytest.raises(PublicInputError, match="frozen source verification failed"):
+        paper_table.verify_frozen_source(
+            paper_table.FROZEN_SOURCE_SHA256, contract_sha256="0" * 64
+        )
+
+
+def test_cli_fails_closed_when_frozen_source_identity_drifts(tmp_path: Path) -> None:
+    """Catches the release CLI writing artifacts after its controlled frozen SHA changes."""
+    stage6_table = _stage6_cli_module()
+    measurements = tmp_path / "measurements.json"
+    evidence = tmp_path / "evidence.json"
+    cells = tmp_path / "cells.json"
+    output_root = tmp_path / "artifacts"
+    _write_json(measurements, [_baseline(), _row("trusted")])
+    _write_json(evidence, [{"evidence_id": "baseline", "sha256_status": "verified"}, {"evidence_id": "trusted", "sha256_status": "verified"}])
+    _write_json(cells, [_cells()[0]])
+    stage6_table.FROZEN_SOURCE_SHA256 = "0" * 64
+    args = stage6_table._parse_args(
+        [
+            "--measurements", str(measurements),
+            "--evidence", str(evidence),
+            "--cells", str(cells),
+            "--measurements-provenance", "measurements-v1",
+            "--evidence-provenance", "evidence-v1",
+            "--cells-provenance", "cells-v1",
+            "--output-root", str(output_root),
+        ]
+    )
+
+    with pytest.raises(PublicInputError, match="frozen source verification failed"):
+        stage6_table.run(args)
+
+    assert not output_root.exists()
 
 
 def test_cli_refuses_different_existing_output_and_sanitizes_errors(tmp_path: Path) -> None:
