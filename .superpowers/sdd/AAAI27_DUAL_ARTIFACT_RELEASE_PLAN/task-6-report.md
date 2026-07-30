@@ -154,3 +154,47 @@ ac2785f86f9cbeeac8d623eeb47bce762966e58f99b4637f134b6971e2af8960  online_compone
 Fix Round 1 commit：`fix: preserve stage7 acquisition identities`（最终 SHA 由本次提交后的版本控制历史记录）。
 
 Fix Round 1 独立只读复审：无新增 finding；复审确认三条非 A1 路径均经 `_stage5_acquisition` 调用 Stage5 `select_task_batch`，A2 SHA/候选 identity/exclusion 生效，canonical feedback 验证与 CLI 脱敏测试均覆盖。
+
+## Fix Round 2（trajectory 与 blind prediction 绑定）
+
+### RED → GREEN
+
+Fix Round 2 的新增回归先刻画两类合同缺口：
+
+1. later round 若接受空的或与前一请求不一致的 `selected_ids`，旧实现会以调用者列表而不是已验证 request/feedback 历史决定排除集合，可能重选前一批候选。
+2. `backend_blind` 若直接接受调用者候选中的 predictions，调用者可替换预测；即使篡改 bundle 后重新计算其内部摘要，也没有外部、独立的期望 SHA 作为锚点。
+
+RED 测试增加在 `tests/stage7/test_search_policy.py` 和 `tests/stage7/test_selection_cli.py`：空/错误 caller history、variant/seed/round/task SHA 均自一致重哈希的 previous request、caller prediction 改写、bundle 内部篡改后重哈希，以及 CLI 缺 bundle/SHA 与错误脱敏。修复后 GREEN：`pytest -q tests/stage7` 为 `33 passed in 15.16s`。
+
+### 实现
+
+- canonical measurement request 新增并哈希 `selected_history_ids`；每轮为四个新候选追加到历史前缀，严格要求长度为 `4 × (round + 1)`、全局唯一、最后四项等于当前 request 行。
+- `round > 0` 先 canonical 验证 previous request，再显式比对 `variant`、`seed`、`task_sha256` 与 `round_index == current - 1`；feedback 仍要求完整、唯一且精确绑定该 request identity。有效排除集仅从已验证 history 与 feedback 派生；caller `selected_ids` 必须与 verified history 严格一致，否则 fail-closed。
+- `backend_blind` 新增独立 canonical prediction bundle，绑定 schema、`backend_blind` variant、task SHA、候选 identities、blind projection/schema SHA、model/training bundle SHA，以及 predictions/intervals。选择只消费该 bundle；调用者 candidates 中的 prediction 值不会影响排序。
+- bundle 需要由调用者通过独立的 `--blind-prediction-bundle-sha256` 提供外部期望 SHA；内部篡改并自重哈希但外部 SHA 不变时被拒绝。CLI 增加 `--blind-prediction-bundle` 和 `--blind-prediction-bundle-sha256`，并保持公共错误不回显调用者路径。
+
+### Fix Round 2 验证
+
+| 命令 | 结果 |
+|---|---|
+| `coverage run -m pytest -q tests/stage7` | `33 passed in 15.16s` |
+| `coverage report -m --include='*/framework/stage7/online_component_ablation_v1.py,*/framework/stage7/search_policy_v1.py,*/framework/stage7/ablation_statistics_v2.py,*/scripts/reproduce/stage7_selection.py'` | 4 个受门禁文件均至少 80%（下表） |
+| `pytest -q tests/stage1 tests/stage2 tests/stage4 tests/stage5 tests/stage6 tests/stage7` | `231 passed in 74.10s` |
+| `ruff check framework/stage7 scripts/reproduce/stage7_selection.py tests/stage7` | `All checks passed!` |
+| `python -m compileall -q framework/stage7 scripts/reproduce/stage7_selection.py` | 退出 0 |
+| `python scripts/reproduce/stage7_selection.py --help` | 退出 0（12 行 usage/help） |
+| `python scripts/reproduce/stage7_selection.py select --help` | 退出 0（33 行 usage/help，含 blind bundle 两个显式参数） |
+| `python scripts/reproduce/stage7_selection.py summarize --help` | 退出 0（7 行 usage/help） |
+| `pytest -q tests/stage7/test_selection_cli.py::test_select_requires_explicit_files_and_is_idempotent` | `1 passed in 4.48s`；同一显式 CLI select 连续执行两次，均返回 0 且产物同字节 |
+| `git diff --check` | 退出 0，无输出 |
+
+### Fix Round 2 最终逐文件覆盖率
+
+| 文件 | 覆盖率 |
+|---|---:|
+| `framework/stage7/online_component_ablation_v1.py` | 85.96% |
+| `framework/stage7/search_policy_v1.py` | 88.14% |
+| `framework/stage7/ablation_statistics_v2.py` | 89.23% |
+| `scripts/reproduce/stage7_selection.py` | 80.95% |
+
+生产修复提交：`dec4e29 fix: bind stage7 trajectory and blind predictions`。本报告更新提交：`docs: record stage7 fix round two verification`（SHA 由紧随其后的 Git 提交记录确定）。
