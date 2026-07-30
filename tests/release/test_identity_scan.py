@@ -472,6 +472,7 @@ def test_ci_enforces_release_source_quality_and_global_coverage() -> None:
     """The release workflow checks every shipped source directory with one global gate."""
     workflow = (REPOSITORY_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
+    assert 'python -m pip install --upgrade "pip>=26.1.2"' in workflow
     assert "ruff check framework scripts tests tools" in workflow
     assert "python -m compileall -q framework scripts tools" in workflow
     assert re.search(

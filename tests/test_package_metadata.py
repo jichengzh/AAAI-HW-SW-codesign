@@ -20,10 +20,10 @@ def _requirement_names(requirements: set[str]) -> set[str]:
 
 
 def test_dev_extra_contains_all_dependencies_needed_by_stage1_tests() -> None:
-    """The documented release test install can import real Stage1 scan modules."""
+    """The documented release test install uses the fixed pytest and real Stage1 modules."""
     requirements = _extra_requirements("dev")
 
-    assert {"torch>=2.0", "torch-pruning>=1.4"} <= requirements
+    assert {"pytest>=9.0.3,<10", "torch>=2.0", "torch-pruning>=1.4"} <= requirements
 
 
 def test_repro_extra_remains_independent_of_optional_scan_runtime() -> None:

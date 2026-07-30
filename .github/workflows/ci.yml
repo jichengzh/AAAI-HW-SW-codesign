@@ -20,7 +20,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-      - run: python -m pip install --upgrade pip
+      - run: python -m pip install --upgrade "pip>=26.1.2"
       - run: pip install -e '.[repro,dev]'
       - name: Lint release source and tests
         run: ruff check framework scripts tests tools

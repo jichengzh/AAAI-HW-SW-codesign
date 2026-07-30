@@ -28,7 +28,7 @@ repro = [
 ]
 dev = [
   "build>=1.2,<2",
-  "pytest>=8,<9",
+  "pytest>=9.0.3,<10",
   "pytest-cov>=5,<7",
   "ruff>=0.6,<1",
   "torch>=2.0",
