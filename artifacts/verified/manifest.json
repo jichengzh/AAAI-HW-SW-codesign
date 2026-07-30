@@ -1,0 +1,36 @@
+{
+  "schema": "aaai27_verified_artifact_manifest_v1",
+  "artifacts": [
+    {
+      "artifact_id": "stage4-cost-model-selection-report",
+      "path": "artifacts/verified/stage4/cost_model_selection_report.json",
+      "sha256": "e6506e1a33f0974ba4053734d01852e2e8fac270619913ccedd91482249590dd",
+      "schema": "stage4_cost_model_selection_v1",
+      "provenance": {
+        "source_content_sha256": "8387905d7e4c0ca8fa5805fe8656da2cf53b851be873648e954d30576d220e10",
+        "sanitization": "Removed private local input locations and retained source-data content hashes.",
+        "source_data_content_hashes_retained": true
+      },
+      "paper_mapping": {
+        "paper_section": "Stage4 cost-model selection",
+        "evidence_scope": "Nested grouped cross-validation model selection"
+      },
+      "verification_status": "verified_sanitized"
+    },
+    {
+      "artifact_id": "stage4-nested-cv-folds",
+      "path": "artifacts/verified/stage4/nested_cv_folds.csv",
+      "sha256": "8af4d9ed180b6239ad4ac4e2dcb9ac52875c0c228a000a9d985f12e1ffbd1f5c",
+      "schema": "stage4_nested_cv_folds_v1",
+      "provenance": {
+        "source_content_sha256": "257645ed8c8118651c14cdf70cddfe740703a65f65683cffa79a87a009c61aae",
+        "sanitization": "Verified no private paths or identities were present and normalized CRLF line endings to LF."
+      },
+      "paper_mapping": {
+        "paper_section": "Stage4 cost-model selection",
+        "evidence_scope": "Per-target outer-fold metrics and selected candidates"
+      },
+      "verification_status": "verified_sanitized"
+    }
+  ]
+}

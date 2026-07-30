@@ -1,0 +1,3 @@
+{"schema":"demo_candidate_pool_v1","paper_evidence":false,"intended_use":"smoke_test_only","candidate_id":"demo-extra-trees-raw","family":"extra_trees","target_encoding":"raw"}
+{"schema":"demo_candidate_pool_v1","paper_evidence":false,"intended_use":"smoke_test_only","candidate_id":"demo-extra-trees-log","family":"extra_trees","target_encoding":"log1p"}
+{"schema":"demo_candidate_pool_v1","paper_evidence":false,"intended_use":"smoke_test_only","candidate_id":"demo-linear-baseline","family":"linear","target_encoding":"raw"}

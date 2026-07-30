@@ -1,0 +1,2 @@
+{"schema":"demo_coldstart_measurements_v1","paper_evidence":false,"intended_use":"smoke_test_only","measurement_id":"demo-measurement-alpha","graph_id":"demo-graph-alpha","profile_id":"demo-runtime-a","precision":"fp16","latency_ms":10.0,"energy_j":1.0}
+{"schema":"demo_coldstart_measurements_v1","paper_evidence":false,"intended_use":"smoke_test_only","measurement_id":"demo-measurement-beta","graph_id":"demo-graph-beta","profile_id":"demo-runtime-b","precision":"fp16","latency_ms":20.0,"energy_j":2.0}

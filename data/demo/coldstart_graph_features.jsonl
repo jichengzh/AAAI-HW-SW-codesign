@@ -1,0 +1,2 @@
+{"schema":"demo_coldstart_graph_features_v1","paper_evidence":false,"intended_use":"smoke_test_only","graph_id":"demo-graph-alpha","node_count":4,"conv_count":1,"parameter_elements":128}
+{"schema":"demo_coldstart_graph_features_v1","paper_evidence":false,"intended_use":"smoke_test_only","graph_id":"demo-graph-beta","node_count":6,"conv_count":2,"parameter_elements":256}

@@ -1,0 +1,21 @@
+{
+  "schema": "demo_capability_profiles_v1",
+  "paper_evidence": false,
+  "intended_use": "smoke_test_only",
+  "profiles": [
+    {
+      "profile_id": "demo-runtime-a",
+      "backend": "demo_backend_a",
+      "paper_evidence": false,
+      "build_supported": true,
+      "precision_modes": ["fp16", "int8"]
+    },
+    {
+      "profile_id": "demo-runtime-b",
+      "backend": "demo_backend_b",
+      "paper_evidence": false,
+      "build_supported": true,
+      "precision_modes": ["fp16"]
+    }
+  ]
+}

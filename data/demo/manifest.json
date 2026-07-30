@@ -1,0 +1,36 @@
+{
+  "schema": "aaai27_demo_data_manifest_v1",
+  "paper_evidence": false,
+  "intended_use": "smoke_test_only",
+  "deterministic": true,
+  "artifacts": [
+    {
+      "artifact_id": "demo-capability-profiles",
+      "path": "data/demo/capability_profiles.json",
+      "schema": "demo_capability_profiles_v1",
+      "paper_evidence": false,
+      "intended_use": "smoke_test_only"
+    },
+    {
+      "artifact_id": "demo-coldstart-graph-features",
+      "path": "data/demo/coldstart_graph_features.jsonl",
+      "schema": "demo_coldstart_graph_features_v1",
+      "paper_evidence": false,
+      "intended_use": "smoke_test_only"
+    },
+    {
+      "artifact_id": "demo-coldstart-measurements",
+      "path": "data/demo/coldstart_measurements.jsonl",
+      "schema": "demo_coldstart_measurements_v1",
+      "paper_evidence": false,
+      "intended_use": "smoke_test_only"
+    },
+    {
+      "artifact_id": "demo-candidate-pool",
+      "path": "data/demo/candidate_pool.jsonl",
+      "schema": "demo_candidate_pool_v1",
+      "paper_evidence": false,
+      "intended_use": "smoke_test_only"
+    }
+  ]
+}
