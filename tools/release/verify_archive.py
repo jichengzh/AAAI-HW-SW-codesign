@@ -6,10 +6,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import stat
 import sys
 import tempfile
+import unicodedata
 import zipfile
 from pathlib import Path, PurePosixPath
 
@@ -31,9 +33,15 @@ def _safe_member_name(name: str) -> str:
     path = PurePosixPath(name)
     if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
         raise _archive_error()
-    if ":" in path.parts[0]:
+    reserved = {"con", "prn", "aux", "nul", *(f"com{i}" for i in range(1, 10)), *(f"lpt{i}" for i in range(1, 10))}
+    if any(":" in part or part.rstrip(" .") != part or part.casefold() in reserved for part in path.parts):
         raise _archive_error()
     return path.as_posix()
+
+
+def _canonical_member_key(name: str) -> str:
+    safe_name = _safe_member_name(name)
+    return "/".join(unicodedata.normalize("NFC", part).casefold() for part in safe_name.split("/"))
 
 
 def _preflight_members(archive: zipfile.ZipFile) -> tuple[zipfile.ZipInfo, ...]:
@@ -43,7 +51,7 @@ def _preflight_members(archive: zipfile.ZipFile) -> tuple[zipfile.ZipInfo, ...]:
     names: set[str] = set()
     total_size = 0
     for info in infos:
-        name = _safe_member_name(info.filename)
+        name = _canonical_member_key(info.filename)
         mode = info.external_attr >> 16
         if info.is_dir() or stat.S_ISLNK(mode):
             raise _archive_error()
@@ -66,21 +74,28 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _load_sidecars(archive_path: Path, digest: str) -> dict[str, object] | None:
+def _load_sidecars(archive_path: Path, digest: str) -> dict[str, object]:
     sidecar = archive_path.with_name(f"{archive_path.name}.sha256")
-    if sidecar.exists():
-        if sidecar.is_symlink() or sidecar.read_text(encoding="ascii").strip() != f"{digest}  {archive_path.name}":
-            raise _archive_error()
+    if not sidecar.is_file() or sidecar.is_symlink():
+        raise _archive_error()
+    try:
+        sidecar_text = sidecar.read_text(encoding="ascii")
+    except (OSError, UnicodeDecodeError) as error:
+        raise _archive_error() from error
+    if sidecar_text != f"{digest}  {archive_path.name}\n":
+        raise _archive_error()
     manifest_path = archive_path.with_name("archive_manifest.json")
-    if not manifest_path.exists():
-        return None
-    if manifest_path.is_symlink():
+    if not manifest_path.is_file() or manifest_path.is_symlink():
         raise _archive_error()
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise _archive_error() from error
-    if not isinstance(manifest, dict) or manifest.get("zip_sha256") != digest:
+    if set(manifest) != {"format", "tool", "zip_sha256", "members"} or manifest.get("format") != 1:
+        raise _archive_error()
+    if not isinstance(manifest.get("tool"), str) or not manifest["tool"].startswith("anonymous-archive-builder/"):
+        raise _archive_error()
+    if manifest.get("zip_sha256") != digest:
         raise _archive_error()
     return manifest
 
@@ -120,21 +135,23 @@ def _is_within(path: Path, root: Path) -> bool:
     return True
 
 
-def _verify_manifest(manifest: dict[str, object] | None, extracted: dict[str, dict[str, object]]) -> None:
-    if manifest is None:
-        return
+def _verify_manifest(manifest: dict[str, object], extracted: dict[str, dict[str, object]]) -> None:
     members = manifest.get("members")
     if not isinstance(members, list):
         raise _archive_error()
     expected: dict[str, dict[str, object]] = {}
     for entry in members:
-        if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
+        if not isinstance(entry, dict) or set(entry) != {"path", "sha256", "size"} or not isinstance(entry.get("path"), str):
             raise _archive_error()
         path = _safe_member_name(entry["path"])
-        if path in expected or not isinstance(entry.get("sha256"), str) or not isinstance(entry.get("size"), int):
+        canonical = _canonical_member_key(path)
+        if canonical in expected or not isinstance(entry.get("sha256"), str) or not isinstance(entry.get("size"), int):
             raise _archive_error()
-        expected[path] = {"sha256": entry["sha256"], "size": entry["size"]}
-    if expected != extracted:
+        if not re.fullmatch(r"[0-9a-f]{64}", entry["sha256"]) or entry["size"] < 0:
+            raise _archive_error()
+        expected[canonical] = {"sha256": entry["sha256"], "size": entry["size"]}
+    normalized_extracted = {_canonical_member_key(path): value for path, value in extracted.items()}
+    if expected != normalized_extracted:
         raise _archive_error()
 
 

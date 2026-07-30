@@ -31,10 +31,10 @@ class ArchiveSafetyError(Exception):
 
 @dataclass(frozen=True)
 class Member:
-    source: Path
     archive_path: str
     size: int
     digest: str
+    payload: bytes
 
 
 def _tool_directory() -> Path:
@@ -81,38 +81,95 @@ def _diagnostic_path(relative_path: str, patterns: Iterable[tuple[str, re.Patter
     return "<redacted-path>" if _matches_forbidden(relative_path, patterns) else relative_path
 
 
-def scan_file(path: Path, root: Path, patterns: Iterable[tuple[str, re.Pattern[str]]]) -> tuple[str, ...]:
-    """Return categories of unsafe source material without exposing matched text."""
-    relative_path = _safe_relative_path(path, root)
+def _scan_payload(payload: bytes, relative_path: str, patterns: Iterable[tuple[str, re.Pattern[str]]]) -> tuple[str, ...]:
+    """Scan exactly the bytes that will become an archive member."""
     issues = list(_matches_forbidden(relative_path, patterns))
-    try:
-        payload = path.read_bytes()
-    except OSError as error:
-        raise ArchiveSafetyError("unsafe input: unreadable selected file") from error
     if len(payload) > MAX_FILE_SIZE:
         issues.append("file-size")
         return tuple(sorted(set(issues)))
     try:
         text = payload.decode("utf-8")
     except UnicodeDecodeError:
-        if path.suffix.lower() in EXECUTABLE_SUFFIXES:
-            issues.append("binary-executable")
+        issues.append("unknown-binary")
     else:
         issues.extend(_matches_forbidden(text, patterns))
     return tuple(sorted(set(issues)))
+
+
+def scan_file(path: Path, root: Path, patterns: Iterable[tuple[str, re.Pattern[str]]]) -> tuple[str, ...]:
+    """Scan a stable local file; source collection uses the stronger no-follow reader."""
+    return _scan_payload(path.read_bytes(), _safe_relative_path(path, root), patterns)
+
+
+DENIED_PATH_PARTS = frozenset(
+    {".git", ".github", "__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", "build", "dist", "results", "cache", "checkpoint", "checkpoints", "engine", "engines"}
+)
+DENIED_SUFFIXES = frozenset({".pyc", ".pyo", ".so", ".dll", ".dylib", ".onnx", ".engine", ".pt", ".pth", ".ckpt", ".zip", ".tar", ".gz", ".whl"})
+
+
+def _is_denied_source_path(relative_path: str) -> bool:
+    parts = Path(relative_path).parts
+    filename = parts[-1].lower()
+    return (
+        any(part.lower() in DENIED_PATH_PARTS or part.startswith(".") for part in parts)
+        or filename.startswith((".", "#"))
+        or filename.endswith(("~", ".coverage"))
+        or Path(filename).suffix in DENIED_SUFFIXES
+    )
 
 
 def _selected_source_paths(root: Path) -> tuple[Path, ...]:
     selected: set[Path] = set()
     missing: list[str] = []
     for entry in _read_allowlist():
-        matches = tuple(path for path in root.glob(entry) if path.is_file() or path.is_symlink())
+        matches = tuple(
+            path
+            for path in root.glob(entry)
+            if (path.is_file() or path.is_symlink()) and not _is_denied_source_path(_safe_relative_path(path, root))
+        )
         if not matches and entry not in OPTIONAL_ALLOWLIST_ENTRIES:
             missing.append(entry)
         selected.update(matches)
     if missing:
         raise ArchiveSafetyError("unsafe input: required allowlist entries are missing")
     return tuple(sorted(selected, key=lambda path: path.relative_to(root).as_posix()))
+
+
+def _read_source_once(source: Path, root: Path, patterns: Iterable[tuple[str, re.Pattern[str]]]) -> Member:
+    relative_path = _safe_relative_path(source, root)
+    if source.is_symlink() or not _resolved_within(source, root):
+        raise ArchiveSafetyError("unsafe input: symlink")
+    try:
+        descriptor = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except OSError as error:
+        raise ArchiveSafetyError("unsafe input: unreadable selected file") from error
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_size > MAX_FILE_SIZE:
+            raise ArchiveSafetyError("unsafe input: non-regular-file")
+        chunks: list[bytes] = []
+        size = 0
+        while chunk := os.read(descriptor, 1024 * 1024):
+            size += len(chunk)
+            if size > MAX_FILE_SIZE:
+                raise ArchiveSafetyError("unsafe input: file-size")
+            chunks.append(chunk)
+        after = os.fstat(descriptor)
+    finally:
+        os.close(descriptor)
+    if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) != (
+        after.st_dev,
+        after.st_ino,
+        after.st_size,
+        after.st_mtime_ns,
+    ):
+        raise ArchiveSafetyError("unsafe input: source changed")
+    payload = b"".join(chunks)
+    issues = _scan_payload(payload, relative_path, patterns)
+    if issues:
+        raise ArchiveSafetyError("unsafe input: " + ", ".join(issues))
+    archive_path = "README.md" if relative_path == "README.anonymous.md" else relative_path
+    return Member(archive_path, len(payload), hashlib.sha256(payload).hexdigest(), payload)
 
 
 def collect_members(repo_root: Path) -> tuple[Member, ...]:
@@ -124,32 +181,10 @@ def collect_members(repo_root: Path) -> tuple[Member, ...]:
     members: list[Member] = []
     issues: list[str] = []
     for source in _selected_source_paths(root):
-        relative_path = _safe_relative_path(source, root)
-        if source.is_symlink() or not _resolved_within(source, root):
-            issues.append("symlink")
-            continue
         try:
-            source_stat = source.stat()
-        except OSError:
-            issues.append("unreadable")
-            continue
-        if not stat.S_ISREG(source_stat.st_mode):
-            issues.append("non-regular-file")
-            continue
-        found = scan_file(source, root, patterns)
-        if found:
-            issues.extend(found)
-            continue
-        archive_path = "README.md" if relative_path == "README.anonymous.md" else relative_path
-        payload = source.read_bytes()
-        members.append(
-            Member(
-                source=source,
-                archive_path=archive_path,
-                size=len(payload),
-                digest=hashlib.sha256(payload).hexdigest(),
-            )
-        )
+            members.append(_read_source_once(source, root, patterns))
+        except ArchiveSafetyError as error:
+            issues.append(str(error).rsplit(": ", maxsplit=1)[-1])
     archive_names = [member.archive_path for member in members]
     if len(archive_names) != len(set(archive_names)):
         issues.append("duplicate-member")
@@ -191,7 +226,7 @@ def _write_zip(path: Path, members: Iterable[Member]) -> None:
             info.create_system = 3
             info.external_attr = 0o100644 << 16
             info.compress_type = zipfile.ZIP_DEFLATED
-            archive.writestr(info, member.source.read_bytes(), compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
+            archive.writestr(info, member.payload, compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
 
 
 def _manifest(members: Iterable[Member], zip_digest: str) -> dict[str, object]:
@@ -206,17 +241,39 @@ def _manifest(members: Iterable[Member], zip_digest: str) -> dict[str, object]:
     }
 
 
-def _atomic_write_bytes(path: Path, content: bytes) -> None:
-    temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}")
+def _publish_no_clobber(output: Path, artifacts: tuple[tuple[str, bytes], ...]) -> None:
+    """Publish only into an empty directory; never replace a competing file."""
+    created: list[str] = []
+    descriptor = os.open(output, os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0))
     try:
-        with temporary.open("xb") as handle:
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        for name, payload in artifacts:
+            if set(os.listdir(output)) != set(created):
+                raise ArchiveSafetyError("unsafe output directory")
+            try:
+                target = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644, dir_fd=descriptor)
+            except FileExistsError as error:
+                raise ArchiveSafetyError("unsafe output directory") from error
+            try:
+                with os.fdopen(target, "wb") as handle:
+                    handle.write(payload)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            except OSError:
+                try:
+                    os.unlink(name, dir_fd=descriptor)
+                except OSError:
+                    pass
+                raise
+            created.append(name)
+    except Exception:
+        for name in created:
+            try:
+                os.unlink(name, dir_fd=descriptor)
+            except OSError:
+                pass
+        raise
     finally:
-        if temporary.exists():
-            temporary.unlink()
+        os.close(descriptor)
 
 
 def build_archive(repo_root: Path, output_dir: Path) -> Path:
@@ -232,12 +289,11 @@ def build_archive(repo_root: Path, output_dir: Path) -> Path:
         temporary_manifest = (json.dumps(_manifest(members, zip_digest), indent=2, sort_keys=True) + "\n").encode(
             "utf-8"
         )
-        for name, payload in (
+        _publish_no_clobber(output, (
             (ARCHIVE_NAME, temporary_zip.read_bytes()),
             (f"{ARCHIVE_NAME}.sha256", temporary_sha),
             ("archive_manifest.json", temporary_manifest),
-        ):
-            _atomic_write_bytes(output / name, payload)
+        ))
     except OSError as error:
         raise ArchiveSafetyError("unsafe output directory") from error
     finally:

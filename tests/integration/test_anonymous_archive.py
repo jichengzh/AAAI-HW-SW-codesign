@@ -19,6 +19,7 @@ BUILDER = REPOSITORY_ROOT / "tools/release/build_anonymous_archive.py"
 ARCHIVE_NAME = "aaai27_code_data_anonymous.zip"
 sys.path.insert(0, str(BUILDER.parent))
 from build_anonymous_archive import ArchiveSafetyError, build_archive  # noqa: E402
+import build_anonymous_archive as archive_builder  # noqa: E402
 from verify_archive import verify_archive  # noqa: E402
 
 
@@ -61,6 +62,17 @@ def _run_verifier(archive: Path) -> SimpleNamespace:
     except ArchiveSafetyError:
         return SimpleNamespace(returncode=2, stdout="", stderr="unsafe archive")
     return SimpleNamespace(returncode=0, stdout="archive verified", stderr="")
+
+
+def _refresh_integrity_sidecars(output: Path) -> None:
+    """Bind a deliberately altered ZIP so preflight checks, not stale metadata, reject it."""
+    archive = output / ARCHIVE_NAME
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    manifest_path = output / "archive_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["zip_sha256"] = digest
+    manifest_path.write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
+    (output / f"{ARCHIVE_NAME}.sha256").write_text(f"{digest}  {ARCHIVE_NAME}\n", encoding="ascii")
 
 
 def test_builder_emits_only_anonymous_allowlisted_deterministic_files(
@@ -183,6 +195,93 @@ def test_verifier_rechecks_real_archive_and_sidecars(anonymous_repo: Path, tmp_p
 
     assert result.returncode == 0, result.stderr
     assert "verified" in result.stdout.lower()
+
+
+def test_builder_excludes_cache_products_and_rejects_unknown_binary(anonymous_repo: Path, tmp_path: Path) -> None:
+    """Broad allowlist globs must never admit local caches or opaque binaries."""
+    cached = anonymous_repo / "framework/__pycache__/module.pyc"
+    cached.parent.mkdir(parents=True)
+    cached.write_bytes(b"\0cache")
+    output = tmp_path / "output"
+    assert _run_builder(anonymous_repo, output).returncode == 0
+    with zipfile.ZipFile(output / ARCHIVE_NAME) as archive:
+        assert not any("__pycache__" in name or name.endswith(".pyc") for name in archive.namelist())
+
+    (anonymous_repo / "framework/opaque.bin").write_bytes(b"\xff\xfe\x00")
+    rejected = _run_builder(anonymous_repo, tmp_path / "binary-output")
+    assert rejected.returncode != 0
+    assert "unsafe input" in rejected.stderr
+
+
+def test_verifier_requires_complete_sidecar_and_manifest(anonymous_repo: Path, tmp_path: Path) -> None:
+    """A standalone ZIP cannot establish its expected member set or integrity."""
+    output = tmp_path / "output"
+    assert _run_builder(anonymous_repo, output).returncode == 0
+    (output / f"{ARCHIVE_NAME}.sha256").unlink()
+    assert _run_verifier(output / ARCHIVE_NAME).returncode != 0
+
+    clean_output = tmp_path / "clean-output"
+    assert _run_builder(anonymous_repo, clean_output).returncode == 0
+    (clean_output / f"{ARCHIVE_NAME}.sha256").write_text("malformed\n", encoding="ascii")
+    assert _run_verifier(clean_output / ARCHIVE_NAME).returncode != 0
+
+
+@pytest.mark.parametrize("first,second", [("README.md", "readme.md"), ("framework/caf\u00e9.py", "framework/cafe\u0301.py")])
+def test_verifier_rejects_platform_normalized_member_collisions(
+    anonymous_repo: Path, tmp_path: Path, first: str, second: str
+) -> None:
+    """Case-insensitive and Unicode-normalizing extractors must not be ambiguous."""
+    output = tmp_path / "output"
+    assert _run_builder(anonymous_repo, output).returncode == 0
+    archive_path = output / ARCHIVE_NAME
+    with zipfile.ZipFile(archive_path, "a", compression=zipfile.ZIP_DEFLATED) as archive:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            archive.writestr(first, "x")
+            archive.writestr(second, "y")
+    _refresh_integrity_sidecars(output)
+    assert _run_verifier(archive_path).returncode != 0
+
+
+def test_builder_reads_selected_source_once_before_writing(
+    anonymous_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second source-path read after validation would reintroduce a swap race."""
+    source = anonymous_repo / "framework/__init__.py"
+    original_read_bytes = Path.read_bytes
+
+    def deny_source_reread(path: Path) -> bytes:
+        if path == source:
+            raise AssertionError("selected source was reopened by pathname")
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", deny_source_reread)
+    assert _run_builder(anonymous_repo, tmp_path / "output").returncode == 0
+
+
+def test_builder_preserves_competing_output_created_during_publish(
+    anonymous_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A post-validation competitor must cause cleanup, never an overwrite."""
+    output = tmp_path / "output"
+    output.mkdir()
+    competitor = output / "competitor.txt"
+    original_listdir = archive_builder.os.listdir
+    injected = False
+
+    def inject_competitor(path: object) -> list[str]:
+        nonlocal injected
+        if Path(path) == output and not injected:
+            injected = True
+            competitor.write_text("retain", encoding="utf-8")
+            return []
+        return original_listdir(path)
+
+    monkeypatch.setattr(archive_builder.os, "listdir", inject_competitor)
+    result = _run_builder(anonymous_repo, output)
+    assert result.returncode != 0
+    assert competitor.read_text(encoding="utf-8") == "retain"
+    assert not (output / ARCHIVE_NAME).exists()
 
 
 def _write_bad_archive(path: Path, kind: str) -> None:

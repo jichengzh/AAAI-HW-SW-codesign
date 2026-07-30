@@ -33,6 +33,10 @@ jobs:
           release_root="$(mktemp -d)"
           coverage run --append tools/release/build_anonymous_archive.py --output-dir "$release_root/archive-output"
           coverage run --append tools/release/verify_archive.py "$release_root/archive-output/aaai27_code_data_anonymous.zip"
+          if coverage run --append tools/release/verify_archive.py "$release_root/archive-output/missing.zip"; then
+            echo "missing archive unexpectedly verified"
+            exit 1
+          fi
           coverage report -m --include='*/tools/release/build_anonymous_archive.py,*/tools/release/verify_archive.py'
           coverage json -o anonymous-archive-coverage.json --include='*/tools/release/build_anonymous_archive.py,*/tools/release/verify_archive.py'
           python - <<'PY'
