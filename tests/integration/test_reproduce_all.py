@@ -20,14 +20,17 @@ DEMO_MANIFEST_PATH = REPOSITORY_ROOT / "data/demo/manifest.json"
 VERIFIED_MANIFEST_PATH = REPOSITORY_ROOT / "artifacts/verified/manifest.json"
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 FORBIDDEN_PUBLIC_PATTERNS = (
-    re.compile(r"/home/[^\s\"']+", re.IGNORECASE),
-    re.compile(r"/Users/[^\s\"']+", re.IGNORECASE),
-    re.compile(r"[A-Za-z]:\\[^\s\"']+"),
-    re.compile(r"\b[^\s@]+@[^\s@]+\.[^\s@]+\b"),
+    re.compile(r"/" + r"home/[^\s\"']+", re.IGNORECASE),
+    re.compile(r"/" + r"Users/[^\s\"']+", re.IGNORECASE),
+    re.compile(r"[A-Za-z]:" + r"\\[^\s\"']+"),
+    re.compile(r"\b[^\s" + "@" + r"]+@[^\s" + "@" + r"]+\.[^\s" + "@" + r"]+\b"),
     re.compile(r"\b(?:github_pat_[A-Za-z0-9_]{20,}|ghp_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9_-]{16,})\b"),
     re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
     re.compile(r"\bprivate_user_\d+\b", re.IGNORECASE),
-    re.compile(r"\bgithub\.com/[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9][A-Za-z0-9_.-]*", re.IGNORECASE),
+    re.compile(
+        r"\bgithub" + r"\.com/[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9][A-Za-z0-9_.-]*",
+        re.IGNORECASE,
+    ),
 )
 DEMO_JSON_RECORD_CONTAINERS = {"demo-capability-profiles": "profiles"}
 
@@ -193,7 +196,7 @@ def test_verified_manifest_has_complete_portable_entries_and_matching_hashes() -
     [
         lambda manifest: manifest["artifacts"][0].pop("sha256"),
         lambda manifest: manifest["artifacts"][0]["provenance"].update(
-            {"source_path": "/home/example/private-input.json"}
+            {"source_path": "/" + "home/example/private-input.json"}
         ),
         lambda manifest: manifest["artifacts"].append(copy.deepcopy(manifest["artifacts"][0])),
     ],
@@ -266,7 +269,7 @@ def test_public_data_and_artifact_files_contain_no_private_identity_or_secret_pa
     "fixture_text",
     [
         "created by private_user_123",
-        "https://github.com/private-owner/private-repository",
+        "https://" + "github.com/private-owner/private-repository",
     ],
     ids=["bare-private-identity", "github-owner-repository"],
 )

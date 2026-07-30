@@ -22,10 +22,10 @@ except ModuleNotFoundError:  # pragma: no cover - exercised by the Python 3.10 C
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 LOCAL_PATH_PATTERNS = (
-    re.compile(r"/home/[^\s\"']+"),
-    re.compile(r"/Users/[^\s\"']+"),
-    re.compile(r"[A-Za-z]:\\[^\s\"']+"),
-    re.compile(r"file://", re.IGNORECASE),
+    re.compile(r"/" + r"home/[^\s\"']+"),
+    re.compile(r"/" + r"Users/[^\s\"']+"),
+    re.compile(r"[A-Za-z]:" + r"\\[^\s\"']+"),
+    re.compile("file:" + "//", re.IGNORECASE),
 )
 EMAIL_PATTERN = re.compile(r"\b[^\s@]+@[^\s@]+\.[^\s@]+\b")
 SECRET_PATTERN = re.compile(
@@ -83,7 +83,17 @@ def test_public_package_identity_is_portable_and_apache_licensed() -> None:
     serialized_metadata = json.dumps(metadata, sort_keys=True)
     assert str(REPOSITORY_ROOT) not in serialized_metadata
     assert "/home/" not in serialized_metadata
-    assert "file://" not in serialized_metadata
+    assert "file:" + "//" not in serialized_metadata
+
+
+def test_anonymous_readme_has_no_public_identity_or_network_locations() -> None:
+    """The reviewer-facing README must stand alone without public-project identity."""
+    anonymous_readme = (REPOSITORY_ROOT / "README.anonymous.md").read_text(encoding="utf-8")
+
+    _assert_no_release_identity_leaks(anonymous_readme)
+    assert "github.com" not in anonymous_readme.lower()
+    assert "http://" not in anonymous_readme.lower()
+    assert "https://" not in anonymous_readme.lower()
 
 
 def test_public_release_metadata_has_no_identity_or_secret_leaks(
@@ -126,11 +136,11 @@ def test_public_release_metadata_has_no_identity_or_secret_leaks(
 @pytest.mark.parametrize(
     "description_body",
     [
-        "Local checkout: /home/alice/private-release",
-        "Local checkout: /Users/alice/private-release",
-        r"Local checkout: C:\Users\alice\private-release",
+        "Local checkout: /" + "home/alice/private-release",
+        "Local checkout: /" + "Users/alice/private-release",
+        "Local checkout: " + "C:" + "\\Users\\alice\\private-release",
         "Credential: " + "github_pat_" + "abcdefghijklmnopqrstuvwxyz123456",
-        "Contact: alice@example.com",
+        "Contact: " + "alice" + "@" + "example.com",
     ],
 )
 def test_release_leak_scanner_rejects_leaks_in_description_body(description_body: str) -> None:

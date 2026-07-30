@@ -1,0 +1,14 @@
+# Paths that may appear in the anonymized reviewer archive.
+LICENSE
+README.anonymous.md
+REPRODUCIBILITY.md
+ARTIFACTS.md
+pyproject.toml
+framework/**
+scripts/reproduce/**
+scripts/prepare_stage2_demo_data.py
+scripts/stage1_classify_models.py
+scripts/stage2_optimize_model.py
+data/**
+artifacts/**
+tests/**

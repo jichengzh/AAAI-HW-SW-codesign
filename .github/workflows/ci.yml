@@ -25,6 +25,30 @@ jobs:
       - run: ruff check tests
       - name: Check public demo and verified artifact manifests
         run: pytest -q tests/integration/test_reproduce_all.py
+      - name: Validate reviewer ZIP and enforce release-tool coverage
+        run: |
+          pytest -q tests/integration/test_anonymous_archive.py tests/release/test_identity_scan.py
+          coverage erase
+          coverage run -m pytest -q tests/integration/test_anonymous_archive.py
+          release_root="$(mktemp -d)"
+          coverage run --append tools/release/build_anonymous_archive.py --output-dir "$release_root/archive-output"
+          coverage run --append tools/release/verify_archive.py "$release_root/archive-output/aaai27_code_data_anonymous.zip"
+          coverage report -m --include='*/tools/release/build_anonymous_archive.py,*/tools/release/verify_archive.py'
+          coverage json -o anonymous-archive-coverage.json --include='*/tools/release/build_anonymous_archive.py,*/tools/release/verify_archive.py'
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("anonymous-archive-coverage.json").read_text(encoding="utf-8"))
+          expected = (
+              "tools/release/build_anonymous_archive.py",
+              "tools/release/verify_archive.py",
+          )
+          for path in expected:
+              percent = report["files"][path]["summary"]["percent_covered"]
+              if percent < 80.0:
+                  raise SystemExit(f"{path} coverage {percent:.2f}% is below 80%")
+          PY
       - name: Test Task8 reproduction entrypoint coverage
         run: |
           smoke_root="$(mktemp -d)"

@@ -1,0 +1,6 @@
+# category<TAB>regular expression.  Do not place real credentials in this file.
+local-path	(?:^|[\s"'(])(?:/(?:home|Users)/[^\s"')]+|[A-Za-z]:\\(?:Users|home)\\[^\s"')]+|file://)
+github-url	https?://github\.com/[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*
+email	\b[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+\b
+ipv4	(?<![A-Za-z0-9.])(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})(?:\.(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})){3}(?![A-Za-z0-9.])
+token	\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{16,}|AKIA[A-Z0-9]{16})\b
