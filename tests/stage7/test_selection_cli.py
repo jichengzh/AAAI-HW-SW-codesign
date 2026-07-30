@@ -93,6 +93,61 @@ def test_cli_module_runs_selection_and_rejects_unsafe_output(tmp_path: Path) -> 
         cli._safe_output_path(str(ROOT))
 
 
+def test_cli_backend_blind_requires_independent_bound_bundle_and_redacts_tampering(tmp_path: Path) -> None:
+    """Catches backend-blind CLI selection trusting caller predictions or bundle rehashes."""
+    cli = _module()
+    inputs = _selection_inputs(tmp_path)
+    task_path = tmp_path / "search-task.json"
+    bundle = cli.policy.build_backend_blind_prediction_bundle(
+        task=cli._stage7_task(task_path), candidate_pool=_candidates(), model_bundle_sha256="a" * 64,
+    )
+    bundle_path = tmp_path / "blind-bundle.json"
+    bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+    output = tmp_path / "blind.json"
+    common = (
+        "select", "--variant", "backend_blind", "--seed", "20260718", "--round", "0", *inputs,
+    )
+
+    missing = _run(*common, "--output-json", str(output))
+    assert missing.returncode != 0
+    assert "explicit blind prediction bundle" in missing.stderr
+
+    first = _run(
+        *common, "--blind-prediction-bundle", str(bundle_path),
+        "--blind-prediction-bundle-sha256", bundle["bundle_sha256"], "--output-json", str(output),
+    )
+    assert first.returncode == 0, first.stderr
+    expected_ids = json.loads(output.read_text(encoding="utf-8"))["acquisition"]["selected_row_ids"]
+
+    altered_candidates = _candidates()
+    for row in altered_candidates:
+        row["predictions"]["latency_ms"] *= 1000
+    (tmp_path / "candidates.json").write_text(json.dumps(altered_candidates), encoding="utf-8")
+    altered_output = tmp_path / "blind-altered.json"
+    altered = _run(
+        *common, "--blind-prediction-bundle", str(bundle_path),
+        "--blind-prediction-bundle-sha256", bundle["bundle_sha256"], "--output-json", str(altered_output),
+    )
+    assert altered.returncode == 0, altered.stderr
+    assert json.loads(altered_output.read_text(encoding="utf-8"))["acquisition"]["selected_row_ids"] == expected_ids
+
+    tampered = dict(bundle)
+    tampered["predictions"] = [dict(row) for row in bundle["predictions"]]
+    tampered["predictions"][0]["predictions"] = dict(tampered["predictions"][0]["predictions"])
+    tampered["predictions"][0]["predictions"]["latency_ms"] *= 2
+    unsigned = {key: value for key, value in tampered.items() if key != "bundle_sha256"}
+    tampered["bundle_sha256"] = cli.policy.canonical_sha256(unsigned)
+    bundle_path.write_text(json.dumps(tampered), encoding="utf-8")
+    rejected = _run(
+        *common, "--blind-prediction-bundle", str(bundle_path),
+        "--blind-prediction-bundle-sha256", bundle["bundle_sha256"], "--output-json", str(tmp_path / "tampered.json"),
+    )
+    assert rejected.returncode != 0
+    assert "blind prediction bundle identity drift" in rejected.stderr
+    assert "Traceback" not in rejected.stderr
+    assert str(bundle_path) not in rejected.stderr
+
+
 def test_cli_module_summarizes_complete_jsonl_matrix(tmp_path: Path) -> None:
     """Catches the imported CLI skipping JSONL parsing or closed-matrix validation."""
     cli = _module()

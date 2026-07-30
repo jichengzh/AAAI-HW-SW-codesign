@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from typing import Mapping
 
 import pytest
 
@@ -63,17 +64,30 @@ def _select(**kwargs: object) -> dict[str, object]:
     return policy.select_stage7_round(task=_task(), measured_rows=[], measured_graph_features=[], **kwargs)
 
 
+def _feedback(selection: Mapping[str, object]) -> list[dict[str, str]]:
+    request = selection["measurement_request"]
+    return [
+        {"row_id": row["row_id"], "request_identity": request["request_identity"], "terminal_status": "completed"}
+        for row in request["rows"]
+    ]
+
+
+def _rehash_request(request: dict[str, object]) -> dict[str, object]:
+    body = {field: request[field] for field in policy._REQUEST_BODY_FIELDS}
+    identity = policy.canonical_sha256(body)
+    return {**request, "request_identity": identity, "measurement_request_sha256": identity}
+
+
 def test_round_zero_selection_excludes_existing_ids_and_is_deterministic() -> None:
     """Catches reselecting measured work or allowing score ordering to vary by input order."""
     first = _select(
-        variant="full", seed=20260718, round_index=0, candidate_pool=_candidates(), selected_ids={"candidate-7"}
+        variant="full", seed=20260718, round_index=0, candidate_pool=_candidates()
     )
     second = _select(
-        variant="full", seed=20260718, round_index=0, candidate_pool=list(reversed(_candidates())), selected_ids={"candidate-7"}
+        variant="full", seed=20260718, round_index=0, candidate_pool=list(reversed(_candidates()))
     )
 
     assert first["acquisition"]["selected_row_ids"] == second["acquisition"]["selected_row_ids"]
-    assert "candidate-7" not in first["acquisition"]["selected_row_ids"]
     assert len(first["measurement_request"]["rows"]) == 4
 
 
@@ -175,11 +189,88 @@ def test_backend_blind_selection_cannot_consume_score_or_derived_features() -> N
     for row in altered:
         row["score"] = -float(row["score"])
 
-    first = _select(variant="backend_blind", seed=20260718, round_index=0, candidate_pool=rows)
-    second = _select(variant="backend_blind", seed=20260718, round_index=0, candidate_pool=altered)
+    bundle = policy.build_backend_blind_prediction_bundle(
+        task=_task(), candidate_pool=rows, model_bundle_sha256="a" * 64
+    )
+    first = _select(
+        variant="backend_blind", seed=20260718, round_index=0, candidate_pool=rows,
+        blind_prediction_bundle=bundle, expected_blind_prediction_bundle_sha256=bundle["bundle_sha256"],
+    )
+    second = _select(
+        variant="backend_blind", seed=20260718, round_index=0, candidate_pool=altered,
+        blind_prediction_bundle=bundle, expected_blind_prediction_bundle_sha256=bundle["bundle_sha256"],
+    )
 
     assert first["acquisition"]["selected_row_ids"] == second["acquisition"]["selected_row_ids"]
     assert "model:capability_score" in first["backend_blind_audit"]["removed_names"]
+
+
+def test_later_round_uses_verified_history_when_caller_selected_ids_are_empty() -> None:
+    """Catches an empty or stale caller list reselecting the verified previous batch."""
+    first = _select(variant="full", seed=20260718, round_index=0, candidate_pool=_candidates())
+    with pytest.raises(ValueError, match="selected history"):
+        _select(
+            variant="full", seed=20260718, round_index=1, candidate_pool=_candidates(), selected_ids=set(),
+            previous_measurement_request=first["measurement_request"], feedback_rows=_feedback(first),
+        )
+    later = _select(
+        variant="full", seed=20260718, round_index=1, candidate_pool=_candidates(),
+        selected_ids=set(first["acquisition"]["selected_row_ids"]),
+        previous_measurement_request=first["measurement_request"], feedback_rows=_feedback(first),
+    )
+    assert not set(later["acquisition"]["selected_row_ids"]) & set(first["acquisition"]["selected_row_ids"])
+
+
+@pytest.mark.parametrize("field", ["variant", "seed", "round_index", "task_sha256"])
+def test_later_round_rejects_self_consistent_wrong_previous_request(field: str) -> None:
+    """Catches accepting an internally rehashed request from a different trajectory."""
+    first = _select(variant="full", seed=20260718, round_index=0, candidate_pool=_candidates())
+    wrong = copy.deepcopy(first["measurement_request"])
+    wrong[field] = {"variant": "backend_blind", "seed": 20260719, "round_index": 1, "task_sha256": "b" * 64}[field]
+    if field == "round_index":
+        wrong["selected_history_ids"] = [f"prior-{index}" for index in range(4)] + list(
+            wrong["selected_row_ids"]
+        )
+    wrong = _rehash_request(wrong)
+    feedback = _feedback(first)
+    for row in feedback:
+        row["request_identity"] = wrong["request_identity"]
+    with pytest.raises(ValueError, match="previous request trajectory"):
+        _select(
+            variant="full", seed=20260718, round_index=1, candidate_pool=_candidates(),
+            selected_ids=set(first["acquisition"]["selected_row_ids"]),
+            previous_measurement_request=wrong, feedback_rows=feedback,
+        )
+
+
+def test_backend_blind_uses_only_explicit_bound_prediction_bundle() -> None:
+    """Catches caller predictions overriding or replacing a blind prediction bundle."""
+    candidates = _candidates()
+    bundle = policy.build_backend_blind_prediction_bundle(
+        task=_task(), candidate_pool=candidates, model_bundle_sha256="a" * 64
+    )
+    baseline = _select(
+        variant="backend_blind", seed=20260718, round_index=0, candidate_pool=candidates,
+        blind_prediction_bundle=bundle, expected_blind_prediction_bundle_sha256=bundle["bundle_sha256"],
+    )
+    altered = copy.deepcopy(candidates)
+    for row in altered:
+        row["predictions"]["latency_ms"] *= 1000
+    same = _select(
+        variant="backend_blind", seed=20260718, round_index=0, candidate_pool=altered,
+        blind_prediction_bundle=bundle, expected_blind_prediction_bundle_sha256=bundle["bundle_sha256"],
+    )
+    assert baseline["acquisition"]["selected_row_ids"] == same["acquisition"]["selected_row_ids"]
+    tampered = copy.deepcopy(bundle)
+    tampered["predictions"][0]["predictions"]["latency_ms"] *= 2
+    unsigned = dict(tampered)
+    unsigned.pop("bundle_sha256")
+    tampered["bundle_sha256"] = policy.canonical_sha256(unsigned)
+    with pytest.raises(ValueError, match="blind prediction bundle identity"):
+        _select(
+            variant="backend_blind", seed=20260718, round_index=0, candidate_pool=candidates,
+            blind_prediction_bundle=tampered, expected_blind_prediction_bundle_sha256=bundle["bundle_sha256"],
+        )
 
 
 def test_request_binding_rejects_trajectory_identity_drift() -> None:

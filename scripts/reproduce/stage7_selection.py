@@ -144,11 +144,19 @@ def _select(args: argparse.Namespace) -> dict[str, Any]:
         if not isinstance(frozen_payload, Mapping):
             raise PublicInputError("a2-frozen must be a JSON object")
         frozen = dict(frozen_payload)
+    blind_bundle: Mapping[str, Any] | None = None
+    if args.blind_prediction_bundle is not None:
+        blind_payload = _load_json(_safe_path(args.blind_prediction_bundle, label="blind-prediction-bundle", require_file=True), label="blind-prediction-bundle")
+        if not isinstance(blind_payload, Mapping):
+            raise PublicInputError("blind-prediction-bundle must be a JSON object")
+        blind_bundle = dict(blind_payload)
     if args.round > 0 and previous_request is None:
         raise PublicInputError("later rounds require explicit previous-request")
     if args.round > 0 and args.variant == "without_measured_feedback" and (frozen is None or args.a2_frozen_sha256 is None):
         raise PublicInputError("A2 later rounds require explicit frozen bundle and SHA identity")
-    return policy.select_stage7_round(variant=args.variant, seed=args.seed, round_index=args.round, task=task, candidate_pool=candidates, measured_rows=measured_rows, measured_graph_features=measured_graph_features, selected_ids=set(selected_payload), feedback_rows=feedback, previous_measurement_request=previous_request, a2_frozen=frozen, expected_a2_frozen_sha256=args.a2_frozen_sha256)
+    if args.variant == "backend_blind" and (blind_bundle is None or args.blind_prediction_bundle_sha256 is None):
+        raise PublicInputError("backend-blind requires explicit blind prediction bundle and SHA identity")
+    return policy.select_stage7_round(variant=args.variant, seed=args.seed, round_index=args.round, task=task, candidate_pool=candidates, measured_rows=measured_rows, measured_graph_features=measured_graph_features, selected_ids=set(selected_payload), feedback_rows=feedback, previous_measurement_request=previous_request, a2_frozen=frozen, expected_a2_frozen_sha256=args.a2_frozen_sha256, blind_prediction_bundle=blind_bundle, expected_blind_prediction_bundle_sha256=args.blind_prediction_bundle_sha256)
 
 
 def _summarize(args: argparse.Namespace) -> dict[str, Any]:
@@ -177,6 +185,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     select.add_argument("--previous-request")
     select.add_argument("--a2-frozen")
     select.add_argument("--a2-frozen-sha256")
+    select.add_argument("--blind-prediction-bundle")
+    select.add_argument("--blind-prediction-bundle-sha256")
     select.add_argument("--output-json", required=True)
     summarize = commands.add_parser("summarize", help="Summarize a complete terminal-event matrix.")
     summarize.add_argument("--trajectory-root", required=True)

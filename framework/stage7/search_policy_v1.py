@@ -68,7 +68,8 @@ def build_trajectory_contract(*, variant: str, seed: int, result_root: str | Pat
 
 
 def _stage5_request(
-    *, task: SearchTask, variant: str, seed: int, round_index: int, rows: Sequence[Mapping[str, Any]]
+    *, task: SearchTask, variant: str, seed: int, round_index: int, rows: Sequence[Mapping[str, Any]],
+    previous_selected_history_ids: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Wrap a Stage5 request in one canonical Stage7 feedback identity body."""
     stage5_request = build_stage5_measurement_request(
@@ -78,11 +79,14 @@ def _stage5_request(
     ids = [_identity(row) for row in selected]
     if len(ids) != 4 or any(not value for value in ids) or len(set(ids)) != 4:
         raise ValueError("selection must contain exactly four unique candidates")
+    history = [*previous_selected_history_ids, *ids]
+    if len(history) != 4 * (round_index + 1) or len(set(history)) != len(history):
+        raise ValueError("selection history is not a frozen T16 prefix")
     payload = {
         "schema_version": SCHEMA_VERSION + "_measurement_request", "variant": variant,
         "seed": seed, "round_index": round_index, "task_sha256": stage5_request["task_sha256"],
         "stage5_measurement_request_sha256": stage5_request["measurement_request_sha256"],
-        "rows": selected, "selected_row_ids": ids,
+        "rows": selected, "selected_row_ids": ids, "selected_history_ids": history,
     }
     request_identity = canonical_sha256(payload)
     return {**payload, "request_identity": request_identity, "measurement_request_sha256": request_identity}
@@ -90,7 +94,7 @@ def _stage5_request(
 
 _REQUEST_BODY_FIELDS = (
     "schema_version", "variant", "seed", "round_index", "task_sha256",
-    "stage5_measurement_request_sha256", "rows", "selected_row_ids",
+    "stage5_measurement_request_sha256", "rows", "selected_row_ids", "selected_history_ids",
 )
 
 
@@ -109,10 +113,13 @@ def validate_measurement_request(measurement_request: Mapping[str, Any]) -> dict
         raise ValueError("measurement request canonical identity drift")
     rows = body["rows"]
     ids = body["selected_row_ids"]
+    history = body["selected_history_ids"]
     if (
         not isinstance(rows, list) or not isinstance(ids, list) or len(rows) != 4
         or [_identity(row) for row in rows if isinstance(row, Mapping)] != ids
         or len(set(ids)) != 4 or any(not isinstance(value, str) or not value for value in ids)
+        or not isinstance(history, list) or len(history) != 4 * (int(body["round_index"]) + 1)
+        or len(set(history)) != len(history) or history[-4:] != ids
     ):
         raise ValueError("measurement request canonical row identity drift")
     return {**body, "request_identity": canonical, "measurement_request_sha256": canonical}
@@ -248,23 +255,95 @@ def _backend_blind_inputs(
     return blind_rows, blind_measured, blind_graphs, audit
 
 
-def select_stage7_round(*, variant: str, seed: int, round_index: int, task: SearchTask, candidate_pool: Sequence[Mapping[str, Any]], measured_rows: Sequence[Mapping[str, Any]], measured_graph_features: Sequence[Mapping[str, Any]], selected_ids: set[str] | None = None, feedback_rows: Sequence[Mapping[str, Any]] = (), previous_measurement_request: Mapping[str, Any] | None = None, a2_frozen: Mapping[str, Any] | None = None, expected_a2_frozen_sha256: str | None = None) -> dict[str, Any]:
+def _blind_projection_sha256(audit: Mapping[str, Any]) -> str:
+    return canonical_sha256({
+        "blind_schema": audit.get("blind_schema"), "removed_names": audit.get("removed_names"),
+        "blind_matrix_sha256": audit.get("blind_matrix_sha256"),
+    })
+
+
+def build_backend_blind_prediction_bundle(
+    *, task: SearchTask, candidate_pool: Sequence[Mapping[str, Any]], model_bundle_sha256: str,
+) -> dict[str, Any]:
+    """Create an explicit selection-only blind prediction lineage bundle."""
+    if not _is_sha(model_bundle_sha256):
+        raise ValueError("blind prediction model bundle identity must be SHA256")
+    blind_rows, _, _, audit = _backend_blind_inputs(candidate_pool, (), ())
+    predictions = _sorted_candidates(blind_rows)
+    payload = {
+        "schema_version": SCHEMA_VERSION + "_backend_blind_prediction_bundle",
+        "variant": "backend_blind", "task_sha256": _stage7_task_contract(task)["task_sha256"],
+        "candidate_ids": [_identity(row) for row in predictions],
+        "projection_sha256": _blind_projection_sha256(audit), "blind_feature_schema": audit["blind_schema"],
+        "model_bundle_sha256": model_bundle_sha256, "predictions": predictions,
+    }
+    return {**payload, "bundle_sha256": canonical_sha256(payload)}
+
+
+def _validate_backend_blind_prediction_bundle(
+    bundle: Mapping[str, Any] | None, *, expected_sha256: str | None, task: SearchTask,
+    candidate_pool: Sequence[Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if not isinstance(bundle, Mapping):
+        raise ValueError("backend-blind requires an explicit blind prediction bundle")
+    recorded = bundle.get("bundle_sha256")
+    payload = {key: copy.deepcopy(value) for key, value in bundle.items() if key != "bundle_sha256"}
+    if not _is_sha(expected_sha256) or recorded != expected_sha256 or recorded != canonical_sha256(payload):
+        raise ValueError("blind prediction bundle identity drift")
+    required = {
+        "schema_version", "variant", "task_sha256", "candidate_ids", "projection_sha256",
+        "blind_feature_schema", "model_bundle_sha256", "predictions",
+    }
+    if set(payload) != required or payload["variant"] != "backend_blind":
+        raise ValueError("blind prediction bundle contract drift")
+    if payload["task_sha256"] != _stage7_task_contract(task)["task_sha256"] or not _is_sha(payload["model_bundle_sha256"]):
+        raise ValueError("blind prediction bundle task identity drift")
+    _, _, _, audit = _backend_blind_inputs(candidate_pool, (), ())
+    if (
+        payload["projection_sha256"] != _blind_projection_sha256(audit)
+        or payload["blind_feature_schema"] != audit["blind_schema"]
+    ):
+        raise ValueError("blind prediction bundle projection identity drift")
+    predictions = selection_candidate_view(payload["predictions"])
+    identities = [_identity(row) for row in predictions]
+    source_ids = [_identity(row) for row in _sorted_candidates(candidate_pool)]
+    if payload["candidate_ids"] != identities or set(identities) != set(source_ids) or len(set(identities)) != len(identities):
+        raise ValueError("blind prediction bundle candidate identity drift")
+    return _sorted_candidates(predictions), audit
+
+
+def select_stage7_round(*, variant: str, seed: int, round_index: int, task: SearchTask, candidate_pool: Sequence[Mapping[str, Any]], measured_rows: Sequence[Mapping[str, Any]], measured_graph_features: Sequence[Mapping[str, Any]], selected_ids: set[str] | None = None, feedback_rows: Sequence[Mapping[str, Any]] = (), previous_measurement_request: Mapping[str, Any] | None = None, a2_frozen: Mapping[str, Any] | None = None, expected_a2_frozen_sha256: str | None = None, blind_prediction_bundle: Mapping[str, Any] | None = None, expected_blind_prediction_bundle_sha256: str | None = None) -> dict[str, Any]:
     """Publish four selection requests only; no measurement/cache/execution occurs here."""
     _variant_contract(variant)
     if seed not in SEEDS or round_index not in range(4):
         raise ValueError("Stage7 seed or round index is outside the frozen contract")
-    _stage7_task_contract(task)
-    selected = set(selected_ids or set())
+    task_contract = _stage7_task_contract(task)
+    caller_selected = set(selected_ids or set())
+    previous_history: list[str] = []
+    if round_index > 0:
+        if previous_measurement_request is None:
+            raise ValueError("later rounds require explicit previous request")
+        verified_previous = validate_measurement_request(previous_measurement_request)
+        expected_previous = {
+            "variant": variant, "seed": seed, "task_sha256": task_contract["task_sha256"],
+            "round_index": round_index - 1,
+        }
+        if any(verified_previous.get(key) != value for key, value in expected_previous.items()):
+            raise ValueError("previous request trajectory identity drift")
+        feedback = validate_feedback_jsonl(feedback_rows, verified_previous)
+        previous_history = list(verified_previous["selected_history_ids"])
+        proven_selected = set(previous_history) | set(feedback["row_ids"])
+        if caller_selected != set(previous_history):
+            raise ValueError("caller selected history conflicts with verified trajectory")
+        selected = proven_selected
+    else:
+        if caller_selected or feedback_rows or previous_measurement_request is not None:
+            raise ValueError("round zero cannot accept prior selection history or feedback")
+        selected = set()
     all_candidates = _sorted_candidates(selection_candidate_view(candidate_pool))
     candidates = [row for row in all_candidates if _identity(row) not in selected]
     if len(candidates) < 4:
         raise ValueError("fewer than four unselected candidates remain")
-    if round_index > 0:
-        if previous_measurement_request is None:
-            raise ValueError("later rounds require explicit previous request")
-        validate_feedback_jsonl(feedback_rows, previous_measurement_request)
-    elif feedback_rows or previous_measurement_request is not None:
-        raise ValueError("round zero cannot accept previous feedback")
     frozen: dict[str, Any] | None = None
     backend_audit: dict[str, Any] | None = None
     if variant == "without_surrogate":
@@ -291,8 +370,13 @@ def select_stage7_round(*, variant: str, seed: int, round_index: int, task: Sear
                 measured_graph_features=frozen["measured_graph_features"],
             )
         elif variant == "backend_blind":
-            blind_candidates, blind_measured, blind_graphs, backend_audit = _backend_blind_inputs(
-                candidates, measured_rows, measured_graph_features
+            blind_predictions, backend_audit = _validate_backend_blind_prediction_bundle(
+                blind_prediction_bundle, expected_sha256=expected_blind_prediction_bundle_sha256,
+                task=task, candidate_pool=all_candidates,
+            )
+            blind_candidates = [row for row in blind_predictions if _identity(row) not in selected]
+            _, blind_measured, blind_graphs, _ = _backend_blind_inputs(
+                all_candidates, measured_rows, measured_graph_features
             )
             acquisition = _stage5_acquisition(
                 task=task, candidates=blind_candidates, measured_rows=blind_measured,
@@ -304,8 +388,11 @@ def select_stage7_round(*, variant: str, seed: int, round_index: int, task: Sear
                 measured_graph_features=measured_graph_features,
             )
         chosen = acquisition["selected_rows"]
-    request = _stage5_request(task=task, variant=variant, seed=seed, round_index=round_index, rows=chosen)
-    result: dict[str, Any] = {"schema_version": SCHEMA_VERSION + "_round_selection", "variant": variant, "seed": seed, "round_index": round_index, "acquisition": acquisition, "measurement_request": request}
+    request = _stage5_request(
+        task=task, variant=variant, seed=seed, round_index=round_index, rows=chosen,
+        previous_selected_history_ids=previous_history,
+    )
+    result: dict[str, Any] = {"schema_version": SCHEMA_VERSION + "_round_selection", "variant": variant, "seed": seed, "round_index": round_index, "selected_history_ids": request["selected_history_ids"], "acquisition": acquisition, "measurement_request": request}
     if frozen is not None:
         result["a2_frozen"] = frozen
         result["a2_feedback_projection"] = project_a2_feedback([], {}, anchor={}, bundle_sha256=frozen["bundle_sha256"], selected_results=feedback_rows)
