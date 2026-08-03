@@ -59,6 +59,7 @@ def test_ci_installs_the_public_cpu_requirements_and_exercises_clean_clone() -> 
     assert "public-smoke" in workflow
     assert "pip install -r requirements.txt" in workflow
     assert "smoke_clean_clone.sh" in workflow
+    assert "file:" + "//" not in workflow
 
 
 def test_public_smoke_outputs_are_not_accidentally_staged() -> None:

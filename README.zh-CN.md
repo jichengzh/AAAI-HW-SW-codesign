@@ -7,6 +7,8 @@ checkpoint、ONNX 文件、编译 engine、TVM 或 TensorRT。
 证据边界请参阅 [REPRODUCIBILITY.md](REPRODUCIBILITY.md) 和
 [ARTIFACTS.md](ARTIFACTS.md)。审稿匿名包的入口为 `README.anonymous.md`；它并非
 公开项目的 README。
+持续维护的发布交接、当前状态及到完整开源的计划见
+[docs/AAAI27_RELEASE_AUDIT.md](docs/AAAI27_RELEASE_AUDIT.md)。
 
 ## 快速开始：干净克隆与 CPU-only smoke
 

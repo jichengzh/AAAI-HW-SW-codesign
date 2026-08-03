@@ -10,6 +10,8 @@ files, compiled engines, TVM, or TensorRT.
 For evidence boundaries, see [REPRODUCIBILITY.md](REPRODUCIBILITY.md) and
 [ARTIFACTS.md](ARTIFACTS.md). The reviewer-facing anonymous entry point is
 `README.anonymous.md`; it intentionally is not the public project README.
+The maintained release handoff, current state, and path to complete open source
+are recorded in [docs/AAAI27_RELEASE_AUDIT.md](docs/AAAI27_RELEASE_AUDIT.md).
 
 ## Quick start: clean clone and CPU-only smoke
 
@@ -118,9 +120,9 @@ pytest tests/release/test_identity_scan.py -q
 ```
 
 Use `python scripts/reproduce/reproduce_all.py --help` to inspect the supported
-reproduction arguments. The complete test suite may exercise additional Python
-dependencies; the smoke quick start above needs only the declared `repro` and
-`dev` extras.
+reproduction arguments. The fixed `requirements.txt` environment supports the
+CPU smoke and the current test suite; optional extras in `pyproject.toml` remain
+machine-readable dependency groups rather than the recommended release install.
 
 ## Scope of the released implementation
 

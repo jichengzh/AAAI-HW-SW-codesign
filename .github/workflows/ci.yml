@@ -25,7 +25,7 @@ jobs:
         run: |
           git branch -f ci-public-smoke HEAD
           bash scripts/reproduce/smoke_clean_clone.sh \
-            --repo-url "file://${GITHUB_WORKSPACE}" \
+            --repo-url "${GITHUB_WORKSPACE}" \
             --ref ci-public-smoke \
             --work-dir "${RUNNER_TEMP}/gear-clean-smoke" \
             --skip-install \
