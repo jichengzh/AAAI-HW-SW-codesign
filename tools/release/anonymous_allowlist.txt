@@ -6,6 +6,7 @@ README.anonymous.md
 REPRODUCIBILITY.md
 ARTIFACTS.md
 pyproject.toml
+requirements.txt
 framework/**
 scripts/reproduce/**
 scripts/prepare_stage2_demo_data.py

@@ -1,0 +1,15 @@
+# Offline CPU smoke and release checks. Python >=3.10,<3.14 is required.
+# PyTorch is deliberately resolved from the official CPU wheel index so the
+# public smoke workflow does not require CUDA, TensorRT, TVM, or a GPU.
+--index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://pypi.org/simple
+
+torch==2.9.0
+numpy==2.2.5
+PyYAML==6.0.2
+pydantic==2.11.4
+pandas==2.2.3
+scipy==1.15.3
+scikit-learn==1.6.1
+lightgbm==4.6.0
+pytest==9.0.3

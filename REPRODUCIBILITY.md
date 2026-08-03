@@ -8,11 +8,16 @@ in [ARTIFACTS.md](ARTIFACTS.md).
 
 ## Environment and entry points
 
-Use Python 3.10 or later and install the declared extras:
+Use Python 3.10--3.13. For the public CPU-only smoke, install the pinned
+requirements file and the local package without resolving a second dependency
+set:
 
 ```bash
 python --version
-pip install -e '.[repro,dev]'
+python -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+pip install --no-deps -e .
 python scripts/reproduce/reproduce_all.py --mode smoke --output-root ./repro-smoke-output
 ```
 

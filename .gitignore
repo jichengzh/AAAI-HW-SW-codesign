@@ -13,3 +13,5 @@ htmlcov/
 build/
 dist/
 .superpowers/
+repro-smoke-output/
+repro-verified-output/

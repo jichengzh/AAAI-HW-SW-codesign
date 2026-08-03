@@ -7,11 +7,14 @@ without identifying the authors or development location.
 
 ## Quick start
 
-Create a Python 3.10 or later environment, then install the reproducibility
-dependencies:
+Create a Python 3.10 or later environment, then install the pinned CPU-only
+reproducibility dependencies:
 
 ```bash
-pip install -e '.[repro,dev]'
+python -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+pip install --no-deps -e .
 python scripts/reproduce/reproduce_all.py --mode smoke --output-root ./run-output
 ```
 
@@ -36,4 +39,4 @@ planned for release upon publication.
 - `artifacts/` contains checked-in verified outputs.
 - `tests/` contains the automated checks.
 
-Run the test suite with `pytest -q` after installing the development extras.
+Run the test suite with `pytest -q` after the installation above.

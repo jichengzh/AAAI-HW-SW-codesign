@@ -8,14 +8,26 @@ checkpoint、ONNX 文件、编译 engine、TVM 或 TensorRT。
 [ARTIFACTS.md](ARTIFACTS.md)。审稿匿名包的入口为 `README.anonymous.md`；它并非
 公开项目的 README。
 
-## 快速开始：CPU-only smoke
+## 快速开始：干净克隆与 CPU-only smoke
 
-请使用 Python 3.10 或更高版本。在源代码检出目录中安装复现和开发依赖，然后指定
-一个新的或空的输出目录：
+请使用 Python 3.10--3.13。匿名审稿期间，请从仓库页面取得 HTTPS 克隆 URL 并仅在本机
+设置；不把 URL 写入源码可保持匿名边界。浅克隆和 partial clone 不会下载无关历史：
+
+```bash
+export GEAR_REPOSITORY_URL='<从仓库页面取得的 HTTPS 克隆 URL>'
+git clone --depth 1 --filter=blob:none --single-branch \
+  --branch release/aaai27-reproducibility "$GEAR_REPOSITORY_URL" gear-codesign
+cd gear-codesign
+```
+
+创建 CPU-only 环境并运行确定性 smoke：
 
 ```bash
 python --version
-pip install -e '.[repro,dev]'
+python -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+pip install --no-deps -e .
 python scripts/reproduce/reproduce_all.py --mode smoke --output-root ./repro-smoke-output
 ```
 
@@ -24,6 +36,17 @@ Smoke 是确定性的、离线的、CPU-only 的，仅使用 `data/demo/` 中的
 `paper_evidence: false`。输出的 `run_manifest.json` 记录输入和输出 SHA-256
 标识、源文件哈希、冻结随机种子与执行边界。对内容相同且已完成的输出目录重复运行
 将不产生新结果；内容不同的目录会被拒绝。
+
+如需独立核验“新 clone + 新虚拟环境 + smoke”闭环，可从任意已有检出目录运行：
+
+```bash
+bash scripts/reproduce/smoke_clean_clone.sh \
+  --repo-url "$GEAR_REPOSITORY_URL" \
+  --ref release/aaai27-reproducibility
+```
+
+该脚本不会下载数据集、checkpoint、ONNX、编译 engine、TVM/TensorRT 制品或硬件测量；
+为便于检查失败现场，它会保留临时工作目录。
 
 同一入口也可审计检入的 verified bundle：
 

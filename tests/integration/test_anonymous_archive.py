@@ -36,6 +36,7 @@ def anonymous_repo(tmp_path: Path) -> Path:
     _write(root / "README.anonymous.md", "# Anonymous submission\n")
     _write(root / "REPRODUCIBILITY.md", "# Reproduce\n")
     _write(root / "pyproject.toml", "[project]\nname = 'anonymous'\nversion = '0'\n")
+    _write(root / "requirements.txt", "pytest==9.0.3\n")
     _write(root / "framework/__init__.py")
     _write(root / "scripts/reproduce/run.py")
     _write(root / "scripts/prepare_stage2_demo_data.py")
@@ -85,6 +86,15 @@ def _refresh_integrity_sidecars(output: Path) -> None:
     (output / f"{ARCHIVE_NAME}.sha256").write_text(f"{digest}  {ARCHIVE_NAME}\n", encoding="ascii")
 
 
+def test_anonymous_readme_uses_the_pinned_cpu_requirements() -> None:
+    """Reviewers can install the ZIP with the same deterministic CPU dependencies."""
+    readme = (REPOSITORY_ROOT / "README.anonymous.md").read_text(encoding="utf-8")
+
+    assert "pip install -r requirements.txt" in readme
+    assert "pip install --no-deps -e ." in readme
+    assert "pip install -e '.[repro,dev]'" not in readme
+
+
 def test_builder_emits_only_anonymous_allowlisted_deterministic_files(
     anonymous_repo: Path, tmp_path: Path
 ) -> None:
@@ -117,6 +127,7 @@ def test_builder_emits_only_anonymous_allowlisted_deterministic_files(
     assert "README.md" == names[0] or "README.md" in names
     assert ".github/workflows/ci.yml" in names
     assert ".gitignore" in names
+    assert "requirements.txt" in names
     assert "scripts/phase2/closedloop_objective_query.py" in names
     assert ".github/workflows/other.yml" not in names
     assert not {name for name in names if name.startswith("cache/")}
