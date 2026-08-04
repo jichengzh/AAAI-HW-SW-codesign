@@ -153,7 +153,7 @@ scripts/stage2_update_evidence.py
 | P0 | 已完成 | 建立本交接台账及其回归测试，并从 README 入口链接；修复本轮真实匿名 ZIP 闭包发现。 | 同一提交包含台账、链接、测试与 CI 修复；346 passed，真实 ZIP build/verify 通过。 |
 | P1 | 已完成（本地） | 冻结当前发布候选，重建匿名 ZIP，并对候选源树和解包 ZIP 分别做干净环境验收。 | 记录候选提交、ZIP SHA-256、成员数、依赖版本、测试数、覆盖率、identity scan、clean-clone 结果；旧审计结果不能复用。 |
 | P2 | 已完成（P2a + P2b 本地只读盘点） | 审计私有完整仓库：按“源码/文档/小型脱敏 fixture/外部数据描述/禁止上传生成物”清点全部路径和依赖关系；P2b 加固嵌套数据边界和稳定读取后重新盘点。 | 机器可读的机械分类清单和敏感项扫描结果；每个保留、改写、外置或排除项的语义理由、许可证/许可状态在 P3 逐批批准时补齐。 |
-| P3 | 进行中（关闭验证未通过） | 逐模块脱敏迁移完整 Python、配置和设计 Markdown；将测试所需的小型固定输入迁入受版本控制的 fixture 目录，不再从 `results/` 读取。 | P3-1、P3-3 和 P3-5 已完成；P3-2、P3-4 和 P3-6 未批准直接迁入；P3-7 已建立关闭账本工具并确认缺少覆盖 1,551 个候选的 decisions/ledger；P3-8 已固定候选处置 token、阻塞规则和第一批 9 项账本演练范围；P3-9 已通过 9 项本地子集验证账本流程，并完成首个 Stage4 纯内存脱敏模块，故 P3 仍不能关闭。详见 [P3 关闭验证记录](release-manifests/P3_BATCH_07_CLOSURE_VERIFICATION.md)、[P3 候选处置启动审计](release-manifests/P3_BATCH_08_CANDIDATE_TRIAGE_AUDIT.md) 与 [P3-9 记录](release-manifests/P3_BATCH_09_STAGE4_REWRITE.md)。 |
+| P3 | 进行中（关闭验证未通过） | 逐模块脱敏迁移完整 Python、配置和设计 Markdown；将测试所需的小型固定输入迁入受版本控制的 fixture 目录，不再从 `results/` 读取。 | P3-1、P3-3 和 P3-5 已完成；P3-2、P3-4 和 P3-6 未批准直接迁入；P3-7 已建立关闭账本工具并确认缺少覆盖 1,551 个候选的 decisions/ledger；P3-8 已固定候选处置 token、阻塞规则和第一批 9 项账本演练范围；P3-9 已通过 9 项本地子集验证账本流程，并完成首个 Stage4 纯内存脱敏模块；P3-10 已逐项审计当前 39 项同路径差异候选，并完成其中 9 项的本地账本检查点。累计仅 18/1,551 项有可复核决定，故 P3 仍不能关闭。详见 [P3 关闭验证记录](release-manifests/P3_BATCH_07_CLOSURE_VERIFICATION.md)、[P3-8 审计](release-manifests/P3_BATCH_08_CANDIDATE_TRIAGE_AUDIT.md)、[P3-9 记录](release-manifests/P3_BATCH_09_STAGE4_REWRITE.md) 与 [P3-10 审计](release-manifests/P3_BATCH_10_DIVERGENT_CANDIDATE_AUDIT.md)。 |
 | P4 | 待开始 | 为完整实验的数据、模型和可再生成大文件建立外部获取清单和验证接口。 | 每个外部输入记录许可、获取方式、版本、SHA-256、大小、用途、预期目录和缺失时的失败信息；默认命令不下载数据/权重。 |
 | P5 | 待开始 | 固化可复现环境：CPU 基线继续保持；分别提供 4090 与 H800 的环境/驱动/CUDA 约束、硬件探测和最小运行命令。 | CPU、4090、H800 配置文件互不混淆；不含 SSH 信息；每个环境均可执行依赖检查和相应的最小测试。 |
 | P6 | 待开始 | 接入全流程训练、评测、硬件执行与结果汇总；生成不可伪造的执行 manifest。 | 每一步消费的输入、代码版本、随机种子、配置和输出 SHA-256 可追溯；缺失外部证据失败关闭；Stage6/Stage7 只在正式数据及独立验证满足后更新证据状态。 |
@@ -264,11 +264,15 @@ P3-8 重新生成 P2b 私有 inventory 并核对 SHA-256，确认 1,551 个 P3 �
 
 本批次没有迁入源码或生成公开 ledger，只固定了后续 decisions 的 `reason`/`evidence` token 口径、必须使用 `blocked_license_or_permission` 的许可/隐私情形，以及第一批 9 个同内容代码候选的账本演练范围。完整规则见 [P3-8 候选处置启动审计](release-manifests/P3_BATCH_08_CANDIDATE_TRIAGE_AUDIT.md)。下一步需要在公开仓库外维护 HMAC key 和本地 decisions 文件；完成 9 项演练仍不能关闭 P3，最终仍需覆盖全部 1,551 个候选。
 
-#### P3-9：Stage4 纯内存脱敏改写（首个单元完成）
+#### P3-9：Stage4 纯内存脱敏改写（四个单元完成）
 
 P3-9 已从 P2b 清单派生 9 项仅本机保存的账本演练子集。它们均为当前公开仓库已跟踪、同路径且同 SHA-256 的代码；使用受限 HMAC key 生成 9 条路径无关 ledger 记录，验证通过。该演练只验证账本机制，不能替代完整 P3 ledger，也不会提交 private inventory、decisions、key 或演练输出。
 
-随后按测试优先方法完成首个 Stage4 纯内存模块 `feedback_update_eval_v1` 的脱敏重写。该模块只接受白名单内存字段并生成 closure-audit 兼容摘要；匿名组 ID 限定为 `g<number>`，行 ID 必须由组 ID 和公开四臂派生；不得复制私有实现或接入文件、网络、GPU、子进程、模型、结果或硬件输入。定向验证为 8 passed，新模块覆盖率 89%；完整 Stage4 回归为 48 passed；当前 HEAD 全量为 431 passed、85% coverage，匿名 ZIP build/verify 为 118 个成员、SHA-256 `1b6bebbba902a735e551b2e5c018cf3cc82c3834c9cca44573eb41da25f71180`；Ruff、`compileall` 和 diff 空白检查通过。完整进度见 [P3-9 批次记录](release-manifests/P3_BATCH_09_STAGE4_REWRITE.md)。
+随后按测试优先方法完成四个 Stage4 纯内存模块：`feedback_update_eval_v1`、`selection_completion_v1`、`ranking_pareto_v1` 与 `uncertainty_replay_v1`。它们只接受白名单内存字段；匿名组 ID 限定为 `g<number>`，四臂和 fold/manifest 均严格绑定；不得复制私有实现或接入文件、网络、GPU、子进程、模型、结果或硬件输入。ranking/Pareto 的二次算法另限制为最多 256 组/1,024 候选。四个模块的定向和 closure-audit 回归为 91 passed，完整 Stage4 回归为 119 passed，单元覆盖率依次为 89%、88%、90% 与 90%。本批候选的全仓验收为 502 passed、86% coverage；交接/身份/账本回归为 35 passed；匿名 ZIP build/verify 为 124 个成员、SHA-256 `a6951ed6310541a0266a14d6af93228fe20313f93f41508231b773e54644d264`。Ruff、`compileall`、diff 空白检查通过，依赖审计未发现已知漏洞（PyPI 不提供 CPU 专用 `torch 2.9.0+cpu` 的审计记录）。完整进度见 [P3-9 批次记录](release-manifests/P3_BATCH_09_STAGE4_REWRITE.md)。
+
+#### P3-10：同路径差异候选逐项审计（已完成，本地）
+
+以当前公开工作树复核后，P3-8 中“同路径但内容不同”的 38 项已变为 39 项，说明公开树在 P3-8 后继续演进，旧计数不能外推。39 项均逐项审阅：9 项由当前公开、已测试的安全契约替代，13 项仍需先完成公开改写，2 项仍需来源/许可证依据，15 项仍需逐项确认安全改写、外部契约、排除或阻塞结论。只有前 9 项形成 P3-10 的本地 `duplicate_or_superseded` 子集，采用 `public_contract_supersedes` 与 `public_contract_review` 固定 token；它与 P3-9 的 9 项同内容子集合计仅为 18/1,551 项 decisions。私有 inventory、decisions、HMAC key 和生成 ledger 均未提交。详见 [P3-10 审计](release-manifests/P3_BATCH_10_DIVERGENT_CANDIDATE_AUDIT.md)。
 
 #### P5--P6：环境与全流程复现
 
@@ -318,7 +322,8 @@ P3-9 已从 P2b 清单派生 9 项仅本机保存的账本演练子集。它们�
 | 2026-08-04 | P3-6 下一批候选审阅 | 已完成（未批准直接迁入） | 冷启动筛选器会回显 label，Stage6 独立验证器会深拷贝输入行；两者均要求匿名 schema/投影重写。已有 Stage6 协议 smoke 不重复迁入。未复制代码、测试、数据或生成物；详细条件见 P3-6 审阅记录。 |
 | 2026-08-04 | P3-7 关闭验证 | 已完成（P3 未关闭） | 新增 P3 disposition ledger 工具与公开执行面回归。全量验证为 423 passed、81.95% coverage；匿名 ZIP 已 verify（116 成员，`707dbe2ac21dd276d8eb25192527c0486a8ccf86f73afc50174e2a849e8fb06a`）。由于缺少覆盖 P2b 1,551 个候选的本地 decisions 文件和可提交公开 ledger，P3 仍不能标记完成；当前 HEAD 不应作为完整公开发布推送。 |
 | 2026-08-04 | P3-8 候选处置启动审计 | 已完成（本地只读） | 重新生成 P2b inventory 并确认 SHA-256 未漂移；同路径哈希比对显示 9 个候选已同内容公开、38 个同路径但不同、1,504 个无公开同路径；Stage4 无路径功能筛选进一步确定 P3-9 的 19 项纯内存脱敏改写范围。已固定 decisions token、许可/隐私阻塞规则和第一批 9 项账本演练范围；未迁入源码、未生成公开 ledger、未推送。 |
-| 2026-08-04 | P3-9 Stage4 feedback-update 脱敏改写 | 已完成首个单元（P3-9 继续） | 本机 9 项 HMAC ledger 演练通过且不提交 inventory/decisions/key/输出；新增纯内存 `feedback_update_eval_v1`，使用匿名组/行投影、字段白名单与失败关闭。定向为 8 passed、模块 coverage 89%、完整 Stage4 为 48 passed；当前 HEAD 全量为 431 passed、85% coverage，匿名 ZIP 已 verify（118 成员，`1b6bebbba902a735e551b2e5c018cf3cc82c3834c9cca44573eb41da25f71180`）。未推送、未发布。 |
+| 2026-08-04 | P3-9 Stage4 四个脱敏单元 | 已完成（P3 继续） | 本机 9 项 HMAC ledger 演练保持本地；新增/重写 `feedback_update_eval_v1`、selection completion、ranking/Pareto 与 uncertainty replay 四个纯内存模块，使用匿名组/行投影、字段白名单与失败关闭。ranking/Pareto 限制为最多 256 组/1,024 候选。四个模块及 closure-audit 定向为 91 passed，完整 Stage4 为 119 passed，模块覆盖率依次 89%、88%、90%、90%；全仓为 502 passed、86% coverage，匿名 ZIP 已 verify（124 成员，`a6951ed6310541a0266a14d6af93228fe20313f93f41508231b773e54644d264`），Ruff、compileall、diff 与依赖审计通过（CPU torch 的 PyPI 审计例外已记录）。未推送、未发布。 |
+| 2026-08-04 | P3-10 同路径差异候选审计 | 已完成（本地） | 当前公开树重比对发现 39 项同路径不同内容候选，较 P3-8 的 38 项发生计数漂移。逐项审阅后，9 项已由安全公开契约替代，13 项待公开改写，2 项待来源/许可证核查，15 项待逐项安全边界结论；仅前 9 项写入第二个本地 HMAC ledger 子集。加上 P3-9 演练，目前仅 18/1,551 项具有可复核本地决定；私有 inventory、decisions、key 和 ledger 均未提交、未推送。 |
 
 ## 未执行的外部动作与后续授权
 

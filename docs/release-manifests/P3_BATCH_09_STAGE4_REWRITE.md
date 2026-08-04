@@ -1,6 +1,6 @@
 # P3-9：Stage4 纯内存脱敏改写
 
-状态：首个公开模块已完成；已完成本地账本演练和 `feedback_update_eval_v1` 脱敏重写；未推送、未发布。
+状态：四个最小公开模块均已完成；已完成本地账本演练、P3-10 的差异候选审计与 Stage4 脱敏改写；未推送、未发布。
 
 ## 本地账本演练
 
@@ -10,7 +10,7 @@
 
 ## Stage4 改写范围
 
-P3-8 的无路径审阅识别出 26 个 Stage4 代码候选：19 个纯内存候选需要公开脱敏改写，3 个已有公开等价物，另有 4 个必须单独审阅。P3-9 不复制私有文件；计划按以下四个最小公共模块逐一重写：
+P3-8 的无路径审阅识别出 26 个 Stage4 代码候选：19 个纯内存候选需要公开脱敏改写，3 个已有公开等价物，另有 4 个必须单独审阅。P3-9 不复制私有文件；下列四个最小公共模块均已按独立公开契约重写：
 
 1. feedback-update evaluation：before/after 指标、区间和 fold 角色；
 2. selection completion：四臂完成度、ranker 拒绝和策略 replay 摘要；
@@ -19,15 +19,17 @@ P3-8 的无路径审阅识别出 26 个 Stage4 代码候选：19 个纯内存候
 
 现有的 Stage4 selection 与 closure audit 已是公开等价物，本批不重复实现。每个新模块必须有合成输入测试、字段白名单、有限数值与身份绑定校验，并且不得读取文件、网络、GPU、子进程、结果目录、模型或硬件状态。
 
-## 首个改写单元
+## 四个改写单元
 
-首个单元是 `feedback_update_eval_v1`。它只接受内存中的规范行、before/after 预测和 canonical heads，生成兼容 Stage4 closure audit 的 `stage4_feedback_update_eval_v1` 报告。实现为纯标准库逻辑，不读取文件、网络、GPU、子进程、模型、结果目录或硬件状态。
+`feedback_update_eval_v1` 只接受内存中的规范行、before/after 预测和 canonical heads，生成兼容 Stage4 closure audit 的 `stage4_feedback_update_eval_v1` 报告。实现为纯标准库逻辑，不读取文件、网络、GPU、子进程、模型、结果目录或硬件状态。
 
 该模块采用严格字段白名单、有限数值检查、四臂完整性检查、before/after 预测集合一致性检查、fold 角色绑定和匿名 ID 契约。`group_id` 只能为 `g<number>`，`manifest_job_id` 必须由对应 `group_id` 和公开四臂派生；非匿名组、非规范行 ID、路径/URI/root/cache/terminal/checkpoint 等额外字段、重复或缺失组、预测组绑定漂移、非有限数或非法区间均失败关闭。错误信息固定为 `invalid feedback input`，不回显调用方输入。
 
-为保持纯模块导入边界，`framework.stage4.__init__` 已改为惰性导出 `run_nested_selection`。干净 Python 子进程只导入 `framework.stage4.feedback_update_eval_v1` 时不会加载 NumPy；需要旧入口 `from framework.stage4 import run_nested_selection` 时才按需加载 selection 依赖。
+`selection_completion_v1` 只接受匿名完整四臂测量与严格 selection manifest；它验证候选行、折绑定、每组唯一选择、策略白名单和 replay 指标，只输出可供 closure audit 消费的匿名汇总，明确拒绝保留 ranker。`ranking_pareto_v1` 只接受预测字段，不接受实际标签或测量；它对匿名四臂候选做确定性多目标 Pareto 与排序，并把二次 Pareto 输入限制为最多 256 组、1,024 候选。`uncertainty_replay_v1` 仅处理绑定的 OOF 与无标签候选预测，输出校准 MAE、coverage、区间宽度和匿名 acquisition replay 汇总。
 
-验证结果：`tests/stage4/test_feedback_update_eval_v1.py` 为 8 passed；新模块覆盖率 89%。连同 `tests/stage4/test_cost_model_selection.py` 与 `tests/stage4/test_closure_audit_v1.py` 的完整 Stage4 回归为 48 passed，确认惰性导出没有破坏原有 Stage4 selection/closure 接口。当前 HEAD 的全量验收为 431 passed、85% coverage；交接/身份/账本回归为 35 passed；Ruff、`compileall` 和 `git diff --check` 通过。匿名 ZIP 已 build/verify，含 118 个成员，SHA-256 为 `1b6bebbba902a735e551b2e5c018cf3cc82c3834c9cca44573eb41da25f71180`。
+四个模块均采用严格字段白名单、有限数值与匿名 ID 绑定，并拒绝路径、URI、root、cache、checkpoint、terminal status、真实标签泄漏和不受限序列。三个新增模块以合成输入执行无副作用测试，明确封锁文件、网络和子进程入口；全部结果均为深层不可变或只读的匿名报告。为保持纯模块导入边界，`framework.stage4.__init__` 已改为惰性导出 `run_nested_selection`。干净 Python 子进程只导入 `framework.stage4.feedback_update_eval_v1` 时不会加载 NumPy；需要旧入口 `from framework.stage4 import run_nested_selection` 时才按需加载 selection 依赖。
+
+当前定向验证：四个新增/重写模块与 closure audit 为 91 passed；完整 `tests/stage4` 回归为 119 passed。`feedback_update_eval_v1`、`selection_completion_v1`、`ranking_pareto_v1` 与 `uncertainty_replay_v1` 的单元覆盖率分别为 89%、88%、90% 和 90%，合计 89%。Ruff、`compileall`、`git diff --check`、交接/身份/账本回归（35 passed）均通过。当前候选 HEAD 的全仓验收为 502 passed、86% coverage；匿名 ZIP 已 build/verify，含 124 个成员，SHA-256 为 `a6951ed6310541a0266a14d6af93228fe20313f93f41508231b773e54644d264`。依赖审计没有发现已知漏洞；CPU 专用 `torch 2.9.0+cpu` 不在 PyPI 索引，因而不能由该审计器覆盖。旧的 431 passed/85% 及 ZIP SHA-256 仍仅是前一 HEAD 的历史证据。
 
 Stage5 contract 的真实输入升级、Stage6/Stage7 的正式证据和硬件执行仍保持 external/unavailable；本批次只完成第一个 Stage4 公开脱敏单元，不能替代完整 P3 ledger。
 
