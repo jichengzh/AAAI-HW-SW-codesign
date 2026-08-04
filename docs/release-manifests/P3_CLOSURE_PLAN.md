@@ -6,7 +6,7 @@ P3-18--P3-39 的已接受 records 按批次相加曾为 253 条，但该数字�
 
 ## 当前更正（以本节为准）
 
-P3-40 经第三次逐项裁决、P3-41 经公开职责与定向回归验证、P3-42 经主审与独立复审后，三批均完成当前内容绑定和路径无关 HMAC ledger 重算。P3-41 的 6 项 `duplicate_or_superseded` 已逐项由公开 Stage4 实现与测试/API 职责证据支持，定向回归为 119 passed。P3-18--P3-42 records 合计 289 条，但 P3-40 的 2 条重复 P2 身份与此前 9 条重叠合并后，基线唯一覆盖为 278。P3-43 以 4 项 P4、8 项 P6 新增 12 个身份；P3-44 以 5 项 P4、1 项 P5、4 项 P6、2 项已验证的公开改写新增 12 个身份；P3-45 再以 5 项 P4、7 项 P6 新增 12 个身份。P3-44 的一个执行闭环与两个“公开改写/等价替代”分歧、P3-45 的 GPU 调度/actual-v3 适配器/反馈推进器边界均经第三次只读裁决。当前真实唯一覆盖为 **314/1,551**；P3 仍在进行中，P4 尚未开始。详见 [覆盖身份对账](P3_COVERAGE_IDENTITY_RECONCILIATION.md)、[P3-43 记录](P3_BATCH_43_STAGE5_STAGE6_EXECUTION_REAUDIT.md)、[P3-44 记录](P3_BATCH_44_STAGE6_EVIDENCE_AND_EXECUTION_REAUDIT.md) 与 [P3-45 记录](P3_BATCH_45_STAGE7_EXECUTION_AND_EVIDENCE_REAUDIT.md)。
+P3-40 经第三次逐项裁决、P3-41 经公开职责与定向回归验证、P3-42 经主审与独立复审后，三批均完成当前内容绑定和路径无关 HMAC ledger 重算。P3-41 的 6 项 `duplicate_or_superseded` 已逐项由公开 Stage4 实现与测试/API 职责证据支持，定向回归为 119 passed。P3-18--P3-42 records 合计 289 条，但 P3-40 的 2 条重复 P2 身份与此前 9 条重叠合并后，基线唯一覆盖为 278。P3-43 以 4 项 P4、8 项 P6 新增 12 个身份；P3-44 以 5 项 P4、1 项 P5、4 项 P6、2 项已验证的公开改写新增 12 个身份；P3-45 以 5 项 P4、7 项 P6 新增 12 个身份；P3-46 以 4 项 P4、5 项 P5、3 项 P6 新增 12 个身份。P3-46 独立复审的汇总行笔误已由其 12 条逐项结论重算并确认，不影响语义结论。当前真实唯一覆盖为 **326/1,551**；P3 仍在进行中，P4 尚未开始。详见 [覆盖身份对账](P3_COVERAGE_IDENTITY_RECONCILIATION.md) 与 [P3-46 记录](P3_BATCH_46_STAGE7_ENVIRONMENT_AND_FINALIZATION_REAUDIT.md)。
 
 ## 冻结基线
 
