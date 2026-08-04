@@ -26,6 +26,8 @@ P3-40 经第三次逐项裁决、P3-41 经公开职责与定向回归验证、P3
 
 **最新更正（覆盖上段的当前计数）**：P3-62 确认 11 项遗留 replay/watchdog/TVM/TRT/硬件配置测试为非必要排除，并确认 1 项由公开 Stage1 autoscan/census/predictor workflow 测试替代；本批新增 12 个身份。第 1--9、11、12 项经第三次裁决：旧测试不执行被测运行工具，且不在当前公开支持链中，不能仅因被测目标具有执行边界而转 P4--P6。当前真实唯一覆盖为 **518/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-62 记录](P3_BATCH_62_LEGACY_EXECUTION_TEST_REAUDIT.md)。
 
+**最新更正（覆盖上段的当前计数）**：P3-63 确认 7 项由公开 Stage1 predictor/classifier/trace-plan 或 Stage2 canonical-search/genome API/tests 替代，并排除 5 项不在当前公开支持链中的遗留测试；本批新增 12 个身份。第 3、4、6、10 项经第三次裁决：公开 API/tests 覆盖净化后的 predictor/classifier/architecture 合同，但不替代完整私有 QxS/SMBO entry。当前真实唯一覆盖为 **530/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-63 记录](P3_BATCH_63_STAGE12_LEGACY_TEST_REAUDIT.md)。
+
 ## 冻结基线
 
 P3 以 P2b 的私有源只读盘点为唯一候选基线：原始盘点 SHA-256 为 `6fafdace7dc0eae3e9982763cb1c5c098c0ae83d1715af67ff1e08d7a1d12a79`，共 1,551 个候选：1,008 个代码、96 个配置、439 个 Markdown 和 8 个小 fixture。另有 3,664 个生成物、外部输入或敏感/特殊项，它们不直接进入 P3。两个嵌套仓库保持独立边界，不能默认合并。

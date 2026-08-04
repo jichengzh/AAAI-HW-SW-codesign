@@ -458,6 +458,10 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 
 12 项完成 P2 metadata/bytes、当前内容绑定、主审、独立语义复审、项目级许可证继承和安全输出审查。最终为 11 项非必要排除和 1 项公开替代。第 1--9、11、12 项经第三次裁决：旧测试不执行其被测 replay、watchdog、TVM、TRT 或硬件工具，且不被当前公开支持链调用，不能因被测目标的潜在边界而转 P4--P6。第 12 项由公开 Stage1 autoscan/census/predictor workflow 测试替代。该批新增 12 个不重复身份，使真实唯一覆盖到 **518/1,551**。没有执行私有模型、数据、设备、子进程或网络任务；P4 尚未开始。详见 [P3-62 记录](release-manifests/P3_BATCH_62_LEGACY_EXECUTION_TEST_REAUDIT.md)。
 
+#### P3-63：Stage1/Stage2 遗留测试复审（已接受，本地）
+
+12 项完成 P2 metadata/bytes、当前内容绑定、主审、独立语义复审、项目级许可证继承和安全输出审查。最终为 7 项公开替代和 5 项非必要排除。第 3、4、6、10 项经第三次裁决：公开 Stage1 predictor/classifier/trace-plan 和 Stage2 canonical-search/genome 测试覆盖净化后的公开合同；但完整私有 QxS/SMBO entry 未被公开 API/test 替代，因其不在当前公开支持链中排除。该批新增 12 个不重复身份，使真实唯一覆盖到 **530/1,551**。没有执行私有模型、数据、设备、子进程或网络任务；P4 尚未开始。详见 [P3-63 记录](release-manifests/P3_BATCH_63_STAGE12_LEGACY_TEST_REAUDIT.md)。
+
 #### P5--P6：环境与全流程复现
 
 1. CPU smoke 始终只用受控 fixture，且不得隐式发现本机 `results/`、GPU、缓存或外部目录。
