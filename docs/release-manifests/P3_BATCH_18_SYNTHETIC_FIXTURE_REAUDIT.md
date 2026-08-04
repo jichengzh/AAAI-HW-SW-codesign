@@ -21,8 +21,9 @@
 2. Stage1 manifest 只能是合成 dense-core / trace-net 范围，不能指向 `results/` 或声称完整模型延迟；
 3. Stage2 输入和 anchor fixture 必须显式标为合成、fixture-only、非论文证据；
 4. fixture tree 只能包含 8 个小型 JSON/YAML 文件。
+5. 整个 fixture tree 会拒绝本机绝对路径、邮箱、IPv4 地址和凭据标记，并以代表性泄露值回归验证该拒绝规则本身。
 
-定向 fixture 测试为 5 passed；Stage1 与 release 安全回归为 79 passed，Ruff、`compileall` 和 diff 空白检查均通过。
+定向 fixture 测试为 7 passed；Stage1 与 release 安全回归、Ruff、`compileall` 和 diff 空白检查均通过。
 
 ## 对 P4 的边界
 

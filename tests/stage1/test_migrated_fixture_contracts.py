@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import re
 
 import yaml
 
@@ -12,6 +13,23 @@ import yaml
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_ROOT = REPOSITORY_ROOT / "framework" / "tests" / "fixtures"
 SMOKE_ROOT = FIXTURE_ROOT / "stage12_smoke"
+FIXTURE_DISCLOSURE_PATTERNS = (
+    re.compile(r"/" + r"(?:home|Users)/"),
+    re.compile(r"[A-Za-z]:" + r"\\(?:Users|home)\\"),
+    re.compile(
+        r"\b[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}"
+        r"[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+\b"
+    ),
+    re.compile(
+        r"(?<![A-Za-z0-9.])(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})"
+        r"(?:\.(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})){3}(?![A-Za-z0-9.])"
+    ),
+    re.compile(
+        r"(?i)(?:\b(?:api[_-]?key|" + "se" + r"cret|to" + "ken|pass" + r"word)\b\s*[:=]"
+        r"\s*[^\s\"']+|\b(?:gh[pousr]_" + r"[A-Za-z0-9]{20,}|github_pat_"
+        r"[A-Za-z0-9_]{20,}|sk-" + r"[A-Za-z0-9_-]{16,}|AKIA[A-Z0-9]{16})\b)"
+    ),
+)
 
 
 def _load_yaml(relative_path: str) -> dict[str, object]:
@@ -78,3 +96,24 @@ def test_fixture_tree_contains_only_declared_small_text_inputs() -> None:
         b"".join(path.relative_to(FIXTURE_ROOT).as_posix().encode("utf-8") + path.read_bytes() for path in files)
     ).hexdigest()
     assert len(digest) == 64
+
+
+def test_fixture_tree_rejects_private_and_credential_markers() -> None:
+    """Fixtures are public inputs, so they cannot carry local disclosure markers."""
+    for path in sorted(item for item in FIXTURE_ROOT.rglob("*") if item.is_file()):
+        text = path.read_text(encoding="utf-8")
+        for pattern in FIXTURE_DISCLOSURE_PATTERNS:
+            assert not pattern.search(text), f"fixture disclosure matched {pattern.pattern!r}: {path}"
+
+
+def test_fixture_disclosure_patterns_detect_representative_unsafe_values() -> None:
+    """Keep the denylist effective when its regular expressions are refactored."""
+    unsafe_values = (
+        "/" + "home/" + "local-user",
+        "dev" + "@" + "private." + "example",
+        ".".join(("10", "11", "12", "13")),
+        "api_" + "key=" + "not-for-public-use",
+        "gh" + "p_" + "x" * 20,
+    )
+    for value in unsafe_values:
+        assert any(pattern.search(value) for pattern in FIXTURE_DISCLOSURE_PATTERNS), value
