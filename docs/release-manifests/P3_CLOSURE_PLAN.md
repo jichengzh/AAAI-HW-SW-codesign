@@ -36,6 +36,8 @@ P3-40 经第三次逐项裁决、P3-41 经公开职责与定向回归验证、P3
 
 **最新更正（覆盖上段的当前计数）**：P3-67 完成 2 项 P4（未公开论文 latency/curve 证据图输入）、1 项 P5（部署 diagnostic bytecode archive）、8 项 P6（Stage7 transaction deployment/runtime repair）和 1 项 P7（外部 process patcher 的路径与再分发权限阻塞）处置，并新增 12 个身份。第 2--12 项经第三次只读裁决：未公开证据制品不可仅因不在公开调用链而排除；部署目录归档是环境状态；会修改 deployed/frozen runtime、scheduler 或 live wrapper 的候选属于执行链。当前真实唯一覆盖为 **578/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-67 记录](P3_BATCH_67_DEPLOYMENT_AND_EVIDENCE_REAUDIT.md)。
 
+**最新更正（覆盖上段的当前计数）**：P3-68 完成 2 项 P4（未公开 measured CSV 的图/插值证据）、5 项 P6（Stage7 transactional deployment 与 live orchestrator 维护）、4 项 P7（外部 patch/config 与第三方派生 metrics 的许可/路径/输出阻塞）和 1 项非必要 legacy synthetic test 排除，并新增 12 个身份。第 1--5、11、12 项经第三次只读裁决：会替换 deployed/frozen runtime、更新 deployment state 或控制 live 进程的包装器属于执行链；未公开 measured CSV→论文图的职责属于外部制品契约。当前真实唯一覆盖为 **590/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-68 记录](P3_BATCH_68_DEPLOYMENT_METRICS_AND_EVIDENCE_REAUDIT.md)。
+
 ## 冻结基线
 
 P3 以 P2b 的私有源只读盘点为唯一候选基线：原始盘点 SHA-256 为 `6fafdace7dc0eae3e9982763cb1c5c098c0ae83d1715af67ff1e08d7a1d12a79`，共 1,551 个候选：1,008 个代码、96 个配置、439 个 Markdown 和 8 个小 fixture。另有 3,664 个生成物、外部输入或敏感/特殊项，它们不直接进入 P3。两个嵌套仓库保持独立边界，不能默认合并。
