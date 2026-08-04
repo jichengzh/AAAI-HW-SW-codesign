@@ -406,6 +406,10 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 
 12 项完成 P2 metadata/bytes、当前内容绑定、主审、独立语义复审、项目级许可证继承和安全输出审查。最终为 2 项 P4（论文 cost-model 图/源 CSV provenance 与 checkpoint alias）、1 项 P5（不使用 GPU 的 receipt archive）、8 项 P6（TVM benchmark/tune、部署 sidecar、恢复与 cooldown 控制）和 1 项 `excluded_nonessential`（无公开支持链的可选示意图）。第 1、6、10 项经第三次只读裁决：论文引用的图表需要 P4 补齐来源和制品契约，receipt archive 只保存环境/部署证据而不测量 GPU，故归 P5；cooldown wrapper 会改变实时部署状态，故归 P6。该批新增 12 个不重复身份，使真实唯一覆盖到 **362/1,551**。没有执行私有模型、数据、设备、子进程或网络任务；P4 尚未开始。详见 [P3-49 记录](release-manifests/P3_BATCH_49_STAGE7_DEPLOYMENT_AND_TVM_REAUDIT.md)。
 
+#### P3-50：release 与 deployment 边界复审（已接受，本地）
+
+12 项完成 P2 metadata/bytes、当前内容绑定、主审、独立语义复审、项目级许可证继承和安全输出审查。最终为 3 项 P4（release asset integrity 与 checkpoint alias 契约）、5 项 P6（实时 deployment recovery、takeover 与 source sidecar）、2 项 `duplicate_or_superseded`（有公开 clean-clone/synthetic smoke API、测试和支持链职责证据）和 2 项 `blocked_license_or_permission`（外部 CUDA 源码 patcher）。第 1、4、5 项经第三次只读裁决：公开 archive/manifest 的相邻测试不足以替代 release-asset 验证器，故归 P4；后两者虽含环境检查，但主导职责是实时部署事务、状态变更和回滚，故归 P6。外部 CUDA patcher 保持 P7 许可/隐私阻塞，不得以“可选”或“可生成”理由排除。该批新增 12 个不重复身份，使真实唯一覆盖到 **374/1,551**。P3-50 入账前还对此前 373 条 accepted records 重建了 P2 metadata、当前 SHA-256 和 HMAC ledger 绑定，确认其去重覆盖为 362。没有执行私有模型、数据、设备、子进程或网络任务；P4 尚未开始。详见 [P3-50 记录](release-manifests/P3_BATCH_50_RELEASE_AND_DEPLOYMENT_REAUDIT.md)。
+
 #### P5--P6：环境与全流程复现
 
 1. CPU smoke 始终只用受控 fixture，且不得隐式发现本机 `results/`、GPU、缓存或外部目录。
@@ -488,6 +492,7 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 | 2026-08-05 | P3-47 Stage7 source 与 feedback 边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 5 项 P4、3 项 P5、4 项 P6；第 2、9 项经第三次裁决。HMAC ledger 已重新计算，真实唯一覆盖为 338/1,551；未推送、未发布。 |
 | 2026-08-05 | P3-48 Stage2 执行与外部制品边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 3 项 P4、8 项 P6、1 项非必要排除；第 1、8、12 项经第三次裁决。HMAC ledger 已重新计算，真实唯一覆盖为 350/1,551；未推送、未发布。 |
 | 2026-08-05 | P3-49 Stage7 deployment 与 TVM 边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 2 项 P4、1 项 P5、8 项 P6、1 项非必要排除；第 1、6、10 项经第三次裁决。HMAC ledger 已重新计算，真实唯一覆盖为 362/1,551；未推送、未发布。 |
+| 2026-08-05 | P3-50 release 与 deployment 边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 3 项 P4、5 项 P6、2 项公开等价替代、2 项 P7 许可/隐私阻塞；第 1、4、5 项经第三次裁决。此前 373 条 accepted records 的 P2/current-SHA/HMAC 重建验证通过，新增 12 个身份后真实唯一覆盖为 374/1,551；未推送、未发布。 |
 
 ## 未执行的外部动作与后续授权
 
