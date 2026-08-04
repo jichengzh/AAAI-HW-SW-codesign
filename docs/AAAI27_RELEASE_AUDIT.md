@@ -394,6 +394,10 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 
 12 项完成 P2 metadata/bytes、当前内容绑定、主审、独立语义复审、项目级许可证继承和安全输出审查。最终为 4 项 P4（trajectory、formal finalizer、scanner blocker 与 fail-closed evidence facade）、5 项 P5（no-GPU、部署 bundle/cross-host override 与 H800 probe/lock）和 3 项 P6（round controller、worker 与 dispatch）。双审的逐项结论完全一致；独立审阅的汇总行笔误经其按索引复核后更正为 P4=4、P5=5、P6=3。该批新增 12 个不重复身份，使真实唯一覆盖到 **326/1,551**。没有执行私有模型、数据、设备、子进程或网络任务；P4 尚未开始。详见 [P3-46 记录](release-manifests/P3_BATCH_46_STAGE7_ENVIRONMENT_AND_FINALIZATION_REAUDIT.md)。
 
+#### P3-47：Stage7 source 与 feedback 边界复审（已接受，本地）
+
+12 项完成 P2 metadata/bytes、当前内容绑定、主审、独立语义复审、项目级许可证继承和安全输出审查。最终为 5 项 P4（private ablation、physical terminal-evidence promotion、freeze/search/relocation） 、3 项 P5（formal prepare 与 source scheduling/lease 环境）和 4 项 P6（GPU runtime、source materialization、source lease controller 与 round shell）。第 2 项不运行硬件或测量，只认证并晋升已产生的 Stage3 terminal evidence，故经第三次裁决归 P4；第 9 项持锁调用 resolver、提交 canonical source result 并推进执行状态，故归 P6。该批新增 12 个不重复身份，使真实唯一覆盖到 **338/1,551**。没有执行私有模型、数据、设备、子进程或网络任务；P4 尚未开始。详见 [P3-47 记录](release-manifests/P3_BATCH_47_STAGE7_SOURCE_AND_FEEDBACK_REAUDIT.md)。
+
 #### P5--P6：环境与全流程复现
 
 1. CPU smoke 始终只用受控 fixture，且不得隐式发现本机 `results/`、GPU、缓存或外部目录。
@@ -473,6 +477,7 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 | 2026-08-05 | P3-44 Stage6 证据、环境与执行边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 5 项 P4、1 项 P5、4 项 P6、2 项发布安全公开改写；第 4、6、10 项经第三次裁决。新增 12 个不重复身份，HMAC ledger 已重新计算，真实唯一覆盖为 302/1,551；未推送、未发布。 |
 | 2026-08-05 | P3-45 Stage7 执行、反馈与证据边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 5 项 P4、7 项 P6；第 1、7、8 项经第三次裁决。新增 12 个不重复身份，HMAC ledger 已重新计算，真实唯一覆盖为 314/1,551；未推送、未发布。 |
 | 2026-08-05 | P3-46 Stage7 环境、执行与最终证据边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。逐项双审一致；独立审阅汇总笔误已按索引复核。最终 4 项 P4、5 项 P5、3 项 P6，HMAC ledger 已重新计算，真实唯一覆盖为 326/1,551；未推送、未发布。 |
+| 2026-08-05 | P3-47 Stage7 source 与 feedback 边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 5 项 P4、3 项 P5、4 项 P6；第 2、9 项经第三次裁决。HMAC ledger 已重新计算，真实唯一覆盖为 338/1,551；未推送、未发布。 |
 
 ## 未执行的外部动作与后续授权
 
