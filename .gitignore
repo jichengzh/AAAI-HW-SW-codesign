@@ -8,6 +8,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .coverage
+.coverage.*
 coverage.xml
 htmlcov/
 build/
@@ -15,4 +16,22 @@ dist/
 .superpowers/
 repro-smoke-output/
 repro-verified-output/
+# Local experiment products.  Public fixtures and verified release evidence stay tracked
+# under data/demo/ and artifacts/verified/ respectively.
+/results/
+/models/
+/checkpoints/
+/framework/partitions/
+/outputs/
+/runs/
+/wandb/
+/tensorboard/
+*.ckpt
+*.engine
+*.onnx
+*.plan
+*.pt
+*.pth
+*.safetensors
+*.trt
 docs/release-manifests/P2_PRIVATE_SOURCE_INVENTORY.json

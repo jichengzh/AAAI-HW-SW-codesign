@@ -153,7 +153,7 @@ scripts/stage2_update_evidence.py
 | P0 | 已完成 | 建立本交接台账及其回归测试，并从 README 入口链接；修复本轮真实匿名 ZIP 闭包发现。 | 同一提交包含台账、链接、测试与 CI 修复；346 passed，真实 ZIP build/verify 通过。 |
 | P1 | 已完成（本地） | 冻结当前发布候选，重建匿名 ZIP，并对候选源树和解包 ZIP 分别做干净环境验收。 | 记录候选提交、ZIP SHA-256、成员数、依赖版本、测试数、覆盖率、identity scan、clean-clone 结果；旧审计结果不能复用。 |
 | P2 | 已完成（P2a + P2b 本地只读盘点） | 审计私有完整仓库：按“源码/文档/小型脱敏 fixture/外部数据描述/禁止上传生成物”清点全部路径和依赖关系；P2b 加固嵌套数据边界和稳定读取后重新盘点。 | 机器可读的机械分类清单和敏感项扫描结果；每个保留、改写、外置或排除项的语义理由、许可证/许可状态在 P3 逐批批准时补齐。 |
-| P3 | 进行中（P3-1、P3-3 和 P3-5 已完成；P3-2、P3-4 和 P3-6 未批准直接迁入） | 逐模块脱敏迁移完整 Python、配置和设计 Markdown；将测试所需的小型固定输入迁入受版本控制的 fixture 目录，不再从 `results/` 读取。 | P3-1、P3-3 和 P3-5 的范围分别见 [批次记录](release-manifests/P3_BATCH_01_STAGE6_CONTRACTS.md)、[批次记录](release-manifests/P3_BATCH_03_STAGE4_CLOSURE_AUDIT.md) 与 [批次记录](release-manifests/P3_BATCH_05_STAGE2_LATENCY_OUTLIER_POLICY.md)；P3-2、P3-4 和 P3-6 的拒绝/改写要求分别见 [审阅记录](release-manifests/P3_BATCH_02_STAGE5_AUDIT.md)、[审阅记录](release-manifests/P3_BATCH_04_STAGE2_S1_PROBE_METRICS_AUDIT.md) 与 [审阅记录](release-manifests/P3_BATCH_06_NEXT_CANDIDATE_AUDIT.md)。其余模块仍须逐批完成同等审阅。 |
+| P3 | 进行中（关闭验证未通过） | 逐模块脱敏迁移完整 Python、配置和设计 Markdown；将测试所需的小型固定输入迁入受版本控制的 fixture 目录，不再从 `results/` 读取。 | P3-1、P3-3 和 P3-5 已完成；P3-2、P3-4 和 P3-6 未批准直接迁入；P3-7 已建立关闭账本工具并确认缺少覆盖 1,551 个候选的 decisions/ledger，故 P3 仍不能关闭。详见 [P3 关闭验证记录](release-manifests/P3_BATCH_07_CLOSURE_VERIFICATION.md)。 |
 | P4 | 待开始 | 为完整实验的数据、模型和可再生成大文件建立外部获取清单和验证接口。 | 每个外部输入记录许可、获取方式、版本、SHA-256、大小、用途、预期目录和缺失时的失败信息；默认命令不下载数据/权重。 |
 | P5 | 待开始 | 固化可复现环境：CPU 基线继续保持；分别提供 4090 与 H800 的环境/驱动/CUDA 约束、硬件探测和最小运行命令。 | CPU、4090、H800 配置文件互不混淆；不含 SSH 信息；每个环境均可执行依赖检查和相应的最小测试。 |
 | P6 | 待开始 | 接入全流程训练、评测、硬件执行与结果汇总；生成不可伪造的执行 manifest。 | 每一步消费的输入、代码版本、随机种子、配置和输出 SHA-256 可追溯；缺失外部证据失败关闭；Stage6/Stage7 只在正式数据及独立验证满足后更新证据状态。 |
@@ -252,6 +252,12 @@ P3-5 将一个只处理内存测量字典的 Stage2 延迟质量策略重写为�
 
 P3-6 审阅三个最小候选而未复制任何私有内容。一个纯内存冷启动筛选器会回显调用方 label 且含历史实验叙述，必须改为中性说明和匿名投影；一个 Stage6 请求构造器会深拷贝调用方行和固定实验标签，必须先定义匿名行 schema；已有的 Stage6 协议 smoke 不重复迁入。完整决定见 [P3-6 审阅记录](release-manifests/P3_BATCH_06_NEXT_CANDIDATE_AUDIT.md)。
 
+#### P3-7：关闭验证与远端更新判定（P3 未关闭）
+
+P3-7 新增公开、路径无关的 disposition ledger 生成器和回归测试，用于把本地私有 inventory/decisions 文件转换为只含 HMAC-SHA256 候选 ID、P2 分类、disposition、固定 reason/evidence token 和后续阶段的公开账本。工具拒绝不完整 decisions、重复候选、非法 disposition、符号链接、硬链接、组/他人可读 HMAC key、已存在或不安全输出路径，错误信息不回显私有路径。定向验证为 18 passed，Ruff、`compileall` 和 `git diff --check` 通过。
+
+本轮关闭验证的硬结论是：尚未存在覆盖 P2b 1,551 个候选的本地逐路径 decisions 文件，也未生成可提交的公开 disposition ledger。因此 P3 仍未完成，当前 HEAD 不能作为完整可复现公开版本远端更新。阶段性分支同步也只能在维护者明确授权后执行，且不能被称为开源发布。详见 [P3-7 关闭验证记录](release-manifests/P3_BATCH_07_CLOSURE_VERIFICATION.md)。
+
 #### P5--P6：环境与全流程复现
 
 1. CPU smoke 始终只用受控 fixture，且不得隐式发现本机 `results/`、GPU、缓存或外部目录。
@@ -298,6 +304,7 @@ P3-6 审阅三个最小候选而未复制任何私有内容。一个纯内存冷
 | 2026-08-04 | P3-5 Stage2 延迟异常策略 | 已完成（本地） | 迁入脱敏的纯内存质量策略，并以定向回归固定分组字段、超大数值和标识不回显的失败关闭行为。全量回归为 386 passed、81.72% coverage，新模块为 93%；独立复审通过。匿名 ZIP 已 verify（113 成员，`6d821d88ab4915a586192b0e38592dfea22c51a8541fef194487576f0a3196b4`）。未推送、未发布。 |
 | 2026-08-04 | P3-1 Stage6 加固复审 | 已完成（本地） | 独立复审发现了字段回显、证据绑定、嵌套形状、q-mode 和数值异常链缺口；均以测试优先改为公开字段白名单、规范哈希绑定、固定失败码和无异常链的有限数值验证。最终独立复审批准；Stage6 定向为 72 passed、89% coverage。当前 HEAD 全树为 405 passed、81.95% coverage；匿名 ZIP 已 verify（113 成员，`96a3bc9b6980e2f25bb9ab102cc950ba2ff57f9fb7c2f35142d2367818b319f6`）。 |
 | 2026-08-04 | P3-6 下一批候选审阅 | 已完成（未批准直接迁入） | 冷启动筛选器会回显 label，Stage6 独立验证器会深拷贝输入行；两者均要求匿名 schema/投影重写。已有 Stage6 协议 smoke 不重复迁入。未复制代码、测试、数据或生成物；详细条件见 P3-6 审阅记录。 |
+| 2026-08-04 | P3-7 关闭验证 | 已完成（P3 未关闭） | 新增 P3 disposition ledger 工具与公开执行面回归。全量验证为 423 passed、81.95% coverage；匿名 ZIP 已 verify（116 成员，`707dbe2ac21dd276d8eb25192527c0486a8ccf86f73afc50174e2a849e8fb06a`）。由于缺少覆盖 P2b 1,551 个候选的本地 decisions 文件和可提交公开 ledger，P3 仍不能标记完成；当前 HEAD 不应作为完整公开发布推送。 |
 
 ## 未执行的外部动作与后续授权
 

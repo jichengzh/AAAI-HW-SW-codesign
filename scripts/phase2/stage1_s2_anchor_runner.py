@@ -14,13 +14,18 @@ model export. It answers the S2 acceptance questions cheaply:
   fp16-tuned database applied as a schedule-swap attempt.
 - H: batch 1 and a throughput batch.
 
-Usage on H800:
+Usage on an H800 host:
 
-  CUDA_VISIBLE_DEVICES=6 /exdata/jichengzhi/tvm310/bin/python \
-    scripts/phase2/stage1_s2_anchor_runner.py \
-    --out-json /exdata/jichengzhi/s2_tvm/results/stage1_s2_anchor_scan_v1.json \
-    --work-root /exdata/jichengzhi/s2_tvm/ms_work/stage1_s2_anchor_scan_v1 \
+  export CUDA_VISIBLE_DEVICES=0
+  python scripts/phase2/stage1_s2_anchor_runner.py \
+    --out-json "$S2_OUT_JSON" \
+    --work-root "$S2_WORK_ROOT" \
     --trials 8 --reps 50 --batches 1,2
+
+``CUDA_VISIBLE_DEVICES`` and both output locations are deliberately explicit:
+the runner never selects a GPU or output location from a developer-specific
+default.  Missing settings fail before TVM is imported, and the error does not
+echo caller-provided values.
 """
 from __future__ import annotations
 
@@ -76,7 +81,7 @@ ANCHORS: tuple[AnchorSpec, ...] = (
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(prog="stage1_s2_anchor_runner.py")
     parser.add_argument("--out-json", required=True)
     parser.add_argument("--work-root", required=True)
     parser.add_argument("--trials", type=int, default=8)
@@ -84,7 +89,19 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--batches", default="1,2")
     parser.add_argument("--anchors", default="all")
-    return parser.parse_args()
+    args = parser.parse_args()
+    _require_explicit_runtime_inputs(parser, args)
+    return args
+
+
+def _require_explicit_runtime_inputs(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """Reject ambiguous local defaults without exposing supplied values."""
+    if not os.environ.get("CUDA_VISIBLE_DEVICES", "").strip():
+        parser.error("required runtime setting: CUDA_VISIBLE_DEVICES")
+    if not args.out_json.strip():
+        parser.error("required CLI input: --out-json")
+    if not args.work_root.strip():
+        parser.error("required CLI input: --work-root")
 
 
 def _selected_anchors(value: str) -> list[AnchorSpec]:

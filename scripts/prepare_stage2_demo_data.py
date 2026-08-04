@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Create self-contained Stage2 demo inputs.
+"""Create self-contained Stage2 demo inputs only beneath an explicit --output-root.
 
 The open-source package intentionally does not commit experimental JSON/YAML
-artifacts.  This script writes a minimal local demo under results/ and
-framework/partitions/ so the Stage2 search drivers can run immediately after a
-fresh clone.
+artifacts. This script writes the minimal local demo exclusively below the
+caller-provided output root, so a fresh clone remains unchanged while the
+Stage2 search drivers can run immediately.
 """
 
 from __future__ import annotations
