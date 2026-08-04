@@ -52,6 +52,8 @@ P3-40 经第三次逐项裁决、P3-41 经公开职责与定向回归验证、P3
 
 **最新更正（覆盖上段的当前计数）**：P3-75 完成 4 项 P4（dataset、coverage、active-sample 与网格外部制品）、6 项 P6（ONNX/TRT/TVM/CUDA/NVML 执行与能耗测量）和 2 项 P7（私有根目录或外部 OpenCOOD 来源绑定），并新增 12 个身份。七项经第三次裁决：真实 load/compile/measure/NVML runner 均归 P6，纯配置计划归 P4。当前真实唯一覆盖为 **674/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-75 记录](P3_BATCH_75_DATASET_AND_ENERGY_REAUDIT.md)。
 
+**最新更正（覆盖上段的当前计数）**：P3-76 完成 3 项 P6（TensorRT engine repair/build/inspect/CUDA re-benchmark 与 TVM recovery measurement）和 9 项 P7（私有模型、workdir、结果、CUDA/PTX dump 或环境文件根目录绑定），并新增 12 个身份。q4、q5、q12 经第三次裁决：消费 engine/cache 或 workdir 不改变其实际 build/inspect/compile/execute/measure 的主导执行职责。当前真实唯一覆盖为 **686/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-76 记录](P3_BATCH_76_TRT_TVM_RECOVERY_REAUDIT.md)。
+
 ## 冻结基线
 
 P3 以 P2b 的私有源只读盘点为唯一候选基线：原始盘点 SHA-256 为 `6fafdace7dc0eae3e9982763cb1c5c098c0ae83d1715af67ff1e08d7a1d12a79`，共 1,551 个候选：1,008 个代码、96 个配置、439 个 Markdown 和 8 个小 fixture。另有 3,664 个生成物、外部输入或敏感/特殊项，它们不直接进入 P3。两个嵌套仓库保持独立边界，不能默认合并。
