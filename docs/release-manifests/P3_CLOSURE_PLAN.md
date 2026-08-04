@@ -12,6 +12,8 @@ P3-40 经第三次逐项裁决、P3-41 经公开职责与定向回归验证、P3
 
 **最新更正（覆盖上段的当前计数）**：P3-55 完成 3 项 P4（baseline admission、capability rebind 与 AP feedback repair 外部证据）和 9 项 P6（checkpoint recovery、replay/watchdog、GPU scheduler/measurement、ONNX quantization 与 Relax worker 执行链）处置，并新增 12 个身份。双审逐项一致：含 ONNX Runtime calibration/inference 的 quant-contract builder 与实际编译模块执行均归 P6；只绑定、重写或修复已有外部 evidence 的项目归 P4。当前真实唯一覆盖为 **434/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-55 记录](P3_BATCH_55_RECOVERY_AND_TVM_REAUDIT.md)。
 
+**最新更正（覆盖上段的当前计数）**：P3-56 完成 7 项 P4（scheduler/feedback integrity、H800/4090 baseline、Pareto predictor 与 accuracy evidence）和 5 项 P6（TVM worker 与 DP4A compile/tune/benchmark gates）处置，并新增 12 个身份。第 10、11 项经第三次只读裁决归 P4：虽然会运行离线评分/预测，但主导依赖是真实 baseline/predictor evidence，未执行候选、硬件或模型运行闭环。当前真实唯一覆盖为 **446/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-56 记录](P3_BATCH_56_DPA4_AND_BASELINE_REAUDIT.md)。
+
 ## 冻结基线
 
 P3 以 P2b 的私有源只读盘点为唯一候选基线：原始盘点 SHA-256 为 `6fafdace7dc0eae3e9982763cb1c5c098c0ae83d1715af67ff1e08d7a1d12a79`，共 1,551 个候选：1,008 个代码、96 个配置、439 个 Markdown 和 8 个小 fixture。另有 3,664 个生成物、外部输入或敏感/特殊项，它们不直接进入 P3。两个嵌套仓库保持独立边界，不能默认合并。
