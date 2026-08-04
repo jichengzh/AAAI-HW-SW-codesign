@@ -28,7 +28,7 @@ ledger SHA-256：`c2ee5a5af17d37966fbcc52e90c0f3f90557f09a2d2724ccefbdc487ee613a
 
 机械复核确认：ledger 有 1,551 条 entry；分类和处置计数均精确对账；所有 candidate ID 为 HMAC-SHA256 值；内容不含路径、origin、正文、人员、机器、地址或 HMAC key。
 
-## 同一 HEAD 的关闭验证
+## 同一代码/账本候选的关闭验证
 
 | 验证 | 结果 |
 | --- | --- |
@@ -38,7 +38,7 @@ ledger SHA-256：`c2ee5a5af17d37966fbcc52e90c0f3f90557f09a2d2724ccefbdc487ee613a
 | Ruff / `compileall` / diff 空白检查 | 通过。 |
 | 匿名 ZIP build/verify | 124 个成员，SHA-256 `a6951ed6310541a0266a14d6af93228fe20313f93f41508231b773e54644d264`。 |
 
-以上验证仅证明当前公开代码、账本和匿名制品在其声明范围内自洽；不访问 GPU、外部数据、模型、checkpoint、engine 或真实硬件，也不把 CPU smoke 升级为论文实验结果。
+完整覆盖率在账本提交后、本文档提交前运行；两者之间只有本交接文档的新增，不涉及代码或账本内容。本文提交后再次运行的 ledger、身份、交接与匿名 archive 测试为 65 passed。以上验证仅证明当前公开代码、账本和匿名制品在其声明范围内自洽；不访问 GPU、外部数据、模型、checkpoint、engine 或真实硬件，也不把 CPU smoke 升级为论文实验结果。
 
 ## 关闭结论与下一步
 
