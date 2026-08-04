@@ -1,0 +1,97 @@
+{
+  "format": 1,
+  "tool": "private-source-inventory/1.0.0",
+  "source": {
+    "label": "univ2x-private",
+    "tracked_files": 5127,
+    "untracked_files_considered": 88,
+    "nested_repository_count": 2
+  },
+  "raw_inventory": {
+    "committed": false,
+    "reason": "The per-file local report is intentionally kept outside the private worktree and public repository. Regenerate it with the inventory tool before each P3 migration batch.",
+    "sha256": "819207c036a35c7a4d8d61f7628aaaf1ea4ec9cc8b87186d6f6a18891e9057ad",
+    "bytes": 992298,
+    "path_policy": "No absolute source path, sensitive file path, or source content is represented in this committed summary."
+  },
+  "policy": {
+    "max_text_bytes": 1048576,
+    "candidate_paths_require_zero_forbidden_pattern_matches": true,
+    "candidate_reads_use_no_follow_stable_regular_files": true,
+    "data_boundaries_checked_at_every_path_segment": true,
+    "errors_do_not_echo_source_paths": true,
+    "opaque_entries_hide_private_paths": true,
+    "untracked_files_are_inventory_only": true
+  },
+  "summary": [
+    {
+      "classification": "exclude_generated",
+      "count": 1109,
+      "bytes": 38140347
+    },
+    {
+      "classification": "external_input",
+      "count": 1881,
+      "bytes": 144076813
+    },
+    {
+      "classification": "fixture_candidate",
+      "count": 8,
+      "bytes": 7561
+    },
+    {
+      "classification": "migrate_code",
+      "count": 1008,
+      "bytes": 11521106
+    },
+    {
+      "classification": "migrate_config",
+      "count": 96,
+      "bytes": 1332788
+    },
+    {
+      "classification": "migrate_document",
+      "count": 441,
+      "bytes": 7130572
+    },
+    {
+      "classification": "review_other",
+      "count": 75,
+      "bytes": 6860304
+    },
+    {
+      "classification": "review_paper_source",
+      "count": 31,
+      "bytes": 1156226
+    },
+    {
+      "classification": "review_sensitive",
+      "count": 455,
+      "bytes": 6226200
+    },
+    {
+      "classification": "review_shell",
+      "count": 111,
+      "bytes": 503935
+    }
+  ],
+  "migration_decisions": {
+    "automatic_migration": false,
+    "p3_input": [
+      "migrate_code",
+      "migrate_config",
+      "migrate_document",
+      "fixture_candidate"
+    ],
+    "manual_review_required": [
+      "external_input",
+      "review_other",
+      "review_paper_source",
+      "review_sensitive",
+      "review_shell"
+    ],
+    "never_copy_directly": [
+      "exclude_generated"
+    ]
+  }
+}
