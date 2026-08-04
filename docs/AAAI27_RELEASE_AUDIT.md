@@ -374,9 +374,9 @@ P3-9 已从 P2b 清单派生 9 项仅本机保存的账本演练子集。它们�
 
 12 项完成主审和独立语义复审，当前内容无漂移且结论一致：6 项进入 P4 的 Gold merge、sufficiency、integrity audit 与 repair-manifest 外部 evidence 契约，6 项进入 P6 的 source queue、AP/performance plan 与 runner 执行契约。公开树没有同路径或职责等价实现；没有运行私有队列、模型、数据、设备或子进程。受限 evidence/decision 与 HMAC ledger 已重新绑定并可重新计算，本批使已接受总数为 241/1,551。详见 [P3-39 记录](release-manifests/P3_BATCH_39_STAGE35_GOLD_QUEUE_REAUDIT.md)。
 
-#### P3-40 / P3-42：当前交接更正（已接受，本地）
+#### P3-40--P3-42：当前交接更正（已接受，本地）
 
-P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-42 经双审为 8 项 P4、4 项 P6。两批均完成当前内容绑定和路径无关 HMAC ledger 重算，未运行私有实验。它们使当前已接受数为 **277/1,551**。P3-41 的公开替代证据仍待逐项补齐，未计入。
+P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、3 项 P6、6 项 `duplicate_or_superseded`；P3-42 经双审为 8 项 P4、4 项 P6。三批均完成当前内容绑定和路径无关 HMAC ledger 重算，且未运行私有实验。P3-41 的 6 项公开替代均已逐项以 Stage4 实现、测试或 API 职责证据核实，并完成 119 项定向回归。它们使当前已接受数为 **289/1,551**；P3 仍未关闭，P4 尚未开始。详见 [P3-41 记录](release-manifests/P3_BATCH_41_STAGE4_EQUIVALENCE_REAUDIT.md)。
 
 #### P5--P6：环境与全流程复现
 
