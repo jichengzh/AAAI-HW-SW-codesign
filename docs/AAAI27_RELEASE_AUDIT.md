@@ -402,6 +402,10 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 
 12 项完成 P2 metadata/bytes、当前内容绑定、主审、独立语义复审、项目级许可证继承和安全输出审查。最终为 3 项 P4（校准、ONNX 与 coldstart96 测量行）、8 项 P6（AP queues/watchers、TRT/TVM build/eval/measure）和 1 项 `excluded_nonessential`（无公开支持链调用的替代图）。第 1、8 项没有实际运行数据集、checkpoint、CUDA 或导出，而是验证制品接口/证据，故经第三次裁决归 P4；第 12 项只产出可选展示图，公开 Stage4 实现、CLI、测试和 verified artifact 已承担选择证据，故可排除。该批新增 12 个不重复身份，使真实唯一覆盖到 **350/1,551**。没有执行私有模型、数据、设备、子进程或网络任务；P4 尚未开始。详见 [P3-48 记录](release-manifests/P3_BATCH_48_STAGE2_EXECUTION_AND_ARTIFACT_REAUDIT.md)。
 
+#### P3-49：Stage7 deployment 与 TVM 边界复审（已接受，本地）
+
+12 项完成 P2 metadata/bytes、当前内容绑定、主审、独立语义复审、项目级许可证继承和安全输出审查。最终为 2 项 P4（论文 cost-model 图/源 CSV provenance 与 checkpoint alias）、1 项 P5（不使用 GPU 的 receipt archive）、8 项 P6（TVM benchmark/tune、部署 sidecar、恢复与 cooldown 控制）和 1 项 `excluded_nonessential`（无公开支持链的可选示意图）。第 1、6、10 项经第三次只读裁决：论文引用的图表需要 P4 补齐来源和制品契约，receipt archive 只保存环境/部署证据而不测量 GPU，故归 P5；cooldown wrapper 会改变实时部署状态，故归 P6。该批新增 12 个不重复身份，使真实唯一覆盖到 **362/1,551**。没有执行私有模型、数据、设备、子进程或网络任务；P4 尚未开始。详见 [P3-49 记录](release-manifests/P3_BATCH_49_STAGE7_DEPLOYMENT_AND_TVM_REAUDIT.md)。
+
 #### P5--P6：环境与全流程复现
 
 1. CPU smoke 始终只用受控 fixture，且不得隐式发现本机 `results/`、GPU、缓存或外部目录。
@@ -483,6 +487,7 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 | 2026-08-05 | P3-46 Stage7 环境、执行与最终证据边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。逐项双审一致；独立审阅汇总笔误已按索引复核。最终 4 项 P4、5 项 P5、3 项 P6，HMAC ledger 已重新计算，真实唯一覆盖为 326/1,551；未推送、未发布。 |
 | 2026-08-05 | P3-47 Stage7 source 与 feedback 边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 5 项 P4、3 项 P5、4 项 P6；第 2、9 项经第三次裁决。HMAC ledger 已重新计算，真实唯一覆盖为 338/1,551；未推送、未发布。 |
 | 2026-08-05 | P3-48 Stage2 执行与外部制品边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 3 项 P4、8 项 P6、1 项非必要排除；第 1、8、12 项经第三次裁决。HMAC ledger 已重新计算，真实唯一覆盖为 350/1,551；未推送、未发布。 |
+| 2026-08-05 | P3-49 Stage7 deployment 与 TVM 边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 2 项 P4、1 项 P5、8 项 P6、1 项非必要排除；第 1、6、10 项经第三次裁决。HMAC ledger 已重新计算，真实唯一覆盖为 362/1,551；未推送、未发布。 |
 
 ## 未执行的外部动作与后续授权
 
