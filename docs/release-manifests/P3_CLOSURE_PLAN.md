@@ -50,6 +50,8 @@ P3-40 经第三次逐项裁决、P3-41 经公开职责与定向回归验证、P3
 
 **最新更正（覆盖上段的当前计数）**：P3-74 完成 5 项 P4（AP/latency/H800/SMBO 外部结果制品）、3 项 P6（模型评估与 TVM/CUDA 执行）、2 项 P7（私有根目录与破坏性工作目录语义）和 3 项已安全公开改写，并新增 12 个身份。六项经第三次裁决：执行 runner 的实际加载/编译/计时职责归 P6；嵌入路径仅为结果来源示例的 builder 归 P4；当前回显私有根目录或破坏性工作目录的 runner 保持 P7。当前真实唯一覆盖为 **662/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-74 记录](P3_BATCH_74_ATTENTION_EXECUTION_REAUDIT.md)。
 
+**最新更正（覆盖上段的当前计数）**：P3-75 完成 4 项 P4（dataset、coverage、active-sample 与网格外部制品）、6 项 P6（ONNX/TRT/TVM/CUDA/NVML 执行与能耗测量）和 2 项 P7（私有根目录或外部 OpenCOOD 来源绑定），并新增 12 个身份。七项经第三次裁决：真实 load/compile/measure/NVML runner 均归 P6，纯配置计划归 P4。当前真实唯一覆盖为 **674/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-75 记录](P3_BATCH_75_DATASET_AND_ENERGY_REAUDIT.md)。
+
 ## 冻结基线
 
 P3 以 P2b 的私有源只读盘点为唯一候选基线：原始盘点 SHA-256 为 `6fafdace7dc0eae3e9982763cb1c5c098c0ae83d1715af67ff1e08d7a1d12a79`，共 1,551 个候选：1,008 个代码、96 个配置、439 个 Markdown 和 8 个小 fixture。另有 3,664 个生成物、外部输入或敏感/特殊项，它们不直接进入 P3。两个嵌套仓库保持独立边界，不能默认合并。
