@@ -10,6 +10,8 @@ P3-40 经第三次逐项裁决、P3-41 经公开职责与定向回归验证、P3
 
 **最新更正（覆盖上段的当前计数）**：P3-54 完成 3 项 P4（coldstart、engine/probe、graph evidence 外部制品）和 9 项 P6（pruning/quantization、GPU guard、GPU benchmark、ONNX preparation 与 recovery training）处置，并新增 12 个身份。GPU exclusivity gate 经第三次只读裁决归 P6：GPU 准入是守卫，而其主导行为是被保护命令的启动、监控、隔离与终止。当前真实唯一覆盖为 **422/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-54 记录](P3_BATCH_54_QUANTIZATION_AND_EVIDENCE_REAUDIT.md)。
 
+**最新更正（覆盖上段的当前计数）**：P3-55 完成 3 项 P4（baseline admission、capability rebind 与 AP feedback repair 外部证据）和 9 项 P6（checkpoint recovery、replay/watchdog、GPU scheduler/measurement、ONNX quantization 与 Relax worker 执行链）处置，并新增 12 个身份。双审逐项一致：含 ONNX Runtime calibration/inference 的 quant-contract builder 与实际编译模块执行均归 P6；只绑定、重写或修复已有外部 evidence 的项目归 P4。当前真实唯一覆盖为 **434/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-55 记录](P3_BATCH_55_RECOVERY_AND_TVM_REAUDIT.md)。
+
 ## 冻结基线
 
 P3 以 P2b 的私有源只读盘点为唯一候选基线：原始盘点 SHA-256 为 `6fafdace7dc0eae3e9982763cb1c5c098c0ae83d1715af67ff1e08d7a1d12a79`，共 1,551 个候选：1,008 个代码、96 个配置、439 个 Markdown 和 8 个小 fixture。另有 3,664 个生成物、外部输入或敏感/特殊项，它们不直接进入 P3。两个嵌套仓库保持独立边界，不能默认合并。

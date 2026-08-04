@@ -426,6 +426,10 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 
 12 项完成 P2 metadata/bytes、当前内容绑定、主审、独立语义复审、项目级许可证继承和安全输出审查。最终为 3 项 P4（coldstart、engine/probe 与 graph evidence 外部制品）和 9 项 P6（pruning/quantization、GPU guard、GPU benchmark、ONNX preparation 与 recovery training）。GPU exclusivity gate 经第三次只读裁决归 P6：GPU telemetry/锁/quiet-window 是准入守卫，但文件的主导行为是被保护命令的运行、监控、隔离和进程终止。量化候选有 QuantV2X/OpenCOOD 等外部来源或依赖信号；其 NOTICE/provenance、calibration 数据隐私和 CUDA 运行时必须在 P6 前完成。该批新增 12 个不重复身份，使真实唯一覆盖到 **422/1,551**。没有执行私有模型、数据、设备、子进程或网络任务；P4 尚未开始。详见 [P3-54 记录](release-manifests/P3_BATCH_54_QUANTIZATION_AND_EVIDENCE_REAUDIT.md)。
 
+#### P3-55：recovery 与 TVM 边界复审（已接受，本地）
+
+12 项完成 P2 metadata/bytes、当前内容绑定、主审、独立语义复审、项目级许可证继承和安全输出审查。最终为 3 项 P4（baseline admission、capability rebind 与 AP feedback repair 外部 evidence）和 9 项 P6（checkpoint recovery、search replay、watchdog、round/GPU scheduler、TVM measurement、ONNX quant contract 与 Relax worker）。双审逐项一致：ONNX quant-contract builder 会以 calibration 样本运行 ONNX Runtime inference，TVM/Relax worker 会加载编译模块并执行，故均归 P6；只验证、重写或修复已有 checkpoint/ONNX/AP evidence 而不执行模型或硬件的项目归 P4。该批新增 12 个不重复身份，使真实唯一覆盖到 **434/1,551**。没有执行私有模型、数据、设备、子进程或网络任务；P4 尚未开始。详见 [P3-55 记录](release-manifests/P3_BATCH_55_RECOVERY_AND_TVM_REAUDIT.md)。
+
 #### P5--P6：环境与全流程复现
 
 1. CPU smoke 始终只用受控 fixture，且不得隐式发现本机 `results/`、GPU、缓存或外部目录。
@@ -513,6 +517,7 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 | 2026-08-05 | P3-52 training 与 plugin 边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 3 项 P4、9 项 P6；第 1--4、7 项经第三次裁决。HMAC ledger 已重新计算，真实唯一覆盖为 398/1,551；未推送、未发布。 |
 | 2026-08-05 | P3-53 model 与 plugin 边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。12 项均归 P6；双审逐项一致。OpenMMLab/TRT 适配来源留待 P6 前 NOTICE/provenance 审查。HMAC ledger 已重新计算，真实唯一覆盖为 410/1,551；未推送、未发布。 |
 | 2026-08-05 | P3-54 quantization 与 evidence 边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 3 项 P4、9 项 P6；GPU exclusivity gate 经第三次裁决归 P6。HMAC ledger 已重新计算，真实唯一覆盖为 422/1,551；未推送、未发布。 |
+| 2026-08-05 | P3-55 recovery 与 TVM 边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 3 项 P4、9 项 P6；双审逐项一致。HMAC ledger 已重新计算，真实唯一覆盖为 434/1,551；未推送、未发布。 |
 
 ## 未执行的外部动作与后续授权
 
