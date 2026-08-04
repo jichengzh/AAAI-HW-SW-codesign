@@ -360,23 +360,23 @@ P3-9 已从 P2b 清单派生 9 项仅本机保存的账本演练子集。它们�
 
 #### P3-36：Stage2 外部执行线索复审（已接受，本地）
 
-12 项候选均完成主审和独立语义读取并确认当前内容无漂移。两项“公开同路径差异实现是否等价”的分歧由第三次职责/API/测试裁决解决：公开实现保留核心 B4 ablation 统计/报告和 three-arm search API，并由公开 demo pipeline 测试覆盖，因此两项为 `duplicate_or_superseded`；其余 10 项仍按职责转交。最终 5 项进入 P4 外部测量/制品/registry/readiness 契约、2 项进入 P5 环境/部署协议、3 项进入 P6 测量/控制/CLI 执行契约、2 项由公开实现替代。公开 demo pipeline 定向回归为 9 passed；受限 evidence/decision 与 HMAC ledger 已重新绑定并可重新计算，本批使已接受总数为 217/1,551。详见 [P3-36 记录](release-manifests/P3_BATCH_36_STAGE2_EXECUTION_LEADS_ADJUDICATION.md)。
+12 项候选均完成主审和独立语义读取并确认当前内容无漂移。两项“公开同路径差异实现是否等价”的分歧由第三次职责/API/测试裁决解决：公开实现保留核心 B4 ablation 统计/报告和 three-arm search API，并由公开 demo pipeline 测试覆盖，因此两项为 `duplicate_or_superseded`；其余 10 项仍按职责转交。最终 5 项进入 P4 外部测量/制品/registry/readiness 契约、2 项进入 P5 环境/部署协议、3 项进入 P6 测量/控制/CLI 执行契约、2 项由公开实现替代。公开 demo pipeline 定向回归为 9 passed；受限 evidence/decision 与 HMAC ledger 已重新绑定并可重新计算。P3-36 中有 8 项此前已处置的 P2 身份，故截至本批的真实唯一覆盖为 209/1,551。详见 [P3-36 记录](release-manifests/P3_BATCH_36_STAGE2_EXECUTION_LEADS_ADJUDICATION.md)。
 
 #### P3-37：Stage2/Stage4 运行边界复审（已接受，本地）
 
-12 项完成主审和独立语义复审：5 项进入 P4 外部证据/制品契约、3 项进入 P5 硬件/编译环境契约、4 项进入 P6 训练/测量执行契约。当前内容无漂移；受限 evidence/decision 与 HMAC ledger 已重新绑定并可重新计算，本批使已接受总数为 253/1,551。没有执行私有模型、数据、设备或子进程，P4 尚未开始。
+12 项完成主审和独立语义复审：5 项进入 P4 外部证据/制品契约、3 项进入 P5 硬件/编译环境契约、4 项进入 P6 训练/测量执行契约。当前内容无漂移；受限 evidence/decision 与 HMAC ledger 已重新绑定并可重新计算。P3-37 含 1 项此前已处置的 P2 身份，故截至本批的真实唯一覆盖为 220/1,551，而非按 records 累加的 253。没有执行私有模型、数据、设备或子进程，P4 尚未开始。
 
 #### P3-38：Stage35 完成与证据边界复审（已接受，本地）
 
-12 项完成主审、独立语义复审和针对两个 finalizer P4/P6 分歧的根级逐项裁决。裁决读取了测试与被测入口：两个 finalizer 只接收 manifest/state rows、验证结构并输出 schema/audit，测试中的 CLI 仅覆盖 `--help`，不实际执行模型、设备或 job，因此均归 P4 而非 P6。最终 6 项进入 P4 ONNX/evidence/finalization 契约、6 项进入 P6 supervisor/source queue/repeat plan 执行契约。受限 evidence/decision 与 HMAC ledger 已重新绑定并可重新计算，本批使已接受总数为 229/1,551。详见 [P3-38 记录](release-manifests/P3_BATCH_38_STAGE35_FINALIZATION_ADJUDICATION.md)。
+12 项完成主审、独立语义复审和针对两个 finalizer P4/P6 分歧的根级逐项裁决。裁决读取了测试与被测入口：两个 finalizer 只接收 manifest/state rows、验证结构并输出 schema/audit，测试中的 CLI 仅覆盖 `--help`，不实际执行模型、设备或 job，因此均归 P4 而非 P6。最终 6 项进入 P4 ONNX/evidence/finalization 契约、6 项进入 P6 supervisor/source queue/repeat plan 执行契约。受限 evidence/decision 与 HMAC ledger 已重新绑定并可重新计算，本批使真实唯一覆盖到 232/1,551。详见 [P3-38 记录](release-manifests/P3_BATCH_38_STAGE35_FINALIZATION_ADJUDICATION.md)。
 
 #### P3-39：Stage35 Gold 队列与充分性复审（已接受，本地）
 
-12 项完成主审和独立语义复审，当前内容无漂移且结论一致：6 项进入 P4 的 Gold merge、sufficiency、integrity audit 与 repair-manifest 外部 evidence 契约，6 项进入 P6 的 source queue、AP/performance plan 与 runner 执行契约。公开树没有同路径或职责等价实现；没有运行私有队列、模型、数据、设备或子进程。受限 evidence/decision 与 HMAC ledger 已重新绑定并可重新计算，本批使已接受总数为 241/1,551。详见 [P3-39 记录](release-manifests/P3_BATCH_39_STAGE35_GOLD_QUEUE_REAUDIT.md)。
+12 项完成主审和独立语义复审，当前内容无漂移且结论一致：6 项进入 P4 的 Gold merge、sufficiency、integrity audit 与 repair-manifest 外部 evidence 契约，6 项进入 P6 的 source queue、AP/performance plan 与 runner 执行契约。公开树没有同路径或职责等价实现；没有运行私有队列、模型、数据、设备或子进程。受限 evidence/decision 与 HMAC ledger 已重新绑定并可重新计算，本批使真实唯一覆盖到 244/1,551。详见 [P3-39 记录](release-manifests/P3_BATCH_39_STAGE35_GOLD_QUEUE_REAUDIT.md)。
 
 #### P3-40--P3-42：当前交接更正（已接受，本地）
 
-P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、3 项 P6、6 项 `duplicate_or_superseded`；P3-42 经双审为 8 项 P4、4 项 P6。三批均完成当前内容绑定和路径无关 HMAC ledger 重算，且未运行私有实验。P3-41 的 6 项公开替代均已逐项以 Stage4 实现、测试或 API 职责证据核实，并完成 119 项定向回归。它们使当前已接受数为 **289/1,551**；P3 仍未关闭，P4 尚未开始。详见 [P3-41 记录](release-manifests/P3_BATCH_41_STAGE4_EQUIVALENCE_REAUDIT.md)。
+P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、3 项 P6、6 项 `duplicate_or_superseded`；P3-42 经双审为 8 项 P4、4 项 P6。三批均完成当前内容绑定和路径无关 HMAC ledger 重算，且未运行私有实验。P3-41 的 6 项公开替代均已逐项以 Stage4 实现、测试或 API 职责证据核实，并完成 119 项定向回归。全量接受 records 虽为 289 条，但 11 条是对既有 P2 身份的复审，故当前真实唯一覆盖为 **278/1,551**；P3 仍未关闭，P4 尚未开始。详见 [P3-41 记录](release-manifests/P3_BATCH_41_STAGE4_EQUIVALENCE_REAUDIT.md) 与 [覆盖身份对账](release-manifests/P3_COVERAGE_IDENTITY_RECONCILIATION.md)。
 
 #### P5--P6：环境与全流程复现
 
@@ -449,10 +449,10 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 | 2026-08-04 | P3-33 执行环境与制品边界复审 | 已接受（本地） | 12 项完成当前内容、P2 bytes、职责、调用、公开反证、来源/许可证与安全输出审查，并通过独立语义复审：4 项转 P4、2 项转 P5、3 项转 P6、3 项待公开合成重写。受限 HMAC ledger 可重新计算；未运行或迁入私有执行面。本批使已接受总数到 169/1,551；未推送、未发布。 |
 | 2026-08-04 | P3-34 Stage2 覆盖与导出边界复审 | 已接受（本地） | 12 项完成当前内容、P2 bytes、职责、调用、公开反证、来源/许可证与安全输出审查，并通过独立语义复审：1 项转 P4、2 项转 P5、5 项转 P6、4 项待公开合成重写。受限 HMAC ledger 可重新计算；当前已接受总数为 181/1,551；未推送、未发布。 |
 | 2026-08-04 | P3-35 Stage2 测试边界复审 | 已接受（本地） | 前两次逐项审阅的 8 项主导边界不一致；第三次裁决逐项确认公开 Stage2 contract/demo 测试仅部分覆盖，不能误判为公开替代，最终为 5 项 P4、2 项 P5、5 项 P6。公开 Stage2 定向回归为 20 passed；受限 evidence/decision 和 HMAC ledger 已重新绑定并可重新计算。该批使已接受总数到 205/1,551；未推送、未发布。 |
-| 2026-08-04 | P3-36 Stage2 外部执行线索复审 | 已接受（本地） | 两项公开替代分歧经第三次职责/API/测试裁决解决：公开同路径实现和 demo pipeline 覆盖核心 ablation/search 责任，成为 2 项公开替代；其余为 5 项 P4、2 项 P5、3 项 P6。公开 demo pipeline 定向回归为 9 passed；受限 evidence/decision 和 HMAC ledger 已重新绑定并可重新计算。该批使已接受总数到 217/1,551；未推送、未发布。 |
-| 2026-08-04 | P3-37 Stage2/Stage4 运行边界复审 | 已接受（本地） | 12 项主审与独立语义复审一致：5 项 P4、3 项 P5、4 项 P6；受限 evidence/decision 与 HMAC ledger 已重新绑定并可重新计算。该批使已接受总数到 253/1,551；未推送、未发布。 |
-| 2026-08-04 | P3-38 Stage35 完成与证据边界复审 | 已接受（本地） | 12 项经历主审、独立复审和两个 P4/P6 finalizer 分歧的逐项测试/入口裁决，最终为 6 项 P4、6 项 P6。受限 evidence/decision 和 HMAC ledger 已重新绑定并可重新计算；该批使已接受总数到 229/1,551；未推送、未发布。 |
-| 2026-08-04 | P3-39 Stage35 Gold 队列与充分性复审 | 已接受（本地） | 12 项主审与独立语义复审一致：6 项 P4、6 项 P6；公开树无同路径或职责等价实现。受限 evidence/decision 和 HMAC ledger 已重新绑定并可重新计算；该批使已接受总数到 241/1,551；未推送、未发布。 |
+| 2026-08-04 | P3-36 Stage2 外部执行线索复审 | 已接受（本地） | 两项公开替代分歧经第三次职责/API/测试裁决解决：公开同路径实现和 demo pipeline 覆盖核心 ablation/search 责任，成为 2 项公开替代；其余为 5 项 P4、2 项 P5、3 项 P6。公开 demo pipeline 定向回归为 9 passed；受限 evidence/decision 和 HMAC ledger 已重新绑定并可重新计算。8 条为对 P3-19/P3-20 既有身份的复审，因此真实唯一覆盖仅增至 209/1,551；未推送、未发布。 |
+| 2026-08-04 | P3-37 Stage2/Stage4 运行边界复审 | 已接受（本地） | 12 项主审与独立语义复审一致：5 项 P4、3 项 P5、4 项 P6；受限 evidence/decision 与 HMAC ledger 已重新绑定并可重新计算。1 条为对 P3-20 既有身份的复审，因此真实唯一覆盖增至 220/1,551；未推送、未发布。 |
+| 2026-08-04 | P3-38 Stage35 完成与证据边界复审 | 已接受（本地） | 12 项经历主审、独立复审和两个 P4/P6 finalizer 分歧的逐项测试/入口裁决，最终为 6 项 P4、6 项 P6。受限 evidence/decision 和 HMAC ledger 已重新绑定并可重新计算；该批使真实唯一覆盖到 232/1,551；未推送、未发布。 |
+| 2026-08-04 | P3-39 Stage35 Gold 队列与充分性复审 | 已接受（本地） | 12 项主审与独立语义复审一致：6 项 P4、6 项 P6；公开树无同路径或职责等价实现。受限 evidence/decision 和 HMAC ledger 已重新绑定并可重新计算；该批使真实唯一覆盖到 244/1,551；未推送、未发布。 |
 
 ## 未执行的外部动作与后续授权
 
