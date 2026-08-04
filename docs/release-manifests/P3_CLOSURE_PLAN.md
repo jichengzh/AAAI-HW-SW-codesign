@@ -6,7 +6,7 @@ P3-18--P3-39 的已接受 records 按批次相加曾为 253 条，但该数字�
 
 ## 当前更正（以本节为准）
 
-P3-40 经第三次逐项裁决、P3-41 经公开职责与定向回归验证、P3-42 经主审与独立复审后，三批均完成当前内容绑定和路径无关 HMAC ledger 重算。P3-41 的 6 项 `duplicate_or_superseded` 已逐项由公开 Stage4 实现与测试/API 职责证据支持，定向回归为 119 passed。P3-18--P3-42 records 合计 289 条，但 P3-40 的 2 条重复 P2 身份与此前 9 条重叠合并后，基线唯一覆盖为 278。P3-43--P3-46 依次新增 12 个身份；P3-47 再以 5 项 P4、3 项 P5、4 项 P6 新增 12 个身份。P3-47 的物理 terminal-evidence promotion 和 source lease controller 边界均经第三次只读裁决，分别归 P4 与 P6。当前真实唯一覆盖为 **338/1,551**；P3 仍在进行中，P4 尚未开始。详见 [覆盖身份对账](P3_COVERAGE_IDENTITY_RECONCILIATION.md) 与 [P3-47 记录](P3_BATCH_47_STAGE7_SOURCE_AND_FEEDBACK_REAUDIT.md)。
+P3-40 经第三次逐项裁决、P3-41 经公开职责与定向回归验证、P3-42 经主审与独立复审后，三批均完成当前内容绑定和路径无关 HMAC ledger 重算。P3-41 的 6 项 `duplicate_or_superseded` 已逐项由公开 Stage4 实现与测试/API 职责证据支持，定向回归为 119 passed。P3-18--P3-42 records 合计 289 条，但 P3-40 的 2 条重复 P2 身份与此前 9 条重叠合并后，基线唯一覆盖为 278。P3-43--P3-47 依次新增 12 个身份；P3-48 再以 3 项 P4、8 项 P6、1 项非必要排除新增 12 个身份。P3-48 的校准、ONNX 和替代图职责均经第三次只读裁决：前二者只绑定外部制品契约，后者无公开支持链调用。当前真实唯一覆盖为 **350/1,551**；P3 仍在进行中，P4 尚未开始。详见 [覆盖身份对账](P3_COVERAGE_IDENTITY_RECONCILIATION.md) 与 [P3-48 记录](P3_BATCH_48_STAGE2_EXECUTION_AND_ARTIFACT_REAUDIT.md)。
 
 ## 冻结基线
 
