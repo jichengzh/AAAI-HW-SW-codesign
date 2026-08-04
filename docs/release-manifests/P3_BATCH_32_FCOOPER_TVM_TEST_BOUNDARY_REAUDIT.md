@@ -16,4 +16,4 @@
 
 12 项均完成当前内容 SHA-256 与 P2 metadata/字节数对账，当前内容漂移为 0。P2b inventory 没有每文件历史 digest，当前 SHA-256 仅绑定本轮读取的内容；源码变化时必须重新审计。
 
-本批不迁入源码、测试、数据、模型、checkpoint、ONNX、engine 或实验结果。受限 HMAC evidence/decision records 仅用于本机核验，不构成 P3 关闭账本。由于独立复审尚未回收，新的发布级 re-audit 仍保持 145/1,551；P4 尚未开始。
+本批不迁入源码、测试、数据、模型、checkpoint、ONNX、engine 或实验结果。受限 HMAC evidence/decision records 仅用于本机核验，不构成 P3 关闭账本。由于独立复审尚未回收，本批不计入已接受总数；其他已接受批次使新的发布级 re-audit 为 181/1,551；P4 尚未开始。

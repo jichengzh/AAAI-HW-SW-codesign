@@ -17,4 +17,4 @@
 
 12 项均完成当前内容 SHA-256 与 P2 metadata/字节数对账、AST 解析、导入/调用审阅、公开替代物检查、来源/许可证结论和安全输出审查。P2b inventory 不带每文件历史 digest，当前 SHA-256 仅绑定本轮读取内容；以后变更必须重新审计。
 
-受限 HMAC evidence/decision records 与路径无关账本检查点均通过，但不构成 P3 关闭账本。本批不迁入源码、测试、数据、模型、checkpoint、ONNX、engine 或实验结果；本批关闭时的累计为 109/1,551。随后 P3-26/P3-27 的规范 records 通过独立复审和 supersession 处置，当前累计为 145/1,551；P4 尚未开始。
+受限 HMAC evidence/decision records 与路径无关账本检查点均通过，但不构成 P3 关闭账本。本批不迁入源码、测试、数据、模型、checkpoint、ONNX、engine 或实验结果；本批关闭时的累计为 109/1,551。随后 P3-26/P3-27 的规范 records 通过独立复审和 supersession 处置，P3-31、P3-33、P3-34 也已按协议接受，当前累计为 181/1,551；P4 尚未开始。
