@@ -482,6 +482,10 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 
 12 项完成 P2 metadata/bytes、当前内容绑定、主审、独立语义复审、项目级许可证继承和安全输出审查。第 6--10 项双审一致；第 1--5、11、12 项经第三次只读裁决。最终为 2 项 P4（未公开 measured CSV 的图/插值证据）、5 项 P6（Stage7 transactional deployment 与 live orchestrator 维护）、4 项 P7（外部 patch/config 与第三方派生 metrics 的许可/路径/输出阻塞）和 1 项非必要 legacy synthetic test 排除。裁决确认：会替换 deployed/frozen runtime、更新 deployment state 或认证并控制 live 进程的包装器属于执行链；未公开 measured CSV→论文图的职责属于外部制品契约，即使该脚本不在当前公开调用链。该批新增 12 个不重复身份，使真实唯一覆盖到 **590/1,551**。没有执行私有模型、数据、设备、子进程或网络任务；P4 尚未开始。详见 [P3-68 记录](release-manifests/P3_BATCH_68_DEPLOYMENT_METRICS_AND_EVIDENCE_REAUDIT.md)。
 
+#### P3-69：UniV2X 模型支持边界复审（已接受，本地）
+
+12 项完成 P2 metadata/bytes、当前内容绑定、主审、独立语义复审、项目级许可证继承和安全输出审查。第 1、4--12 项双审一致；第 2、3 项经第三次只读裁决。最终为 1 项 P4（TRT Phase-2 config 的 checkpoint/ONNX/engine/dataset/anchor 制品来源）、9 项 P6（UniV2X/MMDet registry、assigner、coder、match-cost 和 tensor 执行支持）和 2 项非必要排除。裁决确认：零字节 private package marker 不承担可发布职责；模型 config 的主导边界是外部制品身份而非环境或执行器。该批新增 12 个不重复身份，使真实唯一覆盖到 **602/1,551**。没有执行私有模型、数据、设备、子进程或网络任务；P4 尚未开始。详见 [P3-69 记录](release-manifests/P3_BATCH_69_UNIV2X_MODEL_SUPPORT_REAUDIT.md)。
+
 #### P5--P6：环境与全流程复现
 
 1. CPU smoke 始终只用受控 fixture，且不得隐式发现本机 `results/`、GPU、缓存或外部目录。
@@ -583,6 +587,7 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 | 2026-08-05 | P3-66 Stage6/Stage7 遗留测试复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 2 项公开替代、10 项非必要排除；第 3 项经第三次裁决。HMAC ledger 已重新计算，真实唯一覆盖为 566/1,551；未推送、未发布。 |
 | 2026-08-05 | P3-67 deployment 与论文证据边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 2 项 P4、1 项 P5、8 项 P6、1 项 P7；第 2--12 项经第三次裁决。HMAC ledger 已重新计算，真实唯一覆盖为 578/1,551；未推送、未发布。 |
 | 2026-08-05 | P3-68 deployment、metrics 与证据边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 2 项 P4、5 项 P6、4 项 P7、1 项非必要排除；第 1--5、11、12 项经第三次裁决。HMAC ledger 已重新计算，真实唯一覆盖为 590/1,551；未推送、未发布。 |
+| 2026-08-05 | P3-69 UniV2X 模型支持边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 1 项 P4、9 项 P6、2 项非必要排除；第 2、3 项经第三次裁决。HMAC ledger 已重新计算，真实唯一覆盖为 602/1,551；未推送、未发布。 |
 
 ## 未执行的外部动作与后续授权
 
