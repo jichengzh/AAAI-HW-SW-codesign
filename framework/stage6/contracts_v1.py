@@ -170,16 +170,19 @@ def build_stage6_manifest() -> dict[str, Any]:
     )
 
 
-def validate_stage6_manifest(manifest: Mapping[str, Any]) -> dict[str, Any]:
+def validate_stage6_manifest(manifest: Any) -> dict[str, Any]:
     """Return an audit result without initiating a measurement or reading evidence."""
     failures: list[str] = []
-    raw_arms = manifest.get("arms")
+    root = manifest if isinstance(manifest, Mapping) else {}
+    if root is not manifest:
+        failures.append("stage6_manifest_must_be_an_object")
+    raw_arms = root.get("arms")
     arms = list(raw_arms) if isinstance(raw_arms, list) else []
     valid_arms = all(isinstance(arm, Mapping) for arm in arms)
     by_id = {str(arm.get("arm_id")): arm for arm in arms if isinstance(arm, Mapping)}
     if not valid_arms or tuple(arm.get("arm_id") for arm in arms if isinstance(arm, Mapping)) != ARM_IDS:
         failures.append("six_arm_identity_or_order_mismatch")
-    common = _mapping(manifest.get("common_contract"))
+    common = _mapping(root.get("common_contract"))
     if common.get("genome") != ["w0", "w1", "w2", "q_mode"]:
         failures.append("outer_genome_contract_mismatch")
     if common.get("backend_is_outer_gene") is not False:
@@ -203,8 +206,18 @@ def validate_stage6_manifest(manifest: Mapping[str, Any]) -> dict[str, Any]:
         failures.append("effective_candidate_pool_contract_mismatch")
 
     compression = _mapping(by_id.get("compression_only"))
-    features = set(compression.get("acquisition_features") or [])
-    if features & BACKEND_LABELS or compression.get("target_backend_labels_allowed_in_acquisition") is not False:
+    raw_features = compression.get("acquisition_features")
+    features = (
+        set(raw_features)
+        if isinstance(raw_features, list) and all(isinstance(item, str) for item in raw_features)
+        else set()
+    )
+    if (
+        not isinstance(raw_features, list)
+        or any(not isinstance(item, str) for item in raw_features)
+        or features & BACKEND_LABELS
+        or compression.get("target_backend_labels_allowed_in_acquisition") is not False
+    ):
         failures.append("compression_only_backend_label_leakage")
     if compression.get("q_modes") != ["fp16", "int8"]:
         failures.append("compression_only_q_mode_mismatch")
@@ -241,7 +254,7 @@ def validate_stage6_manifest(manifest: Mapping[str, Any]) -> dict[str, Any]:
         failures.append("schedule_only_resource_cap_missing")
 
     joint = _mapping(by_id.get("joint_shcosearch"))
-    evidence = joint.get("joint_evidence") or {}
+    evidence = joint.get("joint_evidence")
     evidence_is_valid = isinstance(evidence, Mapping) and set(evidence) == {"tvm", "trt"}
     if evidence_is_valid:
         evidence_is_valid = all(

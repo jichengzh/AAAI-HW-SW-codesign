@@ -20,19 +20,53 @@ AP_GRAPH_FEATURES = (
     "stride2_conv_count",
     "arithmetic_intensity_proxy",
 )
+ALLOWED_Q_MODES = frozenset({"fp16", "int8", "fp32"})
+
+
+def _invalid_genome() -> ValueError:
+    return ValueError("invalid candidate genome")
+
+
+def _invalid_scalar() -> ValueError:
+    return ValueError("formal candidate contains invalid scalar")
+
+
+def _validated_widths(value: Any) -> tuple[int, int, int]:
+    if (
+        not isinstance(value, (list, tuple))
+        or len(value) != 3
+        or any(
+            isinstance(width, bool) or not isinstance(width, int) or width <= 0
+            for width in value
+        )
+    ):
+        raise _invalid_genome()
+    return value[0], value[1], value[2]
+
+
+def _validated_q_mode(value: Any) -> str:
+    if not isinstance(value, str) or value not in ALLOWED_Q_MODES:
+        raise _invalid_genome()
+    return value
 
 
 def _genome_key(row: Mapping[str, Any]) -> tuple[int, int, int, str]:
-    genome = list(row.get("genome") or [])
-    if len(genome) != 4:
-        raise ValueError("candidate genome must contain three widths and q_mode")
-    return int(genome[0]), int(genome[1]), int(genome[2]), str(genome[3])
+    genome = row.get("genome")
+    if not isinstance(genome, (list, tuple)) or len(genome) != 4:
+        raise _invalid_genome()
+    widths = _validated_widths(genome[:3])
+    return *widths, _validated_q_mode(genome[3])
 
 
 def _finite(value: Any) -> float:
-    number = float(value)
-    if not math.isfinite(number):
-        raise ValueError("formal candidate contains a non-finite scalar")
+    number: float | None = None
+    if not isinstance(value, bool):
+        try:
+            number = float(value)
+        except (OverflowError, TypeError, ValueError):
+            number = None
+    if number is None or not math.isfinite(number):
+        raise _invalid_scalar()
     return number
 
 
@@ -44,6 +78,12 @@ def _normalize(values: Sequence[float], value: float) -> float:
 def _digest(payload: Any) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _is_sha256(value: Any) -> bool:
+    return isinstance(value, str) and len(value) == 64 and all(
+        character in "0123456789abcdef" for character in value
+    )
 
 
 def _index(rows: Sequence[Mapping[str, Any]]) -> dict[tuple[int, int, int, str], dict[str, Any]]:
@@ -58,15 +98,19 @@ def _index(rows: Sequence[Mapping[str, Any]]) -> dict[tuple[int, int, int, str],
 
 
 def _ap_feature(
-    *, model: str, width: Sequence[int], q_mode: str, graph: Mapping[str, Any]
+    *, model: Any, width: Any, q_mode: Any, graph: Any
 ) -> list[float]:
+    if not isinstance(model, str):
+        raise ValueError("invalid formal model")
+    widths = _validated_widths(width)
+    mode = _validated_q_mode(q_mode)
+    if not isinstance(graph, Mapping):
+        raise ValueError("invalid formal graph features")
     return [
-        float(width[0]),
-        float(width[1]),
-        float(width[2]),
-        float(q_mode == "int8"),
-        float(model == "codriving"),
-        *[float(graph.get(name) or 0.0) for name in AP_GRAPH_FEATURES],
+        *[_finite(width) for width in widths],
+        1.0 if mode == "int8" else 0.0,
+        1.0 if model == "codriving" else 0.0,
+        *[_finite(graph.get(name, 0.0)) for name in AP_GRAPH_FEATURES],
     ]
 
 
@@ -78,21 +122,32 @@ def fit_neutral_ap_surrogate(
     seed: int = 20260720,
 ) -> dict[tuple[int, int, int, str], float]:
     """Fit AP without backend, capability, latency, or energy inputs."""
-    graph_by_group = {str(row["group_id"]): dict(row) for row in graph_rows}
+    graph_by_group: dict[str, dict[str, Any]] = {}
+    for row in graph_rows:
+        if not isinstance(row, Mapping):
+            raise ValueError("invalid formal graph features")
+        group_id = row.get("group_id")
+        if not isinstance(group_id, str) or not group_id.strip():
+            raise ValueError("invalid formal graph features")
+        graph_by_group[group_id] = dict(row)
     x_train, y_train = [], []
     for row in training_rows:
+        if not isinstance(row, Mapping):
+            raise ValueError("invalid formal training row")
         if row.get("terminal_status") != "measured_success_gold":
             continue
-        group_id = str(row.get("group_id") or "")
+        group_id = row.get("group_id")
+        if not isinstance(group_id, str) or not group_id.strip():
+            raise ValueError("invalid formal training row")
         graph = graph_by_group.get(group_id)
         if graph is None:
             continue
         ap70 = _finite(row.get("ap70"))
         x_train.append(
             _ap_feature(
-                model=str(row["model"]),
-                width=[int(value) for value in row["width"]],
-                q_mode=str(row["q_mode"]),
+                model=row.get("model"),
+                width=row.get("width"),
+                q_mode=row.get("q_mode"),
                 graph=graph,
             )
         )
@@ -107,18 +162,23 @@ def fit_neutral_ap_surrogate(
         n_jobs=1,
     )
     model.fit(np.asarray(x_train, dtype=float), np.asarray(y_train, dtype=float))
-    ordered = sorted((_genome_key(row), row) for row in candidates)
+    ordered = []
+    for row in candidates:
+        if not isinstance(row, Mapping):
+            raise _invalid_genome()
+        ordered.append((_genome_key(row), row))
+    ordered.sort(key=lambda item: item[0])
     x_predict = [
         _ap_feature(
-            model=str(row.get("model") or "pyramid"),
-            width=[int(value) for value in row["width"]],
-            q_mode=str(row["q_mode"]),
-            graph=row.get("graph_features") or {},
+            model=row.get("model", "pyramid"),
+            width=row.get("width"),
+            q_mode=row.get("q_mode"),
+            graph=row.get("graph_features", {}),
         )
         for _, row in ordered
     ]
     predictions = model.predict(np.asarray(x_predict, dtype=float))
-    return {key: float(value) for (key, _), value in zip(ordered, predictions)}
+    return {key: _finite(value) for (key, _), value in zip(ordered, predictions)}
 
 
 def build_formal_plan(
@@ -138,11 +198,14 @@ def build_formal_plan(
         )
 
     neutral = []
+    evidence_records = []
     for key in sorted(tvm):
         left, right = tvm[key], trt[key]
         left_evidence = left.get("source_evidence_sha256")
         right_evidence = right.get("source_evidence_sha256")
-        if not isinstance(left_evidence, str) or left_evidence != right_evidence:
+        if not _is_sha256(left_evidence) or not _is_sha256(right_evidence):
+            raise ValueError("invalid source evidence binding")
+        if left_evidence != right_evidence:
             raise ValueError(f"backend source evidence drift for genome {key}")
         if neutral_ap_by_genome is None:
             left_ap = _finite((left.get("predictions") or {}).get("ap70"))
@@ -179,17 +242,23 @@ def build_formal_plan(
                 "source_evidence_sha256": left_evidence,
             }
         )
+        evidence_records.append(
+            {
+                "genome": [*key[:3], key[3]],
+                "source_evidence_sha256": left_evidence,
+            }
+        )
 
     columns = {
-        name: [float(row[name]) for row in neutral]
+        name: [row[name] for row in neutral]
         for name in ("ap_surrogate", "parameter_count", "flops")
     }
     ranked = []
     for row in neutral:
         score = (
-            _normalize(columns["ap_surrogate"], float(row["ap_surrogate"]))
-            - 0.5 * _normalize(columns["parameter_count"], float(row["parameter_count"]))
-            - 0.5 * _normalize(columns["flops"], float(row["flops"]))
+            _normalize(columns["ap_surrogate"], row["ap_surrogate"])
+            - 0.5 * _normalize(columns["parameter_count"], row["parameter_count"])
+            - 0.5 * _normalize(columns["flops"], row["flops"])
         )
         ranked.append({**row, "hardware_blind_acquisition_score": score})
     ranked.sort(key=lambda row: (-row["hardware_blind_acquisition_score"], row["candidate_id"]))
@@ -205,6 +274,11 @@ def build_formal_plan(
         }
         for backend in ("tvm", "trt")
     }
+    source_evidence_binding = {
+        "schema_version": "stage6_source_evidence_binding_v1",
+        "records": evidence_records,
+        "evidence_version_sha256": _digest(evidence_records),
+    }
     payload = {
         "schema_version": "stage6_formal_execution_plan_v1",
         "passed": True,
@@ -212,6 +286,7 @@ def build_formal_plan(
         "pool_policy": "registered_materializable_minus_frozen_gold176_rows",
         "hardware_blind_backend_labels_used": False,
         "ranked_candidates": ranked,
+        "source_evidence_binding": source_evidence_binding,
         "arms": {
             "original_default": {"fixed_genome": [64, 128, 256, "fp32"]},
             "compression_only": {"selected_genomes": selected, "outer_budget": 16},

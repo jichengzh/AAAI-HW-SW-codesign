@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "tool": "private-source-inventory/1.0.0",
+  "tool": "private-source-inventory/1.1.0",
   "source": {
     "label": "univ2x-private",
     "tracked_files": 5127,
@@ -10,14 +10,16 @@
   "raw_inventory": {
     "committed": false,
     "reason": "The per-file local report is intentionally kept outside the private worktree and public repository. Regenerate it with the inventory tool before each P3 migration batch.",
-    "sha256": "819207c036a35c7a4d8d61f7628aaaf1ea4ec9cc8b87186d6f6a18891e9057ad",
-    "bytes": 992298,
+    "sha256": "6fafdace7dc0eae3e9982763cb1c5c098c0ae83d1715af67ff1e08d7a1d12a79",
+    "bytes": 992291,
     "path_policy": "No absolute source path, sensitive file path, or source content is represented in this committed summary."
   },
   "policy": {
     "max_text_bytes": 1048576,
     "candidate_paths_require_zero_forbidden_pattern_matches": true,
     "candidate_reads_use_no_follow_stable_regular_files": true,
+    "hard_linked_source_entries_are_rejected": true,
+    "stable_reads_bind_ctime_and_link_count": true,
     "data_boundaries_checked_at_every_path_segment": true,
     "errors_do_not_echo_source_paths": true,
     "opaque_entries_hide_private_paths": true,
@@ -26,13 +28,13 @@
   "summary": [
     {
       "classification": "exclude_generated",
-      "count": 1109,
-      "bytes": 38140347
+      "count": 1108,
+      "bytes": 38140315
     },
     {
       "classification": "external_input",
-      "count": 1881,
-      "bytes": 144076813
+      "count": 1884,
+      "bytes": 144076856
     },
     {
       "classification": "fixture_candidate",
@@ -51,8 +53,8 @@
     },
     {
       "classification": "migrate_document",
-      "count": 441,
-      "bytes": 7130572
+      "count": 439,
+      "bytes": 7130561
     },
     {
       "classification": "review_other",

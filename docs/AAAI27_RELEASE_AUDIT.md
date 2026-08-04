@@ -141,7 +141,7 @@ scripts/stage2_update_evidence.py
 | 匿名审稿 ZIP | P1 本地验收完成 | allowlist、逐字节安全扫描、archive verifier 和解包后的新 venv 已验收；P1 ZIP 为 100 个成员。 | 每次候选 HEAD 改变都必须重建并记录新哈希。 |
 | 论文证据 | 受限 | 小型 Stage4 审计为 `verified`；demo 明确为非论文证据。规范定义见 [REPRODUCIBILITY.md](../REPRODUCIBILITY.md) 与 [ARTIFACTS.md](../ARTIFACTS.md)。 | Stage6/Stage7 及真实硬件/AP/能耗结果仍为 `external` 或 `unavailable`。 |
 | 完整项目源代码 | P3 进行中 | 当前树含公开的接口、验证、选择和聚合逻辑；P3-1 已补入 Stage6 纯 Python 合约层，P3-3 已补入不读取或回显外部位置、已复审的 Stage4 闭环审计，P3-5 已补入 Stage2 脱敏延迟异常策略。 | 私有完整训练、模型物化、硬件调度/测量和正式实验执行代码尚未逐项脱敏、迁入并验收。 |
-| 私有源迁移清单 | P2a 本地只读机械盘点完成 | [P2 脱敏汇总](release-manifests/P2_PRIVATE_SOURCE_SUMMARY.json) 与可重复 inventory 工具已记录候选/复核/排除分类。 | P3 必须逐批完成语义、许可与依赖审阅后才迁移任何候选；当前清单不是自动上传许可。 |
+| 私有源迁移清单 | P2a + P2b 本地只读盘点完成 | [P2 脱敏汇总](release-manifests/P2_PRIVATE_SOURCE_SUMMARY.json) 与 v1.1.0 inventory 工具已记录 1,551 个候选及复核/排除分类；P2b 重新盘点替代旧候选计数。 | P3 必须逐批完成语义、许可与依赖审阅后才迁移任何候选；当前清单不是自动上传许可。 |
 | 公开发布 | 未开始 | P1 本地发布候选已冻结并验收；P2 私有源盘点已完成；尚未执行外部推送或可见性变更。 | 需要完成 P3--P8，并在最后取得推送/发布的明确授权。 |
 
 历史的 `338 passed`、覆盖率和 ZIP SHA-256 记录仍是其对应审计提交的证据，不能自动外推到当前 HEAD。当前 HEAD 的每一次新验收结果必须通过本台账追加记录。
@@ -152,8 +152,8 @@ scripts/stage2_update_evidence.py
 | --- | --- | --- | --- |
 | P0 | 已完成 | 建立本交接台账及其回归测试，并从 README 入口链接；修复本轮真实匿名 ZIP 闭包发现。 | 同一提交包含台账、链接、测试与 CI 修复；346 passed，真实 ZIP build/verify 通过。 |
 | P1 | 已完成（本地） | 冻结当前发布候选，重建匿名 ZIP，并对候选源树和解包 ZIP 分别做干净环境验收。 | 记录候选提交、ZIP SHA-256、成员数、依赖版本、测试数、覆盖率、identity scan、clean-clone 结果；旧审计结果不能复用。 |
-| P2 | 已完成（P2a 本地只读机械盘点） | 审计私有完整仓库：按“源码/文档/小型脱敏 fixture/外部数据描述/禁止上传生成物”清点全部路径和依赖关系。 | 机器可读的机械分类清单和敏感项扫描结果；每个保留、改写、外置或排除项的语义理由、许可证/许可状态在 P3 逐批批准时补齐。 |
-| P3 | 进行中（P3-1、P3-3 和 P3-5 已完成；P3-2 和 P3-4 未批准） | 逐模块脱敏迁移完整 Python、配置和设计 Markdown；将测试所需的小型固定输入迁入受版本控制的 fixture 目录，不再从 `results/` 读取。 | P3-1、P3-3 和 P3-5 的范围分别见 [批次记录](release-manifests/P3_BATCH_01_STAGE6_CONTRACTS.md)、[批次记录](release-manifests/P3_BATCH_03_STAGE4_CLOSURE_AUDIT.md) 与 [批次记录](release-manifests/P3_BATCH_05_STAGE2_LATENCY_OUTLIER_POLICY.md)；P3-2 和 P3-4 的拒绝理由分别见 [审阅记录](release-manifests/P3_BATCH_02_STAGE5_AUDIT.md) 与 [审阅记录](release-manifests/P3_BATCH_04_STAGE2_S1_PROBE_METRICS_AUDIT.md)。其余模块仍须逐批完成同等审阅。 |
+| P2 | 已完成（P2a + P2b 本地只读盘点） | 审计私有完整仓库：按“源码/文档/小型脱敏 fixture/外部数据描述/禁止上传生成物”清点全部路径和依赖关系；P2b 加固嵌套数据边界和稳定读取后重新盘点。 | 机器可读的机械分类清单和敏感项扫描结果；每个保留、改写、外置或排除项的语义理由、许可证/许可状态在 P3 逐批批准时补齐。 |
+| P3 | 进行中（P3-1、P3-3 和 P3-5 已完成；P3-2、P3-4 和 P3-6 未批准直接迁入） | 逐模块脱敏迁移完整 Python、配置和设计 Markdown；将测试所需的小型固定输入迁入受版本控制的 fixture 目录，不再从 `results/` 读取。 | P3-1、P3-3 和 P3-5 的范围分别见 [批次记录](release-manifests/P3_BATCH_01_STAGE6_CONTRACTS.md)、[批次记录](release-manifests/P3_BATCH_03_STAGE4_CLOSURE_AUDIT.md) 与 [批次记录](release-manifests/P3_BATCH_05_STAGE2_LATENCY_OUTLIER_POLICY.md)；P3-2、P3-4 和 P3-6 的拒绝/改写要求分别见 [审阅记录](release-manifests/P3_BATCH_02_STAGE5_AUDIT.md)、[审阅记录](release-manifests/P3_BATCH_04_STAGE2_S1_PROBE_METRICS_AUDIT.md) 与 [审阅记录](release-manifests/P3_BATCH_06_NEXT_CANDIDATE_AUDIT.md)。其余模块仍须逐批完成同等审阅。 |
 | P4 | 待开始 | 为完整实验的数据、模型和可再生成大文件建立外部获取清单和验证接口。 | 每个外部输入记录许可、获取方式、版本、SHA-256、大小、用途、预期目录和缺失时的失败信息；默认命令不下载数据/权重。 |
 | P5 | 待开始 | 固化可复现环境：CPU 基线继续保持；分别提供 4090 与 H800 的环境/驱动/CUDA 约束、硬件探测和最小运行命令。 | CPU、4090、H800 配置文件互不混淆；不含 SSH 信息；每个环境均可执行依赖检查和相应的最小测试。 |
 | P6 | 待开始 | 接入全流程训练、评测、硬件执行与结果汇总；生成不可伪造的执行 manifest。 | 每一步消费的输入、代码版本、随机种子、配置和输出 SHA-256 可追溯；缺失外部证据失败关闭；Stage6/Stage7 只在正式数据及独立验证满足后更新证据状态。 |
@@ -210,18 +210,19 @@ local-path/github-url/email/ipv4/token/unknown-binary 类别均为 0。候选完
 3. 每个可生成大文件只保留生成脚本、最小参数和输入/输出 SHA-256；每个不可再生成但合法可分发的输入必须先确认许可，之后才可建立下载/校验清单。
 4. 新增设计 Markdown 必须说明模块目的、关键决策、输入输出契约、复现命令、已知边界和与论文/实验阶段的关系。
 
-#### P2 完成证据：2026-08-04 私有源只读盘点
+#### P2a 与 P2b 完成证据：2026-08-04 私有源只读盘点
 
 P2a 在私有完整工作树上执行只读机械盘点；没有修改、复制、压缩、上传或提交该工作树中的任何文件。盘点时主工作树有 5,127 个 tracked 文件、88 个未跟踪文件待考虑、19 个已跟踪修改；另识别出两个独立嵌套 Git 仓库。它们在 P3 中必须保持仓库边界，不能作为普通子目录盲目合并。
 
-工具为 `tools/release/inventory_private_source.py`（`private-source-inventory/1.0.0`）。它只接受 Git 根目录；输出必须在该工作树外，文本候选最大读取 1 MiB，复用匿名制品的路径/内容禁用模式扫描。数据边界在任意路径层级均会排除；候选读取逐层禁止跟随符号链接，并在读取前后核验普通文件元数据。通过扫描的候选才写出相对路径；模型、结果、数据、缓存、生成物、符号链接、脚本、超大文本和命中禁用模式的条目只以分类、大小和不可逆 ID 记录。该工具还拒绝将输出写回私有工作树、拒绝覆盖竞争输出，且失败信息不回显私有路径，因此不会把盘点报告重新纳入待扫描集合。
+随后独立复审发现 P2a 工具的嵌套数据边界与稳定读取仍有缺口，因此旧报告只能作为历史证据，不能再用于选择 P3 候选。P2b 以 [安全加固记录](release-manifests/P2B_INVENTORY_SAFETY_HARDENING.md) 中的 v1.1.0 工具重跑只读盘点；原始报告只在临时目录短暂保存并已清理，没有修改或上传私有树内容。
+
+工具为 `tools/release/inventory_private_source.py`（`private-source-inventory/1.1.0`）。它只接受 Git 根目录；输出必须在该工作树外，文本候选最大读取 1 MiB，复用匿名制品的路径/内容禁用模式扫描。精确数据目录段在任意路径层级均会排除，而 `tests` 源码目录不会误伤；候选读取逐层禁止跟随符号链接，拒绝硬链接，并在读取前后核验普通文件的设备、inode、mode、link-count、size、mtime 和 ctime。通过扫描的候选才写出相对路径；模型、结果、数据、缓存、生成物、符号链接、脚本、超大文本和命中禁用模式的条目只以分类、大小和不可逆 ID 记录。该工具还拒绝将输出写回私有工作树、拒绝覆盖竞争输出，且失败信息不回显私有路径，因此不会把盘点报告重新纳入待扫描集合。
 
 复查或开始每一批 P3 迁移前，均从公开仓库根目录运行：`python tools/release/inventory_private_source.py --source-root <private-git-root> --source-label <opaque-label> --output <directory-outside-private-worktree>/P2_PRIVATE_SOURCE_INVENTORY.json`。原始 JSON 仅在受控本地位置短期保存，每批迁移核对完成后应清理；提交前只更新其中的脱敏计数、哈希与本节证据。
 
-本轮本地原始 JSON 有 992,298 bytes，SHA-256 为
-`819207c036a35c7a4d8d61f7628aaaf1ea4ec9cc8b87186d6f6a18891e9057ad`。原始逐文件报告特意不提交：即使它已经通过禁用模式扫描，完整私有目录结构在 P3 逐批批准前也不应扩大公开暴露面。其可再生成命令由上述工具提供；提交的是不含路径/内容的 [P2 脱敏汇总](release-manifests/P2_PRIVATE_SOURCE_SUMMARY.json)，其中绑定原始报告哈希和分类计数。
+P2a 的历史原始 JSON 为 992,298 bytes，SHA-256 为 `819207c036a35c7a4d8d61f7628aaaf1ea4ec9cc8b87186d6f6a18891e9057ad`。P2b 的替代原始 JSON 为 992,291 bytes，SHA-256 为 `6fafdace7dc0eae3e9982763cb1c5c098c0ae83d1715af67ff1e08d7a1d12a79`。两份原始逐文件报告均不提交：即使通过禁用模式扫描，完整私有目录结构在 P3 逐批批准前也不应扩大公开暴露面。其可再生成命令由上述工具提供；提交的是不含路径/内容的 [P2 脱敏汇总](release-manifests/P2_PRIVATE_SOURCE_SUMMARY.json)，其中绑定当前原始报告哈希和分类计数。
 
-盘点得到 1,553 个候选：1,008 `migrate_code`、96 `migrate_config`、441 `migrate_document` 和 8 `fixture_candidate`。另有 3,662 个不透明条目：1,109 `exclude_generated`、1,881 `external_input`、75 `review_other`、31 `review_paper_source`、455 `review_sensitive` 和 111 `review_shell`。候选并非自动迁移许可；P3 每一批都必须复扫、审阅许可与依赖，并将最终“保留/改写/外置/排除”决定写回台账。`exclude_generated` 永不直接复制，外部输入由 P4 处理。
+P2b 盘点得到 1,551 个候选：1,008 `migrate_code`、96 `migrate_config`、439 `migrate_document` 和 8 `fixture_candidate`。另有 3,664 个不透明条目：1,108 `exclude_generated`、1,884 `external_input`、75 `review_other`、31 `review_paper_source`、455 `review_sensitive` 和 111 `review_shell`。候选并非自动迁移许可；P3 每一批都必须复扫、审阅许可与依赖，并将最终“保留/改写/外置/排除”决定写回台账。`exclude_generated` 永不直接复制，外部输入由 P4 处理。
 
 私有树规模约 242 GiB，包含 checkpoint、模型导出、engine、训练/评测输出、缓存和数据目录等十 GB 级边界。盘点不读取这些二进制内容，也不把它们计入候选。文件名预审还发现敏感候选、特殊文件名和符号链接；它们均进入不透明人工复核，不能通过普通 shell 通配符、压缩包或批量复制迁移。
 
@@ -246,6 +247,10 @@ P3-4 审阅一个无 I/O 的 Stage2 结构探针指标模块。它会拒绝性�
 #### P3-5：Stage2 脱敏延迟异常策略（已完成，本地）
 
 P3-5 将一个只处理内存测量字典的 Stage2 延迟质量策略重写为公开契约。输出只有稳定的 `row_index`、固定质量状态和原因代码；调用方提供的行、运行、配置、模型、候选、调度、路径和 URI 信息绝不回显。分组字段必须均为非空字符串，缺失、空白或非字符串分组只能失败关闭；有限正数边界也安全处理超大数值。全量回归为 `386 passed`、总覆盖率 81.72%、新模块覆盖率 93%，独立复审通过；匿名 ZIP 已独立 build/verify（113 成员，SHA-256 `6d821d88ab4915a586192b0e38592dfea22c51a8541fef194487576f0a3196b4`）。详细范围和排除见 [P3-5 批次记录](release-manifests/P3_BATCH_05_STAGE2_LATENCY_OUTLIER_POLICY.md)。本批次未推送、未发布，P3 仍须逐批完成其余候选的处置。
+
+#### P3-6：下一批候选只读审阅（未批准直接迁入）
+
+P3-6 审阅三个最小候选而未复制任何私有内容。一个纯内存冷启动筛选器会回显调用方 label 且含历史实验叙述，必须改为中性说明和匿名投影；一个 Stage6 请求构造器会深拷贝调用方行和固定实验标签，必须先定义匿名行 schema；已有的 Stage6 协议 smoke 不重复迁入。完整决定见 [P3-6 审阅记录](release-manifests/P3_BATCH_06_NEXT_CANDIDATE_AUDIT.md)。
 
 #### P5--P6：环境与全流程复现
 
@@ -285,11 +290,14 @@ P3-5 将一个只处理内存测量字典的 Stage2 延迟质量策略重写为�
 | 2026-08-04 | P1 第二个候选 | 未通过，修复中 | 候选 `fe524b736b637a3fae2121788647a12f154f60a8` 的独立源树验收通过（347 passed、80.71% coverage、27 项 clean-clone 检查）。其匿名 ZIP 通过 build/verify（100 个成员，SHA-256 `80e091112d29fecf9c67d5115b42b5623a2d4ad7e924b79fabdebf98db83f85f`），解包后的 CPU smoke、构建、Ruff、compileall 和 coverage 均通过；全量测试为 343 passed、3 skipped、1 failed。唯一失败是 archive 集成测试仍把匿名 README 固定为源树路径 `README.anonymous.md`，没有接受 ZIP 的正确根 `README.md` 映射。测试现已改为两种制品路径均可验证；必须以修复后的新提交重新冻结和完整复验。 |
 | 2026-08-04 | P1 第三个候选 | 已完成（本地） | 候选 `c65b5fc7eb9d20e2d34928f7c948aea90f822754` 以两个新 venv 完成源树与解包 ZIP 验收；源树为 347 passed/80.71%，解包 ZIP 为 344 passed、3 skipped/80.71%，ZIP SHA-256 为 `aa83bc98b4ada4f7865a5db0ee0c12c92215599b50d9734ff3f123c6833cf4b7`。完整命令、依赖、manifest、扫描和 P7 风险见上节。P2 是下一项；没有外部发布动作。 |
 | 2026-08-04 | P2a 私有源盘点 | 已完成（本地只读） | 新增安全 inventory 工具与脱敏汇总。5,127 tracked 与 88 未跟踪条目被分类为 1,553 个安全候选及 3,662 个不透明复核/排除项；原始报告 SHA-256 为 `819207c036a35c7a4d8d61f7628aaaf1ea4ec9cc8b87186d6f6a18891e9057ad`，不提交。公开树回归为 350 passed，当前匿名 ZIP 已 verify（102 成员，`9cb20e3716958c1f0a69b2f03e4431915d48b18e688bf509efce2170a65f0faa`）。未修改私有工作树，未迁移或上传文件。下一项为 P3 逐批脱敏迁移。 |
+| 2026-08-04 | P2b 盘点安全加固 | 已完成（本地只读） | 独立复审发现 P2a 的嵌套数据边界和稳定读取缺口后，以 v1.1.0 工具补充路径段、硬链接与 ctime/link-count 失败关闭测试并获复审批准。只读重新盘点得到 1,551 个候选及 3,664 个不透明复核/排除项；新原始报告 SHA-256 为 `6fafdace7dc0eae3e9982763cb1c5c098c0ae83d1715af67ff1e08d7a1d12a79`，临时报告已清理。P2a 计数仅保留历史证据。 |
 | 2026-08-04 | P3-1 Stage6 合约层 | 已完成（本地） | 迁入 3 个确定性纯 Python 模块及其 unit/integration tests；将固定生成物位置改为外部证据描述符，不迁入数据、模型、结果或硬件执行器。审查后的字段白名单、证据哈希一致性和畸形输入失败关闭均有回归测试。公开树回归为 366 passed，匿名 ZIP 已 verify（109 成员，`72b8f3c813fd29407044c863c62d66f50ae7c8a4296ae43727bdce1ea75f1b9f`）。完整范围和排除决定见 P3-1 批次记录。 |
 | 2026-08-04 | P3-2 Stage5 审阅 | 已完成（未批准迁移） | 审阅 4 个 Stage5 候选：3 个处理外部制品/测量输入，closure 审计器会回显调用者提供的证据/结果位置。未复制代码或数据；改造要求和下批筛选条件见 P3-2 审阅记录。 |
 | 2026-08-04 | P3-3 Stage4 闭环审计 | 已完成（本地） | 首轮迁入后的 `after_feedback` 行绑定、采集数值契约和无效指标回显缺口均以新增失败关闭测试修复，并获独立复审批准。最终源树回归为 378 passed、81.52% coverage；匿名 ZIP 独立 verify 通过（111 成员，`aca6c8426e5f1d413586e18e315dc4655fcc5446d90cd494d0643d1e28cea32c`）。未推送、未发布。 |
 | 2026-08-04 | P3-4 Stage2 S1 探针指标审阅 | 已完成（未批准迁移） | 候选无 I/O 且会拒绝性能字段，但报告/错误会回显调用者探针标识与特征名。未复制代码、测试、数据或执行器；改造条件已记录，下一批继续筛选。 |
 | 2026-08-04 | P3-5 Stage2 延迟异常策略 | 已完成（本地） | 迁入脱敏的纯内存质量策略，并以定向回归固定分组字段、超大数值和标识不回显的失败关闭行为。全量回归为 386 passed、81.72% coverage，新模块为 93%；独立复审通过。匿名 ZIP 已 verify（113 成员，`6d821d88ab4915a586192b0e38592dfea22c51a8541fef194487576f0a3196b4`）。未推送、未发布。 |
+| 2026-08-04 | P3-1 Stage6 加固复审 | 已完成（本地） | 独立复审发现了字段回显、证据绑定、嵌套形状、q-mode 和数值异常链缺口；均以测试优先改为公开字段白名单、规范哈希绑定、固定失败码和无异常链的有限数值验证。最终独立复审批准；Stage6 定向为 72 passed、89% coverage。当前 HEAD 全树为 405 passed、81.95% coverage；匿名 ZIP 已 verify（113 成员，`96a3bc9b6980e2f25bb9ab102cc950ba2ff57f9fb7c2f35142d2367818b319f6`）。 |
+| 2026-08-04 | P3-6 下一批候选审阅 | 已完成（未批准直接迁入） | 冷启动筛选器会回显 label，Stage6 独立验证器会深拷贝输入行；两者均要求匿名 schema/投影重写。已有 Stage6 协议 smoke 不重复迁入。未复制代码、测试、数据或生成物；详细条件见 P3-6 审阅记录。 |
 
 ## 未执行的外部动作与后续授权
 

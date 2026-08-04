@@ -72,6 +72,24 @@ def test_manifest_rejects_a_non_mapping_evidence_container() -> None:
     assert "joint_evidence_binding_missing" in audit["failures"]
 
 
+def test_manifest_rejects_malformed_nested_containers_with_public_failures() -> None:
+    manifest = build_stage6_manifest()
+    manifest["arms"][1]["acquisition_features"] = [{"private": "value"}]
+
+    audit = validate_stage6_manifest(manifest)
+
+    assert not audit["passed"]
+    assert "compression_only_backend_label_leakage" in audit["failures"]
+
+    manifest = build_stage6_manifest()
+    manifest["arms"][5]["joint_evidence"] = [["tvm"], ["trt"]]
+
+    audit = validate_stage6_manifest(manifest)
+
+    assert not audit["passed"]
+    assert "joint_evidence_binding_missing" in audit["failures"]
+
+
 def test_manifest_rejects_non_mapping_arm_entries() -> None:
     manifest = build_stage6_manifest()
     manifest["arms"] = ["not-an-arm"]
@@ -80,3 +98,10 @@ def test_manifest_rejects_non_mapping_arm_entries() -> None:
 
     assert not audit["passed"]
     assert "six_arm_identity_or_order_mismatch" in audit["failures"]
+
+
+def test_manifest_rejects_a_non_mapping_root_with_public_failure() -> None:
+    audit = validate_stage6_manifest(["not-a-manifest"])
+
+    assert not audit["passed"]
+    assert "stage6_manifest_must_be_an_object" in audit["failures"]

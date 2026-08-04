@@ -20,7 +20,7 @@ from build_anonymous_archive import load_forbidden_patterns
 
 
 FORMAT_VERSION = 1
-TOOL_VERSION = "1.0.0"
+TOOL_VERSION = "1.1.0"
 MAX_TEXT_BYTES_DEFAULT = 1024 * 1024
 SAFE_LABEL_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 
@@ -52,7 +52,20 @@ GENERATED_DIRECTORY_PARTS = frozenset(
         "work_dirs",
     }
 )
-EXTERNAL_DATA_DIRECTORY_PARTS = frozenset({"data", "datasets", "test", "val"})
+EXTERNAL_DATA_DIRECTORY_PARTS = frozenset(
+    {
+        "data",
+        "dataset",
+        "datasets",
+        "input",
+        "inputs",
+        "test",
+        "testing",
+        "val",
+        "valid",
+        "validation",
+    }
+)
 GENERATED_SUFFIXES = frozenset(
     {
         ".avi",
@@ -246,13 +259,32 @@ def _open_regular_file_beneath_root(source_root: Path, relative_path: str) -> in
             os.close(directory_descriptor)
 
 
+def _is_single_link_regular_file(metadata: os.stat_result) -> bool:
+    return stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1
+
+
+def _stable_metadata(metadata: os.stat_result) -> tuple[int, int, int, int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_nlink,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
 def _read_stable_payload(descriptor: int, max_text_bytes: int) -> tuple[int, bytes]:
     """Read a pinned regular file and reject changes while it is scanned."""
     try:
         before = os.fstat(descriptor)
-        if not stat.S_ISREG(before.st_mode):
+        if not _is_single_link_regular_file(before):
             raise InventorySafetyError("source entry is not a regular file")
         if before.st_size > max_text_bytes:
+            after = os.fstat(descriptor)
+            if _stable_metadata(before) != _stable_metadata(after):
+                raise InventorySafetyError("source entry changed during scanning")
             return before.st_size, b""
 
         chunks: list[bytes] = []
@@ -265,12 +297,7 @@ def _read_stable_payload(descriptor: int, max_text_bytes: int) -> tuple[int, byt
         after = os.fstat(descriptor)
     except OSError as error:
         raise InventorySafetyError("source entry is not safely readable") from error
-    if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) != (
-        after.st_dev,
-        after.st_ino,
-        after.st_size,
-        after.st_mtime_ns,
-    ):
+    if _stable_metadata(before) != _stable_metadata(after):
         raise InventorySafetyError("source entry changed during scanning")
     return before.st_size, b"".join(chunks)
 
@@ -322,7 +349,7 @@ def build_inventory(
             descriptor = _open_regular_file_beneath_root(source_root, relative_path)
             try:
                 metadata = os.fstat(descriptor)
-                if not stat.S_ISREG(metadata.st_mode):
+                if not _is_single_link_regular_file(metadata):
                     raise InventorySafetyError("source entry is not a regular file")
                 size = metadata.st_size
                 classification, reasons = _classify_path(relative_path)
