@@ -438,6 +438,10 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 
 12 项完成 P2 metadata/bytes、当前内容绑定、主审、独立语义复审、项目级许可证继承和安全输出审查。最终为 9 项 P4（latency mapping、baseline integration 与 predictor/Pareto analysis 外部 evidence）和 3 项 P6（ONNX export、TensorRT engine build 与 CUDA benchmark 执行）。双审逐项一致：只消费既有测量、baseline 或 predictor 的映射、整合和预测分析归 P4；会物化 runtime engine、导出 ONNX 或执行 CUDA benchmark 的候选归 P6。公开 CPU-only 选择逻辑没有承担完整的输入、输出和执行职责，不能据此认定公开替代。该批新增 12 个不重复身份，使真实唯一覆盖到 **458/1,551**。没有执行私有模型、数据、设备、子进程或网络任务；P4 尚未开始。详见 [P3-57 记录](release-manifests/P3_BATCH_57_ENGINE_AND_BASELINE_REAUDIT.md)。
 
+#### P3-58：公开表面与证据边界复审（已接受，本地）
+
+12 项完成 P2 metadata/bytes、当前内容绑定、主审、独立语义复审、项目级许可证继承和安全输出审查。最终为 7 项 P4（measurement budget、baseline/predictor search、ratio lookup 与 ablation evidence）、2 项已公开迁入、2 项已安全改写和 1 项非必要排除。第 1、2、11、12 项经第三次只读裁决：同字节公开 package marker 是候选本身的迁入，受测试覆盖的更窄安全导出面是改写，未被受支持流程调用的纯说明 legacy marker 可排除。公开相邻算法不构成完整等价物；其余候选仍需 P4 提供外部 evidence 的来源、许可、哈希、schema 和匿名 fixture。该批新增 12 个不重复身份，使真实唯一覆盖到 **470/1,551**。没有执行私有模型、数据、设备、子进程或网络任务；P4 尚未开始。详见 [P3-58 记录](release-manifests/P3_BATCH_58_PUBLIC_SURFACE_AND_EVIDENCE_REAUDIT.md)。
+
 #### P5--P6：环境与全流程复现
 
 1. CPU smoke 始终只用受控 fixture，且不得隐式发现本机 `results/`、GPU、缓存或外部目录。
@@ -528,6 +532,7 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 | 2026-08-05 | P3-55 recovery 与 TVM 边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 3 项 P4、9 项 P6；双审逐项一致。HMAC ledger 已重新计算，真实唯一覆盖为 434/1,551；未推送、未发布。 |
 | 2026-08-05 | P3-56 DP4A 与 baseline 边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 7 项 P4、5 项 P6；第 10、11 项经第三次裁决归 P4。HMAC ledger 已重新计算，真实唯一覆盖为 446/1,551；未推送、未发布。 |
 | 2026-08-05 | P3-57 engine 与 baseline 边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 9 项 P4、3 项 P6；双审逐项一致，无需第三次裁决。HMAC ledger 已重新计算，真实唯一覆盖为 458/1,551；未推送、未发布。 |
+| 2026-08-05 | P3-58 公开表面与证据边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 7 项 P4、2 项已公开迁入、2 项已安全改写、1 项非必要排除；第 1、2、11、12 项经第三次裁决。HMAC ledger 已重新计算，真实唯一覆盖为 470/1,551；未推送、未发布。 |
 
 ## 未执行的外部动作与后续授权
 
