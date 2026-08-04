@@ -208,6 +208,7 @@ scripts/stage2_update_evidence.py
 | 2026-08-03 | P0 交接台账 | 进行中 | 本节、README 链接和台账回归测试在同一提交中建立。真实 ZIP build 发现 public-smoke CI 中的 `file://` 会触发匿名制品安全扫描；已增加回归测试并改为本地路径 clone，待重新 build/verify 后结项。 |
 | 2026-08-03 | P0 交接台账 | 已完成 | 回归测试将 CI 禁止使用 `file://` 固定下来；真实匿名 ZIP build/verify 通过，100 个成员，SHA-256 `9d93031c7a4cb91ada2b9b92ce70839b5df47630654b4c9b21241acb279c53df`；最终全量回归为 346 passed，Ruff、compileall 与 diff 检查通过。下一项为 P1 发布候选冻结。 |
 | 2026-08-04 | P1 首个候选 | 未通过，修复中 | 候选 `1a67bd624e2ceee68dcf609a9c5148d48351ae1f` 的独立源树验收通过（346 passed、80.71% coverage、26 项 clean-clone 检查）；匿名 ZIP build/verify 也通过，SHA-256 为 `9d93031c7a4cb91ada2b9b92ce70839b5df47630654b4c9b21241acb279c53df`、100 个成员。但解包后的定向测试发现四项闭包缺失：公开交接文档和 README 断言不适用于匿名映射 README，且 smoke 脚本的 `--help` 过早要求 Git。已新增制品感知回归测试、将公开断言在匿名 ZIP 中跳过，并推迟 Git 根目录解析；必须以修复后的新提交重新冻结和完整复验，不能复用本候选作为 P1 完成证据。 |
+| 2026-08-04 | P1 第二个候选 | 未通过，修复中 | 候选 `fe524b736b637a3fae2121788647a12f154f60a8` 的独立源树验收通过（347 passed、80.71% coverage、27 项 clean-clone 检查）。其匿名 ZIP 通过 build/verify（100 个成员，SHA-256 `80e091112d29fecf9c67d5115b42b5623a2d4ad7e924b79fabdebf98db83f85f`），解包后的 CPU smoke、构建、Ruff、compileall 和 coverage 均通过；全量测试为 343 passed、3 skipped、1 failed。唯一失败是 archive 集成测试仍把匿名 README 固定为源树路径 `README.anonymous.md`，没有接受 ZIP 的正确根 `README.md` 映射。测试现已改为两种制品路径均可验证；必须以修复后的新提交重新冻结和完整复验。 |
 
 ## 未执行的外部动作与后续授权
 

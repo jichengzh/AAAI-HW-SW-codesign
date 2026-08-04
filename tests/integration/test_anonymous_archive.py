@@ -88,7 +88,9 @@ def _refresh_integrity_sidecars(output: Path) -> None:
 
 def test_anonymous_readme_uses_the_pinned_cpu_requirements() -> None:
     """Reviewers can install the ZIP with the same deterministic CPU dependencies."""
-    readme = (REPOSITORY_ROOT / "README.anonymous.md").read_text(encoding="utf-8")
+    anonymous_readme = REPOSITORY_ROOT / "README.anonymous.md"
+    readme_path = anonymous_readme if anonymous_readme.exists() else REPOSITORY_ROOT / "README.md"
+    readme = readme_path.read_text(encoding="utf-8")
 
     assert "pip install -r requirements.txt" in readme
     assert "pip install --no-deps -e ." in readme
