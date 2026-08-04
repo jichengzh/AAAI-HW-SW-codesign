@@ -153,7 +153,7 @@ scripts/stage2_update_evidence.py
 | P0 | 已完成 | 建立本交接台账及其回归测试，并从 README 入口链接；修复本轮真实匿名 ZIP 闭包发现。 | 同一提交包含台账、链接、测试与 CI 修复；346 passed，真实 ZIP build/verify 通过。 |
 | P1 | 已完成（本地） | 冻结当前发布候选，重建匿名 ZIP，并对候选源树和解包 ZIP 分别做干净环境验收。 | 记录候选提交、ZIP SHA-256、成员数、依赖版本、测试数、覆盖率、identity scan、clean-clone 结果；旧审计结果不能复用。 |
 | P2 | 已完成（P2a + P2b 本地只读盘点） | 审计私有完整仓库：按“源码/文档/小型脱敏 fixture/外部数据描述/禁止上传生成物”清点全部路径和依赖关系；P2b 加固嵌套数据边界和稳定读取后重新盘点。 | 机器可读的机械分类清单和敏感项扫描结果；每个保留、改写、外置或排除项的语义理由、许可证/许可状态在 P3 逐批批准时补齐。 |
-| P3 | 进行中（关闭验证未通过） | 逐模块脱敏迁移完整 Python、配置和设计 Markdown；将测试所需的小型固定输入迁入受版本控制的 fixture 目录，不再从 `results/` 读取。 | P3-1、P3-3 和 P3-5 已完成；P3-2、P3-4 和 P3-6 未批准直接迁入；P3-7 已建立关闭账本工具并确认缺少覆盖 1,551 个候选的 decisions/ledger；P3-8 已固定候选处置 token、阻塞规则和第一批 9 项账本演练范围；P3-9 已完成四个 Stage4 纯内存脱敏模块；P3-10 已逐项审计当前 39 项同路径差异候选并完成其中 9 项的本地账本检查点；P3-11 已逐项处置 8 个小型 fixture。累计仅 26/1,551 项有可复核决定，故 P3 仍不能关闭。详见 [P3 关闭验证记录](release-manifests/P3_BATCH_07_CLOSURE_VERIFICATION.md)、[P3-8 审计](release-manifests/P3_BATCH_08_CANDIDATE_TRIAGE_AUDIT.md)、[P3-9 记录](release-manifests/P3_BATCH_09_STAGE4_REWRITE.md)、[P3-10 审计](release-manifests/P3_BATCH_10_DIVERGENT_CANDIDATE_AUDIT.md) 与 [P3-11 记录](release-manifests/P3_BATCH_11_FIXTURE_DISPOSITION.md)。 |
+| P3 | 进行中（关闭验证未通过） | 逐模块脱敏迁移完整 Python、配置和设计 Markdown；将测试所需的小型固定输入迁入受版本控制的 fixture 目录，不再从 `results/` 读取。 | P3-1、P3-3 和 P3-5 已完成；P3-2、P3-4 和 P3-6 未批准直接迁入；P3-7 已建立关闭账本工具并确认缺少覆盖 1,551 个候选的 decisions/ledger；P3-8 已固定候选处置 token、阻塞规则和第一批 9 项账本演练范围；P3-9 已完成四个 Stage4 纯内存脱敏模块；P3-10 已逐项审计当前 39 项同路径差异候选并完成其中 9 项的本地账本检查点；P3-11 已逐项处置 8 个小型 fixture；P3-12 已逐项处置 96 项配置。累计 122/1,551 项有可复核决定，故 P3 仍不能关闭。详见 [P3 关闭验证记录](release-manifests/P3_BATCH_07_CLOSURE_VERIFICATION.md)、[P3-8 审计](release-manifests/P3_BATCH_08_CANDIDATE_TRIAGE_AUDIT.md)、[P3-9 记录](release-manifests/P3_BATCH_09_STAGE4_REWRITE.md)、[P3-10 审计](release-manifests/P3_BATCH_10_DIVERGENT_CANDIDATE_AUDIT.md)、[P3-11 记录](release-manifests/P3_BATCH_11_FIXTURE_DISPOSITION.md) 与 [P3-12 记录](release-manifests/P3_BATCH_12_CONFIGURATION_DISPOSITION.md)。 |
 | P4 | 待开始 | 为完整实验的数据、模型和可再生成大文件建立外部获取清单和验证接口。 | 每个外部输入记录许可、获取方式、版本、SHA-256、大小、用途、预期目录和缺失时的失败信息；默认命令不下载数据/权重。 |
 | P5 | 待开始 | 固化可复现环境：CPU 基线继续保持；分别提供 4090 与 H800 的环境/驱动/CUDA 约束、硬件探测和最小运行命令。 | CPU、4090、H800 配置文件互不混淆；不含 SSH 信息；每个环境均可执行依赖检查和相应的最小测试。 |
 | P6 | 待开始 | 接入全流程训练、评测、硬件执行与结果汇总；生成不可伪造的执行 manifest。 | 每一步消费的输入、代码版本、随机种子、配置和输出 SHA-256 可追溯；缺失外部证据失败关闭；Stage6/Stage7 只在正式数据及独立验证满足后更新证据状态。 |
@@ -278,6 +278,10 @@ P3-9 已从 P2b 清单派生 9 项仅本机保存的账本演练子集。它们�
 
 8 项小型 YAML/JSON fixture 均单独审阅。7 项 synthetic Stage1/Stage2 测试输入已被当前公开测试和 demo 生成契约替代，形成 `duplicate_or_superseded`；1 项仅描述外部 checkpoint/dataset 获取和校验的 manifest 形成 `external_contract_p4`。相应公开 Stage1/Stage2 工作流回归为 36 passed。本机 ledger 检查点含 8 条路径无关记录且泄露扫描干净；累计 26/1,551 项有可复核 decisions。详见 [P3-11 记录](release-manifests/P3_BATCH_11_FIXTURE_DISPOSITION.md)。
 
+#### P3-12：配置候选逐项处置（已完成，本地）
+
+96 项 JSON/YAML 配置逐项验证后，86 项量化/剪枝实验参数转入 P6 execution contract，3 项硬件/环境描述转入 P5，6 项外部数据转换元数据转入 P4，1 项内部代理运行复盘排除。所有本地 ledger 记录均为路径无关 HMAC 条目且通过泄露扫描；累计 122/1,551 项有可复核 decisions。详见 [P3-12 记录](release-manifests/P3_BATCH_12_CONFIGURATION_DISPOSITION.md)。
+
 #### P5--P6：环境与全流程复现
 
 1. CPU smoke 始终只用受控 fixture，且不得隐式发现本机 `results/`、GPU、缓存或外部目录。
@@ -329,6 +333,7 @@ P3-9 已从 P2b 清单派生 9 项仅本机保存的账本演练子集。它们�
 | 2026-08-04 | P3-9 Stage4 四个脱敏单元 | 已完成（P3 继续） | 本机 9 项 HMAC ledger 演练保持本地；新增/重写 `feedback_update_eval_v1`、selection completion、ranking/Pareto 与 uncertainty replay 四个纯内存模块，使用匿名组/行投影、字段白名单与失败关闭。ranking/Pareto 限制为最多 256 组/1,024 候选。四个模块及 closure-audit 定向为 91 passed，完整 Stage4 为 119 passed，模块覆盖率依次 89%、88%、90%、90%；全仓为 502 passed、86% coverage，匿名 ZIP 已 verify（124 成员，`a6951ed6310541a0266a14d6af93228fe20313f93f41508231b773e54644d264`），Ruff、compileall、diff 与依赖审计通过（CPU torch 的 PyPI 审计例外已记录）。未推送、未发布。 |
 | 2026-08-04 | P3-10 同路径差异候选审计 | 已完成（本地） | 当前公开树重比对发现 39 项同路径不同内容候选，较 P3-8 的 38 项发生计数漂移。逐项审阅后，9 项已由安全公开契约替代，13 项待公开改写，2 项待来源/许可证核查，15 项待逐项安全边界结论；仅前 9 项写入第二个本地 HMAC ledger 子集。加上 P3-9 演练，目前仅 18/1,551 项具有可复核本地决定；私有 inventory、decisions、key 和 ledger 均未提交、未推送。 |
 | 2026-08-04 | P3-11 小型 fixture 处置 | 已完成（本地） | 8 项 YAML/JSON fixture 逐项审阅后，7 项由公开 Stage1/Stage2 synthetic test/demo contracts 替代，1 项转入 P4 外部制品契约；相关公开回归为 36 passed。本机路径无关 ledger 含 8 条记录并通过泄露扫描；累计 26/1,551 项有可复核 decisions。私有 inventory、decisions、key 和 ledger 均未提交、未推送。 |
+| 2026-08-04 | P3-12 配置候选处置 | 已完成（本地） | 96 项配置逐项审阅后，86 项转入 P6 执行契约、3 项转入 P5 环境契约、6 项转入 P4 外部数据契约、1 项排除；本机路径无关 ledger 通过泄露扫描。累计 122/1,551 项有可复核 decisions；私有 inventory、decisions、key 和 ledger 均未提交、未推送。 |
 
 ## 未执行的外部动作与后续授权
 
