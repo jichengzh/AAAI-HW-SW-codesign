@@ -132,16 +132,16 @@ scripts/stage2_update_evidence.py
 
 ### 当前状态
 
-**状态日期：2026-08-03；此处记录的是台账提交前的已验证工作树状态。** 当前工作分支为 `release/aaai27-reproducibility`，最后一个功能提交为 `9df8299`（干净克隆 CPU smoke）；分支相对配置的远端发布分支尚有 5 个本地提交，尚未推送。该数字在推送或新增提交后必须更新。
+**状态日期：2026-08-04；此处记录 P1 最终候选冻结时的已验证工作树状态。** 当前工作分支为 `release/aaai27-reproducibility`。P1 最终候选为 `c65b5fc7eb9d20e2d34928f7c948aea90f822754`，tree 为 `e9adfe9888a21ae0b5f819858e1cea001acbcecb`；冻结时相对配置的远端发布分支为 behind 0、ahead 8，工作树干净且尚未推送。P1 结项文档提交不属于该已验收候选；其发生后应以 `git status --short --branch` 取得实时差异，不能把这里的冻结数字误作实时远端状态。
 
 | 范围 | 当前状态 | 可验证证据 | 仍缺少的内容 |
 | --- | --- | --- | --- |
-| 公开 CPU 冒烟闭环 | 已完成 | `requirements.txt` 固定 CPU 依赖；`scripts/reproduce/smoke_clean_clone.sh` 创建全新 clone/venv 后运行 smoke；当前分支上曾以隔离本地 Git 源实际通过。 | 真实公开远端在推送后仍需由 CI 再验证。 |
+| 公开 CPU 冒烟闭环 | 已完成，并经 P1 重验 | `requirements.txt` 固定 CPU 依赖；`scripts/reproduce/smoke_clean_clone.sh` 创建全新 clone/venv 后运行 smoke；P1 候选上实际通过 27 项 clean-clone 检查。 | 真实公开远端在推送后仍需由 CI 再验证。 |
 | 公开文档与新手入口 | 已完成 | `README.md`、`README.zh-CN.md`、`REPRODUCIBILITY.md` 说明浅克隆、固定依赖和 smoke；匿名 README 使用同一依赖入口。 | 全量训练/硬件运行说明尚未迁入。 |
-| 匿名审稿 ZIP | 已完成，但需随发布候选重建 | allowlist、逐字节安全扫描、archive verifier 和既有审计记录均在仓库。 | 旧 ZIP 哈希仅对应旧审计提交；每次候选 HEAD 改变都必须重建并记录新哈希。 |
+| 匿名审稿 ZIP | P1 本地验收完成 | allowlist、逐字节安全扫描、archive verifier 和解包后的新 venv 已验收；P1 ZIP 为 100 个成员。 | 每次候选 HEAD 改变都必须重建并记录新哈希。 |
 | 论文证据 | 受限 | 小型 Stage4 审计为 `verified`；demo 明确为非论文证据。规范定义见 [REPRODUCIBILITY.md](../REPRODUCIBILITY.md) 与 [ARTIFACTS.md](../ARTIFACTS.md)。 | Stage6/Stage7 及真实硬件/AP/能耗结果仍为 `external` 或 `unavailable`。 |
 | 完整项目源代码 | 未完成 | 当前树含公开的接口、验证、选择和聚合逻辑。 | 私有完整训练、模型物化、硬件调度/测量和正式实验执行代码尚未逐项脱敏、迁入并验收。 |
-| 公开发布 | 未开始 | 本地发布候选已存在，尚未执行外部推送或可见性变更。 | 需要完成 P1--P8，并在最后取得推送/发布的明确授权。 |
+| 公开发布 | 未开始 | P1 本地发布候选已冻结并验收；尚未执行外部推送或可见性变更。 | 需要完成 P2--P8，并在最后取得推送/发布的明确授权。 |
 
 历史的 `338 passed`、覆盖率和 ZIP SHA-256 记录仍是其对应审计提交的证据，不能自动外推到当前 HEAD。当前 HEAD 的每一次新验收结果必须通过本台账追加记录。
 
@@ -150,7 +150,7 @@ scripts/stage2_update_evidence.py
 | 编号 | 状态 | 操作 | 交付物与验收条件 |
 | --- | --- | --- | --- |
 | P0 | 已完成 | 建立本交接台账及其回归测试，并从 README 入口链接；修复本轮真实匿名 ZIP 闭包发现。 | 同一提交包含台账、链接、测试与 CI 修复；346 passed，真实 ZIP build/verify 通过。 |
-| P1 | 进行中 | 冻结当前发布候选，重建匿名 ZIP，并对候选源树和解包 ZIP 分别做干净环境验收。 | 记录候选提交、ZIP SHA-256、成员数、依赖版本、测试数、覆盖率、identity scan、clean-clone 结果；旧审计结果不能复用。 |
+| P1 | 已完成（本地） | 冻结当前发布候选，重建匿名 ZIP，并对候选源树和解包 ZIP 分别做干净环境验收。 | 记录候选提交、ZIP SHA-256、成员数、依赖版本、测试数、覆盖率、identity scan、clean-clone 结果；旧审计结果不能复用。 |
 | P2 | 待开始 | 审计私有完整仓库：按“源码/文档/小型脱敏 fixture/外部数据描述/禁止上传生成物”清点全部路径和依赖关系。 | 机器可读迁移清单；每个保留、改写、外置或排除项有理由、许可证/许可状态和敏感项扫描结果。 |
 | P3 | 待开始 | 逐模块脱敏迁移完整 Python、配置和设计 Markdown；将测试所需的小型固定输入迁入受版本控制的 fixture 目录，不再从 `results/` 读取。 | 每个迁入模块有单元/集成测试、相对路径入口、设计理由和从私有运行假设中移除的说明；不含密码、主机地址、个人路径或二进制生成物。 |
 | P4 | 待开始 | 为完整实验的数据、模型和可再生成大文件建立外部获取清单和验证接口。 | 每个外部输入记录许可、获取方式、版本、SHA-256、大小、用途、预期目录和缺失时的失败信息；默认命令不下载数据/权重。 |
@@ -165,6 +165,42 @@ scripts/stage2_update_evidence.py
 2. 用空输出目录构建匿名 ZIP；使用独立 verifier 复核 ZIP、manifest、sidecar、成员数和扫描结果。
 3. 在新 clone/new venv 中分别运行 CPU smoke、`ruff`、`compileall`、全量 pytest 与覆盖率门槛；另执行 clean-clone 脚本。
 4. 将实际命令、版本、提交和每项退出状态追加到本台账；任一失败则记录问题并回到相应计划项修复。
+
+#### P1 完成证据：2026-08-04 本地候选
+
+候选为 `c65b5fc7eb9d20e2d34928f7c948aea90f822754`（tree
+`e9adfe9888a21ae0b5f819858e1cea001acbcecb`）。它由一个新的 shallow local
+clone 产生；冻结时 `git diff --check` 为 0，工作树干净，分支相对远端为
+behind 0、ahead 8。整个 P1 均未推送、创建 PR、打 tag、修改可见性或访问真实
+GPU/硬件/外部实验数据。
+
+源树在新的 Python 3.13.12 venv 中验收。运行时为 pip 26.2、NumPy 2.2.5、
+PyYAML 6.0.2、pydantic 2.11.4、pandas 2.2.3、SciPy 1.15.3、scikit-learn
+1.6.1、LightGBM 4.6.0、pytest 9.0.3、pytest-cov 6.3.0、Ruff 0.16.1、CPU
+PyTorch 2.9.0、torch-pruning 1.6.1 与 build 1.5.0；`pip check` 无损坏依赖。
+CPU smoke 的 manifest 为 `aaai27_reproduction_run_manifest_v1`、`completed`、
+`paper_evidence: false`，含 6 个 stage、34 个输出和 3 个冻结 seed。包 wheel/sdist
+构建、Ruff、compileall 和 source 全量覆盖率门禁均通过：**347 passed，80.71%**。
+同一新环境执行 clean-clone 脚本通过：**27 passed**，输出 commit 与候选一致。
+本地路径 clone 对 `--depth`/`--filter` 只发出 Git 的预期本地 clone 警告；它不影响
+clone 内容或验收结果。公开远端 HTTP(S) clone 的传输行为仍由推送后的 CI 复验。
+
+匿名 ZIP 使用 `anonymous-archive-builder/1.0.0` 从同一候选生成，并经独立 verifier
+验证。ZIP 有 100 个成员，manifest 亦列 100 个成员，SHA-256 为
+`aa83bc98b4ada4f7865a5db0ee0c12c92215599b50d9734ff3f123c6833cf4b7`。解包目录
+不含 `.git` 和 `README.anonymous.md`，根 `README.md` 正确映射为匿名入口；第二个全新
+venv 的 `framework` 导入路径确认来自该解包目录。该环境的 smoke manifest 与源树摘要
+相同，wheel/sdist、Ruff、compileall 和覆盖率门禁均通过：**344 passed, 3 skipped，
+80.71%**。3 项跳过均是公开交接/公开 README 专用测试，在匿名 ZIP 中按制品边界显式
+跳过；没有跳过 smoke、归档验证、身份扫描或实验代码测试。
+
+安全检查中，匿名 archive builder/verifier 的逐成员 allowlist 扫描通过，故其
+local-path/github-url/email/ipv4/token/unknown-binary 类别均为 0。候选完整 tracked
+源码树的同一模式扫描结果为 `release_tree_local-path=1` 与
+`release_tree_github-url=1`，其余 email/ipv4/token/unknown-binary 均为 0：前者位于
+`docs/superpowers/plans/2026-07-30-scoped-reproducibility-disclosure.md`，后者位于
+`docs/AAAI27_DUAL_ARTIFACT_RELEASE_PLAN.md`。两份文件不进入匿名 ZIP；但在 P7 对公开
+源码树脱敏或作出明确公开豁免前，本仓库不得宣称已可公开开源。
 
 #### P2--P4：从私有工作树安全迁移
 
@@ -209,6 +245,7 @@ scripts/stage2_update_evidence.py
 | 2026-08-03 | P0 交接台账 | 已完成 | 回归测试将 CI 禁止使用 `file://` 固定下来；真实匿名 ZIP build/verify 通过，100 个成员，SHA-256 `9d93031c7a4cb91ada2b9b92ce70839b5df47630654b4c9b21241acb279c53df`；最终全量回归为 346 passed，Ruff、compileall 与 diff 检查通过。下一项为 P1 发布候选冻结。 |
 | 2026-08-04 | P1 首个候选 | 未通过，修复中 | 候选 `1a67bd624e2ceee68dcf609a9c5148d48351ae1f` 的独立源树验收通过（346 passed、80.71% coverage、26 项 clean-clone 检查）；匿名 ZIP build/verify 也通过，SHA-256 为 `9d93031c7a4cb91ada2b9b92ce70839b5df47630654b4c9b21241acb279c53df`、100 个成员。但解包后的定向测试发现四项闭包缺失：公开交接文档和 README 断言不适用于匿名映射 README，且 smoke 脚本的 `--help` 过早要求 Git。已新增制品感知回归测试、将公开断言在匿名 ZIP 中跳过，并推迟 Git 根目录解析；必须以修复后的新提交重新冻结和完整复验，不能复用本候选作为 P1 完成证据。 |
 | 2026-08-04 | P1 第二个候选 | 未通过，修复中 | 候选 `fe524b736b637a3fae2121788647a12f154f60a8` 的独立源树验收通过（347 passed、80.71% coverage、27 项 clean-clone 检查）。其匿名 ZIP 通过 build/verify（100 个成员，SHA-256 `80e091112d29fecf9c67d5115b42b5623a2d4ad7e924b79fabdebf98db83f85f`），解包后的 CPU smoke、构建、Ruff、compileall 和 coverage 均通过；全量测试为 343 passed、3 skipped、1 failed。唯一失败是 archive 集成测试仍把匿名 README 固定为源树路径 `README.anonymous.md`，没有接受 ZIP 的正确根 `README.md` 映射。测试现已改为两种制品路径均可验证；必须以修复后的新提交重新冻结和完整复验。 |
+| 2026-08-04 | P1 第三个候选 | 已完成（本地） | 候选 `c65b5fc7eb9d20e2d34928f7c948aea90f822754` 以两个新 venv 完成源树与解包 ZIP 验收；源树为 347 passed/80.71%，解包 ZIP 为 344 passed、3 skipped/80.71%，ZIP SHA-256 为 `aa83bc98b4ada4f7865a5db0ee0c12c92215599b50d9734ff3f123c6833cf4b7`。完整命令、依赖、manifest、扫描和 P7 风险见上节。P2 是下一项；没有外部发布动作。 |
 
 ## 未执行的外部动作与后续授权
 
