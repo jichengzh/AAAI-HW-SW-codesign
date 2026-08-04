@@ -1,0 +1,19 @@
+schema: univ2x_release_assets_v1
+assets:
+  - id: tiny_checkpoint
+    kind: checkpoint
+    source: https://example.invalid/tiny-checkpoint
+    destination: inputs/tiny_checkpoint.bin
+    checksum:
+      algorithm: sha256
+      value: cfa9e8f095dc34780ecf052d1c74663a9107e5d445bdd026da1e088304d51315
+      required_before_formal_run: true
+  - id: tiny_dataset
+    kind: dataset_tree
+    source: https://example.invalid/tiny-dataset
+    destination: inputs/tiny_dataset
+    checksum:
+      algorithm: sha256
+      value: ab2b347f82d1884f8fc505404de113b0efc4b1258b1949131eb7b113cf907786
+      required_before_formal_run: true
+      method: sha256_lines_relative_path_v1

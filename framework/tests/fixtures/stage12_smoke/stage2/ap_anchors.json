@@ -1,0 +1,13 @@
+{
+  "_source": "synthetic_fixture",
+  "anchors": [
+    {
+      "tag": "smoke_w64",
+      "s0": 64,
+      "s1": 128,
+      "s2": 256,
+      "ap70": 0.5,
+      "source": "synthetic_fixture"
+    }
+  ]
+}

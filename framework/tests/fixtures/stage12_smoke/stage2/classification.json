@@ -1,0 +1,29 @@
+{
+  "schema": "stage1_model_classification_v1",
+  "models": [
+    {
+      "model": "pyramid_lidar",
+      "ckpt_status": "fixture_checkpoint_present",
+      "acceleration_class": "CO_ACCELERATION_REQUIRED",
+      "classification": "P_HUB_CONTEXT_WITH_HISTORICAL_TRT_Q_AP_BOUND",
+      "scope": "dense_core_only",
+      "evidence_level": "fixture_only"
+    },
+    {
+      "model": "codriving",
+      "ckpt_status": "fixture_checkpoint_present",
+      "acceleration_class": "SEPARABLE_ACCELERATION",
+      "classification": "SCOPED_MEASURED_NEGATIVE_ANCHOR",
+      "scope": "dense_core_only",
+      "evidence_level": "fixture_only"
+    },
+    {
+      "model": "where2comm",
+      "ckpt_status": "missing_architecture_scan_only",
+      "acceleration_class": "SCAN_FAILED",
+      "classification": "ARCHITECTURE_ONLY_FUSION_UNCOVERED_UNKNOWN",
+      "scope": "dense_core_only",
+      "evidence_level": "fixture_only"
+    }
+  ]
+}

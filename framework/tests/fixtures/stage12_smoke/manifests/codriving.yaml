@@ -1,0 +1,67 @@
+stage: stage1_partition
+model: codriving
+model_class: FixtureCoDrivingDenseCore
+scan_status: ok
+config: fixtures/config.yaml
+ckpt: fixtures/model.ckpt
+ckpt_status: fixture_checkpoint_present
+hw_capability:
+  path: configs/hardware/h800_hopper.yaml
+  name: H800 smoke target
+  arch: hopper sm90
+  int8_align: 32
+  fp16_align: 8
+  int8_pack_factor: 4
+  alignment_enforcement: hard
+  legal_bits: [INT8, FP16]
+trace:
+  entry_shape: [1, 64, 32, 32]
+  skipped_modules: []
+  skipped_subgraphs: []
+trace_plan:
+  schema: stage1_trace_plan_v1
+  model: codriving
+  detector: fixture_dense_core
+  ckpt_status: fixture_checkpoint_present
+  trace_confidence: high
+  coverage_scope: dense_core_only
+  manual_override_used: false
+  review_required: false
+  review_reasons: []
+  selected_candidate:
+    candidate_id: smoke_dense_core
+    wrapper_kind: fixture_dense_core
+  included_modules: [backbone]
+  ignored_layers: []
+  skipped_subgraphs: []
+  rejected_candidates: []
+search_space_summary:
+  n_b1_search_knobs: 1
+  latency_status: fixture_only
+view_b1_prune_groups: []
+view_b1_search_groups:
+  - search_group_id: backbone.s1
+    bucket: backbone
+    member_b1_groups: [g0]
+    widths: [128]
+    max_rate: 0.5
+    round_to: 32
+    int8_buildable_align: 32
+    grouped_conv: false
+    criterion_pool: [L1]
+view_b2_quant_units:
+  - unit: backbone
+    quantizable: true
+    legal_bits: [INT8, FP16]
+    legal_granularity_w: [per_tensor]
+    member_groups: [g0]
+view_d_routing_segments:
+  segments:
+    - device: gpu
+      n_nodes: 1
+view_latency:
+  coverage:
+    coverage_scope: trace_net_only
+    full_model_latency_pct: null
+    skipped_subgraphs_accounted_separately: true
+    note: Synthetic dense-core fixture; not a full-model measurement.

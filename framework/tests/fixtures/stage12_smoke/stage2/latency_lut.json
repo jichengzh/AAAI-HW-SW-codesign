@@ -1,0 +1,12 @@
+{
+  "_source": "synthetic_fixture",
+  "widths": [
+    {
+      "label": "smoke_w64",
+      "num_filters": [64, 128, 256],
+      "dense_stage": "bev_encoder",
+      "default_us": 240.0,
+      "tuned_us": 180.0
+    }
+  ]
+}

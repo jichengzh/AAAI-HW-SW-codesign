@@ -1,0 +1,9 @@
+{
+  "_source": "synthetic_fixture",
+  "evidence_level": "fixture_only",
+  "paper_evidence": false,
+  "anchors": {
+    "codriving_fp16_dense_core": true,
+    "codriving_pqs_and_highdim": true
+  }
+}
