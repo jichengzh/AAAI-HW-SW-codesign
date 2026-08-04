@@ -20,6 +20,8 @@ P3-40 经第三次逐项裁决、P3-41 经公开职责与定向回归验证、P3
 
 **最新更正（覆盖上段的当前计数）**：P3-59 完成 5 项 P4（cost bundle、evidence registry、native route、probe profile 与 measurement feedback evidence），确认 6 项已有安全公开改写，并将 1 项会回显私有 probe/feature 标识、尚无公开安全改写和测试链的候选记为 P7 阻塞；本批新增 12 个身份。第 7 项经第三次只读裁决：未来可改写不是当前已改写证据，必须保持 P7。当前真实唯一覆盖为 **482/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-59 记录](P3_BATCH_59_CONTRACT_AND_EVIDENCE_REAUDIT.md)。
 
+**最新更正（覆盖上段的当前计数）**：P3-60 完成 2 项 P4（closure feedback 与 independent measurement request evidence）、3 项 P5（executor admission、recovery root 与 full frozen/sidecar/pre-scan 环境状态）并确认 7 项安全公开改写；本批新增 12 个身份。第 4、10、11、12 项经第三次裁决：不启动测量的 request builder 归 P4，进程/根目录/状态准备而不运行 executor 的候选归 P5，公开 selection-only 子集不替代完整私有 stateful 角色。当前真实唯一覆盖为 **494/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-60 记录](P3_BATCH_60_STAGE567_BOUNDARY_REAUDIT.md)。
+
 ## 冻结基线
 
 P3 以 P2b 的私有源只读盘点为唯一候选基线：原始盘点 SHA-256 为 `6fafdace7dc0eae3e9982763cb1c5c098c0ae83d1715af67ff1e08d7a1d12a79`，共 1,551 个候选：1,008 个代码、96 个配置、439 个 Markdown 和 8 个小 fixture。另有 3,664 个生成物、外部输入或敏感/特殊项，它们不直接进入 P3。两个嵌套仓库保持独立边界，不能默认合并。
