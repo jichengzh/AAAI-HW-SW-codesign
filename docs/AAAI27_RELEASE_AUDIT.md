@@ -140,7 +140,7 @@ scripts/stage2_update_evidence.py
 | 公开文档与新手入口 | 已完成 | `README.md`、`README.zh-CN.md`、`REPRODUCIBILITY.md` 说明浅克隆、固定依赖和 smoke；匿名 README 使用同一依赖入口。 | 全量训练/硬件运行说明尚未迁入。 |
 | 匿名审稿 ZIP | P1 本地验收完成 | allowlist、逐字节安全扫描、archive verifier 和解包后的新 venv 已验收；P1 ZIP 为 100 个成员。 | 每次候选 HEAD 改变都必须重建并记录新哈希。 |
 | 论文证据 | 受限 | 小型 Stage4 审计为 `verified`；demo 明确为非论文证据。规范定义见 [REPRODUCIBILITY.md](../REPRODUCIBILITY.md) 与 [ARTIFACTS.md](../ARTIFACTS.md)。 | Stage6/Stage7 及真实硬件/AP/能耗结果仍为 `external` 或 `unavailable`。 |
-| 完整项目源代码 | P3 进行中 | 当前树含公开的接口、验证、选择和聚合逻辑；P3-1 已补入 Stage6 纯 Python 合约层，P3-3 已补入不读取或回显外部位置、已复审的 Stage4 闭环审计。 | 私有完整训练、模型物化、硬件调度/测量和正式实验执行代码尚未逐项脱敏、迁入并验收。 |
+| 完整项目源代码 | P3 进行中 | 当前树含公开的接口、验证、选择和聚合逻辑；P3-1 已补入 Stage6 纯 Python 合约层，P3-3 已补入不读取或回显外部位置、已复审的 Stage4 闭环审计，P3-5 已补入 Stage2 脱敏延迟异常策略。 | 私有完整训练、模型物化、硬件调度/测量和正式实验执行代码尚未逐项脱敏、迁入并验收。 |
 | 私有源迁移清单 | P2a 本地只读机械盘点完成 | [P2 脱敏汇总](release-manifests/P2_PRIVATE_SOURCE_SUMMARY.json) 与可重复 inventory 工具已记录候选/复核/排除分类。 | P3 必须逐批完成语义、许可与依赖审阅后才迁移任何候选；当前清单不是自动上传许可。 |
 | 公开发布 | 未开始 | P1 本地发布候选已冻结并验收；P2 私有源盘点已完成；尚未执行外部推送或可见性变更。 | 需要完成 P3--P8，并在最后取得推送/发布的明确授权。 |
 
@@ -153,7 +153,7 @@ scripts/stage2_update_evidence.py
 | P0 | 已完成 | 建立本交接台账及其回归测试，并从 README 入口链接；修复本轮真实匿名 ZIP 闭包发现。 | 同一提交包含台账、链接、测试与 CI 修复；346 passed，真实 ZIP build/verify 通过。 |
 | P1 | 已完成（本地） | 冻结当前发布候选，重建匿名 ZIP，并对候选源树和解包 ZIP 分别做干净环境验收。 | 记录候选提交、ZIP SHA-256、成员数、依赖版本、测试数、覆盖率、identity scan、clean-clone 结果；旧审计结果不能复用。 |
 | P2 | 已完成（P2a 本地只读机械盘点） | 审计私有完整仓库：按“源码/文档/小型脱敏 fixture/外部数据描述/禁止上传生成物”清点全部路径和依赖关系。 | 机器可读的机械分类清单和敏感项扫描结果；每个保留、改写、外置或排除项的语义理由、许可证/许可状态在 P3 逐批批准时补齐。 |
-| P3 | 进行中（P3-1 和 P3-3 已完成；P3-2 和 P3-4 未批准） | 逐模块脱敏迁移完整 Python、配置和设计 Markdown；将测试所需的小型固定输入迁入受版本控制的 fixture 目录，不再从 `results/` 读取。 | P3-1 的范围见 [批次记录](release-manifests/P3_BATCH_01_STAGE6_CONTRACTS.md)，P3-3 的范围见 [批次记录](release-manifests/P3_BATCH_03_STAGE4_CLOSURE_AUDIT.md)；P3-2 和 P3-4 的拒绝理由分别见 [审阅记录](release-manifests/P3_BATCH_02_STAGE5_AUDIT.md) 与 [审阅记录](release-manifests/P3_BATCH_04_STAGE2_S1_PROBE_METRICS_AUDIT.md)。其余模块仍须逐批完成同等审阅。 |
+| P3 | 进行中（P3-1、P3-3 和 P3-5 已完成；P3-2 和 P3-4 未批准） | 逐模块脱敏迁移完整 Python、配置和设计 Markdown；将测试所需的小型固定输入迁入受版本控制的 fixture 目录，不再从 `results/` 读取。 | P3-1、P3-3 和 P3-5 的范围分别见 [批次记录](release-manifests/P3_BATCH_01_STAGE6_CONTRACTS.md)、[批次记录](release-manifests/P3_BATCH_03_STAGE4_CLOSURE_AUDIT.md) 与 [批次记录](release-manifests/P3_BATCH_05_STAGE2_LATENCY_OUTLIER_POLICY.md)；P3-2 和 P3-4 的拒绝理由分别见 [审阅记录](release-manifests/P3_BATCH_02_STAGE5_AUDIT.md) 与 [审阅记录](release-manifests/P3_BATCH_04_STAGE2_S1_PROBE_METRICS_AUDIT.md)。其余模块仍须逐批完成同等审阅。 |
 | P4 | 待开始 | 为完整实验的数据、模型和可再生成大文件建立外部获取清单和验证接口。 | 每个外部输入记录许可、获取方式、版本、SHA-256、大小、用途、预期目录和缺失时的失败信息；默认命令不下载数据/权重。 |
 | P5 | 待开始 | 固化可复现环境：CPU 基线继续保持；分别提供 4090 与 H800 的环境/驱动/CUDA 约束、硬件探测和最小运行命令。 | CPU、4090、H800 配置文件互不混淆；不含 SSH 信息；每个环境均可执行依赖检查和相应的最小测试。 |
 | P6 | 待开始 | 接入全流程训练、评测、硬件执行与结果汇总；生成不可伪造的执行 manifest。 | 每一步消费的输入、代码版本、随机种子、配置和输出 SHA-256 可追溯；缺失外部证据失败关闭；Stage6/Stage7 只在正式数据及独立验证满足后更新证据状态。 |
@@ -243,6 +243,10 @@ P3-3 迁入没有 I/O、网络、GPU 或子进程依赖的 Stage4 闭环审计�
 
 P3-4 审阅一个无 I/O 的 Stage2 结构探针指标模块。它会拒绝性能标签，但仍会在报告和异常中回显调用者提供的探针标识与特征名。为防止私有标识或位置经聚合报告回流，未复制实现或测试；必须先按 [P3-4 审阅记录](release-manifests/P3_BATCH_04_STAGE2_S1_PROBE_METRICS_AUDIT.md) 改为公开字段白名单/位置索引、固定错误代码和畸形输入失败关闭，才能在新批次重新审阅。
 
+#### P3-5：Stage2 脱敏延迟异常策略（已完成，本地）
+
+P3-5 将一个只处理内存测量字典的 Stage2 延迟质量策略重写为公开契约。输出只有稳定的 `row_index`、固定质量状态和原因代码；调用方提供的行、运行、配置、模型、候选、调度、路径和 URI 信息绝不回显。分组字段必须均为非空字符串，缺失、空白或非字符串分组只能失败关闭；有限正数边界也安全处理超大数值。全量回归为 `386 passed`、总覆盖率 81.72%、新模块覆盖率 93%，独立复审通过；匿名 ZIP 已独立 build/verify（113 成员，SHA-256 `6d821d88ab4915a586192b0e38592dfea22c51a8541fef194487576f0a3196b4`）。详细范围和排除见 [P3-5 批次记录](release-manifests/P3_BATCH_05_STAGE2_LATENCY_OUTLIER_POLICY.md)。本批次未推送、未发布，P3 仍须逐批完成其余候选的处置。
+
 #### P5--P6：环境与全流程复现
 
 1. CPU smoke 始终只用受控 fixture，且不得隐式发现本机 `results/`、GPU、缓存或外部目录。
@@ -285,6 +289,7 @@ P3-4 审阅一个无 I/O 的 Stage2 结构探针指标模块。它会拒绝性�
 | 2026-08-04 | P3-2 Stage5 审阅 | 已完成（未批准迁移） | 审阅 4 个 Stage5 候选：3 个处理外部制品/测量输入，closure 审计器会回显调用者提供的证据/结果位置。未复制代码或数据；改造要求和下批筛选条件见 P3-2 审阅记录。 |
 | 2026-08-04 | P3-3 Stage4 闭环审计 | 已完成（本地） | 首轮迁入后的 `after_feedback` 行绑定、采集数值契约和无效指标回显缺口均以新增失败关闭测试修复，并获独立复审批准。最终源树回归为 378 passed、81.52% coverage；匿名 ZIP 独立 verify 通过（111 成员，`aca6c8426e5f1d413586e18e315dc4655fcc5446d90cd494d0643d1e28cea32c`）。未推送、未发布。 |
 | 2026-08-04 | P3-4 Stage2 S1 探针指标审阅 | 已完成（未批准迁移） | 候选无 I/O 且会拒绝性能字段，但报告/错误会回显调用者探针标识与特征名。未复制代码、测试、数据或执行器；改造条件已记录，下一批继续筛选。 |
+| 2026-08-04 | P3-5 Stage2 延迟异常策略 | 已完成（本地） | 迁入脱敏的纯内存质量策略，并以定向回归固定分组字段、超大数值和标识不回显的失败关闭行为。全量回归为 386 passed、81.72% coverage，新模块为 93%；独立复审通过。匿名 ZIP 已 verify（113 成员，`6d821d88ab4915a586192b0e38592dfea22c51a8541fef194487576f0a3196b4`）。未推送、未发布。 |
 
 ## 未执行的外部动作与后续授权
 
