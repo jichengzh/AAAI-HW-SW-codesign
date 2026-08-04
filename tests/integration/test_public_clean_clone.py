@@ -5,12 +5,25 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPOSITORY_ROOT / "scripts/reproduce/smoke_clean_clone.sh"
 
 
+def _is_anonymous_reviewer_archive() -> bool:
+    root_readme = REPOSITORY_ROOT / "README.md"
+    return (
+        not (REPOSITORY_ROOT / "README.anonymous.md").exists()
+        and root_readme.is_file()
+        and root_readme.read_text(encoding="utf-8").startswith("# Anonymous AAAI Submission")
+    )
+
+
 def test_public_readme_exposes_anonymous_safe_clean_clone_workflow() -> None:
+    if _is_anonymous_reviewer_archive():
+        pytest.skip("the mapped anonymous README intentionally omits public-clone instructions")
     readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
 
     assert "GEAR_REPOSITORY_URL" in readme
@@ -51,6 +64,25 @@ def test_clean_clone_script_has_safe_controls_and_never_fetches_experiment_asset
     assert "wget" not in source
     assert "curl" not in source
     assert "gdown" not in source
+
+
+def test_clean_clone_help_does_not_require_a_git_checkout(tmp_path: Path) -> None:
+    """An extracted anonymous ZIP can display usage before it is placed in a Git repository."""
+    isolated_script = tmp_path / "scripts" / "reproduce" / SCRIPT.name
+    isolated_script.parent.mkdir(parents=True)
+    isolated_script.write_text(SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
+    isolated_script.chmod(0o755)
+
+    help_result = subprocess.run(
+        ["bash", str(isolated_script), "--help"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert help_result.returncode == 0, help_result.stderr
+    assert "Usage:" in help_result.stdout
 
 
 def test_ci_installs_the_public_cpu_requirements_and_exercises_clean_clone() -> None:

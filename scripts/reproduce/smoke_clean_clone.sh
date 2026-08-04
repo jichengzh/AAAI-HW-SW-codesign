@@ -29,7 +29,6 @@ die() {
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SOURCE_ROOT="$(git -C "$SCRIPT_DIR/../.." rev-parse --show-toplevel)"
 REPO_URL=""
 REF=""
 WORK_DIR=""
@@ -75,6 +74,7 @@ done
 command -v git >/dev/null 2>&1 || die 'git is required'
 command -v "$PYTHON_BIN" >/dev/null 2>&1 || die "Python executable not found: $PYTHON_BIN"
 "$PYTHON_BIN" -c 'import sys; assert (3, 10) <= sys.version_info[:2] < (3, 14), sys.version'
+SOURCE_ROOT="$(git -C "$SCRIPT_DIR/../.." rev-parse --show-toplevel)"
 
 if [[ -z "$REPO_URL" ]]; then
   REPO_URL="$(git -C "$SOURCE_ROOT" remote get-url origin)"

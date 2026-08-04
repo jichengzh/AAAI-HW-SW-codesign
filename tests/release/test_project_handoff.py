@@ -4,13 +4,26 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 HANDOFF = REPOSITORY_ROOT / "docs/AAAI27_RELEASE_AUDIT.md"
 
 
+def _is_anonymous_reviewer_archive() -> bool:
+    root_readme = REPOSITORY_ROOT / "README.md"
+    return (
+        not (REPOSITORY_ROOT / "README.anonymous.md").exists()
+        and root_readme.is_file()
+        and root_readme.read_text(encoding="utf-8").startswith("# Anonymous AAAI Submission")
+    )
+
+
 def test_handoff_records_baseline_current_state_and_open_source_plan() -> None:
     """A successor must be able to find the release starting point and remaining work."""
+    if _is_anonymous_reviewer_archive():
+        pytest.skip("the anonymous reviewer ZIP deliberately excludes the public handoff ledger")
     handoff = HANDOFF.read_text(encoding="utf-8")
 
     for heading in (
@@ -32,6 +45,8 @@ def test_handoff_records_baseline_current_state_and_open_source_plan() -> None:
 
 def test_public_readmes_link_the_handoff_ledger() -> None:
     """The maintained plan is discoverable without depending on an old chat transcript."""
+    if _is_anonymous_reviewer_archive():
+        pytest.skip("the anonymous reviewer ZIP deliberately excludes public release documentation")
     for readme_name in ("README.md", "README.zh-CN.md"):
         readme = (REPOSITORY_ROOT / readme_name).read_text(encoding="utf-8")
         assert "docs/AAAI27_RELEASE_AUDIT.md" in readme
