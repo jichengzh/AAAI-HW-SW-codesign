@@ -44,6 +44,8 @@ P3-40 经第三次逐项裁决、P3-41 经公开职责与定向回归验证、P3
 
 **最新更正（覆盖上段的当前计数）**：P3-71 完成 12 项 P6（UniV2X 分割、tracking、detector、ONNX/TRT plugin、fusion、hook 与 attention 执行支持）处置，并新增 12 个身份。双审逐项一致；公开 CPU-safe 流程没有同职责 API/test 支持链。当前真实唯一覆盖为 **626/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-71 记录](P3_BATCH_71_UNIV2X_TRACKING_EXECUTION_REAUDIT.md)。
 
+**最新更正（覆盖上段的当前计数）**：P3-72 完成 6 项 P6（transformer、pruning 与 temporal cache 执行支持）和 6 项 P7（QuantV2X/OpenCOOD 量化栈 copy/port 的再分发许可阻塞）处置，并新增 12 个身份。后六项经第三次裁决：项目 Apache-2.0 信号不覆盖明确的上游 copy/port，且未见可再分发豁免或干净公开替代。当前真实唯一覆盖为 **638/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-72 记录](P3_BATCH_72_PRUNING_AND_QUANTIZATION_REAUDIT.md)。
+
 ## 冻结基线
 
 P3 以 P2b 的私有源只读盘点为唯一候选基线：原始盘点 SHA-256 为 `6fafdace7dc0eae3e9982763cb1c5c098c0ae83d1715af67ff1e08d7a1d12a79`，共 1,551 个候选：1,008 个代码、96 个配置、439 个 Markdown 和 8 个小 fixture。另有 3,664 个生成物、外部输入或敏感/特殊项，它们不直接进入 P3。两个嵌套仓库保持独立边界，不能默认合并。

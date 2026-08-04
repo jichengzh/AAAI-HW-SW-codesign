@@ -494,6 +494,10 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 
 12 项完成 P2 metadata/bytes、当前内容绑定、主审、独立语义复审、项目级许可证继承和安全输出审查，双审逐项一致。最终为 12 项 P6：分割 transformer/metric、tracking memory/query/state/tracker、detector registry、ONNX/TRT plugin functions、fusion modules、训练 hook 与 BEV/attention modules。公开 CPU-safe 流程没有同职责 API/test 支持链；这些候选支撑私有模型训练、跟踪、推理、导出或执行状态更新。该批新增 12 个不重复身份，使真实唯一覆盖到 **626/1,551**。没有执行私有模型、数据、设备、子进程或网络任务；P4 尚未开始。详见 [P3-71 记录](release-manifests/P3_BATCH_71_UNIV2X_TRACKING_EXECUTION_REAUDIT.md)。
 
+#### P3-72：pruning 与量化边界复审（已接受，本地）
+
+12 项完成 P2 metadata/bytes、当前内容绑定、主审、独立语义复审、项目级许可证继承和安全输出审查。前六项双审一致为 P6：transformer、结构化 pruning 与 temporal cache 执行支持。后六项经第三次只读许可证裁决为 P7：量化包、AdaRound、communication quant、BN folding 及 BEVFormer/downstream wrappers 明确具有 QuantV2X/OpenCOOD copy/port 来源；可见上游许可不允许进一步转让，且没有可公开的双许可、NOTICE 或干净替代实现。该批新增 12 个不重复身份，使真实唯一覆盖到 **638/1,551**。没有执行私有模型、数据、设备、子进程或网络任务；P4 尚未开始。详见 [P3-72 记录](release-manifests/P3_BATCH_72_PRUNING_AND_QUANTIZATION_REAUDIT.md)。
+
 #### P5--P6：环境与全流程复现
 
 1. CPU smoke 始终只用受控 fixture，且不得隐式发现本机 `results/`、GPU、缓存或外部目录。
@@ -598,6 +602,7 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 | 2026-08-05 | P3-69 UniV2X 模型支持边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 1 项 P4、9 项 P6、2 项非必要排除；第 2、3 项经第三次裁决。HMAC ledger 已重新计算，真实唯一覆盖为 602/1,551；未推送、未发布。 |
 | 2026-08-05 | P3-70 UniV2X 执行支持边界复审 | 已接受（本地） | 12 项在重新绑定实际队列后完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查；主审队列身份错误已整体作废，复核后双审一致。最终 12 项 P6，HMAC ledger 已重新计算，真实唯一覆盖为 614/1,551；未推送、未发布。 |
 | 2026-08-05 | P3-71 UniV2X tracking 与执行支持边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查；双审逐项一致。最终 12 项 P6，HMAC ledger 已重新计算，真实唯一覆盖为 626/1,551；未推送、未发布。 |
+| 2026-08-05 | P3-72 pruning 与量化边界复审 | 已接受（本地） | 12 项完成 P2/当前内容、职责、调用、公开反证、项目级许可与安全输出审查。最终 6 项 P6、6 项 P7；后六项经第三次许可裁决。HMAC ledger 已重新计算，真实唯一覆盖为 638/1,551；未推送、未发布。 |
 
 ## 未执行的外部动作与后续授权
 
