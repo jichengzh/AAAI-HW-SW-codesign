@@ -470,6 +470,10 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 
 12 项完成 P2 metadata/bytes、当前内容绑定、主审、独立语义复审、项目级许可证继承和安全输出审查。最终为 2 项公开替代和 10 项非必要排除。双审逐项一致：公开 Stage5 genome 与 Stage6 six-arm contract 测试覆盖相同职责；其余旧测试不执行被测 AP plan、repair、validation、audit、TVM helper 或 controller 工具，且不在当前公开支持链中，不能仅由底层执行边界转 P4--P6。该批新增 12 个不重复身份，使真实唯一覆盖到 **554/1,551**。没有执行私有模型、数据、设备、子进程或网络任务；P4 尚未开始。详见 [P3-65 记录](release-manifests/P3_BATCH_65_STAGE56_LEGACY_TEST_REAUDIT.md)。
 
+#### P3-66：Stage6/Stage7 遗留测试复审（已接受，本地）
+
+12 项完成 P2 metadata/bytes、当前内容绑定、主审、独立语义复审、项目级许可证继承和安全输出审查。最终为 2 项公开替代和 10 项非必要排除。第 3 项经第三次裁决：公开 Stage6 manifest validator 已以可校验、失败关闭 contract 承担 INT8 自动路由并禁止 legacy DP4A/native/hand rewrite 的职责。其余旧测试不在当前公开支持链，也不执行被测运行工具。该批新增 12 个不重复身份，使真实唯一覆盖到 **566/1,551**。没有执行私有模型、数据、设备、子进程或网络任务；P4 尚未开始。详见 [P3-66 记录](release-manifests/P3_BATCH_66_STAGE67_LEGACY_TEST_REAUDIT.md)。
+
 #### P5--P6：环境与全流程复现
 
 1. CPU smoke 始终只用受控 fixture，且不得隐式发现本机 `results/`、GPU、缓存或外部目录。
