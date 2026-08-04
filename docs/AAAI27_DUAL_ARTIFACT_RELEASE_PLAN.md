@@ -32,10 +32,10 @@ The target checkout is the current repository root:
 $REPO_ROOT
 ```
 
-Its remote is:
+Its collaboration remote is intentionally not recorded in this public-safe plan. Verify the configured remote locally before any authorized push; do not copy a personal account URL into release documentation.
 
 ```text
-https://github.com/jichengzh/AAAI-HW-SW-codesign.git
+<private-collaboration-remote>
 ```
 
 The repository currently contains:

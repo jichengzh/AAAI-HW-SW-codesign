@@ -142,10 +142,10 @@ git commit -m "docs: align reproducibility evidence boundaries"
 
 ```bash
 git diff --check HEAD~2..HEAD
-rg -n "/home/|jichengzh|220243603|@seu" README.anonymous.md
+python -m pytest -q tests/release/test_identity_scan.py
 ```
 
-预期：无空白错误；匿名 README 无身份或本地路径匹配。
+预期：无空白错误；身份扫描回归通过，匿名 README 无身份或本地路径匹配。
 
 - [ ] **Step 2: 运行发布与匿名归档测试**
 
