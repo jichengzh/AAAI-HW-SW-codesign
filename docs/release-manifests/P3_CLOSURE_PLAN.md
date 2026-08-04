@@ -40,6 +40,8 @@ P3-40 经第三次逐项裁决、P3-41 经公开职责与定向回归验证、P3
 
 **最新更正（覆盖上段的当前计数）**：P3-69 完成 1 项 P4（TRT Phase-2 config 的 checkpoint/ONNX/engine/dataset/anchor 制品来源）、9 项 P6（UniV2X/MMDet registry、assigner、coder、match-cost 和 tensor 执行支持）和 2 项非必要排除，并新增 12 个身份。第 2、3 项经第三次只读裁决：零字节 private package marker 不承担可发布职责；模型 config 的主导边界是外部制品身份而非环境或执行器。当前真实唯一覆盖为 **602/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-69 记录](P3_BATCH_69_UNIV2X_MODEL_SUPPORT_REAUDIT.md)。
 
+**最新更正（覆盖上段的当前计数）**：P3-70 完成 12 项 P6（UniV2X/MMDet distributed evaluation、training loss 与 model plugin import 支持）处置，并新增 12 个身份。主审初稿的队列身份错误已作废；重新绑定实际队列后双审逐项一致。当前真实唯一覆盖为 **614/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-70 记录](P3_BATCH_70_UNIV2X_EXECUTION_SUPPORT_REAUDIT.md)。
+
 ## 冻结基线
 
 P3 以 P2b 的私有源只读盘点为唯一候选基线：原始盘点 SHA-256 为 `6fafdace7dc0eae3e9982763cb1c5c098c0ae83d1715af67ff1e08d7a1d12a79`，共 1,551 个候选：1,008 个代码、96 个配置、439 个 Markdown 和 8 个小 fixture。另有 3,664 个生成物、外部输入或敏感/特殊项，它们不直接进入 P3。两个嵌套仓库保持独立边界，不能默认合并。
