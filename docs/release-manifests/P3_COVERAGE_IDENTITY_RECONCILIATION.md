@@ -16,6 +16,8 @@
 
 重叠只出现在此前已接受的复审批次之间：P3-19/P3-36 为 3 项、P3-20/P3-36 为 5 项、P3-20/P3-37 为 1 项、P3-20/P3-40 为 2 项。后续批次的逐项审阅记录仍保留为审计证据，但不再增加 P3 的覆盖分子，也不能替代尚未审阅的候选。
 
+**当前更正（覆盖下段及后续旧更正的当前计数）**：P3-124 从 P3-123 后的唯一身份集合之外新增 12 个 `migrate_document` 身份。受限 inventory、当前 SHA-256、规范 HMAC ledger 与 acceptance manifest 均已重算；真实唯一覆盖现为 **1,256/1,551**，尚余 **295** 项文档候选。8 项 P4/P6 职责分歧均完成第三方只读裁决：FP32 energy、INT8 不确定性、TensorCore/full-engine、rewritten engine、跨精度根因/scale-sweep 和 AP-shape/speed-gate 的已测制品、诊断与 claim boundary 归 P4；full-val 监控与 suite/门禁执行归 P6。2 项遗留凭据访问工作流和私有运行信息保持 P7，需失效确认、非可执行改写、脱敏和当前树/历史/导出物泄露回归后重审，本记录不声称已解除。P3 尚未关闭，P4 尚未开始。
+
 **当前更正（覆盖下段及后续旧更正的当前计数）**：P3-123 从 P3-122 后的唯一身份集合之外新增 12 个 `migrate_document` 身份。受限 inventory、当前 SHA-256、规范 HMAC ledger 与 acceptance manifest 均已重算；真实唯一覆盖现为 **1,244/1,551**，尚余 **307** 项文档候选。3 项 P4/P6 职责分歧均完成第三方只读裁决：checkpoint blocker、builder readiness、量化核对和已测 rows/telemetry/full-engine gate 的制品、scope redline 与验证记录归 P4；checkpoint recovery、多卡训练/评测、scale-aware route 修复与 completion queue/runner 编排归 P6。另有 1 项真实凭据和私有运行信息暴露保持 P7；该项需轮换失效确认、脱敏和泄露回归后重审，本记录不声称已解除。P3 尚未关闭，P4 尚未开始。
 
 **当前更正（覆盖下段及后续旧更正的当前计数）**：P3-122 从 P3-121 后的唯一身份集合之外新增 12 个 `migrate_document` 身份。受限 inventory、当前 SHA-256、规范 HMAC ledger 与 acceptance manifest 均已重算；真实唯一覆盖现为 **1,232/1,551**，尚余 **319** 项文档候选。3 项 P4/P6 职责分歧均完成第三方只读裁决：checkpoint/route inventory 若由监控、gate 后导入和恢复编排主导则归 P6；已测 capture、smoke、numeric/trace blocker 与 readiness 制品为主导时归 P4。full-AP 监控、bridge 修复、coverage 刷新、checkpoint recovery 与 AP/energy 补点均归 P6。占位主机、环境变量和无变量名的脱敏片段不构成 P7，未发现真实凭据或连接秘密。P3 尚未关闭，P4 尚未开始。
