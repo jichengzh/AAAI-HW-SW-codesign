@@ -747,6 +747,7 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 | 2026-08-05 | P3-118 AP 稳定性与生产访问边界复审 | 已接受（本地） | 12 项 `migrate_document` 均完成固定队列身份核验、双独立逐项审查；6 项职责分歧经第三次裁决。最终 1 项 P5、6 项 P6、5 项 P7：实际 AP replay/微调、评估、三臂 readiness 与生产门禁归 P6，纯 AP 训练环境阻塞归 P5；泛化 PID 写法不足以 P7，明确远程登录、临时认证和访问命令保持 P7，公开记录不披露这些流程。HMAC ledger 已重新计算，真实唯一覆盖为 1,184/1,551；P3 仍进行中，P4 未启动；未推送、未发布。 |
 | 2026-08-05 | P3-119 量化证据与 AP 收口复审 | 已接受（本地） | 12 项 `migrate_document` 均完成固定队列身份核验、双独立逐项审查；10 项职责分歧经第三次裁决。最终 6 项 P4、1 项 P5、5 项 P6：量化/精度/AP 的受控测量、状态表、gap 报告和制品索引归 P4，native INT8 硬件路线归 P5，实际量化生成、AP 收口和 runner 修复归 P6；占位主机、环境变量、登录规则引用和连接失败文本不足以 P7，未发现真实凭据或连接秘密。HMAC ledger 已重新计算，真实唯一覆盖为 1,196/1,551；P3 仍进行中，P4 未启动；未推送、未发布。 |
 | 2026-08-05 | P3-120 INT8 Bridge 与 Blocker 复审 | 已接受（本地） | 12 项 `migrate_document` 均完成固定队列身份核验、双独立逐项审查；10 项职责分歧经第三次裁决。最终 7 项 P4、5 项 P6：已测 AP/INT8 状态、route、数值/权重/output-scale blocker 归 P4，实际量化补点、AP 收口、TVM worker bridge、重测和 full AP gate 计划归 P6；记录 bridge 或后续修复不自动覆盖证据主导职责，未发现真实凭据或连接秘密。HMAC ledger 已重新计算，真实唯一覆盖为 1,208/1,551；P3 仍进行中，P4 未启动；未推送、未发布。 |
+| 2026-08-05 | P3-121 INT8 证据与执行边界复审 | 已接受（本地） | 12 项 `migrate_document` 均完成固定队列身份核验、双独立逐项审查；7 项真实职责分歧经第三次裁决。最终 7 项 P4、5 项 P6：已测 INT8 route/trace、数值与 sanity blocker、FP16 AP 来源、calibration/reference-range 制品、reference-range 实测和 calibrated AP smoke/row gate 归 P4；energy/AP 补点、completion queue/simulator、hook/reference-range capture、AP 收口和 latency 补点执行编排归 P6。独立审查中的协议外标签未被采用，未发现真实凭据或连接秘密。HMAC ledger 已重新计算，真实唯一覆盖为 1,220/1,551；P3 仍进行中，P4 未启动；未推送、未发布。 |
 
 ## 未执行的外部动作与后续授权
 

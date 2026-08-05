@@ -16,6 +16,8 @@
 
 重叠只出现在此前已接受的复审批次之间：P3-19/P3-36 为 3 项、P3-20/P3-36 为 5 项、P3-20/P3-37 为 1 项、P3-20/P3-40 为 2 项。后续批次的逐项审阅记录仍保留为审计证据，但不再增加 P3 的覆盖分子，也不能替代尚未审阅的候选。
 
+**当前更正（覆盖下段及后续旧更正的当前计数）**：P3-121 从 P3-120 后的唯一身份集合之外新增 12 个 `migrate_document` 身份。受限 inventory、当前 SHA-256、规范 HMAC ledger 与 acceptance manifest 均已重算；真实唯一覆盖现为 **1,220/1,551**，尚余 **331** 项文档候选。7 项真实职责分歧均完成第三方只读裁决：已测 INT8 route/trace、数值与 sanity blocker、FP16 AP 来源、calibration/reference-range 制品、reference-range 实测和 calibrated AP smoke/row gate 归 P4；energy/AP 补点、completion queue/simulator、hook/reference-range capture、AP 收口和 latency 补点的执行编排归 P6。独立审查中的协议外标签未被采用；未发现真实凭据或连接秘密，故无 P7。P3 尚未关闭，P4 尚未开始。
+
 **当前更正（覆盖下段及后续旧更正的当前计数）**：P3-120 从 P3-119 后的唯一身份集合之外新增 12 个 `migrate_document` 身份。受限 inventory、当前 SHA-256、规范 HMAC ledger 与 acceptance manifest 均已重算；真实唯一覆盖现为 **1,208/1,551**，尚余 **343** 项文档候选。10 项职责分歧均完成第三方只读裁决：已测 AP/INT8 状态、route 和 blocker 证据归 P4，实际量化补点、AP 收口、worker bridge、重测和 full AP gate 计划归 P6。未发现真实凭据或连接秘密，故无 P7。P3 尚未关闭，P4 尚未开始。
 
 **当前更正（覆盖下段及后续旧更正的当前计数）**：P3-119 从 P3-118 后的唯一身份集合之外新增 12 个 `migrate_document` 身份。受限 inventory、当前 SHA-256、规范 HMAC ledger 与 acceptance manifest 均已重算；真实唯一覆盖现为 **1,196/1,551**，尚余 **355** 项文档候选。10 项职责分歧均完成第三方只读裁决：量化/精度/AP 的受控测量、状态表、gap 报告和制品索引归 P4，native INT8 硬件路线归 P5，实际量化生成、AP 收口和 runner 修复归 P6。占位主机、环境变量、登录规则引用和连接失败文本不足以 P7；未发现真实凭据或连接秘密。P3 尚未关闭，P4 尚未开始。
