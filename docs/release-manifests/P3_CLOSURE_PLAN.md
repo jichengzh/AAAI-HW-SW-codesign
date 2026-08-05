@@ -144,6 +144,8 @@ P3-40 经第三次逐项裁决、P3-41 经公开职责与定向回归验证、P3
 
 **最新更正（覆盖上段的当前计数）**：P3-121 完成 12 项 `migrate_document` 候选的逐项复审，最终为 7 项 P4 和 5 项 P6。7 项真实职责分歧均由第三方逐项只读裁决：已测 INT8 route/trace、数值与 sanity blocker、FP16 AP 来源、calibration/reference-range 制品、reference-range 实测和 calibrated AP smoke/row gate 归 P4；energy/AP 补点、completion queue/simulator、hook/reference-range capture、AP 收口和 latency 补点的执行编排归 P6。独立审查中的协议外标签未被采用；未发现真实凭据或连接秘密，故无 P7。当前真实唯一覆盖为 **1,220/1,551**，剩余 331 项文档候选；P3 仍在进行中，P4 尚未开始。详见 [P3-121 记录](P3_BATCH_121_INT8_EVIDENCE_AND_EXECUTION_REAUDIT.md)。
 
+**最新更正（覆盖上段的当前计数）**：P3-122 完成 12 项 `migrate_document` 候选的逐项复审，最终为 3 项 P4 和 9 项 P6。3 项 P4/P6 职责分歧均由第三方逐项只读裁决：checkpoint/route inventory 若由监控、gate 后导入和恢复编排主导则归 P6；已测 capture、smoke、numeric/trace blocker 与 readiness 制品为主导时归 P4，后续 route 计划不改变该边界。full-AP 监控、bridge 修复、coverage 刷新、checkpoint recovery 与 AP/energy 补点均归 P6。占位主机、环境变量和无变量名的脱敏片段不构成 P7，未发现真实凭据或连接秘密。当前真实唯一覆盖为 **1,232/1,551**，剩余 319 项文档候选；P3 仍在进行中，P4 尚未开始。详见 [P3-122 记录](P3_BATCH_122_FULL_AP_AND_ROUTE_REAUDIT.md)。
+
 ## 冻结基线
 
 P3 以 P2b 的私有源只读盘点为唯一候选基线：原始盘点 SHA-256 为 `6fafdace7dc0eae3e9982763cb1c5c098c0ae83d1715af67ff1e08d7a1d12a79`，共 1,551 个候选：1,008 个代码、96 个配置、439 个 Markdown 和 8 个小 fixture。另有 3,664 个生成物、外部输入或敏感/特殊项，它们不直接进入 P3。两个嵌套仓库保持独立边界，不能默认合并。
