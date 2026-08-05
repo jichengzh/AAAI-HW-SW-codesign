@@ -104,6 +104,8 @@ P3-40 经第三次逐项裁决、P3-41 经公开职责与定向回归验证、P3
 
 **最新更正（覆盖上段的当前计数）**：P3-101 完成 2 项 P4 外部制品契约和 10 项 P6 执行契约，并新增 12 个身份。q1--q9、q11 经第三次只读裁决：TensorRT engine build/benchmark、ONNX Q/DQ build、TVM tune/measure、模型校准和配置驱动部署的实际 build/run 行为均归 P6；本地路径、GPU 编号和输出风险本身不构成 `blocked_license_or_permission`，且环境依赖不能将真实执行工具降为 P5。当前真实唯一覆盖为 **986/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-101 记录](P3_BATCH_101_TRT_TVM_AND_CALIBRATION_REAUDIT.md)。
 
+**最新更正（覆盖上段的当前计数）**：P3-102 完成 6 项 P4 外部制品契约和 6 项 P6 执行契约，并新增 12 个身份。q1、q2、q4--q6、q8、q11 经第三次只读裁决：量化 plan/其私有 smoke 因无真实公开实现与测试链归 P4；TensorRT inspection、模型转换、数据集评测、ONNX export 与前向测时均有实际加载/反序列化/执行行为，归 P6。当前真实唯一覆盖为 **998/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-102 记录](P3_BATCH_102_QUANTIZATION_EVALUATION_AND_INFERENCE_REAUDIT.md)。
+
 ## 冻结基线
 
 P3 以 P2b 的私有源只读盘点为唯一候选基线：原始盘点 SHA-256 为 `6fafdace7dc0eae3e9982763cb1c5c098c0ae83d1715af67ff1e08d7a1d12a79`，共 1,551 个候选：1,008 个代码、96 个配置、439 个 Markdown 和 8 个小 fixture。另有 3,664 个生成物、外部输入或敏感/特殊项，它们不直接进入 P3。两个嵌套仓库保持独立边界，不能默认合并。
