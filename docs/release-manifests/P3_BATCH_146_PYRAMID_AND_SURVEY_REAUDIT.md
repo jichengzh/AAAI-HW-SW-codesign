@@ -6,7 +6,7 @@
 
 - P4：Pyramid 可行路径、反思、完整实验流程和方法总结主要是测量结果、设计解释和 provenance 证据。
 - P6：协同加速工作流、搜索空间更新、预测器训练、完整硬件软件 pipeline 以及 quant+prune 联合方案承担执行/验证编排职责。
-- P7：方法路线交接文档含私有 `/tmp` 测量日志和外部 HEAL/checkpoint 边界；CASCO 论文精读、49 篇论文综述和 Agent-1 来源综述的 DOI/链接/venue/许可链未闭合。须清洗路径、改为可验证公开引用并完成来源/版权扫描后重审。
+- P7：方法路线交接文档含私有临时测量日志和外部 HEAL/checkpoint 边界；CASCO 论文精读、49 篇论文综述和 Agent-1 来源综述的 DOI/链接/venue/许可链未闭合。须清洗路径、改为可验证公开引用并完成来源/版权扫描后重审。
 
 未运行候选、模型、数据、GPU、网络或外部服务；受限 evidence、逐项 decisions、候选 identity 与 HMAC key 不进入公开树。
 

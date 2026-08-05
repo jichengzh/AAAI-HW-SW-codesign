@@ -6,7 +6,7 @@
 
 - P4：survey_raw 文献检索/摘要、耦合分类、D-space 研究和 survey_raw_2 索引属于外部文献与 provenance 证据。
 - P6：survey_task_plan 与协同加速框架工作流定义调查任务、调用链和执行步骤。
-- P7：`d_space_nvidia.md` 含 `/tmp/nvidia-mps` 私有临时运行路径；须参数化、清除私有运行标识并完成当前树/历史/导出物扫描后重审。
+- P7：一项 D-space 文档含私有临时运行路径；须参数化、清除私有运行标识并完成当前树/历史/导出物扫描后重审。
 
 未运行候选、模型、数据、GPU、网络或外部服务；受限 evidence、逐项 decisions、候选 identity 与 HMAC key 不进入公开树。
 

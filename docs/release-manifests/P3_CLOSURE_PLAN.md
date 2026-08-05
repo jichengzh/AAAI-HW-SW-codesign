@@ -1,6 +1,6 @@
 # P3：完整源码处置与验证关闭计划
 
-状态：进行中；此前机械分流形成的 P3-13--P3-17 结论与全量 ledger 已撤回，不能作为公开发布或 P4 的依据。真实逐项复审按 [P3_REAUDIT_PROTOCOL.md](P3_REAUDIT_PROTOCOL.md) 执行；本文件定义其关闭条件，不代表已完成公开发布。
+状态：已完成（本地）；此前机械分流形成的 P3-13--P3-17 结论与全量 ledger 已撤回，不能作为公开发布或 P4 的依据。真实逐项复审按 [P3_REAUDIT_PROTOCOL.md](P3_REAUDIT_PROTOCOL.md) 完成；本地关闭不代表公开发布，也不启动 P4--P8。
 
 P3-18--P3-39 的已接受 records 按批次相加曾为 253 条，但该数字不是去重后的覆盖数：P3-36 与 P3-37 中有 9 条重复 P2 身份，因此截至 P3-39 的真实唯一覆盖为 244 项。P3-25 中 4 项在入队快照后发生内容变化，已按当前内容重新读取、重新绑定受限 SHA-256 证据后才保留；P3-26/P3-27 的冲突本地 records 已由保留旧记录的 supersession manifest 解决，唯一规范 records 已重新验证当前内容并重建账本；P3-28--P3-39 中已接受批次当前内容漂移均为 0，且均已有独立语义复审。P3-35 的前两次审阅有 8 个边界分歧，已由第三次逐项裁决、公开 Stage2 契约回归和重新计算账本解决；P3-36 的两项公开替代分歧也已由第三次职责/API/测试裁决解决；P3-38 的两个 P4/P6 finalizer 分歧已由逐项读取测试与被测入口的裁决解决。所有受限 evidence/decision/HMAC ledger 检查点均不构成关闭账本；P4 尚未开始。
 
@@ -222,11 +222,17 @@ P3 以 P2b 的私有源只读盘点为唯一候选基线：原始盘点 SHA-256 
 
 **最新更正（覆盖上段的当前计数）**：P3-145 完成 12 项 `migrate_document` 的双独立逐项审查，最终 P4=8、P6=3、P7=1，无重复项。1.3 实验结果/审计、论文故事线和 Pyramid 实测/边界分析归 P4；硬件优化第二版计划、workflow checklist 和 Orin 流水线计划归 P6；Pyramid 架构审计因绝对本机路径及外部资产边界保持 P7。受限账本与 acceptance manifest 已重算，真实唯一覆盖 **1,508/1,551**，剩余 **43** 项；P3 仍进行中，P4 尚未开始，未推送、未发布。详见 [P3-145 记录](P3_BATCH_145_AAAI_STORY_HARDWARE_REAUDIT.md)。
 
-**最新更正（覆盖上段的当前计数）**：P3-146 完成 12 项 `migrate_document` 的双独立逐项审查与第三方裁决，最终 P4=3、P6=5、P7=4，无重复项。Pyramid/反思/实验流程结果归 P4；协同加速工作流、搜索空间、预测器训练、全流程和 quant+prune 联合方案归 P6；q2 的私有 `/tmp` 测量日志以及 q7/q11/q12 的外部论文来源/许可链未闭合，保持 P7。受限账本与 acceptance manifest 已重算，真实唯一覆盖 **1,520/1,551**，剩余 **31** 项；P3 仍进行中，P4 尚未开始，未推送、未发布。详见 [P3-146 记录](P3_BATCH_146_PYRAMID_AND_SURVEY_REAUDIT.md)。
+**最新更正（覆盖上段的当前计数）**：P3-146 完成 12 项 `migrate_document` 的双独立逐项审查与第三方裁决，最终 P4=3、P6=5、P7=4，无重复项。Pyramid/反思/实验流程结果归 P4；协同加速工作流、搜索空间、预测器训练、全流程和 quant+prune 联合方案归 P6；q2 的私有临时测量日志以及 q7/q11/q12 的外部论文来源/许可链未闭合，保持 P7。受限账本与 acceptance manifest 已重算，真实唯一覆盖 **1,520/1,551**，剩余 **31** 项；P3 仍进行中，P4 尚未开始，未推送、未发布。详见 [P3-146 记录](P3_BATCH_146_PYRAMID_AND_SURVEY_REAUDIT.md)。
 
-**最新更正（覆盖上段的当前计数）**：P3-147 完成 12 项 `migrate_document` 的双独立逐项审查，最终 P4=9、P6=2、P7=1，无重复项。survey_raw 文献与 D-space 分析归 P4；survey_task_plan 与协同加速工作流归 P6；d_space_nvidia 因 `/tmp/nvidia-mps` 私有临时路径保持 P7。受限账本与 acceptance manifest 已重算，真实唯一覆盖 **1,532/1,551**，剩余 **19** 项；P3 仍进行中，P4 尚未开始，未推送、未发布。详见 [P3-147 记录](P3_BATCH_147_SURVEY_RAW_REAUDIT.md)。
+**最新更正（覆盖上段的当前计数）**：P3-147 完成 12 项 `migrate_document` 的双独立逐项审查，最终 P4=9、P6=2、P7=1，无重复项。survey_raw 文献与 D-space 分析归 P4；survey_task_plan 与协同加速工作流归 P6；一项 D-space 文档因私有临时运行路径保持 P7。受限账本与 acceptance manifest 已重算，真实唯一覆盖 **1,532/1,551**，剩余 **19** 项；P3 仍进行中，P4 尚未开始，未推送、未发布。详见 [P3-147 记录](P3_BATCH_147_SURVEY_RAW_REAUDIT.md)。
 
 **最新更正（覆盖上段的当前计数）**：P3-148 完成 12 项 `migrate_document` 的双独立逐项审查与第三方裁决，最终 P4=2、P6=9、P7=1，无重复项。搜索空间/协同概念归 P4；精度预测接口、主动采样、PLAN-B、训练/失败分析和决策清单归 P6；q8 因绝对私有 Bench2Drive 路径及权重/checkpoint 边界保持 P7。受限账本与 acceptance manifest 已重算，真实唯一覆盖 **1,544/1,551**，剩余 **7** 项；P3 仍进行中，P4 尚未开始，未推送、未发布。详见 [P3-148 记录](P3_BATCH_148_ACCURACY_PREDICTION_REAUDIT.md)。
+
+**最新更正（覆盖上段的当前计数）**：P3-149 完成最后 7 项 `migrate_document` 的双独立逐项审查与第三方裁决，最终 P4=2、P5=1、P6=2、P7=2，无重复项。P2b 冻结基线现已达到 **1,551/1,551** 候选处置覆盖；q3/q5 的 QuantV2X 私有源码/外部数据许可边界保持 P7，q6 requirements.txt 归 P5。全量关闭验证（账本对账、全量测试/覆盖率、匿名 ZIP 验证和独立关闭审查）仍待完成，故 P3 尚未宣布完成，P4 尚未开始。详见 [P3-149 记录](P3_BATCH_149_FINAL_PLAN_AND_ENV_REAUDIT.md)。
+
+**覆盖计算更正**：复核发现旧选择器将 P3-28/29/30/33 的 pending inventory 错计为已覆盖；该 48 项 `migrate_code` 已在 P3-150–153 重新建立正式队列并完成 acceptance。四批的公开 API/测试职责、私有路径和合成 fixture 证据均已逐项记录；P2b 正式 acceptance manifest 现覆盖 **1,551/1,551**。此前基于 pending ledger 的覆盖数不再作为关闭证据。全量关闭验证仍待完成，P3 尚未宣布完成，P4 尚未开始。详见 [缺口复审记录](P3_BATCH_150_153_PENDING_CODE_GAP_REAUDIT.md)。
+
+**全量关闭复核结果**：已基于 accepted-only inventory 集合重新计算 1,551 项当前内容 SHA-256，重建去重后的 1,551 条本机 decisions，并由受限 HMAC key 生成新的路径无关全量 ledger；逐项复核记录同时补齐了早期旧字段名的显式映射。独立关闭复审发现的公开文档问题已修正，并在修正后的工作树重跑账本重算、文档身份扫描、release 定向回归（81 passed）、全量 CPU-only pytest/覆盖率（509 passed、83.09%）、Ruff、compileall、diff 检查和匿名 ZIP build/verify（133 个成员，SHA-256 `306c3892f2b7f64fbb32a02b3fe3bd9ba03025afa2fcc4e0a67dcf662c2d8ee0`）；最终人工差异审查通过。本地关闭提交后 P3 完成；P4 尚未开始。详见 [P3 全量关闭复核](P3_FULL_CLOSURE_REVALIDATION.md)。
 
 P3-139 上一批覆盖为 1,436/1,551（P4=12）。
 
@@ -242,4 +248,4 @@ P3-134 已记录为上一批：P4=9、P6=3、P7=0，覆盖 1,376/1,551。
 
 ## 远端更新判定
 
-当前不允许将远端称为完整公开发布版本：P3 的发布级逐项处置账本尚未重新生成，P4--P8 也未完成。只有完成逐项复审及 P4--P7 实际交付后，才可以评估将通过同一 HEAD 验证的分支同步到已确认私有的协作远端；这只是阶段性备份，不是开源发布。任何 `git push`、可见性变更、tag 或 Release 都需要维护者对此次外部动作的明确授权。
+当前不允许将远端称为完整公开发布版本：P3 虽已本地关闭，但 P4--P8 尚未完成。只有完成 P4--P7 实际交付后，才可以评估将通过同一 HEAD 验证的分支同步到已确认私有的协作远端；这只是阶段性备份，不是开源发布。任何 `git push`、可见性变更、tag 或 Release 都需要维护者对此次外部动作的明确授权。
