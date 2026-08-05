@@ -224,6 +224,8 @@ P3 以 P2b 的私有源只读盘点为唯一候选基线：原始盘点 SHA-256 
 
 **最新更正（覆盖上段的当前计数）**：P3-146 完成 12 项 `migrate_document` 的双独立逐项审查与第三方裁决，最终 P4=3、P6=5、P7=4，无重复项。Pyramid/反思/实验流程结果归 P4；协同加速工作流、搜索空间、预测器训练、全流程和 quant+prune 联合方案归 P6；q2 的私有 `/tmp` 测量日志以及 q7/q11/q12 的外部论文来源/许可链未闭合，保持 P7。受限账本与 acceptance manifest 已重算，真实唯一覆盖 **1,520/1,551**，剩余 **31** 项；P3 仍进行中，P4 尚未开始，未推送、未发布。详见 [P3-146 记录](P3_BATCH_146_PYRAMID_AND_SURVEY_REAUDIT.md)。
 
+**最新更正（覆盖上段的当前计数）**：P3-147 完成 12 项 `migrate_document` 的双独立逐项审查，最终 P4=9、P6=2、P7=1，无重复项。survey_raw 文献与 D-space 分析归 P4；survey_task_plan 与协同加速工作流归 P6；d_space_nvidia 因 `/tmp/nvidia-mps` 私有临时路径保持 P7。受限账本与 acceptance manifest 已重算，真实唯一覆盖 **1,532/1,551**，剩余 **19** 项；P3 仍进行中，P4 尚未开始，未推送、未发布。详见 [P3-147 记录](P3_BATCH_147_SURVEY_RAW_REAUDIT.md)。
+
 P3-139 上一批覆盖为 1,436/1,551（P4=12）。
 
 P3-138 上一批覆盖为 1,424/1,551（P4=12）。
