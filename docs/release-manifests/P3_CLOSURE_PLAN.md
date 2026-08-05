@@ -98,6 +98,8 @@ P3-40 经第三次逐项裁决、P3-41 经公开职责与定向回归验证、P3
 
 **最新更正（覆盖上段的当前计数）**：P3-98 完成 2 项 P4 外部制品契约、2 项 P5 环境契约、7 项 P6 执行契约和 1 项非必要排除，并新增 12 个身份。q4--q6、q8、q11、q12 经第三次只读裁决：core preparation 的主导边界是环境绑定，在线准备、source materialization 与 lease control 属执行链；两个尚无真实公开实现和测试的候选不能提前记为 `migrated_public` 或 `rewritten_public`，均归 P4。当前真实唯一覆盖为 **950/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-98 记录](P3_BATCH_98_STAGE7_RUNTIME_AND_CONTRACT_REAUDIT.md)。
 
+**最新更正（覆盖上段的当前计数）**：P3-99 完成 6 项 P4 外部制品契约、2 项 P6 执行契约和 4 项非必要排除，并新增 12 个身份。q1--q8 经第三次只读裁决：私有 Phase2/Stage6 验证测试因绑定 checkpoint、评测、报告、指标或其他外部制品而归 P4；直接覆盖实际 TVM measurement 或短时 finetune runner 的两项归 P6；没有测试可因未来迁入而提前记为 `rewritten_public`。同时拒绝了五项不合法 `excluded_nonessential → P7` 草案。当前真实唯一覆盖为 **962/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-99 记录](P3_BATCH_99_PHASE2_TEST_AND_DEBUG_REAUDIT.md)。
+
 ## 冻结基线
 
 P3 以 P2b 的私有源只读盘点为唯一候选基线：原始盘点 SHA-256 为 `6fafdace7dc0eae3e9982763cb1c5c098c0ae83d1715af67ff1e08d7a1d12a79`，共 1,551 个候选：1,008 个代码、96 个配置、439 个 Markdown 和 8 个小 fixture。另有 3,664 个生成物、外部输入或敏感/特殊项，它们不直接进入 P3。两个嵌套仓库保持独立边界，不能默认合并。
