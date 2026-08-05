@@ -108,6 +108,8 @@ P3-40 经第三次逐项裁决、P3-41 经公开职责与定向回归验证、P3
 
 **最新更正（覆盖上段的当前计数）**：P3-103 完成 7 项 P4 外部制品契约和 5 项 P6 执行契约，并新增 12 个身份。q2、q4--q6、q9 经第三次只读裁决：Orin/TensorRT build、模型加载与 CUDA/功耗测量归 P6；纯 report 解析及未验证公开等价性的 voxelizer 表面归 P4，环境依赖本身不能将实际 runner 降为 P5。当前真实唯一覆盖为 **1,010/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-103 记录](P3_BATCH_103_ORIN_PARITY_AND_PRUNING_REAUDIT.md)。
 
+**最新更正（覆盖上段的当前计数）**：P3-104 完成最后 8 项 `migrate_code` 候选的复审，其中 1 项归 P4 外部制品契约、7 项归 P6 执行契约。TRT head smoke 经第三次只读裁决：实际构造 head 并执行 CUDA dummy forward，不能仅因环境依赖降为 P5。`migrate_code` 现已完全审阅，后续从 `migrate_config` 开始；当前真实唯一覆盖为 **1,018/1,551**，P3 仍在进行中，P4 尚未开始。详见 [P3-104 记录](P3_BATCH_104_FINAL_CODE_REAUDIT.md)。
+
 ## 冻结基线
 
 P3 以 P2b 的私有源只读盘点为唯一候选基线：原始盘点 SHA-256 为 `6fafdace7dc0eae3e9982763cb1c5c098c0ae83d1715af67ff1e08d7a1d12a79`，共 1,551 个候选：1,008 个代码、96 个配置、439 个 Markdown 和 8 个小 fixture。另有 3,664 个生成物、外部输入或敏感/特殊项，它们不直接进入 P3。两个嵌套仓库保持独立边界，不能默认合并。
