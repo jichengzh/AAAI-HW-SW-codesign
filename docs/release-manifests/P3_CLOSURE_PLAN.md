@@ -150,6 +150,8 @@ P3-40 经第三次逐项裁决、P3-41 经公开职责与定向回归验证、P3
 
 **最新更正（覆盖上段的当前计数）**：P3-124 完成 12 项 `migrate_document` 候选的逐项复审，最终为 8 项 P4、2 项 P6 和 2 项 P7。8 项 P4/P6 职责分歧均由第三方逐项只读裁决：FP32 energy、INT8 不确定性、TensorCore/full-engine、rewritten engine、跨精度根因/scale-sweep 和 AP-shape/speed-gate 的已测制品、诊断与 claim boundary 归 P4；full-val 监控与 suite/门禁执行归 P6。安全复核确认 2 项遗留凭据访问工作流和私有运行信息保持 P7：须确认历史凭据已失效、改写整个访问工作流为非可执行环境变量示例、脱敏运行标识并完成当前树/历史/导出物泄露回归后重审；本记录不声称已解除。当前真实唯一覆盖为 **1,256/1,551**，剩余 295 项文档候选；P3 仍在进行中，P4 尚未开始。详见 [P3-124 记录](P3_BATCH_124_ACCELERATION_AND_CREDENTIAL_REAUDIT.md)。
 
+**最新更正（覆盖上段的当前计数）**：P3-125 完成 12 项 `migrate_document` 候选的逐项复审，最终为 7 项 P4 和 5 项 P6，双独立审查逐项一致。AP-shape matcher、三精度覆盖、历史缺口、后端比较更正、实验数据库/provenance、claim-evidence 与 INT8 cold-start 审计的结果/来源/声明边界归 P4；Original60 补测、AP smoke worker、INT8 recovery、多框架比较及 TVM 修复/测量编排归 P6。未发现真实凭据或连接秘密。当前真实唯一覆盖为 **1,268/1,551**，剩余 283 项文档候选；P3 仍在进行中，P4 尚未开始。详见 [P3-125 记录](P3_BATCH_125_COVERAGE_AND_BACKEND_REAUDIT.md)。
+
 ## 冻结基线
 
 P3 以 P2b 的私有源只读盘点为唯一候选基线：原始盘点 SHA-256 为 `6fafdace7dc0eae3e9982763cb1c5c098c0ae83d1715af67ff1e08d7a1d12a79`，共 1,551 个候选：1,008 个代码、96 个配置、439 个 Markdown 和 8 个小 fixture。另有 3,664 个生成物、外部输入或敏感/特殊项，它们不直接进入 P3。两个嵌套仓库保持独立边界，不能默认合并。
