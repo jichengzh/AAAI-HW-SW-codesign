@@ -16,6 +16,8 @@
 
 重叠只出现在此前已接受的复审批次之间：P3-19/P3-36 为 3 项、P3-20/P3-36 为 5 项、P3-20/P3-37 为 1 项、P3-20/P3-40 为 2 项。后续批次的逐项审阅记录仍保留为审计证据，但不再增加 P3 的覆盖分子，也不能替代尚未审阅的候选。
 
+**当前更正（覆盖下段及后续旧更正的当前计数）**：P3-126 从 P3-125 后的唯一身份集合之外新增 12 个 `migrate_document` 身份。受限 inventory、当前 SHA-256、规范 HMAC ledger 与 acceptance manifest 均已重算；真实唯一覆盖现为 **1,280/1,551**，尚余 **271** 项文档候选。双独立审查逐项一致：QxS 自动后端关键点、Gold96/Gold176 与 Feedback16 的已测结果、行级证据、数据充分性和声明边界归 P4；后端对照、QxS 结构/能力扫描、Route-B INT8 修复、Gold Cold-start 批量执行及阶段 5 搜索/预算协议的构建、测量、修复和调度编排归 P6。已脱敏远程占位符、环境变量与泛化访问描述不构成 P7；P3 尚未关闭，P4 尚未开始。
+
 **当前更正（覆盖下段及后续旧更正的当前计数）**：P3-125 从 P3-124 后的唯一身份集合之外新增 12 个 `migrate_document` 身份。受限 inventory、当前 SHA-256、规范 HMAC ledger 与 acceptance manifest 均已重算；真实唯一覆盖现为 **1,268/1,551**，尚余 **283** 项文档候选。双独立审查逐项一致：AP-shape matcher、三精度覆盖、历史缺口、后端比较更正、实验数据库/provenance、claim-evidence 与 INT8 cold-start 审计的结果/来源/声明边界归 P4；Original60 补测、AP smoke worker、INT8 recovery、多框架比较及 TVM 修复/测量编排归 P6。未发现真实凭据或连接秘密；P3 尚未关闭，P4 尚未开始。
 
 **当前更正（覆盖下段及后续旧更正的当前计数）**：P3-124 从 P3-123 后的唯一身份集合之外新增 12 个 `migrate_document` 身份。受限 inventory、当前 SHA-256、规范 HMAC ledger 与 acceptance manifest 均已重算；真实唯一覆盖现为 **1,256/1,551**，尚余 **295** 项文档候选。8 项 P4/P6 职责分歧均完成第三方只读裁决：FP32 energy、INT8 不确定性、TensorCore/full-engine、rewritten engine、跨精度根因/scale-sweep 和 AP-shape/speed-gate 的已测制品、诊断与 claim boundary 归 P4；full-val 监控与 suite/门禁执行归 P6。2 项遗留凭据访问工作流和私有运行信息保持 P7，需失效确认、非可执行改写、脱敏和当前树/历史/导出物泄露回归后重审，本记录不声称已解除。P3 尚未关闭，P4 尚未开始。
