@@ -8,7 +8,9 @@
 
 ## 结果
 
-**当前更正（覆盖此前当前计数）**：P3-138 新增 12 个冻结 P2b 身份；受限 inventory、当前 SHA-256、第三方裁决、HMAC ledger 与 acceptance manifest 均已重算。12 项全部为 P4 `paper_source_boundary`，真实唯一覆盖为 **1,424/1,551**，尚余 **127** 项。P3 尚未关闭，P4 尚未开始。
+**当前更正（覆盖此前当前计数）**：P3-139 新增 12 个冻结 P2b 身份；受限 inventory、当前 SHA-256、第三方裁决、HMAC ledger 与 acceptance manifest 均已重算。12 项全部为 P4 `paper_source_boundary`，真实唯一覆盖为 **1,436/1,551**，尚余 **115** 项。P3 尚未关闭，P4 尚未开始。
+
+P3-138 上一批覆盖为 1,424/1,551（P4=12）。
 
 P3-137 上一批覆盖为 1,412/1,551（P4=8、P5=1、P6=1、P7=0、duplicate=2）。
 

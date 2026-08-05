@@ -210,7 +210,9 @@ P3 以 P2b 的私有源只读盘点为唯一候选基线：原始盘点 SHA-256 
 
 完成后在总台账记录候选基线、提交、命令、测试数、覆盖率和 ZIP 哈希，并保留 P4--P8 的未完成边界。
 
-**最新更正（覆盖此前当前计数）**：P3-138 完成 12 项 `migrate_document` 的双独立逐项审查与第三方裁决，12 项全部为 P4 `paper_source_boundary`。评测/仿真定义虽含技术细节，但没有运行时 caller、runner API、作业队列或执行 I/O，不升 P6。受限账本与 acceptance manifest 已重算，真实唯一覆盖 **1,424/1,551**，剩余 **127** 项；P3 仍进行中，P4 尚未开始，未推送、未发布。
+**最新更正（覆盖此前当前计数）**：P3-139 完成 12 项 `migrate_document` 的双独立逐项审查与第三方裁决，12 项全部为 P4 `paper_source_boundary`。q7–q10 虽引用 Stage1/Stage2 实现概念，但没有 runtime caller、CLI/API、job queue、runner I/O 或生成物职责；版本相似也没有公开实现及测试/API 职责对比，不作 duplicate 或 P6。受限账本与 acceptance manifest 已重算，真实唯一覆盖 **1,436/1,551**，剩余 **115** 项；P3 仍进行中，P4 尚未开始，未推送、未发布。
+
+P3-138 上一批覆盖为 1,424/1,551（P4=12）。
 
 P3-137 上一批覆盖为 1,412/1,551（P4=8、P5=1、P6=1、P7=0、duplicate=2）。
 
