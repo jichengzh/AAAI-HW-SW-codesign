@@ -94,6 +94,8 @@ P3-40 经第三次逐项裁决、P3-41 经公开职责与定向回归验证、P3
 
 **最新更正（覆盖上段的当前计数）**：P3-96 完成 5 项 P4 外部制品契约和 7 项 P6 执行契约，并新增 12 个身份。主审与独立复审均先核验同一固定队列 SHA；q1、q2、q6、q7、q11、q12 经第三次只读裁决：rerun jobs 与 TensorRT build probe 归 P6，launch gate 与 scoped audit 归 P4。当前真实唯一覆盖为 **926/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-96 记录](P3_BATCH_96_STAGE6_EXECUTION_AND_EVIDENCE_REAUDIT.md)。
 
+**最新更正（覆盖上段的当前计数）**：P3-97 完成 4 项 P4 外部制品契约和 8 项 P6 执行契约，并新增 12 个身份。主审与独立复审均先核验同一固定队列身份；q1、q3、q7、q9 经第三次只读裁决：TVM schedule-transfer probe、实际调度/协调/工作器控制与反馈执行链均归 P6。一次初稿中的不合法 `excluded_nonessential → P7` 组合已被拒绝，按实际职责改为 P6。当前真实唯一覆盖为 **938/1,551**；P3 仍在进行中，P4 尚未开始。详见 [P3-97 记录](P3_BATCH_97_STAGE7_EXECUTION_REAUDIT.md)。
+
 ## 冻结基线
 
 P3 以 P2b 的私有源只读盘点为唯一候选基线：原始盘点 SHA-256 为 `6fafdace7dc0eae3e9982763cb1c5c098c0ae83d1715af67ff1e08d7a1d12a79`，共 1,551 个候选：1,008 个代码、96 个配置、439 个 Markdown 和 8 个小 fixture。另有 3,664 个生成物、外部输入或敏感/特殊项，它们不直接进入 P3。两个嵌套仓库保持独立边界，不能默认合并。
