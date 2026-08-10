@@ -70,6 +70,9 @@ def test_p4_contract_is_discoverable_and_has_complete_coverage_summary() -> None
     assert contract.is_file()
     assert coverage["format"] == "aaai27_p4_external_resource_coverage_v1"
     assert coverage["p3_p4_candidate_count"] == 506
+    assert coverage["document_candidate_count"] == 199
+    assert coverage["asset_candidate_count"] == 307
+    assert coverage["distinct_resource_count"] == 284
     assert coverage["document_candidate_count"] + coverage["asset_candidate_count"] == 506
     assert coverage["distinct_resource_count"] == len(registry["inputs"])
     assert registry["format"] == "aaai27_external_input_registry_v1"
@@ -94,13 +97,30 @@ def test_p4_contract_is_discoverable_and_has_complete_coverage_summary() -> None
     assert all(item["asset_kind"] != "document" for item in registry["inputs"])
     handoff = HANDOFF.read_text(encoding="utf-8")
     assert "P4_EXTERNAL_INPUT_CONTRACT.md" in handoff
-    assert "进行中（本地）" in handoff
+    p4_plan_line = next(
+        line for line in handoff.splitlines() if line.startswith("| P4 |")
+    )
+    assert (
+        "506 条 P3 转交候选均已在本地裁决为 document 或 asset：199 条为 document、"
+        "307 条为 asset，去重后为 284 项资源；284 项均为 unavailable。"
+        in p4_plan_line
+    )
 
 
 def test_p4_audit_links_complete_registry_and_coverage() -> None:
-    """The handoff must expose the completed local P4 evidence without closure."""
+    """The handoff must expose the complete P4 registry and coverage evidence."""
     handoff = HANDOFF.read_text(encoding="utf-8")
 
     assert "P4_EXTERNAL_INPUT_CONTRACT.md" in handoff
     assert "artifacts/external/coverage.json" in handoff
     assert "506" in handoff
+
+
+def test_p4_closure_records_the_successful_public_ci_gate() -> None:
+    """P4 closes locally only after its three public CI jobs have succeeded."""
+    handoff = HANDOFF.read_text(encoding="utf-8")
+
+    assert "| P4 | 已完成（本地） |" in handoff
+    assert "31404700281" in handoff
+    for job_name in ("quality (3.10)", "quality (3.11)", "public-smoke"):
+        assert job_name in handoff
