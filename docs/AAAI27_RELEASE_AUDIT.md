@@ -154,7 +154,7 @@ scripts/stage2_update_evidence.py
 | P1 | 已完成（本地） | 冻结当前发布候选，重建匿名 ZIP，并对候选源树和解包 ZIP 分别做干净环境验收。 | 记录候选提交、ZIP SHA-256、成员数、依赖版本、测试数、覆盖率、identity scan、clean-clone 结果；旧审计结果不能复用。 |
 | P2 | 已完成（P2a + P2b 本地只读盘点） | 审计私有完整仓库：按“源码/文档/小型脱敏 fixture/外部数据描述/禁止上传生成物”清点全部路径和依赖关系；P2b 加固嵌套数据边界和稳定读取后重新盘点。 | 机器可读的机械分类清单和敏感项扫描结果；每个保留、改写、外置或排除项的语义理由、许可证/许可状态在 P3 逐批批准时补齐。 |
 | P3 | 已完成（本地） | 按发布级逐项复审协议处置 P2b 冻结基线的全部候选；对迁入、改写、公开替代、外部输入、环境、执行与许可阻塞逐项绑定当前内容、职责/调用关系、来源/许可证和安全审查。 | accepted-only manifest 与路径无关 HMAC ledger 覆盖 **1,551/1,551**，缺失 0、额外身份 0；全量 CPU-only pytest 为 509 passed、83.09% 覆盖率，release 定向回归 81 passed，身份/路径扫描、Ruff、compileall、diff 检查和匿名 ZIP build/verify 均通过。详见 [P3 重审协议](release-manifests/P3_REAUDIT_PROTOCOL.md)、[P3 全量关闭复核](release-manifests/P3_FULL_CLOSURE_REVALIDATION.md) 与各批次记录。P3 本地关闭不启动 P4--P8，也不授权推送、发布或真实实验执行。 |
-| P4 | 进行中（本地） | 将 P3 转交的 `external_contract_p4` 工作集整理为轻量外部输入注册表与离线验证接口，覆盖完整实验所需的数据、模型、checkpoint、ONNX/engine 及可再生成大文件；只定义获取与校验契约，不下载、不运行或迁入真实制品。本次变更仅建立初始 unavailable 注册表和离线检查器，详见 [P4 外部输入契约](release-manifests/P4_EXTERNAL_INPUT_CONTRACT.md)。 | 每个外部输入记录来源、许可/再分发结论、获取方式、版本、用途、相对目录和缺失时的 `unavailable`；上游已提供摘要或项目需固定版本时才记录 SHA-256。验证器只检查用户显式提供的本地输入，默认命令不下载数据或权重，CPU smoke 不读取维护者目录、缓存或真实外部资产。 |
+| P4 | 进行中（本地） | [P4 外部输入契约](release-manifests/P4_EXTERNAL_INPUT_CONTRACT.md)以 `artifacts/external/registry.json` 为完整资源目录、以 `artifacts/external/coverage.json` 为完整性摘要。506 条 P3 转交候选均已在本地裁决为 document 或 asset：199 条为 document、307 条为 asset，去重后为 284 项资源；284 项均为 unavailable。该记录只说明离线登记与验证契约，不下载、不运行或迁入真实制品。 | 远端 `quality (3.10)` 与 `quality (3.11)` 尚未确认成功，因此不得将 P4 标为已完成（本地）。验证器仍只检查用户显式提供的本地输入；不得下载数据或权重，也不得读取维护者目录、缓存或真实外部资产。 |
 | P5 | 待开始 | 固化可复现环境：CPU 基线继续保持；分别提供 4090 与 H800 的环境/驱动/CUDA 约束、硬件探测和最小运行命令。 | CPU、4090、H800 配置文件互不混淆；不含 SSH 信息；每个环境均可执行依赖检查和相应的最小测试。 |
 | P6 | 待开始 | 接入全流程训练、评测、硬件执行与结果汇总；生成不可伪造的执行 manifest。 | 每一步消费的输入、代码版本、随机种子、配置和输出 SHA-256 可追溯；缺失外部证据失败关闭；Stage6/Stage7 只在正式数据及独立验证满足后更新证据状态。 |
 | P7 | 待开始 | 完成开源前安全、合规、文档和供应链审查。 | 全树/待发布历史凭据扫描为零；第三方许可和数据使用权明确；README、架构/设计说明、数据卡、复现指南、贡献/引用信息与真实入口一致；依赖漏洞处置或记录完成。 |
@@ -786,6 +786,8 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 **P3 本地关闭（2026-08-05）**：P2b 冻结基线的 **1,551/1,551** 候选已由受限逐项当前 SHA、职责/调用链、公开等价物、来源/许可证、安全审查与 HMAC ledger 重新绑定；受限账本重算一致。独立关闭复审发现的公开文档问题已修正，随后通过文档身份/路径扫描、release 定向回归（81 passed）、CPU-only 全量回归（509 passed，83.09% 覆盖率）、Ruff、compileall、diff 检查和匿名 ZIP 本地 build/verify（133 个成员，SHA-256 `306c3892f2b7f64fbb32a02b3fe3bd9ba03025afa2fcc4e0a67dcf662c2d8ee0`）。P3 已完成（本地）；P4--P8 尚未启动，未推送、未发布，也未运行真实模型、数据、GPU、网络或外部服务。
 
 **P4 外部输入契约（2026-08-10）**：提交 `3b9d94d` 建立初始两条 unavailable 记录的外部输入注册表和纯离线检查器；focused 回归为 9 passed，release 回归为 85 passed，Ruff、compileall 与 diff 门禁通过。P4 保持**进行中（本地）**；未下载外部资产、未运行真实执行，也未推送或发布。
+
+**P4 完整登记本地证据（2026-08-10）**：公开完整目录为 `artifacts/external/registry.json`，聚合摘要为 `artifacts/external/coverage.json`，契约见 [P4 外部输入契约](release-manifests/P4_EXTERNAL_INPUT_CONTRACT.md)。506 条 P3 转交候选已完成本地 document/asset 裁决：199 条 document、307 条 asset，去重为 284 项资源，且 284 项均为 unavailable。本地全量 coverage 门禁为 534 passed、83.08%，Ruff 和 compileall 通过；release、公开 clean-clone 与匿名 archive 组合回归为 103 passed。远端 `quality (3.10)` 与 `quality (3.11)` 尚未确认成功，P4 继续为**进行中（本地）**。未下载或执行外部资源，未推送或发布。
 
 P3-139 上一批完成后覆盖为 1,436/1,551（P4=12）。
 

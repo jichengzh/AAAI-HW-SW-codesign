@@ -95,3 +95,12 @@ def test_p4_contract_is_discoverable_and_has_complete_coverage_summary() -> None
     handoff = HANDOFF.read_text(encoding="utf-8")
     assert "P4_EXTERNAL_INPUT_CONTRACT.md" in handoff
     assert "进行中（本地）" in handoff
+
+
+def test_p4_audit_links_complete_registry_and_coverage() -> None:
+    """The handoff must expose the completed local P4 evidence without closure."""
+    handoff = HANDOFF.read_text(encoding="utf-8")
+
+    assert "P4_EXTERNAL_INPUT_CONTRACT.md" in handoff
+    assert "artifacts/external/coverage.json" in handoff
+    assert "506" in handoff
