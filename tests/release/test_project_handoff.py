@@ -57,8 +57,10 @@ def test_p4_contract_is_discoverable_and_starts_unavailable() -> None:
     registry = json.loads((REPOSITORY_ROOT / "artifacts/external/registry.json").read_text(encoding="utf-8"))
     assert (REPOSITORY_ROOT / "docs/release-manifests/P4_EXTERNAL_INPUT_CONTRACT.md").is_file()
     assert registry["format"] == "aaai27_external_input_registry_v1"
+    assert len(registry["inputs"]) == 2
     assert {item["input_id"] for item in registry["inputs"]} == {"stage6-terminal-evidence", "stage7-formal-aggregate"}
     assert all(item["availability"] == "unavailable" for item in registry["inputs"])
+    assert all(item["unavailable_reason"] == "bundle_not_published" for item in registry["inputs"])
     handoff = HANDOFF.read_text(encoding="utf-8")
     assert "P4_EXTERNAL_INPUT_CONTRACT.md" in handoff
     assert "进行中（本地）" in handoff
