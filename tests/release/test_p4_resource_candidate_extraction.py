@@ -49,6 +49,19 @@ def test_extract_p4_candidates_classifies_assets_documents_and_ambiguities(tmp_p
     assert draft[2].suggested_asset_kinds == ("dataset", "onnx")
 
 
+def test_extract_p4_candidates_allows_empty_optional_descriptive_fields(tmp_path: Path) -> None:
+    review = tmp_path / "review.json"
+    record = _record("private/paper.md", "external_contract_p4", "paper method discussion")
+    record["outputs"] = ""
+    record["evidence_artifact"] = ""
+    review.write_text(json.dumps({"records": [record]}), encoding="utf-8")
+
+    draft = _module().extract_candidate_draft(review)
+
+    assert [item.suggested_decision for item in draft] == ["document"]
+    assert draft[0].suggested_asset_kinds == ()
+
+
 def test_cli_writes_private_draft_without_echoing_candidate_path(tmp_path: Path) -> None:
     review = tmp_path / "review.json"
     draft = tmp_path / "draft.json"

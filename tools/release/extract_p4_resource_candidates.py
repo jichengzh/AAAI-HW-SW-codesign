@@ -51,6 +51,13 @@ def _required_string(record: Mapping[str, object], field: str) -> str:
     return value
 
 
+def _text_string(record: Mapping[str, object], field: str) -> str:
+    value = record.get(field)
+    if not isinstance(value, str):
+        raise CandidateDraftError("invalid local P3 review")
+    return value
+
+
 def load_p4_records(path: Path) -> tuple[Mapping[str, object], ...]:
     """Load only P4-disposition records from a caller-supplied local review."""
     try:
@@ -73,7 +80,9 @@ def suggest_candidate(record: Mapping[str, object]) -> CandidateDraft:
     """Classify one P4 record conservatively from its five textual fields."""
     origin = _required_string(record, "origin")
     path = _required_string(record, "path")
-    text = " ".join(_required_string(record, field) for field in _TEXT_FIELDS).lower()
+    if _required_string(record, "disposition") != P4_DISPOSITION:
+        raise CandidateDraftError("invalid local P3 review")
+    text = " ".join(_text_string(record, field) for field in _TEXT_FIELDS).lower()
     suggested_asset_kinds = tuple(
         asset_kind
         for asset_kind, terms in ASSET_TERMS.items()
