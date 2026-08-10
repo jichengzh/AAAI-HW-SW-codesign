@@ -14,6 +14,7 @@ htmlcov/
 build/
 dist/
 .superpowers/
+.worktrees/
 repro-smoke-output/
 repro-verified-output/
 # Local experiment products.  Public fixtures and verified release evidence stay tracked
