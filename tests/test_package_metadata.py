@@ -6,7 +6,9 @@ from pathlib import Path
 
 try:
     import tomllib
-except ModuleNotFoundError:  # pragma: no cover - exercised by the Python 3.10 CI job.
+except ModuleNotFoundError as exc:  # pragma: no cover - exercised by the Python 3.10 CI job.
+    if exc.name != "tomllib":
+        raise
     import tomli as tomllib
 
 

@@ -12,12 +12,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 METADATA_TEST = PROJECT_ROOT / "tests" / "test_package_metadata.py"
 
 
-def test_package_metadata_tests_fall_back_when_tomllib_is_unavailable(tmp_path: Path) -> None:
-    """Catches removing the Python 3.10 ``tomli`` fallback from the test module."""
+def _run_metadata_tests_with_tomllib_shadow(
+    tmp_path: Path, missing_module: str
+) -> subprocess.CompletedProcess[str]:
     shadow_directory = tmp_path / "stdlib-shadow"
     shadow_directory.mkdir()
+    missing_message = f"No module named '{missing_module}'"
     (shadow_directory / "tomllib.py").write_text(
-        "raise ModuleNotFoundError(\"No module named 'tomllib'\")\n",
+        f"raise ModuleNotFoundError({missing_message!r}, name={missing_module!r})\n",
         encoding="utf-8",
     )
     environment = os.environ.copy()
@@ -34,7 +36,7 @@ def test_package_metadata_tests_fall_back_when_tomllib_is_unavailable(tmp_path: 
         )
     )
 
-    result = subprocess.run(
+    return subprocess.run(
         [sys.executable, "-c", runner],
         cwd=PROJECT_ROOT,
         capture_output=True,
@@ -43,4 +45,17 @@ def test_package_metadata_tests_fall_back_when_tomllib_is_unavailable(tmp_path: 
         check=False,
     )
 
+
+def test_package_metadata_tests_fall_back_when_tomllib_is_unavailable(tmp_path: Path) -> None:
+    """Catches removing the Python 3.10 ``tomli`` fallback from the test module."""
+    result = _run_metadata_tests_with_tomllib_shadow(tmp_path, "tomllib")
+
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_package_metadata_tests_preserve_tomllib_dependency_import_errors(tmp_path: Path) -> None:
+    """Catches swallowing a broken ``tomllib`` dependency as a Python 3.10 fallback."""
+    result = _run_metadata_tests_with_tomllib_shadow(tmp_path, "missing_dependency")
+
+    assert result.returncode != 0
+    assert "No module named 'missing_dependency'" in result.stderr
