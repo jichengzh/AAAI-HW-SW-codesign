@@ -120,19 +120,22 @@ def load_registry(path: Path) -> tuple[ExternalInput, ...]:
     except (OSError, json.JSONDecodeError) as error:
         raise RegistryError(f"cannot load registry: {error}") from error
 
+    return parse_registry_document(document)
+
+
+def parse_registry_document(document: object) -> tuple[ExternalInput, ...]:
+    """Parse and validate a public external-input registry document."""
+
     if not isinstance(document, Mapping):
         raise RegistryError("registry must be an object")
-    if document.get("format") != REGISTRY_FORMAT:
-        raise RegistryError("registry format is invalid")
-    if document.get("registry_version") != 1:
-        raise RegistryError("registry_version must be 1")
+    if document.get("format") != REGISTRY_FORMAT or document.get("registry_version") != 1:
+        raise RegistryError("registry header is invalid")
     records = document.get("inputs")
     if not isinstance(records, list):
         raise RegistryError("inputs must be a list")
 
     inputs = tuple(_parse_record(record) for record in records)
-    input_ids = tuple(item.input_id for item in inputs)
-    if len(set(input_ids)) != len(input_ids):
+    if len({item.input_id for item in inputs}) != len(inputs):
         raise RegistryError("input_id values must be unique")
     return inputs
 

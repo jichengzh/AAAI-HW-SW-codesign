@@ -49,6 +49,18 @@ def _write_registry(path: Path, records: list[dict[str, object]]) -> None:
     )
 
 
+def test_parse_registry_document_accepts_the_public_shape() -> None:
+    document = {
+        "format": "aaai27_external_input_registry_v1",
+        "registry_version": 1,
+        "inputs": [_record()],
+    }
+
+    parsed = _module().parse_registry_document(document)
+
+    assert parsed[0].input_id == "stage6-terminal-evidence"
+
+
 def test_load_registry_accepts_record_without_checksum(tmp_path: Path) -> None:
     registry = tmp_path / "registry.json"
     _write_registry(registry, [_record()])
