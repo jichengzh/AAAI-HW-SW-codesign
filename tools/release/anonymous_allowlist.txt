@@ -7,8 +7,8 @@ REPRODUCIBILITY.md
 ARTIFACTS.md
 pyproject.toml
 requirements.txt
-framework/**
-scripts/reproduce/**
+framework/**/*
+scripts/reproduce/**/*
 scripts/prepare_stage2_demo_data.py
 scripts/stage1_classify_models.py
 scripts/stage2_optimize_model.py
@@ -16,7 +16,7 @@ scripts/phase2/b4_integrate.py
 scripts/phase2/b5_verify_convergence.py
 scripts/phase2/closedloop_objective_query.py
 scripts/stage2_update_evidence.py
-data/**
-artifacts/**
-tests/**
-tools/release/**
+data/**/*
+artifacts/**/*
+tests/**/*
+tools/release/**/*

@@ -53,9 +53,27 @@ def anonymous_repo(tmp_path: Path) -> Path:
     _write(root / ".github/workflows/ci.yml", "name: anonymous-ci\n")
     _write(root / "tools/release/build_anonymous_archive.py", "# archive builder\n")
     _write(root / "tools/release/verify_archive.py", "# archive verifier\n")
-    _write(root / "tools/release/anonymous_allowlist.txt", "framework/**\n")
+    _write(root / "tools/release/anonymous_allowlist.txt", "framework/**/*\n")
     _write(root / "tools/release/forbidden_patterns.txt", "token\tforbidden\n")
     return root
+
+
+def test_anonymous_allowlist_uses_file_recursive_patterns() -> None:
+    entries = {
+        line.strip()
+        for line in (BUILDER.parent / "anonymous_allowlist.txt").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+
+    assert {
+        "framework/**/*",
+        "scripts/reproduce/**/*",
+        "data/**/*",
+        "artifacts/**/*",
+        "tests/**/*",
+        "tools/release/**/*",
+    } <= entries
+    assert not any(entry.endswith("/**") for entry in entries)
 
 
 def _run_builder(root: Path, output_dir: Path) -> SimpleNamespace:
