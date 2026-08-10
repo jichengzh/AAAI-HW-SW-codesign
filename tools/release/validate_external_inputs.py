@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 
 REGISTRY_FORMAT = "aaai27_external_input_registry_v1"
@@ -164,3 +165,52 @@ def validate_inputs(
         else:
             results.append(InputResult(item.input_id, item.relative_path, "verified", None))
     return tuple(results)
+
+
+def render_result(results: tuple[InputResult, ...]) -> dict[str, object]:
+    status = "verified" if all(item.status == "verified" for item in results) else "unavailable"
+    return {
+        "format": RESULT_FORMAT,
+        "status": status,
+        "inputs": [
+            {
+                "input_id": item.input_id,
+                "relative_path": item.relative_path,
+                "status": item.status,
+                "reason": item.reason,
+            }
+            for item in results
+        ],
+    }
+
+
+def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--registry", required=True, type=Path)
+    parser.add_argument("--asset-root", required=True, type=Path)
+    parser.add_argument("--output", required=True, type=Path)
+    return parser.parse_args(argv)
+
+
+def _write_json(output: Path, payload: dict[str, object]) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = _parse_args(argv)
+    try:
+        payload = render_result(validate_inputs(load_registry(args.registry), args.asset_root))
+    except RegistryError:
+        payload = {
+            "format": RESULT_FORMAT,
+            "status": "unavailable",
+            "inputs": [],
+            "reason": "registry_invalid",
+        }
+    _write_json(args.output, payload)
+    return 0 if payload["status"] == "verified" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
