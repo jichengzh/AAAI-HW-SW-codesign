@@ -89,8 +89,6 @@ def _parse_record(record: object) -> ExternalInput:
     if availability == "unavailable":
         if not isinstance(unavailable_reason, str) or not unavailable_reason:
             raise RegistryError("unavailable_reason is required when unavailable")
-    elif unavailable_reason is not None:
-        raise RegistryError("unavailable_reason is allowed only when unavailable")
 
     return ExternalInput(
         input_id=_required_string(record, "input_id"),

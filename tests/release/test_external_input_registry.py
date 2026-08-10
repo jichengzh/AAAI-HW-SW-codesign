@@ -55,6 +55,13 @@ def test_load_registry_accepts_record_without_checksum(tmp_path: Path) -> None:
     assert item.availability == "available_for_verification"
 
 
+def test_available_record_accepts_extra_unavailable_reason(tmp_path: Path) -> None:
+    registry = tmp_path / "registry.json"
+    _write_registry(registry, [_record(unavailable_reason="publication_note")])
+    item = _module().load_registry(registry)[0]
+    assert item.unavailable_reason == "publication_note"
+
+
 def test_declared_unavailable_keeps_its_reason(tmp_path: Path) -> None:
     registry = tmp_path / "registry.json"
     _write_registry(
