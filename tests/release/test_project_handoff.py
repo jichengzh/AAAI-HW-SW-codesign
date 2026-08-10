@@ -53,14 +53,45 @@ def test_public_readmes_link_the_handoff_ledger() -> None:
         assert "docs/AAAI27_RELEASE_AUDIT.md" in readme
 
 
-def test_p4_contract_is_discoverable_and_starts_unavailable() -> None:
-    registry = json.loads((REPOSITORY_ROOT / "artifacts/external/registry.json").read_text(encoding="utf-8"))
-    assert (REPOSITORY_ROOT / "docs/release-manifests/P4_EXTERNAL_INPUT_CONTRACT.md").is_file()
+def test_p4_contract_is_discoverable_and_has_complete_coverage_summary() -> None:
+    coverage = json.loads(
+        (REPOSITORY_ROOT / "artifacts/external/coverage.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    registry = json.loads(
+        (REPOSITORY_ROOT / "artifacts/external/registry.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    contract = (
+        REPOSITORY_ROOT / "docs/release-manifests/P4_EXTERNAL_INPUT_CONTRACT.md"
+    )
+    assert contract.is_file()
+    assert coverage["format"] == "aaai27_p4_external_resource_coverage_v1"
+    assert coverage["p3_p4_candidate_count"] == 506
+    assert coverage["document_candidate_count"] + coverage["asset_candidate_count"] == 506
+    assert coverage["distinct_resource_count"] == len(registry["inputs"])
     assert registry["format"] == "aaai27_external_input_registry_v1"
-    assert len(registry["inputs"]) == 2
-    assert {item["input_id"] for item in registry["inputs"]} == {"stage6-terminal-evidence", "stage7-formal-aggregate"}
+    assert {item["input_id"] for item in registry["inputs"]} >= {
+        "stage6-terminal-evidence",
+        "stage7-formal-aggregate",
+    }
     assert all(item["availability"] == "unavailable" for item in registry["inputs"])
-    assert all(item["unavailable_reason"] == "bundle_not_published" for item in registry["inputs"])
+    assert all(item["unavailable_reason"] for item in registry["inputs"])
+    forbidden_private_fields = {
+        "candidate_id",
+        "candidate_path",
+        "origin",
+        "path",
+        "private_locator",
+        "private_path",
+        "local_path",
+    }
+    assert all(
+        forbidden_private_fields.isdisjoint(item) for item in registry["inputs"]
+    )
+    assert all(item["asset_kind"] != "document" for item in registry["inputs"])
     handoff = HANDOFF.read_text(encoding="utf-8")
     assert "P4_EXTERNAL_INPUT_CONTRACT.md" in handoff
     assert "进行中（本地）" in handoff

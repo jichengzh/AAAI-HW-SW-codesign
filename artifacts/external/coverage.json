@@ -1,0 +1,47 @@
+{
+  "asset_candidate_count": 307,
+  "asset_kind_counts": [
+    {
+      "asset_kind": "checkpoint",
+      "count": 15
+    },
+    {
+      "asset_kind": "dataset",
+      "count": 20
+    },
+    {
+      "asset_kind": "engine",
+      "count": 13
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "count": 171
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "count": 39
+    },
+    {
+      "asset_kind": "model",
+      "count": 3
+    },
+    {
+      "asset_kind": "onnx",
+      "count": 11
+    },
+    {
+      "asset_kind": "regenerable_large_file",
+      "count": 12
+    }
+  ],
+  "availability_counts": [
+    {
+      "availability": "unavailable",
+      "count": 284
+    }
+  ],
+  "distinct_resource_count": 284,
+  "document_candidate_count": 199,
+  "format": "aaai27_p4_external_resource_coverage_v1",
+  "p3_p4_candidate_count": 506
+}

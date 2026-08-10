@@ -1,36 +1,4266 @@
 {
   "format": "aaai27_external_input_registry_v1",
-  "registry_version": 1,
   "inputs": [
     {
-      "input_id": "stage6-terminal-evidence",
-      "asset_kind": "evidence_bundle",
-      "source": "publication-pending",
-      "license": {
-        "status": "unconfirmed",
-        "reference": "provider-terms-required"
-      },
-      "version": "unreleased",
-      "relative_path": "stage6/terminal-evidence.jsonl",
-      "intended_use": "stage6_representative_selection",
-      "consumer_ids": [],
+      "asset_kind": "checkpoint",
       "availability": "unavailable",
-      "unavailable_reason": "bundle_not_published"
+      "consumer_ids": [],
+      "input_id": "p4-checkpoint-001",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/checkpoint/001",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
     },
     {
-      "input_id": "stage7-formal-aggregate",
-      "asset_kind": "evidence_bundle",
-      "source": "publication-pending",
-      "license": {
-        "status": "unconfirmed",
-        "reference": "provider-terms-required"
-      },
-      "version": "unreleased",
-      "relative_path": "stage7/formal-aggregate.json",
-      "intended_use": "stage7_formal_aggregate",
-      "consumer_ids": [],
+      "asset_kind": "checkpoint",
       "availability": "unavailable",
-      "unavailable_reason": "bundle_not_published"
+      "consumer_ids": [],
+      "input_id": "p4-checkpoint-002",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/checkpoint/002",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "checkpoint",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-checkpoint-003",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/checkpoint/003",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "checkpoint",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-checkpoint-004",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/checkpoint/004",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "checkpoint",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-checkpoint-005",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/checkpoint/005",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "checkpoint",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-checkpoint-006",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/checkpoint/006",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "checkpoint",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-checkpoint-007",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/checkpoint/007",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "checkpoint",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-checkpoint-008",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/checkpoint/008",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "checkpoint",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-checkpoint-009",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/checkpoint/009",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "checkpoint",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-checkpoint-010",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/checkpoint/010",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "checkpoint",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-checkpoint-011",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/checkpoint/011",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "checkpoint",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-checkpoint-012",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/checkpoint/012",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "checkpoint",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-checkpoint-013",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/checkpoint/013",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "checkpoint",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-checkpoint-014",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/checkpoint/014",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "checkpoint",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-checkpoint-015",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/checkpoint/015",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "dataset",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-dataset-001",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/dataset/001",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "dataset",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-dataset-002",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/dataset/002",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "dataset",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-dataset-003",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/dataset/003",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "dataset",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-dataset-004",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/dataset/004",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "dataset",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-dataset-005",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/dataset/005",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "dataset",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-dataset-006",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/dataset/006",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "dataset",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-dataset-007",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/dataset/007",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "dataset",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-dataset-008",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/dataset/008",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "dataset",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-dataset-009",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/dataset/009",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "dataset",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-dataset-010",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/dataset/010",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "dataset",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-dataset-011",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/dataset/011",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "dataset",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-dataset-012",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/dataset/012",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "dataset",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-dataset-013",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/dataset/013",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "dataset",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-dataset-014",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/dataset/014",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "dataset",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-dataset-015",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/dataset/015",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "dataset",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-dataset-016",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/dataset/016",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "dataset",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-dataset-017",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/dataset/017",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "dataset",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-dataset-018",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/dataset/018",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "dataset",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-dataset-019",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/dataset/019",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "dataset",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-dataset-020",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/dataset/020",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "engine",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-engine-001",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/engine/001",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "engine",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-engine-002",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/engine/002",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "engine",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-engine-003",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/engine/003",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "engine",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-engine-004",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/engine/004",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "engine",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-engine-005",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/engine/005",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "engine",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-engine-006",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/engine/006",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "engine",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-engine-007",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/engine/007",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "engine",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-engine-008",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/engine/008",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "engine",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-engine-009",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/engine/009",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "engine",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-engine-010",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/engine/010",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "engine",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-engine-011",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/engine/011",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "engine",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-engine-012",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/engine/012",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "engine",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-engine-013",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/engine/013",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-001",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/001",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-002",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/002",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-003",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/003",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-004",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/004",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-005",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/005",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-006",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/006",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-007",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/007",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-008",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/008",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-009",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/009",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-010",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/010",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-011",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/011",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-012",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/012",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-013",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/013",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-014",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/014",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-015",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/015",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-016",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/016",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-017",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/017",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-018",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/018",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-019",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/019",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-020",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/020",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-021",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/021",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-022",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/022",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-023",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/023",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-024",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/024",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-025",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/025",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-026",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/026",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-027",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/027",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-028",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/028",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-029",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/029",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-030",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/030",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-031",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/031",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-032",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/032",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-033",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/033",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-034",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/034",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-035",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/035",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-036",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/036",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-037",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/037",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-038",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/038",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-039",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/039",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-040",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/040",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-041",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/041",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-042",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/042",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-043",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/043",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-044",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/044",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-045",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/045",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-046",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/046",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-047",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/047",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-048",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/048",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-049",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/049",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-050",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/050",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-051",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/051",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-052",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/052",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-053",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/053",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-054",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/054",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-055",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/055",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-056",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/056",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-057",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/057",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-058",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/058",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-059",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/059",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-060",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/060",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-061",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/061",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-062",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/062",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-063",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/063",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-064",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/064",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-065",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/065",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-066",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/066",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-067",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/067",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-068",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/068",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-069",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/069",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-070",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/070",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-071",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/071",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-072",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/072",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-073",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/073",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-074",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/074",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-075",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/075",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-076",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/076",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-077",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/077",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-078",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/078",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-079",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/079",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-080",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/080",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-081",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/081",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-082",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/082",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-083",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/083",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-084",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/084",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-085",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/085",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-086",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/086",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-087",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/087",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-088",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/088",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-089",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/089",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-090",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/090",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-091",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/091",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-092",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/092",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-093",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/093",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-094",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/094",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-095",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/095",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-096",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/096",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-097",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/097",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-098",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/098",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-099",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/099",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-100",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/100",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-101",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/101",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-102",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/102",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-103",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/103",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-104",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/104",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-105",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/105",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-106",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/106",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-107",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/107",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-108",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/108",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-109",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/109",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-110",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/110",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-111",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/111",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-112",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/112",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-113",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/113",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-114",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/114",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-115",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/115",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-116",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/116",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-117",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/117",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-118",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/118",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-119",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/119",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-120",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/120",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-121",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/121",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-122",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/122",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-123",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/123",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-124",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/124",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-125",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/125",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-126",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/126",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-127",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/127",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-128",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/128",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-129",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/129",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-130",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/130",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-131",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/131",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-132",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/132",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-133",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/133",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-134",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/134",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-135",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/135",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-136",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/136",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-137",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/137",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-138",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/138",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-139",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/139",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-140",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/140",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-141",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/141",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-142",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/142",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-143",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/143",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-144",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/144",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-145",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/145",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-146",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/146",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-147",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/147",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-148",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/148",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-149",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/149",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-150",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/150",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-151",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/151",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-152",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/152",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-153",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/153",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-154",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/154",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-155",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/155",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-156",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/156",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-157",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/157",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-158",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/158",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-159",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/159",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-160",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/160",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-161",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/161",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-162",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/162",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-163",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/163",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-164",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/164",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-165",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/165",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-166",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/166",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-167",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/167",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-168",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/168",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-evidence-bundle-169",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/evidence_bundle/169",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-001",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/001",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-002",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/002",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-003",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/003",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-004",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/004",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-005",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/005",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-006",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/006",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-007",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/007",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-008",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/008",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-009",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/009",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-010",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/010",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-011",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/011",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-012",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/012",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-013",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/013",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-014",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/014",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-015",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/015",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-016",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/016",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-017",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/017",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-018",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/018",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-019",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/019",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-020",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/020",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-021",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/021",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-022",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/022",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-023",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/023",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-024",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/024",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-025",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/025",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-026",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/026",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-027",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/027",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-028",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/028",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-029",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/029",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-030",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/030",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-031",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/031",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-032",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/032",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-033",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/033",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-034",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/034",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-035",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/035",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-036",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/036",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-037",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/037",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-038",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/038",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "measurement_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-measurement-bundle-039",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/measurement_bundle/039",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "model",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-model-001",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/model/001",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "model",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-model-002",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/model/002",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "model",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-model-003",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/model/003",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "onnx",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-onnx-001",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/onnx/001",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "onnx",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-onnx-002",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/onnx/002",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "onnx",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-onnx-003",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/onnx/003",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "onnx",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-onnx-004",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/onnx/004",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "onnx",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-onnx-005",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/onnx/005",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "onnx",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-onnx-006",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/onnx/006",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "onnx",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-onnx-007",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/onnx/007",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "onnx",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-onnx-008",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/onnx/008",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "onnx",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-onnx-009",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/onnx/009",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "onnx",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-onnx-010",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/onnx/010",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "onnx",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-onnx-011",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/onnx/011",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "regenerable_large_file",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-regenerable-large-file-001",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/regenerable_large_file/001",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "regenerable_large_file",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-regenerable-large-file-002",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/regenerable_large_file/002",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "regenerable_large_file",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-regenerable-large-file-003",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/regenerable_large_file/003",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "regenerable_large_file",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-regenerable-large-file-004",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/regenerable_large_file/004",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "regenerable_large_file",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-regenerable-large-file-005",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/regenerable_large_file/005",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "regenerable_large_file",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-regenerable-large-file-006",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/regenerable_large_file/006",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "regenerable_large_file",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-regenerable-large-file-007",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/regenerable_large_file/007",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "regenerable_large_file",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-regenerable-large-file-008",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/regenerable_large_file/008",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "regenerable_large_file",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-regenerable-large-file-009",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/regenerable_large_file/009",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "regenerable_large_file",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-regenerable-large-file-010",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/regenerable_large_file/010",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "regenerable_large_file",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-regenerable-large-file-011",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/regenerable_large_file/011",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "regenerable_large_file",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "p4-regenerable-large-file-012",
+      "intended_use": "p4_external_contract",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "p4/regenerable_large_file/012",
+      "source": "not-publicly-available",
+      "unavailable_reason": "source_not_publicly_available",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "stage6-terminal-evidence",
+      "intended_use": "stage6_representative_selection",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "stage6/terminal-evidence.jsonl",
+      "source": "publication-pending",
+      "unavailable_reason": "bundle_not_published",
+      "version": "unreleased"
+    },
+    {
+      "asset_kind": "evidence_bundle",
+      "availability": "unavailable",
+      "consumer_ids": [],
+      "input_id": "stage7-formal-aggregate",
+      "intended_use": "stage7_formal_aggregate",
+      "license": {
+        "reference": "provider-terms-required",
+        "status": "unconfirmed"
+      },
+      "relative_path": "stage7/formal-aggregate.json",
+      "source": "publication-pending",
+      "unavailable_reason": "bundle_not_published",
+      "version": "unreleased"
     }
-  ]
+  ],
+  "registry_version": 1
 }
