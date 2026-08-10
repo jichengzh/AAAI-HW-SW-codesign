@@ -162,7 +162,11 @@ def _contains_private_token(value: object, private_tokens: set[str]) -> bool:
     if isinstance(value, str):
         return any(token in value for token in private_tokens)
     if isinstance(value, Mapping):
-        return any(_contains_private_token(item, private_tokens) for item in value.values())
+        return any(
+            _contains_private_token(key, private_tokens)
+            or _contains_private_token(item, private_tokens)
+            for key, item in value.items()
+        )
     if isinstance(value, list):
         return any(_contains_private_token(item, private_tokens) for item in value)
     return False

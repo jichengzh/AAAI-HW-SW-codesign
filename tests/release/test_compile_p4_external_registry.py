@@ -159,10 +159,18 @@ def test_compile_registry_rejects_private_candidate_path_in_consumer_ids(
     [
         ("relative_path", "derived/private/one.md"),
         ("source", "derived-from-synthetic-review"),
+        (
+            "license",
+            {
+                "private/one.md": "leaked-key",
+                "status": "unconfirmed",
+                "reference": "provider-terms-required",
+            },
+        ),
     ],
 )
 def test_compile_registry_rejects_private_tokens_in_public_resource_fields(
-    tmp_path: Path, field: str, value: str
+    tmp_path: Path, field: str, value: object
 ) -> None:
     review_path = tmp_path / "review.json"
     resolution_path = tmp_path / "resolution.json"
