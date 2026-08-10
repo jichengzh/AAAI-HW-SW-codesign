@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-import tomllib
 from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - exercised by the Python 3.10 CI job.
+    import tomli as tomllib
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
