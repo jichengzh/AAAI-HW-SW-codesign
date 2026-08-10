@@ -63,6 +63,13 @@ def _optional_sha256(record: Mapping[str, Any]) -> str | None:
     return value
 
 
+def _relative_asset_path(value: str) -> str:
+    path = Path(value)
+    if path.is_absolute() or ".." in path.parts:
+        raise RegistryError("relative_path must stay within asset-root")
+    return value
+
+
 def _parse_record(record: object) -> ExternalInput:
     if not isinstance(record, Mapping):
         raise RegistryError("each input must be an object")
@@ -98,7 +105,7 @@ def _parse_record(record: object) -> ExternalInput:
         license_status=license_status,
         license_reference=license_reference,
         version=_required_string(record, "version"),
-        relative_path=_required_string(record, "relative_path"),
+        relative_path=_relative_asset_path(_required_string(record, "relative_path")),
         intended_use=_required_string(record, "intended_use"),
         consumer_ids=tuple(consumer_ids),
         availability=availability,

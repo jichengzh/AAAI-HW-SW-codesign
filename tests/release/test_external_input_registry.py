@@ -5,6 +5,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools/release/validate_external_inputs.py"
@@ -60,6 +62,18 @@ def test_available_record_accepts_extra_unavailable_reason(tmp_path: Path) -> No
     _write_registry(registry, [_record(unavailable_reason="publication_note")])
     item = _module().load_registry(registry)[0]
     assert item.unavailable_reason == "publication_note"
+
+
+@pytest.mark.parametrize("relative_path", ["../outside.txt", "/outside.txt"])
+def test_load_registry_rejects_path_outside_asset_root(
+    tmp_path: Path, relative_path: str
+) -> None:
+    registry = tmp_path / "registry.json"
+    _write_registry(registry, [_record(relative_path=relative_path)])
+    module = _module()
+
+    with pytest.raises(module.RegistryError, match="relative_path"):
+        module.load_registry(registry)
 
 
 def test_declared_unavailable_keeps_its_reason(tmp_path: Path) -> None:
