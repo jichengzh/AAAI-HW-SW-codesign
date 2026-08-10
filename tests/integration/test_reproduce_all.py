@@ -316,6 +316,19 @@ def _reproduction_module() -> object:
     return module
 
 
+def test_reproduction_module_supports_datetime_without_utc_constant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The public entrypoint remains importable with Python 3.10's datetime API."""
+    import datetime as datetime_module
+
+    monkeypatch.delattr(datetime_module, "UTC", raising=False)
+
+    reproduce_all = _reproduction_module()
+
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", reproduce_all._utc_now())
+
+
 def _content_identity(output_root: Path) -> dict[str, object]:
     """Return deterministic reproduction identity, excluding run timestamps."""
     manifest = _read_json(output_root / "run_manifest.json")
