@@ -158,6 +158,28 @@ def _reject_private_consumer_ids(
             raise CompilationError("resource consumer_ids must not contain private P3 keys")
 
 
+def _contains_private_token(value: object, private_tokens: set[str]) -> bool:
+    if isinstance(value, str):
+        return any(token in value for token in private_tokens)
+    if isinstance(value, Mapping):
+        return any(_contains_private_token(item, private_tokens) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_private_token(item, private_tokens) for item in value)
+    return False
+
+
+def _reject_private_tokens_in_public_resources(
+    resources: Mapping[str, Mapping[str, object]],
+    candidates: frozenset[tuple[str, str]],
+) -> None:
+    private_tokens = {value for candidate in candidates for value in candidate}
+    if any(
+        _contains_private_token(_registry_record(resource), private_tokens)
+        for resource in resources.values()
+    ):
+        raise CompilationError("public resource records must not contain private P3 keys")
+
+
 def _coverage(
     candidate_count: int,
     document_count: int,
@@ -199,6 +221,7 @@ def compile_registry(
     resources = _parse_resources(resolution)
     decisions, document_count, asset_count = _parse_decisions(resolution, candidates)
     _reject_private_consumer_ids(resources, candidates)
+    _reject_private_tokens_in_public_resources(resources, candidates)
     used_resource_ids = {resource_id for resource_id in decisions.values() if resource_id}
     if not used_resource_ids.issubset(resources):
         raise CompilationError("asset decision references an unknown resource_id")

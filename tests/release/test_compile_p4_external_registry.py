@@ -154,6 +154,28 @@ def test_compile_registry_rejects_private_candidate_path_in_consumer_ids(
         module.compile_registry(review_path, resolution_path)
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("relative_path", "derived/private/one.md"),
+        ("source", "derived-from-synthetic-review"),
+    ],
+)
+def test_compile_registry_rejects_private_tokens_in_public_resource_fields(
+    tmp_path: Path, field: str, value: str
+) -> None:
+    review_path = tmp_path / "review.json"
+    resolution_path = tmp_path / "resolution.json"
+    resolution = _resolution()
+    resolution["resources"][0][field] = value
+    _write_review(review_path)
+    _write_json(resolution_path, resolution)
+
+    module = _module()
+    with pytest.raises(module.CompilationError, match="public resource"):
+        module.compile_registry(review_path, resolution_path)
+
+
 def test_cli_writes_both_public_outputs_only_after_success(tmp_path: Path) -> None:
     review_path = tmp_path / "review.json"
     resolution_path = tmp_path / "resolution.json"
