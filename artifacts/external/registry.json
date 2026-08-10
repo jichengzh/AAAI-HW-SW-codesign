@@ -1,0 +1,36 @@
+{
+  "format": "aaai27_external_input_registry_v1",
+  "registry_version": 1,
+  "inputs": [
+    {
+      "input_id": "stage6-terminal-evidence",
+      "asset_kind": "evidence_bundle",
+      "source": "publication-pending",
+      "license": {
+        "status": "unconfirmed",
+        "reference": "provider-terms-required"
+      },
+      "version": "unreleased",
+      "relative_path": "stage6/terminal-evidence.jsonl",
+      "intended_use": "stage6_representative_selection",
+      "consumer_ids": [],
+      "availability": "unavailable",
+      "unavailable_reason": "bundle_not_published"
+    },
+    {
+      "input_id": "stage7-formal-aggregate",
+      "asset_kind": "evidence_bundle",
+      "source": "publication-pending",
+      "license": {
+        "status": "unconfirmed",
+        "reference": "provider-terms-required"
+      },
+      "version": "unreleased",
+      "relative_path": "stage7/formal-aggregate.json",
+      "intended_use": "stage7_formal_aggregate",
+      "consumer_ids": [],
+      "availability": "unavailable",
+      "unavailable_reason": "bundle_not_published"
+    }
+  ]
+}

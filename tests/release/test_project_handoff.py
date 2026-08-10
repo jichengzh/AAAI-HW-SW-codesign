@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -50,3 +51,14 @@ def test_public_readmes_link_the_handoff_ledger() -> None:
     for readme_name in ("README.md", "README.zh-CN.md"):
         readme = (REPOSITORY_ROOT / readme_name).read_text(encoding="utf-8")
         assert "docs/AAAI27_RELEASE_AUDIT.md" in readme
+
+
+def test_p4_contract_is_discoverable_and_starts_unavailable() -> None:
+    registry = json.loads((REPOSITORY_ROOT / "artifacts/external/registry.json").read_text(encoding="utf-8"))
+    assert (REPOSITORY_ROOT / "docs/release-manifests/P4_EXTERNAL_INPUT_CONTRACT.md").is_file()
+    assert registry["format"] == "aaai27_external_input_registry_v1"
+    assert {item["input_id"] for item in registry["inputs"]} == {"stage6-terminal-evidence", "stage7-formal-aggregate"}
+    assert all(item["availability"] == "unavailable" for item in registry["inputs"])
+    handoff = HANDOFF.read_text(encoding="utf-8")
+    assert "P4_EXTERNAL_INPUT_CONTRACT.md" in handoff
+    assert "进行中（本地）" in handoff
