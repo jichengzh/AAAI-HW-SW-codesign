@@ -141,5 +141,14 @@ def test_p5_environment_contract_is_discoverable() -> None:
         line for line in handoff.splitlines() if line.startswith("| P5 |")
     )
     assert "[P5 环境契约](release-manifests/P5_ENVIRONMENT_CONTRACT.md)" in p5_plan_line
-    assert "进行中（本地）" in p5_plan_line
-    assert "已完成" not in p5_plan_line
+    assert "已完成（本地）" in p5_plan_line
+    assert "进行中" not in p5_plan_line
+
+
+def test_p5_local_closure_is_limited_to_offline_environment_contracts() -> None:
+    handoff = HANDOFF.read_text(encoding="utf-8")
+
+    assert "| P5 | 已完成（本地） |" in handoff
+    assert "P5_ENVIRONMENT_CONTRACT.md" in handoff
+    assert "不探测本机 GPU" in handoff
+    assert "不运行 CUDA 编译、训练、评测、基准测试或任何外部资产" in handoff
