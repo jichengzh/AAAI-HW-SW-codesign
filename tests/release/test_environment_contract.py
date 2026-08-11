@@ -143,6 +143,18 @@ def test_load_environment_observation_rejects_invalid_schema(
         module.load_environment_observation(observation_path)
 
 
+def test_load_environment_observation_rejects_gpu_target_with_no_visible_gpu(tmp_path: Path) -> None:
+    module = _module()
+    _, contract_path = _write_contract_tree(tmp_path, target="rtx4090")
+    observation_path = _observation_path(contract_path)
+    document = json.loads(observation_path.read_text(encoding="utf-8"))
+    document["gpu_count"] = 0
+    observation_path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(module.EnvironmentContractError):
+        module.load_environment_observation(observation_path)
+
+
 def test_load_environment_observation_drops_extra_note(tmp_path: Path) -> None:
     module = _module()
     _, contract_path = _write_contract_tree(tmp_path, target="rtx4090")

@@ -106,6 +106,8 @@ def load_environment_observation(path: Path) -> EnvironmentObservation:
     _validate_runtime_for_target(target, target != "cpu", runtime.cuda, runtime.driver)
     if target == "cpu" and gpu_count != 0:
         raise EnvironmentContractError("CPU observations must report gpu_count as 0")
+    if target != "cpu" and gpu_count <= 0:
+        raise EnvironmentContractError("GPU observations must report gpu_count greater than 0")
     return EnvironmentObservation(target=target, runtime=runtime, gpu_count=gpu_count)
 
 
