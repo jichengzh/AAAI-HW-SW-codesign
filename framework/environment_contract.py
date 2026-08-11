@@ -72,7 +72,7 @@ _RUNTIME_FIELDS = {"python", "cuda", "driver", "framework_name", "framework_vers
 _OBSERVATION_FIELDS = {"target", "runtime", "gpu_count", "note"}
 _Runtime = TypeVar("_Runtime", RuntimeConstraint, RuntimeObservation)
 _VERSION_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+)*$")
-_VERSION_OPERATORS = (">=", "<=", "==", ">", "<")
+_VERSION_OPERATORS = (">=", "<=", ">", "<")
 
 
 def version_satisfies(actual: str, expression: str) -> bool:

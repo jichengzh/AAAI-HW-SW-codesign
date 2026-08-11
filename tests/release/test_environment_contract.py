@@ -100,7 +100,7 @@ def test_version_satisfies_uses_numeric_zero_padded_parts() -> None:
         module.version_satisfies("12.4rc1", ">=12.0")
 
 
-@pytest.mark.parametrize("expression", [">=12..0", ">=12.0,", "~=12.0"])
+@pytest.mark.parametrize("expression", [">=12..0", ">=12.0,", "~=12.0", "==12.4"])
 def test_version_satisfies_rejects_invalid_expressions(expression: str) -> None:
     module = _module()
 
