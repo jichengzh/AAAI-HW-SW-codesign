@@ -178,6 +178,39 @@ def test_builder_includes_release_tools_required_by_archive_tests(
     } <= names
 
 
+def test_builder_keeps_p6_public_contracts_but_excludes_local_execution_material(
+    anonymous_repo: Path, tmp_path: Path
+) -> None:
+    """The P6 archive boundary keeps runner metadata public without local execution state."""
+    entries = {
+        line.strip()
+        for line in (BUILDER.parent / "anonymous_allowlist.txt").read_text(
+            encoding="utf-8"
+        ).splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    assert {"framework/**/*", "tools/release/**/*", "configs/**/*"} <= entries
+
+    _write(anonymous_repo / "tools/release/run_p6_h800_search.py")
+    _write(anonymous_repo / "framework/stage6/h800_search_execution_v1.py")
+    _write(anonymous_repo / "configs/execution/p6_h800_search.example.yaml")
+    _write(anonymous_repo / "configs/local/p6_h800_search.local.yaml", "local sentinel\n")
+    _write(anonymous_repo / "outputs/p6-h800-search/sentinel-raw.log", "raw sentinel\n")
+
+    result = _run_builder(anonymous_repo, tmp_path / "output")
+
+    assert result.returncode == 0, result.stderr
+    with zipfile.ZipFile(tmp_path / "output" / ARCHIVE_NAME) as archive:
+        names = set(archive.namelist())
+    assert {
+        "tools/release/run_p6_h800_search.py",
+        "framework/stage6/h800_search_execution_v1.py",
+        "configs/execution/p6_h800_search.example.yaml",
+    } <= names
+    assert "configs/local/p6_h800_search.local.yaml" not in names
+    assert "outputs/p6-h800-search/sentinel-raw.log" not in names
+
+
 def test_builder_allows_only_the_anonymous_ci_hidden_path(anonymous_repo: Path, tmp_path: Path) -> None:
     """The anonymous CI file is allowed, while other hidden paths remain excluded."""
     _write(anonymous_repo / ".env", "not selected\n")

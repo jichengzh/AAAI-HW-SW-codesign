@@ -106,11 +106,14 @@ DENIED_PATH_PARTS = frozenset(
 )
 DENIED_SUFFIXES = frozenset({".pyc", ".pyo", ".so", ".dll", ".dylib", ".onnx", ".engine", ".pt", ".pth", ".ckpt", ".zip", ".tar", ".gz", ".whl"})
 ANONYMOUS_HIDDEN_ALLOWLIST = frozenset({".github/workflows/ci.yml", ".gitignore"})
+DENIED_SOURCE_PREFIXES = ("configs/local/",)
 
 
 def _is_denied_source_path(relative_path: str) -> bool:
     if relative_path in ANONYMOUS_HIDDEN_ALLOWLIST:
         return False
+    if relative_path.startswith(DENIED_SOURCE_PREFIXES):
+        return True
     parts = Path(relative_path).parts
     filename = parts[-1].lower()
     return (

@@ -183,3 +183,62 @@ def test_p5_local_closure_is_limited_to_offline_environment_contracts() -> None:
     assert "网络下载" in p5_completion_entry
     assert "真实硬件执行" in p5_completion_entry
     assert "远端 CI" not in p5_completion_entry
+
+
+def test_p6_h800_execution_manifest_preserves_the_public_boundary() -> None:
+    """P6 remains a local H800 execution line with a deliberately small public surface."""
+    manifest = REPOSITORY_ROOT / "docs/release-manifests/P6_H800_SEARCH_EXECUTION.md"
+
+    assert manifest.is_file()
+    text = manifest.read_text(encoding="utf-8")
+    handoff = HANDOFF.read_text(encoding="utf-8")
+    p6_plan_line = next(
+        line for line in handoff.splitlines() if line.startswith("| P6 |")
+    )
+
+    assert "进行中（本地）" in p6_plan_line
+    assert "H800" in p6_plan_line
+    assert "Orin" in p6_plan_line
+    assert "RTX 4090" not in p6_plan_line
+    assert "CPU" not in p6_plan_line
+    assert "p6_h800_search_summary_v1" in text
+    for field in (
+        "schema",
+        "target",
+        "code_revision",
+        "seed",
+        "configuration_label",
+        "assets",
+        "status",
+        "planned_rounds",
+        "completed_rounds",
+        "successful_candidate_count",
+        "aggregate_metrics",
+        "failure_code",
+    ):
+        assert field in text
+    for failure_code in (
+        "capability_target_invalid",
+        "command_failed",
+        "local_input_invalid",
+        "local_record_write_failed",
+        "result_candidate_mismatch",
+        "result_invalid_json",
+        "result_metrics_invalid",
+        "result_missing",
+        "stage5_selection_failed",
+    ):
+        assert failure_code in text
+    assert "不下载" in text
+    assert "不自动探测硬件" in text
+    assert "不自动启动硬件" in text
+    assert "configs/local/" in text
+    assert "TVM" in text
+    assert "TensorRT" in text
+    assert "Orin" in text
+    assert "RTX 4090" not in text
+    assert "CPU" not in text
+    assert "/home/" not in text
+    assert "checkpoint" not in text.lower()
+    assert "sha-256" not in text.lower()
+    assert "python tools/release/run_p6_h800_search.py" not in text
