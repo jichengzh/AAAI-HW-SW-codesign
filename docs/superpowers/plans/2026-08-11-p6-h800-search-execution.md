@@ -294,7 +294,6 @@
           "tools/release/run_p6_h800_search.py",
           "--contract", str(contract_path),
           "--local-config", str(local_path),
-          "--local-output-root", str(local_output_root),
           "--public-summary", str(summary_path),
           "--code-revision", "test-revision",
       ],
@@ -352,12 +351,11 @@
   python tools/release/run_p6_h800_search.py \
     --contract configs/execution/p6_h800_search.yaml \
     --local-config configs/local/p6_h800_search.local.yaml \
-    --local-output-root outputs/p6-h800-search \
     --public-summary artifacts/p6/h800_search_summary.json \
     --code-revision "p6-test-revision"
   ```
 
-  参数解析应使用 `allow_abbrev=False`。CLI 只在公共/本地契约都通过校验、输出目录已明确且不冲突后调用控制器。正常完成返回 0；受控的执行失败返回 1；参数或契约错误返回 2。`--code-revision` 是调用者显式传入的非空标签，CLI 不自行执行 git 命令。错误 stdout/stderr 只输出稳定的错误类别，详细信息只留在忽略的本地记录。
+  参数解析应使用 `allow_abbrev=False`。本地 YAML 是 `local_output_root` 的唯一权威；CLI 只在公共/本地契约都通过校验、该本地输出目录已明确且不冲突后调用控制器。正常完成返回 0；受控的执行失败返回 1；参数或契约错误返回 2。`--code-revision` 是调用者显式传入的非空标签，CLI 不自行执行 git 命令。错误 stdout/stderr 只输出稳定的错误类别，详细信息只留在忽略的本地记录。
 
 - [ ] **Step 4: 运行 CLI、脱敏和静态回归。**
 
@@ -477,7 +475,6 @@
   python tools/release/run_p6_h800_search.py \
     --contract configs/execution/p6_h800_search.yaml \
     --local-config configs/local/p6_h800_search.local.yaml \
-    --local-output-root outputs/p6-h800-search \
     --public-summary artifacts/p6/h800_search_summary.json \
     --code-revision "$(git rev-parse HEAD)"
   ```
