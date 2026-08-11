@@ -155,7 +155,7 @@ scripts/stage2_update_evidence.py
 | P2 | 已完成（P2a + P2b 本地只读盘点） | 审计私有完整仓库：按“源码/文档/小型脱敏 fixture/外部数据描述/禁止上传生成物”清点全部路径和依赖关系；P2b 加固嵌套数据边界和稳定读取后重新盘点。 | 机器可读的机械分类清单和敏感项扫描结果；每个保留、改写、外置或排除项的语义理由、许可证/许可状态在 P3 逐批批准时补齐。 |
 | P3 | 已完成（本地） | 按发布级逐项复审协议处置 P2b 冻结基线的全部候选；对迁入、改写、公开替代、外部输入、环境、执行与许可阻塞逐项绑定当前内容、职责/调用关系、来源/许可证和安全审查。 | accepted-only manifest 与路径无关 HMAC ledger 覆盖 **1,551/1,551**，缺失 0、额外身份 0；全量 CPU-only pytest 为 509 passed、83.09% 覆盖率，release 定向回归 81 passed，身份/路径扫描、Ruff、compileall、diff 检查和匿名 ZIP build/verify 均通过。详见 [P3 重审协议](release-manifests/P3_REAUDIT_PROTOCOL.md)、[P3 全量关闭复核](release-manifests/P3_FULL_CLOSURE_REVALIDATION.md) 与各批次记录。P3 本地关闭不启动 P4--P8，也不授权推送、发布或真实实验执行。 |
 | P4 | 已完成（本地） | [P4 外部输入契约](release-manifests/P4_EXTERNAL_INPUT_CONTRACT.md)以 `artifacts/external/registry.json` 为完整资源目录、以 `artifacts/external/coverage.json` 为完整性摘要。506 条 P3 转交候选均已在本地裁决为 document 或 asset：199 条为 document、307 条为 asset，去重后为 284 项资源；284 项均为 unavailable。该记录只说明离线登记与验证契约，不下载、不运行或迁入真实制品。 | 本地交接台账、P4 登记和相关 release/integration 门禁，以及 Ruff、compileall、diff 检查均通过；公开 [CI run 31404700281](https://github.com/jichengzh/AAAI-HW-SW-codesign/actions/runs/31404700281) 的 `public-smoke`、`quality (3.10)`、`quality (3.11)` 均成功。验证器仍只检查用户显式提供的本地输入；不得下载数据或权重，也不得读取维护者目录、缓存或真实外部资产。P5--P8 仍为待开始。 |
-| P5 | 待开始 | 固化可复现环境：CPU 基线继续保持；分别提供 4090 与 H800 的环境/驱动/CUDA 约束、硬件探测和最小运行命令。 | CPU、4090、H800 配置文件互不混淆；不含 SSH 信息；每个环境均可执行依赖检查和相应的最小测试。 |
+| P5 | 进行中（本地） | 固化可复现环境：CPU 基线继续保持；分别定义 4090 与 H800 的环境/驱动/CUDA 约束、硬件探测输入契约和最小验证命令。本阶段仅实现环境契约与离线验证器，不探测本机 GPU、不运行 CUDA 编译、训练、评测或外部资产。 | CPU、4090、H800 配置文件互不混淆；不含 SSH 信息；验证器只消费用户显式提供的本地探测输入，每个环境均可执行依赖检查和相应的合成离线测试。 |
 | P6 | 待开始 | 接入全流程训练、评测、硬件执行与结果汇总；生成不可伪造的执行 manifest。 | 每一步消费的输入、代码版本、随机种子、配置和输出 SHA-256 可追溯；缺失外部证据失败关闭；Stage6/Stage7 只在正式数据及独立验证满足后更新证据状态。 |
 | P7 | 待开始 | 完成开源前安全、合规、文档和供应链审查。 | 全树/待发布历史凭据扫描为零；第三方许可和数据使用权明确；README、架构/设计说明、数据卡、复现指南、贡献/引用信息与真实入口一致；依赖漏洞处置或记录完成。 |
 | P8 | 待开始 | 形成发布候选并进行外部发布。 | 新目录 HTTPS clone、CPU smoke、全量测试、CI、匿名包（如仍在匿名期）和 4090/H800 最小验证均通过；获得明确授权后才推送、PR/合并、打 tag、设置可见性和发布版本。 |
@@ -790,6 +790,8 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 **P4 完整登记本地证据（2026-08-10）**：公开完整目录为 `artifacts/external/registry.json`，聚合摘要为 `artifacts/external/coverage.json`，契约见 [P4 外部输入契约](release-manifests/P4_EXTERNAL_INPUT_CONTRACT.md)。506 条 P3 转交候选已完成本地 document/asset 裁决：199 条 document、307 条 asset，去重为 284 项资源，且 284 项均为 unavailable。本地全量 coverage 门禁为 534 passed、83.08%，Ruff 和 compileall 通过；release、公开 clean-clone 与匿名 archive 组合回归为 103 passed。远端 `quality (3.10)` 与 `quality (3.11)` 尚未确认成功，P4 继续为**进行中（本地）**。未下载或执行外部资源，未推送或发布。
 
 **P4 外部资源登记收口（2026-08-10）**：本项收口提交（台账不自引用最终 SHA）将 P4 标为**已完成（本地）**。完整公开登记仍为 506 条 P3 转交候选，其中 199 条 document、307 条 asset，去重为 284 项资源，且 284 项均为 unavailable；本收口不下载、不执行或迁入真实外部资产。本地交接台账、P4 登记和相关 release/integration 门禁，以及 Ruff、compileall、diff 检查均通过。公开 [CI run 31404700281](https://github.com/jichengzh/AAAI-HW-SW-codesign/actions/runs/31404700281) 已成功：`public-smoke`、`quality (3.10)`、`quality (3.11)` 均通过。P5--P8 未启动；本项只授权功能分支推送，不合并 main 或 release。
+
+**P5 环境契约启动（2026-08-11）**：P5 进入**进行中（本地）**。范围已确认：只定义 CPU、RTX 4090 与 H800 的脱敏环境/驱动/CUDA 约束、硬件探测输入契约和纯离线验证器；不访问或探测本机 GPU，不运行 CUDA 编译、训练、评测、基准测试或任何外部资产，也不下载数据、权重或工具链。P6--P8 仍未启动；本记录不授权推送、合并或真实硬件执行。
 
 P3-139 上一批完成后覆盖为 1,436/1,551（P4=12）。
 
