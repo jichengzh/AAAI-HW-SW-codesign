@@ -67,9 +67,10 @@ class ValidationResult:
     failures: tuple[ValidationFailure, ...]
 
 
-_CONTRACT_FIELDS = {"target", "hardware_capability", "requires_gpu", "runtime"}
+_CONTRACT_FIELDS = {"schema", "target", "hardware_capability", "requires_gpu", "runtime"}
 _RUNTIME_FIELDS = {"python", "cuda", "driver", "framework_name", "framework_version"}
-_OBSERVATION_FIELDS = {"target", "runtime", "gpu_count", "note"}
+_OBSERVATION_FIELDS = {"schema", "target", "runtime", "gpu_count", "note"}
+_OBSERVATION_REQUIRED_FIELDS = _OBSERVATION_FIELDS - {"note"}
 _Runtime = TypeVar("_Runtime", RuntimeConstraint, RuntimeObservation)
 _VERSION_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+)*$")
 _VERSION_OPERATORS = (">=", "<=", ">", "<")
@@ -174,6 +175,7 @@ def load_environment_contract(path: Path, *, repository_root: Path) -> Environme
     """Load a declared environment contract without examining the local machine."""
     document = _load_yaml_object(path)
     _require_exact_fields(document, _CONTRACT_FIELDS, "contract")
+    _require_schema(document, "environment_contract_v1", "contract")
 
     target = _require_string(document, "target", "contract")
     hardware_path = _require_string(document, "hardware_capability", "contract")
@@ -209,6 +211,8 @@ def load_environment_observation(path: Path) -> EnvironmentObservation:
     """Load an explicit observation, dropping the optional human-readable note."""
     document = _load_json_object(path)
     _require_allowed_fields(document, _OBSERVATION_FIELDS, "observation")
+    _require_required_fields(document, _OBSERVATION_REQUIRED_FIELDS, "observation")
+    _require_schema(document, "environment_observation_v1", "observation")
     target = _require_string(document, "target", "observation")
     runtime = _parse_runtime(document.get("runtime"), RuntimeObservation, "observation.runtime")
     gpu_count = document.get("gpu_count")
@@ -246,13 +250,22 @@ def _require_object(value: Any, label: str) -> dict[str, Any]:
 
 def _require_exact_fields(document: dict[str, Any], fields: set[str], label: str) -> None:
     _require_allowed_fields(document, fields, label)
-    if set(document) != fields:
-        raise EnvironmentContractError(f"{label} is missing required fields")
+    _require_required_fields(document, fields, label)
 
 
 def _require_allowed_fields(document: dict[str, Any], fields: set[str], label: str) -> None:
     if not set(document).issubset(fields):
         raise EnvironmentContractError(f"{label} contains unknown fields")
+
+
+def _require_required_fields(document: dict[str, Any], fields: set[str], label: str) -> None:
+    if not fields.issubset(document):
+        raise EnvironmentContractError(f"{label} is missing required fields")
+
+
+def _require_schema(document: dict[str, Any], expected: str, label: str) -> None:
+    if _require_string(document, "schema", label) != expected:
+        raise EnvironmentContractError(f"{label}.schema must be {expected}")
 
 
 def _require_string(document: dict[str, Any], field: str, label: str) -> str:

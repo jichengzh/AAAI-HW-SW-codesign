@@ -41,6 +41,7 @@ def _write_contract_tree(tmp_path: Path, *, target: str) -> tuple[Path, Path]:
     contract_path.write_text(
         yaml.safe_dump(
             {
+                "schema": "environment_contract_v1",
                 "target": target,
                 "hardware_capability": f"configs/hardware/{target}.yaml",
                 "requires_gpu": requires_gpu,
@@ -51,7 +52,14 @@ def _write_contract_tree(tmp_path: Path, *, target: str) -> tuple[Path, Path]:
     )
     observation_path = root / "environment-observation.json"
     observation_path.write_text(
-        json.dumps({"target": target, "runtime": runtime, "gpu_count": 1 if requires_gpu else 0}),
+        json.dumps(
+            {
+                "schema": "environment_observation_v1",
+                "target": target,
+                "runtime": runtime,
+                "gpu_count": 1 if requires_gpu else 0,
+            }
+        ),
         encoding="utf-8",
     )
     return root, contract_path
@@ -173,6 +181,23 @@ def test_load_environment_contract_accepts_only_declared_shape(tmp_path: Path) -
     assert contract.hardware_capability == Path("configs/hardware/rtx4090.yaml")
 
 
+@pytest.mark.parametrize("schema", [None, "environment_contract_v2"])
+def test_load_environment_contract_requires_exact_schema_version(
+    tmp_path: Path, schema: str | None
+) -> None:
+    module = _module()
+    root, contract_path = _write_contract_tree(tmp_path, target="rtx4090")
+    document = yaml.safe_load(contract_path.read_text(encoding="utf-8"))
+    if schema is None:
+        document.pop("schema")
+    else:
+        document["schema"] = schema
+    contract_path.write_text(yaml.safe_dump(document), encoding="utf-8")
+
+    with pytest.raises(module.EnvironmentContractError):
+        module.load_environment_contract(contract_path, repository_root=root)
+
+
 @pytest.mark.parametrize(
     "mutate",
     [
@@ -250,6 +275,24 @@ def test_load_environment_observation_rejects_gpu_target_with_no_visible_gpu(tmp
     observation_path = _observation_path(contract_path)
     document = json.loads(observation_path.read_text(encoding="utf-8"))
     document["gpu_count"] = 0
+    observation_path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(module.EnvironmentContractError):
+        module.load_environment_observation(observation_path)
+
+
+@pytest.mark.parametrize("schema", [None, "environment_observation_v2"])
+def test_load_environment_observation_requires_exact_schema_version(
+    tmp_path: Path, schema: str | None
+) -> None:
+    module = _module()
+    _, contract_path = _write_contract_tree(tmp_path, target="rtx4090")
+    observation_path = _observation_path(contract_path)
+    document = json.loads(observation_path.read_text(encoding="utf-8"))
+    if schema is None:
+        document.pop("schema")
+    else:
+        document["schema"] = schema
     observation_path.write_text(json.dumps(document), encoding="utf-8")
 
     with pytest.raises(module.EnvironmentContractError):
