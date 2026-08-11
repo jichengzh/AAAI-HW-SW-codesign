@@ -127,6 +127,33 @@ def test_cli_returns_zero_and_writes_passing_report(tmp_path: Path) -> None:
     }
 
 
+def test_cli_reports_nested_framework_failure_fields(tmp_path: Path) -> None:
+    root, contract, observation = _write_rtx_inputs(tmp_path, cuda="12.1")
+    document = json.loads(observation.read_text(encoding="utf-8"))
+    document["runtime"]["framework"] = {"name": "tensorflow", "version": "1.0"}
+    observation.write_text(json.dumps(document), encoding="utf-8")
+    output = tmp_path / "report.json"
+
+    result = _run_cli(contract, observation, output, cwd=root)
+    report = json.loads(output.read_text(encoding="utf-8"))
+
+    assert result.returncode == 1
+    assert report == {
+        "schema": "environment_contract_report_v1",
+        "target": "rtx4090",
+        "passed": False,
+        "failures": [
+            {"code": "runtime.framework.name.mismatch", "field": "runtime.framework.name"},
+            {
+                "code": "runtime.framework.version.out_of_range",
+                "field": "runtime.framework.version",
+            },
+        ],
+    }
+    assert "framework_name" not in json.dumps(report)
+    assert "framework_version" not in json.dumps(report)
+
+
 def test_cli_writes_invalid_report_and_returns_two_for_invalid_observation(tmp_path: Path) -> None:
     root, contract, observation = _write_rtx_inputs(tmp_path, cuda="12.1")
     observation.write_text("{", encoding="utf-8")

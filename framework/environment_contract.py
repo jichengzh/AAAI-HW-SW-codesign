@@ -118,11 +118,11 @@ def validate_environment(
         failures, "runtime.driver.out_of_range", "runtime.driver", observed_runtime.driver, runtime.driver
     )
     if observed_runtime.framework_name != runtime.framework_name:
-        failures.append(ValidationFailure("runtime.framework.name.mismatch", "runtime.framework_name"))
+        failures.append(ValidationFailure("runtime.framework.name.mismatch", "runtime.framework.name"))
     _append_version_failure(
         failures,
         "runtime.framework.version.out_of_range",
-        "runtime.framework_version",
+        "runtime.framework.version",
         observed_runtime.framework_version,
         runtime.framework_version,
     )

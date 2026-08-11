@@ -155,8 +155,8 @@ def test_validate_environment_checks_cpu_gpu_framework_and_runtime_order(tmp_pat
         ("runtime.python.out_of_range", "runtime.python"),
         ("runtime.cuda.out_of_range", "runtime.cuda"),
         ("runtime.driver.out_of_range", "runtime.driver"),
-        ("runtime.framework.name.mismatch", "runtime.framework_name"),
-        ("runtime.framework.version.out_of_range", "runtime.framework_version"),
+        ("runtime.framework.name.mismatch", "runtime.framework.name"),
+        ("runtime.framework.version.out_of_range", "runtime.framework.version"),
     ]
 
 
