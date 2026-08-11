@@ -147,8 +147,37 @@ def test_p5_environment_contract_is_discoverable() -> None:
 
 def test_p5_local_closure_is_limited_to_offline_environment_contracts() -> None:
     handoff = HANDOFF.read_text(encoding="utf-8")
+    p5_plan_line = next(
+        line for line in handoff.splitlines() if line.startswith("| P5 |")
+    )
+    completion_heading = "**P5 环境契约完成（2026-08-11）**："
+    assert completion_heading in handoff
+    p5_completion_entry = handoff.split(completion_heading, maxsplit=1)[1].split(
+        "\n\n", maxsplit=1
+    )[0]
 
-    assert "| P5 | 已完成（本地） |" in handoff
-    assert "P5_ENVIRONMENT_CONTRACT.md" in handoff
-    assert "不探测本机 GPU" in handoff
-    assert "不运行 CUDA 编译、训练、评测、基准测试或任何外部资产" in handoff
+    assert "| P5 | 已完成（本地） |" in p5_plan_line
+    assert "P5_ENVIRONMENT_CONTRACT.md" in p5_plan_line
+    assert "三份公开 hardware capability YAML" in p5_plan_line
+    assert "三份环境契约" in p5_plan_line
+    assert "合成正负例" in p5_plan_line
+    assert "离线验证器" in p5_plan_line
+    assert "不探测本机 GPU" in p5_plan_line
+    assert "不运行 CUDA 编译、训练、评测、基准测试或任何外部资产" in p5_plan_line
+    assert "网络下载" in p5_plan_line
+    assert "远端 CI" not in p5_plan_line
+
+    assert "三份公开 hardware capability YAML" in p5_completion_entry
+    assert (
+        "三份 [P5 环境契约](release-manifests/P5_ENVIRONMENT_CONTRACT.md)"
+        in p5_completion_entry
+    )
+    assert "合成正负例" in p5_completion_entry
+    assert "离线验证器" in p5_completion_entry
+    assert "已完成（本地）" in p5_completion_entry
+    assert "P5_ENVIRONMENT_CONTRACT.md" in p5_completion_entry
+    assert "不探测本机 GPU" in p5_completion_entry
+    assert "不运行 CUDA 编译、训练、评测、基准测试或任何外部资产" in p5_completion_entry
+    assert "网络下载" in p5_completion_entry
+    assert "真实硬件执行" in p5_completion_entry
+    assert "远端 CI" not in p5_completion_entry
