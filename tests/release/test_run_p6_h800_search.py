@@ -7,6 +7,7 @@ import subprocess
 import sys
 from typing import Any
 
+import pytest
 import yaml
 
 from tests.stage6.test_h800_search_execution import _public_contract, _stage5_inputs
@@ -89,8 +90,8 @@ def _cli_fixture(tmp_path: Path, *, mode: str = "success") -> dict[str, Path]:
 
     trainer_path = _write_fake_trainer(tmp_path / "fake_trainer.py")
     call_log = tmp_path / "PRIVATE_CALL_LOG.txt"
-    result_path = tmp_path / "PRIVATE_CHECKPOINT_RESULT.json"
     output_root = tmp_path / "PRIVATE_LOCAL_OUTPUT"
+    result_path = output_root / "PRIVATE_CHECKPOINT_RESULT.json"
     local_path = _write_yaml(
         tmp_path / "local.yaml",
         {
@@ -210,7 +211,7 @@ def test_cli_requires_explicit_local_config_without_starting_a_candidate(
     assert not paths["summary"].exists()
 
 
-def test_cli_rejects_invalid_local_config_before_execution_and_writes_failed_summary(
+def test_cli_rejects_invalid_local_config_without_publishing(
     tmp_path: Path,
 ) -> None:
     paths = _cli_fixture(tmp_path)
@@ -223,11 +224,70 @@ def test_cli_rejects_invalid_local_config_before_execution_and_writes_failed_sum
     assert result.returncode == 2
     assert result.stderr == "contract_error\n"
     assert not paths["call_log"].exists()
-    public = json.loads(paths["summary"].read_text(encoding="utf-8"))
-    assert set(public) == PUBLIC_SUMMARY_KEYS
-    assert public["status"] == "failed"
-    assert public["failure_code"] == "contract_invalid"
-    assert str(tmp_path) not in json.dumps(public)
+    assert not paths["summary"].exists()
+
+
+@pytest.mark.parametrize(
+    "case",
+    ["asset_label_mismatch", "duplicate_step", "shell_argv", "private_summary"],
+)
+def test_cli_fails_closed_for_invalid_local_yaml(
+    tmp_path: Path,
+    case: str,
+) -> None:
+    paths = _cli_fixture(tmp_path)
+    local = yaml.safe_load(paths["local"].read_text(encoding="utf-8"))
+    if case in {"asset_label_mismatch", "private_summary"}:
+        del local["asset_paths"]["toolchain"]
+    elif case == "duplicate_step":
+        local["steps"].append(dict(local["steps"][0]))
+    else:
+        local["steps"][0]["argv"] = ["bash", "-c", "PRIVATE_COMMAND", "{result_json}"]
+    if case == "private_summary":
+        paths["summary"] = paths["output_root"] / "public-summary.json"
+    _write_yaml(paths["local"], local)
+
+    result = _run_cli(paths)
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert result.stderr == "contract_error\n"
+    assert not paths["call_log"].exists()
+    assert not paths["summary"].exists()
+
+
+def test_cli_rejects_result_path_equal_to_public_summary_before_execution(
+    tmp_path: Path,
+) -> None:
+    paths = _cli_fixture(tmp_path)
+    local = yaml.safe_load(paths["local"].read_text(encoding="utf-8"))
+    local["result_path_template"] = str(paths["summary"])
+    _write_yaml(paths["local"], local)
+
+    result = _run_cli(paths)
+
+    assert result.returncode == 2
+    assert result.stderr == "contract_error\n"
+    assert not paths["call_log"].exists()
+    assert not paths["summary"].exists()
+
+
+@pytest.mark.parametrize("document", ["contract", "local"])
+def test_cli_reports_invalid_utf8_as_stable_contract_error(
+    tmp_path: Path,
+    document: str,
+) -> None:
+    paths = _cli_fixture(tmp_path)
+    paths[document].write_bytes(b"\xff\xfe")
+
+    result = _run_cli(paths)
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert result.stderr == "contract_error\n"
+    assert "Traceback" not in result.stderr
+    assert not paths["call_log"].exists()
+    assert not paths["summary"].exists()
 
 
 def test_cli_stops_after_failed_subcommand_and_redacts_process_details(

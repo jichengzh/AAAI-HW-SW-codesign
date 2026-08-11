@@ -15,8 +15,6 @@ if str(REPOSITORY_ROOT) not in sys.path:
 
 from framework.stage6.h800_search_execution_v1 import (  # noqa: E402
     H800SearchContractError,
-    PublicH800SearchContract,
-    build_contract_failure_summary,
     load_local_config,
     load_public_contract,
     run_h800_search,
@@ -69,21 +67,6 @@ def _run_command(argv: tuple[str, ...], cwd: Path) -> int:
     return completed.returncode
 
 
-def _publish_contract_failure(
-    args: argparse.Namespace,
-    contract: PublicH800SearchContract,
-) -> bool:
-    try:
-        write_public_summary(
-            args.public_summary,
-            build_contract_failure_summary(contract, args.code_revision),
-        )
-    except OSError:
-        sys.stderr.write("summary_write_error\n")
-        return False
-    return True
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     """Return stable exit codes for completed, failed, and invalid searches."""
     try:
@@ -100,8 +83,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         local = load_local_config(args.local_config, contract)
     except H800SearchContractError:
-        if not _publish_contract_failure(args, contract):
-            return 2
         sys.stderr.write("contract_error\n")
         return 2
     try:

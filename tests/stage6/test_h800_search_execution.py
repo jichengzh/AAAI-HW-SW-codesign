@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import copy
+from dataclasses import replace
 import hashlib
 import json
 import math
@@ -69,7 +70,7 @@ def _local_config(*, asset_label: str = "training-data", **overrides: Any) -> di
             },
         ],
         "result_step": "evaluate",
-        "result_path_template": "/private/p6/results/final.json",
+        "result_path_template": "/private/p6/output/final.json",
         "local_output_root": "/private/p6/output",
     }
     return {**config, **overrides}
@@ -417,7 +418,7 @@ def test_load_local_config_is_pure_and_returns_immutable_values(tmp_path: Path) 
             "toolchain": "/unavailable/toolchain",
         },
         stage5_input_paths={"feedback": "/unavailable/feedback.json"},
-        result_path_template="/unavailable/final.json",
+        result_path_template=str(output_root / "final.json"),
         local_output_root=str(output_root),
     )
 
@@ -428,6 +429,41 @@ def test_load_local_config_is_pure_and_returns_immutable_values(tmp_path: Path) 
     assert loaded.steps[-1].argv[-1] == "{result_json}"
     with pytest.raises(TypeError):
         loaded.asset_paths["new"] = Path("/unavailable/new")  # type: ignore[index]
+
+
+@pytest.mark.parametrize("location", ["outside", "same_as_root"])
+def test_load_local_config_requires_result_path_beneath_local_output_root(
+    tmp_path: Path,
+    location: str,
+) -> None:
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    output_root = tmp_path / "private-output"
+    result_path = output_root if location == "same_as_root" else tmp_path / "public-result.json"
+    config = _local_config(
+        result_path_template=str(result_path),
+        local_output_root=str(output_root),
+    )
+
+    with pytest.raises(H800SearchContractError, match="result_path_template"):
+        load_local_config(_write_yaml(tmp_path / "local.yaml", config), contract)
+
+
+@pytest.mark.parametrize("document", ["public", "local"])
+def test_contract_loaders_normalize_invalid_utf8(
+    tmp_path: Path,
+    document: str,
+) -> None:
+    invalid_path = tmp_path / f"{document}.yaml"
+    invalid_path.write_bytes(b"\xff\xfe")
+
+    with pytest.raises(H800SearchContractError, match="could not load"):
+        if document == "public":
+            load_public_contract(invalid_path)
+        else:
+            contract = load_public_contract(
+                _write_yaml(tmp_path / "contract.yaml", _public_contract())
+            )
+            load_local_config(invalid_path, contract)
 
 
 def _profiles() -> list[dict[str, Any]]:
@@ -574,6 +610,7 @@ def _loaded_local_config(
     output_root: Path | None = None,
     steps: list[dict[str, Any]] | None = None,
 ):
+    resolved_output_root = output_root or tmp_path / "output"
     inputs = _stage5_inputs()
     input_paths: dict[str, str] = {}
     for name, payload in inputs.items():
@@ -596,8 +633,8 @@ def _loaded_local_config(
             }
         ],
         result_step="evaluate",
-        result_path_template=str(tmp_path / "result.json"),
-        local_output_root=str(output_root or tmp_path / "output"),
+        result_path_template=str(resolved_output_root / "result.json"),
+        local_output_root=str(resolved_output_root),
     )
     contract = _loaded_contract(tmp_path)
     return load_local_config(_write_yaml(tmp_path / "local.yaml", config), contract)
@@ -984,12 +1021,6 @@ def _public_summary_fixture() -> H800SearchSummary:
         successful_candidate_count=2,
         aggregate_metrics={
             "latency_ms": {"count": 8.0, "min": 1.0, "max": 3.0, "mean": 2.0},
-            "PRIVATE_METRIC_SENTINEL": {
-                "count": 1.0,
-                "min": 9.0,
-                "max": 9.0,
-                "mean": 9.0,
-            },
         },
         failure_code=None,
     )
@@ -1005,7 +1036,6 @@ def test_summary_to_public_dict_emits_only_fixed_redacted_fields(tmp_path: Path)
         "raw-round-metric-0.123456789",
         "a" * 64,
         "PRIVATE_SCHEMA_SENTINEL",
-        "PRIVATE_METRIC_SENTINEL",
     )
     _write_yaml(
         tmp_path / "local.yaml",
@@ -1079,6 +1109,56 @@ def test_write_public_summary_publishes_with_same_directory_atomic_replace(
     assert json.loads(output.read_text(encoding="utf-8"))["status"] == "completed"
     assert len(replacements) == 1
     assert replacements[0][1] == output
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["code_revision", "asset", "failure_code", "metric_name", "metric_value"],
+)
+def test_public_summary_functions_reject_unsafe_manually_constructed_values(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    summary = _public_summary_fixture()
+    if mutation == "code_revision":
+        summary = replace(summary, code_revision="/private/revision")
+    elif mutation == "asset":
+        summary = replace(
+            summary,
+            assets=(execution.RegisteredAsset("checkpoint", "v1", "cleared"),),
+        )
+    elif mutation == "failure_code":
+        summary = replace(
+            summary,
+            status="failed",
+            failure_code="PRIVATE_STDERR_TEXT",
+        )
+    elif mutation == "metric_name":
+        summary = replace(
+            summary,
+            aggregate_metrics={
+                "PRIVATE_METRIC": {"count": 1.0, "min": 1.0, "max": 1.0, "mean": 1.0}
+            },
+        )
+    else:
+        summary = replace(
+            summary,
+            aggregate_metrics={
+                "latency_ms": {
+                    "count": 1.0,
+                    "min": 1.0,
+                    "max": float("nan"),
+                    "mean": 1.0,
+                }
+            },
+        )
+
+    with pytest.raises(H800SearchContractError):
+        execution.summary_to_public_dict(summary)
+    output = tmp_path / "public-summary.json"
+    with pytest.raises(H800SearchContractError):
+        execution.write_public_summary(output, summary)
+    assert not output.exists()
 
 
 @pytest.mark.parametrize("code_revision", ["/private/revision", "a" * 64])

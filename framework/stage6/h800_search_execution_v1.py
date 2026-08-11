@@ -91,6 +91,20 @@ _STEP_KEYS = frozenset({"name", "argv"})
 _ALLOWED_TEMPLATE_TOKENS = frozenset(
     {"{candidate_request}", "{result_json}", "{local_output_root}"}
 )
+_SUMMARY_METRIC_KEYS = frozenset({"count", "min", "max", "mean"})
+_SUMMARY_FAILURE_CODES = frozenset(
+    {
+        "capability_target_invalid",
+        "command_failed",
+        "local_input_invalid",
+        "local_record_write_failed",
+        "result_candidate_mismatch",
+        "result_invalid_json",
+        "result_metrics_invalid",
+        "result_missing",
+        "stage5_selection_failed",
+    }
+)
 _PUBLIC_RESTRICTED_VALUE_PATTERNS = (
     re.compile(r"(?:^|[-_\s])host(?:name)?(?:[-_\s]|\d|$)", re.IGNORECASE),
     re.compile(r"(?:^|[-_\s])raw[-_\s]?logs?(?:[-_\s]|$)", re.IGNORECASE),
@@ -183,6 +197,7 @@ def validate_code_revision(value: str) -> str:
 
 def summary_to_public_dict(summary: H800SearchSummary) -> dict[str, object]:
     """Render the fixed public summary surface without local execution details."""
+    _validate_public_summary(summary)
     return {
         "schema": SUMMARY_SCHEMA_VERSION,
         "target": summary.target,
@@ -217,6 +232,7 @@ def summary_to_public_dict(summary: H800SearchSummary) -> dict[str, object]:
 
 def write_public_summary(path: Path, summary: H800SearchSummary) -> None:
     """Atomically publish a JSON summary through a temporary sibling file."""
+    payload = summary_to_public_dict(summary)
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(
         dir=path.parent,
@@ -227,7 +243,7 @@ def write_public_summary(path: Path, summary: H800SearchSummary) -> None:
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             json.dump(
-                summary_to_public_dict(summary),
+                payload,
                 handle,
                 ensure_ascii=True,
                 indent=2,
@@ -245,20 +261,64 @@ def write_public_summary(path: Path, summary: H800SearchSummary) -> None:
         raise
 
 
-def build_contract_failure_summary(
-    contract: PublicH800SearchContract,
-    code_revision: str,
-) -> H800SearchSummary:
-    """Build the fixed public failure summary for invalid local execution input."""
-    return _build_summary(
-        contract=contract,
-        code_revision=validate_code_revision(code_revision),
-        status="failed",
-        completed_rounds=0,
-        successful_candidate_count=0,
-        measured_metrics=(),
-        failure_code="contract_invalid",
+def _validate_public_summary(summary: H800SearchSummary) -> None:
+    if not isinstance(summary, H800SearchSummary) or summary.target != "h800":
+        raise H800SearchContractError("summary target is invalid")
+    validate_code_revision(summary.code_revision)
+    _require_public_identifier(summary.configuration_label, "configuration_label")
+    _require_positive_integer(summary.seed, "seed")
+    if not summary.assets or not all(
+        isinstance(asset, RegisteredAsset) for asset in summary.assets
+    ):
+        raise H800SearchContractError("summary assets are invalid")
+    asset_labels: set[str] = set()
+    for asset in summary.assets:
+        label = _require_public_identifier(asset.label, "asset label")
+        _require_public_identifier(asset.version, "asset version")
+        _require_public_identifier(asset.license_status, "asset license_status")
+        if label in asset_labels:
+            raise H800SearchContractError("summary asset labels must be unique")
+        asset_labels.add(label)
+
+    if summary.status == "completed":
+        if summary.failure_code is not None:
+            raise H800SearchContractError("completed summary cannot have a failure code")
+    elif summary.status == "failed":
+        if summary.failure_code not in _SUMMARY_FAILURE_CODES:
+            raise H800SearchContractError("summary failure code is invalid")
+    else:
+        raise H800SearchContractError("summary status is invalid")
+
+    counts = (
+        (summary.planned_rounds, "planned_rounds", True),
+        (summary.completed_rounds, "completed_rounds", False),
+        (summary.successful_candidate_count, "successful_candidate_count", False),
     )
+    for value, description, positive in counts:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or value < (1 if positive else 0)
+        ):
+            raise H800SearchContractError(f"summary {description} is invalid")
+    if summary.completed_rounds > summary.planned_rounds:
+        raise H800SearchContractError("summary completed_rounds is invalid")
+
+    if not isinstance(summary.aggregate_metrics, Mapping) or not set(
+        summary.aggregate_metrics
+    ).issubset(_MEASUREMENT_METRICS):
+        raise H800SearchContractError("summary aggregate metric names are invalid")
+    for values in summary.aggregate_metrics.values():
+        if not isinstance(values, Mapping) or set(values) != _SUMMARY_METRIC_KEYS:
+            raise H800SearchContractError("summary aggregate metric fields are invalid")
+        if not all(_finite_number(value) for value in values.values()):
+            raise H800SearchContractError("summary aggregate metric values are invalid")
+        count = float(values["count"])
+        minimum = float(values["min"])
+        maximum = float(values["max"])
+        mean = float(values["mean"])
+        if count < 1 or not count.is_integer() or not minimum <= mean <= maximum:
+            raise H800SearchContractError("summary aggregate metric values are invalid")
 
 
 def load_public_contract(path: Path) -> PublicH800SearchContract:
@@ -317,17 +377,21 @@ def load_local_config(path: Path, contract: PublicH800SearchContract) -> LocalH8
     if "{result_json}" not in steps[-1].argv:
         raise H800SearchContractError("result_step must produce {result_json}")
 
+    result_path_template = _parse_absolute_path(
+        raw_config["result_path_template"], "result_path_template"
+    )
+    local_output_root = _parse_absolute_path(
+        raw_config["local_output_root"], "local_output_root"
+    )
+    _require_path_beneath(result_path_template, local_output_root)
+
     return LocalH800SearchConfig(
         asset_paths=MappingProxyType(asset_paths),
         stage5_input_paths=MappingProxyType(stage5_input_paths),
         steps=steps,
         result_step=result_step,
-        result_path_template=_parse_absolute_path(
-            raw_config["result_path_template"], "result_path_template"
-        ),
-        local_output_root=_parse_absolute_path(
-            raw_config["local_output_root"], "local_output_root"
-        ),
+        result_path_template=result_path_template,
+        local_output_root=local_output_root,
     )
 
 
@@ -750,7 +814,7 @@ def _write_failure_record(output_root: Path, error: H800SearchExecutionError) ->
 def _load_mapping(path: Path, description: str) -> Mapping[str, Any]:
     try:
         loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except (OSError, yaml.YAMLError) as error:
+    except (OSError, UnicodeError, yaml.YAMLError) as error:
         raise H800SearchContractError(f"could not load {description}") from error
     if not isinstance(loaded, Mapping):
         raise H800SearchContractError(f"{description} must be a mapping")
@@ -877,6 +941,18 @@ def _parse_absolute_path(value: Any, description: str) -> Path:
     if not path.is_absolute():
         raise H800SearchContractError(f"{description} must be an absolute path")
     return path
+
+
+def _require_path_beneath(path: Path, root: Path) -> None:
+    try:
+        resolved_path = path.resolve(strict=False)
+        resolved_root = root.resolve(strict=False)
+    except (OSError, RuntimeError) as error:
+        raise H800SearchContractError("result_path_template is invalid") from error
+    if resolved_root not in resolved_path.parents:
+        raise H800SearchContractError(
+            "result_path_template must be beneath local_output_root"
+        )
 
 
 def _require_nonempty_string(value: Any, description: str) -> str:
