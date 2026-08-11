@@ -28,6 +28,34 @@ _STAGE5_INPUT_NAMES = frozenset(
     {"measurements", "candidate_registry", "graph_features", "capability_profiles", "closure"}
 )
 _MEASUREMENT_METRICS = ("latency_ms", "energy_j", "ap30", "ap50", "ap70")
+_EXPECTED_ARMS = frozenset(
+    {
+        ("tvm_auto", "fp16"),
+        ("tvm_auto", "int8"),
+        ("trt_engine", "fp16"),
+        ("trt_engine", "int8"),
+    }
+)
+_SHELL_EXECUTABLES = frozenset(
+    {
+        "bash",
+        "bash.exe",
+        "cmd",
+        "cmd.exe",
+        "csh",
+        "dash",
+        "fish",
+        "ksh",
+        "powershell",
+        "powershell.exe",
+        "pwsh",
+        "pwsh.exe",
+        "sh",
+        "sh.exe",
+        "tcsh",
+        "zsh",
+    }
+)
 _PUBLIC_KEYS = frozenset(
     {
         "schema_version",
@@ -325,6 +353,13 @@ def _load_stage5_inputs(
         raise H800SearchExecutionError("local_input_invalid", "graph features must be a list")
     if not isinstance(loaded["capability_profiles"], list):
         raise H800SearchExecutionError("local_input_invalid", "capability profiles must be a list")
+    if any(
+        not isinstance(profile, Mapping) or profile.get("hardware_target") != contract.target
+        for profile in loaded["capability_profiles"]
+    ):
+        raise H800SearchExecutionError(
+            "capability_target_invalid", "capability profiles must target h800"
+        )
     if not isinstance(loaded["candidate_registry"], Mapping):
         raise H800SearchExecutionError("local_input_invalid", "candidate registry must be an object")
     if not isinstance(loaded["closure"], Mapping):
@@ -412,6 +447,21 @@ def _execute_selected_group(
     if not all(isinstance(row, Mapping) for row in rows):
         raise H800SearchExecutionError(
             "stage5_selection_failed", "selected candidate rows are invalid"
+        )
+    arms = {
+        (str(row.get("dispatch_key")), str(row.get("q_mode")))
+        for row in rows
+    }
+    row_ids = [str(row.get("row_id") or "") for row in rows]
+    if (
+        len(rows) != 4
+        or arms != _EXPECTED_ARMS
+        or any(row.get("group_id") != candidate_id for row in rows)
+        or any(not row_id for row_id in row_ids)
+        or len(set(row_ids)) != len(row_ids)
+    ):
+        raise H800SearchExecutionError(
+            "stage5_selection_failed", "selected candidate must be one complete four-arm group"
         )
 
     round_directory = local.local_output_root / f"round-{round_index:04d}"
@@ -720,6 +770,9 @@ def _parse_argv(value: Any) -> tuple[str, ...]:
     if not isinstance(value, list) or not value:
         raise H800SearchContractError("step argv must be a non-empty list")
     argv = tuple(_require_nonempty_string(token, "argv token") for token in value)
+    executable = argv[0].replace("\\", "/").rsplit("/", 1)[-1].casefold()
+    if executable in _SHELL_EXECUTABLES:
+        raise H800SearchContractError("step argv must not invoke a shell executable")
     for token in argv:
         if ("{" in token or "}" in token) and token not in _ALLOWED_TEMPLATE_TOKENS:
             raise H800SearchContractError("argv contains an unknown or embedded placeholder")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import copy
 import hashlib
 import json
 import math
@@ -248,6 +249,30 @@ def test_load_local_config_rejects_shell_string_step(tmp_path: Path) -> None:
     )
 
     with pytest.raises(H800SearchContractError, match="argv"):
+        load_local_config(path, contract)
+
+
+@pytest.mark.parametrize(
+    "executable",
+    ["bash", "/bin/sh", "C:\\Windows\\System32\\cmd.exe", "PowerShell", "pwsh"],
+)
+def test_load_local_config_rejects_shell_executables(
+    tmp_path: Path, executable: str
+) -> None:
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    path = _write_yaml(
+        tmp_path / "local.yaml",
+        _local_config(
+            steps=[
+                {
+                    "name": "evaluate",
+                    "argv": [executable, "-c", "private-command", "{result_json}"],
+                }
+            ]
+        ),
+    )
+
+    with pytest.raises(H800SearchContractError, match="shell executable"):
         load_local_config(path, contract)
 
 
@@ -525,8 +550,22 @@ def _write_successful_measurement(seen_requests: list[dict[str, Any]]):
     return runner
 
 
-def test_run_h800_search_feeds_each_round_back_before_next_selection(tmp_path: Path) -> None:
+def test_run_h800_search_feeds_each_round_back_before_next_selection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     seen_requests: list[dict[str, Any]] = []
+    measured_row_counts: list[int] = []
+    online_feedback_counts: list[int] = []
+    real_fit = execution.fit_production_bundle
+
+    def recording_fit(rows: list[Mapping[str, Any]], *args: Any, **kwargs: Any):
+        measured_row_counts.append(len(rows))
+        online_feedback_counts.append(
+            sum(row.get("training_source") == "online_feedback" for row in rows)
+        )
+        return real_fit(rows, *args, **kwargs)
+
+    monkeypatch.setattr(execution, "fit_production_bundle", recording_fit)
 
     summary = run_h800_search(
         contract=_loaded_contract(tmp_path, max_rounds=2, batch_size=1),
@@ -541,8 +580,48 @@ def test_run_h800_search_feeds_each_round_back_before_next_selection(tmp_path: P
     assert summary.successful_candidate_count == 2
     assert len(seen_requests) == 2
     assert seen_requests[1]["feedback_count"] > seen_requests[0]["feedback_count"]
+    assert measured_row_counts == [24, 28]
+    assert online_feedback_counts == [8, 12]
     assert summary.aggregate_metrics["latency_ms"]["count"] == 8.0
     assert summary.failure_code is None
+
+
+def test_run_h800_search_rejects_non_h800_capability_profiles_before_selection(
+    tmp_path: Path,
+) -> None:
+    local = _loaded_local_config(tmp_path)
+    non_h800_profiles = [
+        build_capability_profile(
+            capability_profile_id=profile["capability_profile_id"],
+            hardware_target="rtx4090",
+            compiler_fingerprint=profile["compiler_fingerprint"],
+            dispatch_key=profile["dispatch_key"],
+            features=profile["features"],
+        )
+        for profile in _profiles()
+    ]
+    local.stage5_input_paths["capability_profiles"].write_text(
+        json.dumps(non_h800_profiles), encoding="utf-8"
+    )
+    calls = 0
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        nonlocal calls
+        del argv, cwd
+        calls += 1
+        return 0
+
+    summary = run_h800_search(
+        _loaded_contract(tmp_path, max_rounds=1, batch_size=1),
+        local,
+        "abc123",
+        runner,
+    )
+
+    assert summary.status == "failed"
+    assert summary.failure_code == "capability_target_invalid"
+    assert summary.completed_rounds == 0
+    assert calls == 0
 
 
 def test_run_h800_search_stops_after_a_nonzero_command(tmp_path: Path) -> None:
@@ -681,6 +760,44 @@ def test_run_h800_search_fails_when_stage5_selection_is_empty(
 
     summary = run_h800_search(
         _loaded_contract(tmp_path, max_rounds=2, batch_size=1),
+        _loaded_local_config(tmp_path),
+        "abc123",
+        runner,
+    )
+
+    assert summary.status == "failed"
+    assert summary.failure_code == "stage5_selection_failed"
+    assert summary.completed_rounds == 0
+    assert summary.successful_candidate_count == 0
+    assert calls == 0
+
+
+@pytest.mark.parametrize("mutation", ["missing_arm", "duplicate_arm"])
+def test_run_h800_search_rejects_incomplete_or_duplicate_selected_arms(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    real_select = execution.select_predicted_frontier_diversity
+
+    def invalid_selection(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        selection = real_select(*args, **kwargs)
+        rows = selection["groups"][0]["rows"]
+        if mutation == "missing_arm":
+            rows.pop()
+        else:
+            rows[1] = copy.deepcopy(rows[0])
+        return selection
+
+    monkeypatch.setattr(execution, "select_predicted_frontier_diversity", invalid_selection)
+    calls = 0
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        nonlocal calls
+        del argv, cwd
+        calls += 1
+        return 0
+
+    summary = run_h800_search(
+        _loaded_contract(tmp_path, max_rounds=1, batch_size=1),
         _loaded_local_config(tmp_path),
         "abc123",
         runner,
