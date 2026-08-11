@@ -58,7 +58,7 @@ def render_invalid_report() -> dict[str, object]:
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = _ArgumentParser(add_help=False)
+    parser = _ArgumentParser(add_help=False, allow_abbrev=False)
     parser.add_argument("--contract", required=True, type=Path)
     parser.add_argument("--observation", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)

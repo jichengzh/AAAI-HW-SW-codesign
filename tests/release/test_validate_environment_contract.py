@@ -142,6 +142,31 @@ def test_cli_writes_invalid_report_and_returns_two_for_invalid_observation(tmp_p
     }
 
 
+def test_cli_rejects_abbreviated_arguments_without_writing_a_report(tmp_path: Path) -> None:
+    root, contract, observation = _write_rtx_inputs(tmp_path, cuda="12.1")
+    output = tmp_path / "report.json"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--contra",
+            str(contract),
+            "--observ",
+            str(observation),
+            "--out",
+            str(output),
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert not output.exists()
+
+
 def test_cli_source_does_not_probe_the_host() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
 
