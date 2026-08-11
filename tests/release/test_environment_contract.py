@@ -29,7 +29,7 @@ def _write_contract_tree(tmp_path: Path, *, target: str) -> tuple[Path, Path]:
         ),
         encoding="utf-8",
     )
-    requires_gpu = target != "cpu"
+    requires_gpu = target != "cpu_reference"
     runtime = {
         "python": "3.11",
         "cuda": "12.1" if requires_gpu else None,
@@ -136,11 +136,11 @@ def test_validate_environment_returns_stable_field_only_failures(tmp_path: Path)
 
 def test_validate_environment_checks_cpu_gpu_framework_and_runtime_order(tmp_path: Path) -> None:
     module = _module()
-    root, contract_path = _write_contract_tree(tmp_path, target="cpu")
+    root, contract_path = _write_contract_tree(tmp_path, target="cpu_reference")
     contract = module.load_environment_contract(contract_path, repository_root=root)
     observation = _observation(
         module,
-        target="cpu",
+        target="cpu_reference",
         gpu_count=2,
         python="3.10",
         cuda="12.1",
@@ -222,8 +222,8 @@ def test_load_environment_contract_rejects_invalid_public_shape(
 @pytest.mark.parametrize(
     ("target", "runtime_update"),
     [
-        ("cpu", {"cuda": "12.1"}),
-        ("cpu", {"driver": "535.104"}),
+        ("cpu_reference", {"cuda": "12.1"}),
+        ("cpu_reference", {"driver": "535.104"}),
         ("rtx4090", {"cuda": None}),
         ("rtx4090", {"driver": None}),
     ],
@@ -255,7 +255,7 @@ def test_load_environment_contract_rejects_invalid_hardware_capability(tmp_path:
     [
         {"target": "rtx4090", "runtime": {}, "gpu_count": 1},
         {"target": "rtx4090", "runtime": {"python": "3.11"}, "gpu_count": True},
-        {"target": "cpu", "runtime": {"python": "3.11"}, "gpu_count": 1},
+        {"target": "cpu_reference", "runtime": {"python": "3.11"}, "gpu_count": 1},
     ],
 )
 def test_load_environment_observation_rejects_invalid_schema(
@@ -278,6 +278,81 @@ def test_load_environment_observation_rejects_gpu_target_with_no_visible_gpu(tmp
     observation_path.write_text(json.dumps(document), encoding="utf-8")
 
     with pytest.raises(module.EnvironmentContractError):
+        module.load_environment_observation(observation_path)
+
+
+def test_load_environment_observation_accepts_cpu_reference_without_gpu_runtime(tmp_path: Path) -> None:
+    module = _module()
+    observation_path = tmp_path / "cpu-observation.json"
+    observation_path.write_text(
+        json.dumps(
+            {
+                "schema": "environment_observation_v1",
+                "target": "cpu_reference",
+                "runtime": {
+                    "python": "3.11",
+                    "cuda": None,
+                    "driver": None,
+                    "framework_name": "torch",
+                    "framework_version": "2.4",
+                },
+                "gpu_count": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    observation = module.load_environment_observation(observation_path)
+
+    assert observation.target == "cpu_reference"
+    assert observation.gpu_count == 0
+
+
+@pytest.mark.parametrize(
+    ("runtime", "gpu_count", "message"),
+    [
+        (
+            {
+                "python": "3.11",
+                "cuda": None,
+                "driver": None,
+                "framework_name": "torch",
+                "framework_version": "2.4",
+            },
+            1,
+            "CPU observations must report gpu_count as 0",
+        ),
+        (
+            {
+                "python": "3.11",
+                "cuda": "12.1",
+                "driver": "535.104",
+                "framework_name": "torch",
+                "framework_version": "2.4",
+            },
+            0,
+            "CPU targets cannot declare CUDA or a driver",
+        ),
+    ],
+)
+def test_load_environment_observation_rejects_gpu_properties_for_cpu_reference(
+    tmp_path: Path, runtime: dict[str, str | None], gpu_count: int, message: str
+) -> None:
+    module = _module()
+    observation_path = tmp_path / "cpu-observation.json"
+    observation_path.write_text(
+        json.dumps(
+            {
+                "schema": "environment_observation_v1",
+                "target": "cpu_reference",
+                "runtime": runtime,
+                "gpu_count": gpu_count,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(module.EnvironmentContractError, match=message):
         module.load_environment_observation(observation_path)
 
 

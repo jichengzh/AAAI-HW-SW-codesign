@@ -71,6 +71,7 @@ _CONTRACT_FIELDS = {"schema", "target", "hardware_capability", "requires_gpu", "
 _RUNTIME_FIELDS = {"python", "cuda", "driver", "framework_name", "framework_version"}
 _OBSERVATION_FIELDS = {"schema", "target", "runtime", "gpu_count", "note"}
 _OBSERVATION_REQUIRED_FIELDS = _OBSERVATION_FIELDS - {"note"}
+_CPU_TARGET = "cpu_reference"
 _Runtime = TypeVar("_Runtime", RuntimeConstraint, RuntimeObservation)
 _VERSION_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+)*$")
 _VERSION_OPERATORS = (">=", "<=", ">", "<")
@@ -218,10 +219,11 @@ def load_environment_observation(path: Path) -> EnvironmentObservation:
     gpu_count = document.get("gpu_count")
     if type(gpu_count) is not int or gpu_count < 0:
         raise EnvironmentContractError("observation.gpu_count must be a non-negative integer")
-    _validate_runtime_for_target(target, target != "cpu", runtime.cuda, runtime.driver)
-    if target == "cpu" and gpu_count != 0:
+    is_cpu_target = _is_cpu_target(target)
+    _validate_runtime_for_target(target, not is_cpu_target, runtime.cuda, runtime.driver)
+    if is_cpu_target and gpu_count != 0:
         raise EnvironmentContractError("CPU observations must report gpu_count as 0")
-    if target != "cpu" and gpu_count <= 0:
+    if not is_cpu_target and gpu_count <= 0:
         raise EnvironmentContractError("GPU observations must report gpu_count greater than 0")
     return EnvironmentObservation(target=target, runtime=runtime, gpu_count=gpu_count)
 
@@ -295,12 +297,16 @@ def _parse_runtime(
 def _validate_runtime_for_target(
     target: str, requires_gpu: bool, cuda: str | None, driver: str | None
 ) -> None:
-    if target == "cpu" and requires_gpu:
+    if _is_cpu_target(target) and requires_gpu:
         raise EnvironmentContractError("CPU targets cannot require a GPU")
     if requires_gpu and (cuda is None or driver is None):
         raise EnvironmentContractError("GPU targets require CUDA and driver versions")
     if not requires_gpu and (cuda is not None or driver is not None):
         raise EnvironmentContractError("CPU targets cannot declare CUDA or a driver")
+
+
+def _is_cpu_target(target: str) -> bool:
+    return target == _CPU_TARGET
 
 
 __all__ = [
