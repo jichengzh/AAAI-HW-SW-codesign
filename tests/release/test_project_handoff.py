@@ -130,5 +130,16 @@ def test_p5_environment_contract_is_discoverable() -> None:
     contract = REPOSITORY_ROOT / "docs/release-manifests/P5_ENVIRONMENT_CONTRACT.md"
 
     assert contract.is_file()
-    assert "validate_environment_contract.py" in contract.read_text(encoding="utf-8")
-    assert "P5_ENVIRONMENT_CONTRACT.md" in HANDOFF.read_text(encoding="utf-8")
+    contract_text = contract.read_text(encoding="utf-8")
+    assert "validate_environment_contract.py" in contract_text
+    assert "只读取这三个显式路径" not in contract_text
+    assert "验证 environment contract 引用的公开 hardware capability YAML" in contract_text
+    assert "不访问网络或读取外部资源" in contract_text
+
+    handoff = HANDOFF.read_text(encoding="utf-8")
+    p5_plan_line = next(
+        line for line in handoff.splitlines() if line.startswith("| P5 |")
+    )
+    assert "[P5 环境契约](release-manifests/P5_ENVIRONMENT_CONTRACT.md)" in p5_plan_line
+    assert "进行中（本地）" in p5_plan_line
+    assert "已完成" not in p5_plan_line

@@ -17,9 +17,10 @@ python tools/release/validate_environment_contract.py \
   --output <environment-contract-report.json>
 ```
 
-`validate_environment_contract.py` 只读取这三个显式路径并写出脱敏报告。它是纯离线工具：
-不探测 GPU，不读取环境变量，不运行 CUDA 或 CUDA 编译，不运行训练、评测或基准，且不下载
-数据、权重、工具链或任何其他资产。
+`validate_environment_contract.py` 读取 CLI 指定的 environment contract 和 observation，写出 output，
+并验证 environment contract 引用的公开 hardware capability YAML。它是纯离线工具：
+不探测 GPU，不读取环境变量，不访问网络或读取外部资源，不运行 CUDA 或 CUDA 编译，不运行训练、
+评测或基准，且不下载数据、权重、工具链或任何其他资产。
 
 ## 稳定结果
 
