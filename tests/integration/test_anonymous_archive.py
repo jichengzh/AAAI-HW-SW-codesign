@@ -48,6 +48,8 @@ def anonymous_repo(tmp_path: Path) -> Path:
     _write(root / "scripts/stage2_update_evidence.py")
     _write(root / "data/demo.json", "{}\n")
     _write(root / "artifacts/verified.json", "{}\n")
+    _write(root / "configs/hardware/rtx4090.yaml", "schema: hardware_capability_v1\n")
+    _write(root / "configs/environment/rtx4090.yaml", "schema: environment_contract_v1\n")
     _write(root / "tests/test_smoke.py")
     _write(root / ".gitignore", ".venv/\n")
     _write(root / ".github/workflows/ci.yml", "name: anonymous-ci\n")
@@ -70,6 +72,7 @@ def test_anonymous_allowlist_uses_file_recursive_patterns() -> None:
         "scripts/reproduce/**/*",
         "data/**/*",
         "artifacts/**/*",
+        "configs/**/*",
         "tests/**/*",
         "tools/release/**/*",
     } <= entries
@@ -148,6 +151,8 @@ def test_builder_emits_only_anonymous_allowlisted_deterministic_files(
     assert ".github/workflows/ci.yml" in names
     assert ".gitignore" in names
     assert "requirements.txt" in names
+    assert "configs/hardware/rtx4090.yaml" in names
+    assert "configs/environment/rtx4090.yaml" in names
     assert "scripts/phase2/closedloop_objective_query.py" in names
     assert ".github/workflows/other.yml" not in names
     assert not {name for name in names if name.startswith("cache/")}

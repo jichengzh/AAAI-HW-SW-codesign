@@ -124,3 +124,11 @@ def test_p4_closure_records_the_successful_public_ci_gate() -> None:
     assert "31404700281" in handoff
     for job_name in ("quality (3.10)", "quality (3.11)", "public-smoke"):
         assert job_name in handoff
+
+
+def test_p5_environment_contract_is_discoverable() -> None:
+    contract = REPOSITORY_ROOT / "docs/release-manifests/P5_ENVIRONMENT_CONTRACT.md"
+
+    assert contract.is_file()
+    assert "validate_environment_contract.py" in contract.read_text(encoding="utf-8")
+    assert "P5_ENVIRONMENT_CONTRACT.md" in HANDOFF.read_text(encoding="utf-8")
