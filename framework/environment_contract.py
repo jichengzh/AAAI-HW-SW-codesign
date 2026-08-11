@@ -222,8 +222,6 @@ def load_environment_observation(path: Path) -> EnvironmentObservation:
         raise EnvironmentContractError("observation.gpu_count must be a non-negative integer")
     requires_gpu = _requires_gpu_for_target(target)
     _validate_runtime_for_target(target, requires_gpu, runtime.cuda, runtime.driver)
-    if not requires_gpu and gpu_count != 0:
-        raise EnvironmentContractError("CPU observations must report gpu_count as 0")
     if requires_gpu and gpu_count <= 0:
         raise EnvironmentContractError("GPU observations must report gpu_count greater than 0")
     return EnvironmentObservation(target=target, runtime=runtime, gpu_count=gpu_count)

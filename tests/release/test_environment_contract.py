@@ -331,20 +331,27 @@ def test_load_environment_observation_accepts_cpu_reference_without_gpu_runtime(
     assert observation.gpu_count == 0
 
 
+def test_load_environment_observation_defers_cpu_gpu_count_to_validation(tmp_path: Path) -> None:
+    module = _module()
+    root, contract_path = _write_contract_tree(tmp_path, target="cpu_reference")
+    observation_path = _observation_path(contract_path)
+    document = json.loads(observation_path.read_text(encoding="utf-8"))
+    document["gpu_count"] = 1
+    observation_path.write_text(json.dumps(document), encoding="utf-8")
+
+    observation = module.load_environment_observation(observation_path)
+    contract = module.load_environment_contract(contract_path, repository_root=root)
+    result = module.validate_environment(contract, observation)
+
+    assert observation.gpu_count == 1
+    assert [(failure.code, failure.field) for failure in result.failures] == [
+        ("runtime.gpu_count.unexpected", "gpu_count"),
+    ]
+
+
 @pytest.mark.parametrize(
     ("runtime", "gpu_count", "message"),
     [
-        (
-            {
-                "python": "3.11",
-                "cuda": None,
-                "driver": None,
-                "framework_name": "torch",
-                "framework_version": "2.4",
-            },
-            1,
-            "CPU observations must report gpu_count as 0",
-        ),
         (
             {
                 "python": "3.11",
