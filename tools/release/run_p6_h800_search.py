@@ -93,12 +93,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         sys.stderr.write("contract_error\n")
         return 2
 
-    summary = run_h800_search(
-        contract=contract,
-        local=local,
-        code_revision=args.code_revision,
-        command_runner=_run_command,
-    )
+    try:
+        summary = run_h800_search(
+            contract=contract,
+            local=local,
+            code_revision=args.code_revision,
+            command_runner=_run_command,
+            public_summary_path=args.public_summary,
+        )
+    except H800SearchContractError:
+        sys.stderr.write("contract_error\n")
+        return 2
     try:
         write_public_summary(args.public_summary, summary)
     except OSError:

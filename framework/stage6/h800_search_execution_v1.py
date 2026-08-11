@@ -400,9 +400,12 @@ def run_h800_search(
     local: LocalH800SearchConfig,
     code_revision: str,
     command_runner: CommandRunner,
+    *,
+    public_summary_path: Path,
 ) -> H800SearchSummary:
     """Run a fail-closed H800 feedback loop through injected argv execution."""
     code_revision = validate_code_revision(code_revision)
+    _validate_execution_paths(local, public_summary_path)
     feedback_rows: tuple[Mapping[str, Any], ...] = ()
     feedback_graphs: tuple[Mapping[str, Any], ...] = ()
     measured_metrics: tuple[Mapping[str, float], ...] = ()
@@ -944,6 +947,13 @@ def _parse_absolute_path(value: Any, description: str) -> Path:
 
 
 def _require_path_beneath(path: Path, root: Path) -> None:
+    if (
+        not isinstance(path, Path)
+        or not isinstance(root, Path)
+        or not path.is_absolute()
+        or not root.is_absolute()
+    ):
+        raise H800SearchContractError("result path boundary is invalid")
     try:
         resolved_path = path.resolve(strict=False)
         resolved_root = root.resolve(strict=False)
@@ -953,6 +963,31 @@ def _require_path_beneath(path: Path, root: Path) -> None:
         raise H800SearchContractError(
             "result_path_template must be beneath local_output_root"
         )
+
+
+def _validate_execution_paths(
+    local: LocalH800SearchConfig,
+    public_summary_path: Path,
+) -> None:
+    if not isinstance(local, LocalH800SearchConfig) or not isinstance(
+        public_summary_path, Path
+    ):
+        raise H800SearchContractError("execution path boundary is invalid")
+    _require_path_beneath(local.result_path_template, local.local_output_root)
+    try:
+        public_path = public_summary_path.resolve(strict=False)
+        output_root = local.local_output_root.resolve(strict=False)
+        result_path = local.result_path_template.resolve(strict=False)
+    except (OSError, RuntimeError) as error:
+        raise H800SearchContractError("execution path boundary is invalid") from error
+    if _paths_overlap(public_path, output_root) or _paths_overlap(
+        public_path, result_path
+    ):
+        raise H800SearchContractError("public and private paths overlap")
+
+
+def _paths_overlap(first: Path, second: Path) -> bool:
+    return first == second or first in second.parents or second in first.parents
 
 
 def _require_nonempty_string(value: Any, description: str) -> str:

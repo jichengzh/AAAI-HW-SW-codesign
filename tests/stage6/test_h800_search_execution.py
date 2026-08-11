@@ -448,6 +448,24 @@ def test_load_local_config_requires_result_path_beneath_local_output_root(
         load_local_config(_write_yaml(tmp_path / "local.yaml", config), contract)
 
 
+def test_load_local_config_rejects_result_path_through_symlink_outside_root(
+    tmp_path: Path,
+) -> None:
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    output_root = tmp_path / "private-output"
+    outside_root = tmp_path / "outside"
+    output_root.mkdir()
+    outside_root.mkdir()
+    (output_root / "escape").symlink_to(outside_root, target_is_directory=True)
+    config = _local_config(
+        result_path_template=str(output_root / "escape" / "result.json"),
+        local_output_root=str(output_root),
+    )
+
+    with pytest.raises(H800SearchContractError, match="result_path_template"):
+        load_local_config(_write_yaml(tmp_path / "local.yaml", config), contract)
+
+
 @pytest.mark.parametrize("document", ["public", "local"])
 def test_contract_loaders_normalize_invalid_utf8(
     tmp_path: Path,
@@ -691,6 +709,7 @@ def test_run_h800_search_feeds_each_round_back_before_next_selection(
         local=_loaded_local_config(tmp_path),
         code_revision="abc123",
         command_runner=_write_successful_measurement(seen_requests),
+        public_summary_path=tmp_path / "public-summary.json",
     )
 
     assert isinstance(summary, H800SearchSummary)
@@ -735,6 +754,7 @@ def test_run_h800_search_rejects_non_h800_capability_profiles_before_selection(
         local,
         "abc123",
         runner,
+        public_summary_path=tmp_path / "public-summary.json",
     )
 
     assert summary.status == "failed"
@@ -758,6 +778,7 @@ def test_run_h800_search_stops_after_a_nonzero_command(tmp_path: Path) -> None:
         local,
         "abc123",
         failing_runner,
+        public_summary_path=tmp_path / "public-summary.json",
     )
 
     assert summary.status == "failed"
@@ -800,6 +821,7 @@ def test_run_h800_search_requires_the_result_step_to_produce_the_result(
         local,
         "abc123",
         stale_result_runner,
+        public_summary_path=tmp_path / "public-summary.json",
     )
 
     assert summary.status == "failed"
@@ -851,6 +873,7 @@ def test_run_h800_search_rejects_invalid_results_and_stops(
         _loaded_local_config(tmp_path),
         "abc123",
         malformed_runner,
+        public_summary_path=tmp_path / "public-summary.json",
     )
 
     assert summary.status == "failed"
@@ -882,6 +905,7 @@ def test_run_h800_search_fails_when_stage5_selection_is_empty(
         _loaded_local_config(tmp_path),
         "abc123",
         runner,
+        public_summary_path=tmp_path / "public-summary.json",
     )
 
     assert summary.status == "failed"
@@ -920,6 +944,7 @@ def test_run_h800_search_rejects_incomplete_or_duplicate_selected_arms(
         _loaded_local_config(tmp_path),
         "abc123",
         runner,
+        public_summary_path=tmp_path / "public-summary.json",
     )
 
     assert summary.status == "failed"
@@ -943,6 +968,7 @@ def test_run_h800_search_converts_unexpected_stage5_errors_to_a_stable_failure(
         _loaded_local_config(tmp_path),
         "abc123",
         lambda argv, cwd: 0,
+        public_summary_path=tmp_path / "public-summary.json",
     )
 
     assert summary.status == "failed"
@@ -972,6 +998,7 @@ def test_run_h800_search_rejects_missing_local_inputs_before_selection(
         local,
         "abc123",
         runner,
+        public_summary_path=tmp_path / "public-summary.json",
     )
 
     assert summary.status == "failed"
@@ -998,6 +1025,7 @@ def test_run_h800_search_fails_closed_when_local_record_cannot_be_written(
         _loaded_local_config(tmp_path, output_root=output_root),
         "abc123",
         runner,
+        public_summary_path=tmp_path / "public-summary.json",
     )
 
     assert summary.status == "failed"
@@ -1180,6 +1208,82 @@ def test_run_h800_search_rejects_private_code_revision_before_execution(
             _loaded_local_config(tmp_path),
             code_revision,
             runner,
+            public_summary_path=tmp_path / "public-summary.json",
         )
 
     assert calls == 0
+
+
+@pytest.mark.parametrize("case", ["outside_root", "public_summary", "symlink_escape"])
+def test_run_h800_search_revalidates_manual_local_paths_before_execution(
+    tmp_path: Path,
+    case: str,
+) -> None:
+    output_root = tmp_path / "private-output"
+    local = _loaded_local_config(tmp_path, output_root=output_root)
+    public_summary = tmp_path / "public-summary.json"
+    if case == "outside_root":
+        result_path = tmp_path / "outside-result.json"
+    elif case == "public_summary":
+        result_path = public_summary
+    else:
+        output_root.mkdir()
+        result_path = output_root / "result-link.json"
+        result_path.symlink_to(public_summary)
+    unsafe_local = replace(local, result_path_template=result_path)
+    calls = 0
+
+    def leaking_runner(argv: tuple[str, ...], cwd: Path) -> int:
+        nonlocal calls
+        del cwd
+        calls += 1
+        Path(argv[2]).write_text(
+            json.dumps({"candidate_id": "PRIVATE_CANDIDATE", "measurements": [0.123]}),
+            encoding="utf-8",
+        )
+        return 0
+
+    with pytest.raises(H800SearchContractError, match="path"):
+        run_h800_search(
+            _loaded_contract(tmp_path, max_rounds=1, batch_size=1),
+            unsafe_local,
+            "test-revision",
+            leaking_runner,
+            public_summary_path=public_summary,
+        )
+
+    assert calls == 0
+    assert not public_summary.exists()
+    assert not (tmp_path / "outside-result.json").exists()
+    assert not any(output_root.glob("round-*"))
+
+
+def test_run_h800_search_validates_paths_before_loading_local_inputs(
+    tmp_path: Path,
+) -> None:
+    local = _loaded_local_config(tmp_path)
+    missing_assets = {**local.asset_paths, "training-data": tmp_path / "missing-asset"}
+    unsafe_local = replace(
+        local,
+        asset_paths=missing_assets,
+        result_path_template=tmp_path / "outside-result.json",
+    )
+    calls = 0
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        nonlocal calls
+        del argv, cwd
+        calls += 1
+        return 0
+
+    with pytest.raises(H800SearchContractError, match="path"):
+        run_h800_search(
+            _loaded_contract(tmp_path, max_rounds=1, batch_size=1),
+            unsafe_local,
+            "test-revision",
+            runner,
+            public_summary_path=tmp_path / "public-summary.json",
+        )
+
+    assert calls == 0
+    assert not local.local_output_root.exists()

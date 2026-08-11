@@ -11,6 +11,7 @@ import pytest
 import yaml
 
 from tests.stage6.test_h800_search_execution import _public_contract, _stage5_inputs
+from tools.release import run_p6_h800_search as h800_cli
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -268,6 +269,50 @@ def test_cli_rejects_result_path_equal_to_public_summary_before_execution(
 
     assert result.returncode == 2
     assert result.stderr == "contract_error\n"
+    assert not paths["call_log"].exists()
+    assert not paths["summary"].exists()
+
+
+def test_cli_passes_public_summary_to_controller_and_normalizes_boundary_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    paths = _cli_fixture(tmp_path)
+    seen_public_summaries: list[Path] = []
+
+    def reject_boundary(
+        contract: object,
+        local: object,
+        code_revision: str,
+        command_runner: object,
+        *,
+        public_summary_path: Path,
+    ) -> object:
+        del contract, local, code_revision, command_runner
+        seen_public_summaries.append(public_summary_path)
+        raise h800_cli.H800SearchContractError("public and private paths overlap")
+
+    monkeypatch.setattr(h800_cli, "run_h800_search", reject_boundary)
+
+    result = h800_cli.main(
+        [
+            "--contract",
+            str(paths["contract"]),
+            "--local-config",
+            str(paths["local"]),
+            "--public-summary",
+            str(paths["summary"]),
+            "--code-revision",
+            "test-revision",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert captured.out == ""
+    assert captured.err == "contract_error\n"
+    assert seen_public_summaries == [paths["summary"]]
     assert not paths["call_log"].exists()
     assert not paths["summary"].exists()
 
