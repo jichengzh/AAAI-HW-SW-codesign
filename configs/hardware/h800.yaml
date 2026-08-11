@@ -1,0 +1,9 @@
+name: NVIDIA H800
+arch:
+  family: Hopper
+  sm: sm90
+ips:
+  gpu:
+    precisions: [FP32, TF32, BF16, FP16, INT8, FP8]
+features:
+  tensor_core: true

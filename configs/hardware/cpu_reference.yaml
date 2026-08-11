@@ -1,0 +1,6 @@
+name: CPU reference
+arch:
+  family: generic-cpu
+ips:
+  cpu:
+    precisions: []

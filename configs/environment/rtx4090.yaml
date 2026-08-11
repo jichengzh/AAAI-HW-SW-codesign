@@ -1,0 +1,10 @@
+schema: environment_contract_v1
+target: rtx4090
+hardware_capability: configs/hardware/rtx4090.yaml
+requires_gpu: true
+runtime:
+  python: ">=3.10,<3.12"
+  cuda: ">=12.0,<13"
+  driver: ">=525"
+  framework_name: pytorch
+  framework_version: ">=2.0"

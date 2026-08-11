@@ -1,0 +1,12 @@
+{
+  "schema": "environment_observation_v1",
+  "target": "cpu_reference",
+  "runtime": {
+    "python": "3.11.9",
+    "cuda": null,
+    "driver": null,
+    "framework_name": "pytorch",
+    "framework_version": "2.4.0"
+  },
+  "gpu_count": 1
+}

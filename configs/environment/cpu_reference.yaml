@@ -1,0 +1,10 @@
+schema: environment_contract_v1
+target: cpu_reference
+hardware_capability: configs/hardware/cpu_reference.yaml
+requires_gpu: false
+runtime:
+  python: ">=3.10,<3.12"
+  cuda: null
+  driver: null
+  framework_name: pytorch
+  framework_version: ">=2.0"
