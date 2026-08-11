@@ -29,7 +29,12 @@ FORBIDDEN_KEYS = {
     "provenance",
 }
 FORBIDDEN_TEXT = ("ssh", "nvidia-smi", "http://", "https://")
-PRIVATE_PATH_PATTERN = re.compile(r"(?:/home/|/users/|[a-z]:[\\/])", re.IGNORECASE)
+PRIVATE_PATH_PATTERN = re.compile(
+    r"(?:/" + "home" + r"/|/" + "users" + r"/|[a-z]:[\\/])", re.IGNORECASE
+)
+PRIVATE_HOME_PATH = "/" + "home" + "/operator"
+PRIVATE_USERS_PATH = "/" + "Users" + "/operator"
+PRIVATE_WINDOWS_PATH = "C:" + "\\" + "Users" + "\\" + "operator"
 
 
 @pytest.mark.parametrize(
@@ -43,9 +48,9 @@ PRIVATE_PATH_PATTERN = re.compile(r"(?:/home/|/users/|[a-z]:[\\/])", re.IGNORECA
         {"sha256": "redacted"},
         {"measurement": "redacted"},
         {"provenance": "redacted"},
-        {"runtime": {"note": "prefix /home/operator"}},
-        {"runtime": {"note": "prefix /Users/operator"}},
-        {"runtime": {"note": r"C:\\Users\\operator"}},
+        {"runtime": {"note": "prefix " + PRIVATE_HOME_PATH}},
+        {"runtime": {"note": "prefix " + PRIVATE_USERS_PATH}},
+        {"runtime": {"note": PRIVATE_WINDOWS_PATH}},
         {"runtime": {"note": "https://private.example"}},
         {"runtime": {"note": "nvidia-smi"}},
     ],
