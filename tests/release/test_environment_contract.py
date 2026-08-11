@@ -198,6 +198,29 @@ def test_load_environment_contract_requires_exact_schema_version(
         module.load_environment_contract(contract_path, repository_root=root)
 
 
+@pytest.mark.parametrize("target", ["rtx4090", "h800"])
+def test_load_environment_contract_rejects_gpu_target_without_gpu_requirement(
+    tmp_path: Path, target: str
+) -> None:
+    module = _module()
+    root, contract_path = _write_contract_tree(tmp_path, target=target)
+    document = yaml.safe_load(contract_path.read_text(encoding="utf-8"))
+    document["requires_gpu"] = False
+    document["runtime"].update({"cuda": None, "driver": None})
+    contract_path.write_text(yaml.safe_dump(document), encoding="utf-8")
+
+    with pytest.raises(module.EnvironmentContractError):
+        module.load_environment_contract(contract_path, repository_root=root)
+
+
+def test_load_environment_contract_rejects_legacy_cpu_target(tmp_path: Path) -> None:
+    module = _module()
+    root, contract_path = _write_contract_tree(tmp_path, target="cpu")
+
+    with pytest.raises(module.EnvironmentContractError):
+        module.load_environment_contract(contract_path, repository_root=root)
+
+
 @pytest.mark.parametrize(
     "mutate",
     [

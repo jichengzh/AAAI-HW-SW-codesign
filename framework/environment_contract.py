@@ -72,6 +72,7 @@ _RUNTIME_FIELDS = {"python", "cuda", "driver", "framework_name", "framework_vers
 _OBSERVATION_FIELDS = {"schema", "target", "runtime", "gpu_count", "note"}
 _OBSERVATION_REQUIRED_FIELDS = _OBSERVATION_FIELDS - {"note"}
 _CPU_TARGET = "cpu_reference"
+_TARGET_REQUIRES_GPU = {_CPU_TARGET: False, "rtx4090": True, "h800": True}
 _Runtime = TypeVar("_Runtime", RuntimeConstraint, RuntimeObservation)
 _VERSION_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+)*$")
 _VERSION_OPERATORS = (">=", "<=", ">", "<")
@@ -219,11 +220,11 @@ def load_environment_observation(path: Path) -> EnvironmentObservation:
     gpu_count = document.get("gpu_count")
     if type(gpu_count) is not int or gpu_count < 0:
         raise EnvironmentContractError("observation.gpu_count must be a non-negative integer")
-    is_cpu_target = _is_cpu_target(target)
-    _validate_runtime_for_target(target, not is_cpu_target, runtime.cuda, runtime.driver)
-    if is_cpu_target and gpu_count != 0:
+    requires_gpu = _requires_gpu_for_target(target)
+    _validate_runtime_for_target(target, requires_gpu, runtime.cuda, runtime.driver)
+    if not requires_gpu and gpu_count != 0:
         raise EnvironmentContractError("CPU observations must report gpu_count as 0")
-    if not is_cpu_target and gpu_count <= 0:
+    if requires_gpu and gpu_count <= 0:
         raise EnvironmentContractError("GPU observations must report gpu_count greater than 0")
     return EnvironmentObservation(target=target, runtime=runtime, gpu_count=gpu_count)
 
@@ -297,16 +298,20 @@ def _parse_runtime(
 def _validate_runtime_for_target(
     target: str, requires_gpu: bool, cuda: str | None, driver: str | None
 ) -> None:
-    if _is_cpu_target(target) and requires_gpu:
-        raise EnvironmentContractError("CPU targets cannot require a GPU")
-    if requires_gpu and (cuda is None or driver is None):
+    target_requires_gpu = _requires_gpu_for_target(target)
+    if requires_gpu != target_requires_gpu:
+        raise EnvironmentContractError("requires_gpu must match the formal target class")
+    if target_requires_gpu and (cuda is None or driver is None):
         raise EnvironmentContractError("GPU targets require CUDA and driver versions")
-    if not requires_gpu and (cuda is not None or driver is not None):
+    if not target_requires_gpu and (cuda is not None or driver is not None):
         raise EnvironmentContractError("CPU targets cannot declare CUDA or a driver")
 
 
-def _is_cpu_target(target: str) -> bool:
-    return target == _CPU_TARGET
+def _requires_gpu_for_target(target: str) -> bool:
+    try:
+        return _TARGET_REQUIRES_GPU[target]
+    except KeyError as exc:
+        raise EnvironmentContractError("target must be cpu_reference, rtx4090, or h800") from exc
 
 
 __all__ = [
