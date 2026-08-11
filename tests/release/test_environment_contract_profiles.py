@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -17,8 +18,43 @@ from framework.capability_schema import HardwareCapability
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools" / "release" / "validate_environment_contract.py"
 PROFILES = ("cpu_reference", "rtx4090", "h800")
-FORBIDDEN_KEYS = {"hostname", "serial", "uuid"}
-FORBIDDEN_TEXT = ("ssh",)
+FORBIDDEN_KEYS = {
+    "host",
+    "hostname",
+    "ssh",
+    "uuid",
+    "serial",
+    "sha256",
+    "measurement",
+    "provenance",
+}
+FORBIDDEN_TEXT = ("ssh", "nvidia-smi", "http://", "https://")
+PRIVATE_PATH_PATTERN = re.compile(r"(?:/home/|/users/|[a-z]:[\\/])", re.IGNORECASE)
+
+
+@pytest.mark.parametrize(
+    "polluted_document",
+    [
+        {"host": "redacted"},
+        {"hostname": "redacted"},
+        {"ssh": "redacted"},
+        {"uuid": "redacted"},
+        {"serial": "redacted"},
+        {"sha256": "redacted"},
+        {"measurement": "redacted"},
+        {"provenance": "redacted"},
+        {"runtime": {"note": "prefix /home/operator"}},
+        {"runtime": {"note": "prefix /Users/operator"}},
+        {"runtime": {"note": r"C:\\Users\\operator"}},
+        {"runtime": {"note": "https://private.example"}},
+        {"runtime": {"note": "nvidia-smi"}},
+    ],
+)
+def test_public_redaction_guard_rejects_bound_private_markers(
+    polluted_document: dict[str, object],
+) -> None:
+    with pytest.raises(AssertionError):
+        _assert_public_json_is_redacted(polluted_document)
 
 
 def _run_cli(contract: Path, observation: Path, output: Path) -> subprocess.CompletedProcess[str]:
@@ -57,6 +93,7 @@ def _assert_public_json_is_redacted(value: object) -> None:
             _assert_public_json_is_redacted(item)
     elif isinstance(value, str):
         assert not value.startswith("/")
+        assert PRIVATE_PATH_PATTERN.search(value) is None
         assert not any(token in value.lower() for token in FORBIDDEN_TEXT)
 
 
@@ -85,7 +122,7 @@ def test_public_profiles_have_valid_and_invalid_offline_observations(
 def test_public_hardware_profiles_are_parseable(target: str, ip_name: str) -> None:
     capability = HardwareCapability.from_yaml(ROOT / "configs/hardware" / f"{target}.yaml")
 
-    assert ip_name in capability.ips
+    assert set(capability.ips) == {ip_name}
 
 
 @pytest.mark.parametrize(
@@ -108,8 +145,8 @@ def test_public_profiles_declare_the_published_capabilities_and_constraints(
         assert hardware["name"] == "CPU reference"
     assert HardwareCapability.from_yaml(hardware_path).arch == expected_arch
     assert hardware["ips"]["cpu" if not requires_gpu else "gpu"]["precisions"] == expected_precisions
-    if requires_gpu:
-        assert hardware["features"]["tensor_core"] is True
+    capability = HardwareCapability.from_yaml(hardware_path)
+    assert capability.features.tensor_core is requires_gpu
     assert contract["schema"] == "environment_contract_v1"
     assert contract["target"] == target
     assert contract["hardware_capability"] == f"configs/hardware/{target}.yaml"
@@ -146,6 +183,8 @@ def test_public_observation_fixtures_use_only_the_declared_runtime_deltas(target
         }[target]
     )
 
+    assert set(valid) == set(invalid)
+    assert set(valid["runtime"]) == set(invalid["runtime"])
     assert valid["runtime"] == {
         "python": "3.11.9",
         "cuda": "12.4" if target != "cpu_reference" else None,
