@@ -13,7 +13,7 @@ import yaml
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPOSITORY_ROOT / "tools" / "release" / "validate_environment_contract.py"
-TEST_CAPABILITY = REPOSITORY_ROOT / "configs" / "hardware" / "_p5_task3_test.yaml"
+TEST_CAPABILITY = REPOSITORY_ROOT / "configs" / "hardware" / "task3" / "rtx4090.yaml"
 
 
 @pytest.fixture(autouse=True)
@@ -54,8 +54,9 @@ def _write_rtx_inputs(tmp_path: Path, *, cuda: str) -> tuple[Path, Path, Path]:
     contract.write_text(
         yaml.safe_dump(
             {
-                "target": "_p5_task3_test",
-                "hardware_capability": "configs/hardware/_p5_task3_test.yaml",
+                "schema": "environment_contract_v1",
+                "target": "rtx4090",
+                "hardware_capability": "configs/hardware/task3/rtx4090.yaml",
                 "requires_gpu": True,
                 "runtime": runtime,
             }
@@ -66,7 +67,8 @@ def _write_rtx_inputs(tmp_path: Path, *, cuda: str) -> tuple[Path, Path, Path]:
     observation.write_text(
         json.dumps(
             {
-                "target": "_p5_task3_test",
+                "schema": "environment_observation_v1",
+                "target": "rtx4090",
                 "runtime": {**runtime, "cuda": cuda},
                 "gpu_count": 1,
             }
@@ -104,7 +106,7 @@ def test_cli_writes_redacted_failure_report_and_returns_one(tmp_path: Path) -> N
     assert result.returncode == 1
     assert json.loads(output.read_text(encoding="utf-8")) == {
         "schema": "environment_contract_report_v1",
-        "target": "_p5_task3_test",
+        "target": "rtx4090",
         "passed": False,
         "failures": [{"code": "runtime.cuda.out_of_range", "field": "runtime.cuda"}],
     }
@@ -120,7 +122,7 @@ def test_cli_returns_zero_and_writes_passing_report(tmp_path: Path) -> None:
     assert result.returncode == 0
     assert json.loads(output.read_text(encoding="utf-8")) == {
         "schema": "environment_contract_report_v1",
-        "target": "_p5_task3_test",
+        "target": "rtx4090",
         "passed": True,
         "failures": [],
     }
