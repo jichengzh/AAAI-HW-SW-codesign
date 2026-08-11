@@ -7,6 +7,7 @@ the host environment, invoke subprocesses, or initialize runtime frameworks.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypeVar
@@ -53,10 +54,120 @@ class EnvironmentObservation:
     gpu_count: int
 
 
+@dataclass(frozen=True)
+class ValidationFailure:
+    code: str
+    field: str
+
+
+@dataclass(frozen=True)
+class ValidationResult:
+    target: str
+    passed: bool
+    failures: tuple[ValidationFailure, ...]
+
+
 _CONTRACT_FIELDS = {"target", "hardware_capability", "requires_gpu", "runtime"}
 _RUNTIME_FIELDS = {"python", "cuda", "driver", "framework_name", "framework_version"}
 _OBSERVATION_FIELDS = {"target", "runtime", "gpu_count", "note"}
 _Runtime = TypeVar("_Runtime", RuntimeConstraint, RuntimeObservation)
+_VERSION_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+)*$")
+_VERSION_OPERATORS = (">=", "<=", "==", ">", "<")
+
+
+def version_satisfies(actual: str, expression: str) -> bool:
+    """Return whether a numeric dotted version meets every declared constraint."""
+    actual_parts = _version_parts(actual)
+    if type(expression) is not str or not expression:
+        raise EnvironmentContractError("version expression must be a non-empty string")
+
+    for clause in expression.split(","):
+        operator = next((item for item in _VERSION_OPERATORS if clause.startswith(item)), "")
+        required = clause[len(operator) :] if operator else clause
+        comparison = _compare_versions(actual_parts, _version_parts(required))
+        if not _comparison_satisfies(comparison, operator):
+            return False
+    return True
+
+
+def validate_environment(
+    contract: EnvironmentContract, observation: EnvironmentObservation
+) -> ValidationResult:
+    """Validate an explicit observation against a contract without host inspection."""
+    failures: list[ValidationFailure] = []
+    if observation.target != contract.target:
+        failures.append(ValidationFailure("observation.target.mismatch", "target"))
+    if contract.requires_gpu and observation.gpu_count <= 0:
+        failures.append(ValidationFailure("runtime.gpu_count.required", "gpu_count"))
+    if not contract.requires_gpu and observation.gpu_count != 0:
+        failures.append(ValidationFailure("runtime.gpu_count.unexpected", "gpu_count"))
+
+    runtime = contract.runtime
+    observed_runtime = observation.runtime
+    _append_version_failure(
+        failures, "runtime.python.out_of_range", "runtime.python", observed_runtime.python, runtime.python
+    )
+    _append_optional_version_failure(
+        failures, "runtime.cuda.out_of_range", "runtime.cuda", observed_runtime.cuda, runtime.cuda
+    )
+    _append_optional_version_failure(
+        failures, "runtime.driver.out_of_range", "runtime.driver", observed_runtime.driver, runtime.driver
+    )
+    if observed_runtime.framework_name != runtime.framework_name:
+        failures.append(ValidationFailure("runtime.framework.name.mismatch", "runtime.framework_name"))
+    _append_version_failure(
+        failures,
+        "runtime.framework.version.out_of_range",
+        "runtime.framework_version",
+        observed_runtime.framework_version,
+        runtime.framework_version,
+    )
+    return ValidationResult(contract.target, not failures, tuple(failures))
+
+
+def _version_parts(version: str) -> tuple[int, ...]:
+    if type(version) is not str or _VERSION_PATTERN.fullmatch(version) is None:
+        raise EnvironmentContractError("version must use numeric dotted parts")
+    return tuple(int(part) for part in version.split("."))
+
+
+def _compare_versions(left: tuple[int, ...], right: tuple[int, ...]) -> int:
+    width = max(len(left), len(right))
+    padded_left = left + (0,) * (width - len(left))
+    padded_right = right + (0,) * (width - len(right))
+    return (padded_left > padded_right) - (padded_left < padded_right)
+
+
+def _comparison_satisfies(comparison: int, operator: str) -> bool:
+    if operator == ">=":
+        return comparison >= 0
+    if operator == "<=":
+        return comparison <= 0
+    if operator == ">":
+        return comparison > 0
+    if operator == "<":
+        return comparison < 0
+    return comparison == 0
+
+
+def _append_version_failure(
+    failures: list[ValidationFailure], code: str, field: str, actual: str, expression: str
+) -> None:
+    if not version_satisfies(actual, expression):
+        failures.append(ValidationFailure(code, field))
+
+
+def _append_optional_version_failure(
+    failures: list[ValidationFailure],
+    code: str,
+    field: str,
+    actual: str | None,
+    expression: str | None,
+) -> None:
+    if actual is None and expression is None:
+        return
+    if actual is None or expression is None or not version_satisfies(actual, expression):
+        failures.append(ValidationFailure(code, field))
 
 
 def load_environment_contract(path: Path, *, repository_root: Path) -> EnvironmentContract:
@@ -185,6 +296,10 @@ __all__ = [
     "EnvironmentContract",
     "RuntimeObservation",
     "EnvironmentObservation",
+    "ValidationFailure",
+    "ValidationResult",
     "load_environment_contract",
     "load_environment_observation",
+    "version_satisfies",
+    "validate_environment",
 ]

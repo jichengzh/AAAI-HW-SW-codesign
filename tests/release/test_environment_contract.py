@@ -61,6 +61,107 @@ def _observation_path(contract_path: Path) -> Path:
     return contract_path.with_name("environment-observation.json")
 
 
+def _load_rtx_contract(module: Any, tmp_path: Path) -> Any:
+    root, contract_path = _write_contract_tree(tmp_path, target="rtx4090")
+    return module.load_environment_contract(contract_path, repository_root=root)
+
+
+def _observation(
+    module: Any,
+    *,
+    target: str = "rtx4090",
+    gpu_count: int = 1,
+    python: str = "3.11",
+    cuda: str | None = "12.1",
+    driver: str | None = "535.104",
+    framework_name: str = "torch",
+    framework_version: str = "2.4",
+) -> Any:
+    return module.EnvironmentObservation(
+        target=target,
+        gpu_count=gpu_count,
+        runtime=module.RuntimeObservation(
+            python=python,
+            cuda=cuda,
+            driver=driver,
+            framework_name=framework_name,
+            framework_version=framework_version,
+        ),
+    )
+
+
+def test_version_satisfies_uses_numeric_zero_padded_parts() -> None:
+    module = _module()
+
+    assert module.version_satisfies("12.4", ">=12.0,<13")
+    assert module.version_satisfies("12.4.0", "12.4")
+    assert not module.version_satisfies("11.8", ">=12.0,<13")
+    with pytest.raises(module.EnvironmentContractError, match="version"):
+        module.version_satisfies("12.4rc1", ">=12.0")
+
+
+@pytest.mark.parametrize("expression", [">=12..0", ">=12.0,", "~=12.0"])
+def test_version_satisfies_rejects_invalid_expressions(expression: str) -> None:
+    module = _module()
+
+    with pytest.raises(module.EnvironmentContractError, match="version"):
+        module.version_satisfies("12.4", expression)
+
+
+def test_validate_environment_returns_stable_field_only_failures(tmp_path: Path) -> None:
+    module = _module()
+    contract = _load_rtx_contract(module, tmp_path)
+    observation = _observation(module, cuda="11.8", gpu_count=0, target="h800")
+
+    result = module.validate_environment(contract, observation)
+
+    assert [(item.code, item.field) for item in result.failures] == [
+        ("observation.target.mismatch", "target"),
+        ("runtime.gpu_count.required", "gpu_count"),
+        ("runtime.cuda.out_of_range", "runtime.cuda"),
+    ]
+    assert result.target == "rtx4090"
+    assert result.passed is False
+    assert not hasattr(result, "observation")
+    assert not hasattr(result, "path")
+
+
+def test_validate_environment_checks_cpu_gpu_framework_and_runtime_order(tmp_path: Path) -> None:
+    module = _module()
+    root, contract_path = _write_contract_tree(tmp_path, target="cpu")
+    contract = module.load_environment_contract(contract_path, repository_root=root)
+    observation = _observation(
+        module,
+        target="cpu",
+        gpu_count=2,
+        python="3.10",
+        cuda="12.1",
+        driver="535.104",
+        framework_name="tensorflow",
+        framework_version="2.3",
+    )
+
+    result = module.validate_environment(contract, observation)
+
+    assert [(item.code, item.field) for item in result.failures] == [
+        ("runtime.gpu_count.unexpected", "gpu_count"),
+        ("runtime.python.out_of_range", "runtime.python"),
+        ("runtime.cuda.out_of_range", "runtime.cuda"),
+        ("runtime.driver.out_of_range", "runtime.driver"),
+        ("runtime.framework.name.mismatch", "runtime.framework_name"),
+        ("runtime.framework.version.out_of_range", "runtime.framework_version"),
+    ]
+
+
+def test_validate_environment_returns_passed_for_matching_observation(tmp_path: Path) -> None:
+    module = _module()
+    contract = _load_rtx_contract(module, tmp_path)
+
+    result = module.validate_environment(contract, _observation(module))
+
+    assert result == module.ValidationResult(target="rtx4090", passed=True, failures=())
+
+
 def test_load_environment_contract_accepts_only_declared_shape(tmp_path: Path) -> None:
     module = _module()
     root, contract_path = _write_contract_tree(tmp_path, target="rtx4090")
