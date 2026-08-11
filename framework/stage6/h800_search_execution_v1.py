@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+import re
 from types import MappingProxyType
 from typing import Any
 
@@ -45,6 +46,15 @@ _STEP_KEYS = frozenset({"name", "argv"})
 _ALLOWED_TEMPLATE_TOKENS = frozenset(
     {"{candidate_request}", "{result_json}", "{local_output_root}"}
 )
+_PUBLIC_RESTRICTED_VALUE_PATTERNS = (
+    re.compile(r"(?:^|[-_\s])host(?:name)?(?:[-_\s]|\d|$)", re.IGNORECASE),
+    re.compile(r"(?:^|[-_\s])raw[-_\s]?logs?(?:[-_\s]|$)", re.IGNORECASE),
+    re.compile(r"(?:^|[-_\s])checkpoint(?:[-_\s]|$)", re.IGNORECASE),
+    re.compile(r"(?:^|[-_\s])candidate(?:[-_\s]*id)?[-_\s]*\d+(?:[-_\s]|$)", re.IGNORECASE),
+    re.compile(r"(?:^|[-_\s])(?:sha(?:1|224|256|384|512)?|hash)(?:[:=_-]|$)", re.IGNORECASE),
+    re.compile(r"^(?:python(?:\d+(?:\.\d+)?)?|bash|sh|zsh|cmd(?:\.exe)?|powershell|pwsh)\b", re.IGNORECASE),
+)
+_RAW_DIGEST_PATTERN = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}|[0-9a-f]{128}", re.IGNORECASE)
 
 
 class H800SearchContractError(ValueError):
@@ -102,18 +112,18 @@ def load_public_contract(path: Path) -> PublicH800SearchContract:
     assets = _parse_assets(raw_contract["assets"])
     metric_names = _parse_string_list(raw_contract["metric_names"], "metric_names")
     return PublicH800SearchContract(
-        search_id=_require_nonempty_string(raw_contract["search_id"], "search_id"),
+        search_id=_require_public_identifier(raw_contract["search_id"], "search_id"),
         target="h800",
-        target_model=_require_nonempty_string(raw_contract["target_model"], "target_model"),
+        target_model=_require_public_identifier(raw_contract["target_model"], "target_model"),
         seed=_require_positive_integer(raw_contract["seed"], "seed"),
         max_rounds=_require_positive_integer(raw_contract["max_rounds"], "max_rounds"),
         batch_size=_require_positive_integer(raw_contract["batch_size"], "batch_size"),
-        configuration_label=_require_nonempty_string(
+        configuration_label=_require_public_identifier(
             raw_contract["configuration_label"], "configuration_label"
         ),
         assets=assets,
         metric_names=metric_names,
-        candidate_space_label=_require_nonempty_string(
+        candidate_space_label=_require_public_identifier(
             raw_contract["candidate_space_label"], "candidate_space_label"
         ),
     )
@@ -191,6 +201,7 @@ def _is_forbidden_public_key(key: object) -> bool:
         or normalized == "candidate_id"
         or "hash" in normalized
         or normalized.startswith("sha")
+        or normalized in {"raw_log", "raw_logs", "checkpoint"}
     )
 
 
@@ -215,9 +226,11 @@ def _parse_assets(value: Any) -> tuple[RegisteredAsset, ...]:
             raise H800SearchContractError("each asset must be a mapping")
         _require_exact_keys(raw_asset, _ASSET_KEYS, "asset")
         asset = RegisteredAsset(
-            label=_require_nonempty_string(raw_asset["label"], "asset label"),
-            version=_require_nonempty_string(raw_asset["version"], "asset version"),
-            license_status=_require_nonempty_string(raw_asset["license_status"], "asset license_status"),
+            label=_require_public_identifier(raw_asset["label"], "asset label"),
+            version=_require_public_identifier(raw_asset["version"], "asset version"),
+            license_status=_require_public_identifier(
+                raw_asset["license_status"], "asset license_status"
+            ),
         )
         if asset.label in labels:
             raise H800SearchContractError("asset labels must be unique")
@@ -229,7 +242,7 @@ def _parse_assets(value: Any) -> tuple[RegisteredAsset, ...]:
 def _parse_string_list(value: Any, description: str) -> tuple[str, ...]:
     if not isinstance(value, list) or not value:
         raise H800SearchContractError(f"{description} must be a non-empty list")
-    parsed = tuple(_require_nonempty_string(item, description) for item in value)
+    parsed = tuple(_require_public_identifier(item, description) for item in value)
     if len(set(parsed)) != len(parsed):
         raise H800SearchContractError(f"{description} must contain unique values")
     return parsed
@@ -284,6 +297,17 @@ def _require_nonempty_string(value: Any, description: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise H800SearchContractError(f"{description} must be a non-empty string")
     return value
+
+
+def _require_public_identifier(value: Any, description: str) -> str:
+    identifier = _require_nonempty_string(value, description)
+    if "/" in identifier or "\\" in identifier:
+        raise H800SearchContractError(f"{description} contains restricted public information")
+    if _RAW_DIGEST_PATTERN.fullmatch(identifier) or any(
+        pattern.search(identifier) for pattern in _PUBLIC_RESTRICTED_VALUE_PATTERNS
+    ):
+        raise H800SearchContractError(f"{description} contains restricted public information")
+    return identifier
 
 
 def _require_positive_integer(value: Any, description: str) -> int:

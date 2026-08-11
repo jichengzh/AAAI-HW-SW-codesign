@@ -71,6 +71,16 @@ def test_load_public_contract_requires_h800_and_public_fields(tmp_path: Path) ->
         load_public_contract(path)
 
 
+def test_load_public_contract_rejects_an_invalid_schema_version(tmp_path: Path) -> None:
+    path = _write_yaml(
+        tmp_path / "contract.yaml",
+        _public_contract(schema_version="p6_h800_search_contract_v0"),
+    )
+
+    with pytest.raises(H800SearchContractError, match="schema_version"):
+        load_public_contract(path)
+
+
 @pytest.mark.parametrize(
     "field,value",
     [
@@ -124,7 +134,10 @@ def test_load_public_contract_rejects_malformed_declared_values(
         load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract(**{field: value})))
 
 
-@pytest.mark.parametrize("forbidden_key", ["path", "command", "host", "candidate_id", "sha256"])
+@pytest.mark.parametrize(
+    "forbidden_key",
+    ["path", "command", "host", "candidate_id", "sha256", "raw_logs", "checkpoint"],
+)
 def test_load_public_contract_rejects_private_execution_details(
     tmp_path: Path, forbidden_key: str
 ) -> None:
@@ -133,6 +146,44 @@ def test_load_public_contract_rejects_private_execution_details(
 
     with pytest.raises(H800SearchContractError, match="forbidden"):
         load_public_contract(_write_yaml(tmp_path / "contract.yaml", contract))
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("search_id", "/private/run"),
+        ("configuration_label", "h800-host-01"),
+        ("configuration_label", "raw-logs-2026"),
+        ("configuration_label", "candidate-42"),
+        ("target_model", "python train.py"),
+    ],
+)
+def test_load_public_contract_rejects_restricted_information_in_allowed_strings(
+    tmp_path: Path, field: str, value: str
+) -> None:
+    with pytest.raises(H800SearchContractError, match="restricted"):
+        load_public_contract(
+            _write_yaml(tmp_path / "contract.yaml", _public_contract(**{field: value}))
+        )
+
+
+@pytest.mark.parametrize(
+    "asset",
+    [
+        {"label": "checkpoint", "version": "v1", "license_status": "cleared"},
+        {"label": "training-data", "version": "sha256:abc123", "license_status": "cleared"},
+        {
+            "label": "training-data",
+            "version": "a" * 64,
+            "license_status": "cleared",
+        },
+    ],
+)
+def test_load_public_contract_rejects_restricted_information_in_asset_values(
+    tmp_path: Path, asset: dict[str, str]
+) -> None:
+    with pytest.raises(H800SearchContractError, match="restricted"):
+        load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract(assets=[asset])))
 
 
 def test_load_public_contract_rejects_unknown_and_non_mapping_roots(tmp_path: Path) -> None:
