@@ -1,0 +1,22 @@
+schema_version: p6_h800_search_contract_v1
+search_id: p6-h800-example
+target: h800
+target_model: pyramid
+seed: 73
+max_rounds: 2
+batch_size: 2
+configuration_label: p6-h800-example-baseline
+metric_names:
+  - ap
+  - latency_ms
+candidate_space_label: pyramid-search-space-v1
+assets:
+  - label: training-data
+    version: v1
+    license_status: cleared
+  - label: model-init
+    version: v1
+    license_status: cleared
+  - label: toolchain
+    version: v1
+    license_status: cleared

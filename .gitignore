@@ -36,3 +36,4 @@ repro-verified-output/
 *.safetensors
 *.trt
 docs/release-manifests/P2_PRIVATE_SOURCE_INVENTORY.json
+/configs/local/p6_h800_search.local.yaml
