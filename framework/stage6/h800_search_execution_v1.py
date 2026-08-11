@@ -2,18 +2,32 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+import json
+import math
 from pathlib import Path
 import re
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Literal, Protocol
 
 import yaml
+
+from framework.stage5.production_search_v1 import (
+    build_candidate_manifest,
+    fit_production_bundle,
+    predict_candidate_rows,
+    select_predicted_frontier_diversity,
+)
 
 
 PUBLIC_SCHEMA_VERSION = "p6_h800_search_contract_v1"
 LOCAL_SCHEMA_VERSION = "p6_h800_search_local_v1"
+SUMMARY_SCHEMA_VERSION = "p6_h800_search_summary_v1"
+_STAGE5_INPUT_NAMES = frozenset(
+    {"measurements", "candidate_registry", "graph_features", "capability_profiles", "closure"}
+)
+_MEASUREMENT_METRICS = ("latency_ms", "energy_j", "ap30", "ap50", "ap70")
 _PUBLIC_KEYS = frozenset(
     {
         "schema_version",
@@ -64,6 +78,20 @@ class H800SearchContractError(ValueError):
     """Raised when a P6 public or local search contract is unsafe or incomplete."""
 
 
+class H800SearchExecutionError(RuntimeError):
+    """Controlled local H800 execution failure with a stable public code."""
+
+    def __init__(self, failure_code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.failure_code = failure_code
+
+
+class CommandRunner(Protocol):
+    """Narrow injection boundary for one argv-only local execution step."""
+
+    def __call__(self, argv: tuple[str, ...], cwd: Path) -> int: ...
+
+
 @dataclass(frozen=True)
 class RegisteredAsset:
     label: str
@@ -99,6 +127,22 @@ class LocalH800SearchConfig:
     result_step: str
     result_path_template: Path
     local_output_root: Path
+
+
+@dataclass(frozen=True)
+class H800SearchSummary:
+    schema: str
+    target: str
+    code_revision: str
+    seed: int
+    configuration_label: str
+    assets: tuple[RegisteredAsset, ...]
+    status: Literal["completed", "failed"]
+    planned_rounds: int
+    completed_rounds: int
+    successful_candidate_count: int
+    aggregate_metrics: Mapping[str, Mapping[str, float]]
+    failure_code: str | None
 
 
 def load_public_contract(path: Path) -> PublicH800SearchContract:
@@ -167,6 +211,399 @@ def load_local_config(path: Path, contract: PublicH800SearchContract) -> LocalH8
             raw_config["local_output_root"], "local_output_root"
         ),
     )
+
+
+def run_h800_search(
+    contract: PublicH800SearchContract,
+    local: LocalH800SearchConfig,
+    code_revision: str,
+    command_runner: CommandRunner,
+) -> H800SearchSummary:
+    """Run a fail-closed H800 feedback loop through injected argv execution."""
+    feedback_rows: tuple[Mapping[str, Any], ...] = ()
+    feedback_graphs: tuple[Mapping[str, Any], ...] = ()
+    measured_metrics: tuple[Mapping[str, float], ...] = ()
+    completed_rounds = 0
+    successful_candidate_count = 0
+
+    try:
+        for round_index in range(1, contract.max_rounds + 1):
+            stage5_inputs = _load_stage5_inputs(contract, local)
+            base_rows = stage5_inputs["measurements"]
+            base_graphs = stage5_inputs["graph_features"]
+            measured_rows = (*base_rows, *feedback_rows)
+            measured_graphs = (*base_graphs, *feedback_graphs)
+            selection = _select_round(
+                contract=contract,
+                measured_rows=measured_rows,
+                measured_graphs=measured_graphs,
+                source_registry=stage5_inputs["candidate_registry"],
+                capability_profiles=stage5_inputs["capability_profiles"],
+                closure=stage5_inputs["closure"],
+            )
+            groups = selection.get("groups")
+            if not isinstance(groups, list) or not groups:
+                raise H800SearchExecutionError(
+                    "stage5_selection_failed", "Stage5 returned an empty selection"
+                )
+
+            round_feedback_rows: tuple[Mapping[str, Any], ...] = ()
+            round_feedback_graphs: tuple[Mapping[str, Any], ...] = ()
+            for candidate_index, selected_group in enumerate(groups, start=1):
+                result_rows, result_graph, metrics = _execute_selected_group(
+                    local=local,
+                    command_runner=command_runner,
+                    selected_group=selected_group,
+                    round_index=round_index,
+                    candidate_index=candidate_index,
+                    candidate_count=len(groups),
+                    feedback_count=len(measured_rows) + len(round_feedback_rows),
+                )
+                round_feedback_rows = (*round_feedback_rows, *result_rows)
+                if not any(
+                    graph["group_id"] == result_graph["group_id"]
+                    for graph in (*feedback_graphs, *round_feedback_graphs)
+                ):
+                    round_feedback_graphs = (*round_feedback_graphs, result_graph)
+                measured_metrics = (*measured_metrics, *metrics)
+                successful_candidate_count += 1
+
+            feedback_rows = (*feedback_rows, *round_feedback_rows)
+            feedback_graphs = (*feedback_graphs, *round_feedback_graphs)
+            completed_rounds += 1
+    except H800SearchExecutionError as error:
+        _write_failure_record(local.local_output_root, error)
+        return _build_summary(
+            contract=contract,
+            code_revision=code_revision,
+            status="failed",
+            completed_rounds=completed_rounds,
+            successful_candidate_count=successful_candidate_count,
+            measured_metrics=measured_metrics,
+            failure_code=error.failure_code,
+        )
+
+    return _build_summary(
+        contract=contract,
+        code_revision=code_revision,
+        status="completed",
+        completed_rounds=completed_rounds,
+        successful_candidate_count=successful_candidate_count,
+        measured_metrics=measured_metrics,
+        failure_code=None,
+    )
+
+
+def _load_stage5_inputs(
+    contract: PublicH800SearchContract,
+    local: LocalH800SearchConfig,
+) -> dict[str, Any]:
+    for asset in contract.assets:
+        path = local.asset_paths[asset.label]
+        if not path.exists() or not (path.is_file() or path.is_dir()):
+            raise H800SearchExecutionError("local_input_invalid", "registered asset is unavailable")
+    if set(local.stage5_input_paths) != _STAGE5_INPUT_NAMES:
+        raise H800SearchExecutionError(
+            "local_input_invalid", "Stage5 input labels do not match the required inputs"
+        )
+
+    loaded: dict[str, Any] = {}
+    for name in sorted(_STAGE5_INPUT_NAMES):
+        path = local.stage5_input_paths[name]
+        if not path.is_file():
+            raise H800SearchExecutionError("local_input_invalid", "Stage5 input is unavailable")
+        try:
+            loaded[name] = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise H800SearchExecutionError(
+                "local_input_invalid", "Stage5 input could not be loaded"
+            ) from error
+
+    if not isinstance(loaded["measurements"], list):
+        raise H800SearchExecutionError("local_input_invalid", "measurements must be a list")
+    if not isinstance(loaded["graph_features"], list):
+        raise H800SearchExecutionError("local_input_invalid", "graph features must be a list")
+    if not isinstance(loaded["capability_profiles"], list):
+        raise H800SearchExecutionError("local_input_invalid", "capability profiles must be a list")
+    if not isinstance(loaded["candidate_registry"], Mapping):
+        raise H800SearchExecutionError("local_input_invalid", "candidate registry must be an object")
+    if not isinstance(loaded["closure"], Mapping):
+        raise H800SearchExecutionError("local_input_invalid", "closure must be an object")
+    return loaded
+
+
+def _select_round(
+    *,
+    contract: PublicH800SearchContract,
+    measured_rows: Sequence[Mapping[str, Any]],
+    measured_graphs: Sequence[Mapping[str, Any]],
+    source_registry: Mapping[str, Any],
+    capability_profiles: Sequence[Mapping[str, Any]],
+    closure: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    try:
+        bundle = fit_production_bundle(
+            measured_rows,
+            measured_graphs,
+            capability_profiles,
+            closure,
+            seed=contract.seed,
+        )
+        manifest = build_candidate_manifest(
+            source_registry,
+            measured_group_ids={str(row["group_id"]) for row in measured_rows},
+            frozen_holdout=closure.get("frozen_holdout") or {"groups": []},
+            capability_profiles=capability_profiles,
+        )
+        candidate_rows = manifest.get("rows")
+        if not isinstance(candidate_rows, list) or not candidate_rows:
+            raise ValueError("candidate manifest is empty")
+        target_group_ids = {
+            str(row["group_id"])
+            for row in candidate_rows
+            if row.get("model") == contract.target_model
+        }
+        if not target_group_ids:
+            raise ValueError("target model has no eligible candidate groups")
+        predicted = predict_candidate_rows(bundle, candidate_rows, capability_profiles)
+        selection = select_predicted_frontier_diversity(
+            predicted,
+            measured_rows,
+            measured_graphs,
+            group_budget_by_model={
+                contract.target_model: min(contract.batch_size, len(target_group_ids))
+            },
+        )
+    except Exception as error:
+        raise H800SearchExecutionError(
+            "stage5_selection_failed", f"Stage5 fitting or selection failed: {error}"
+        ) from error
+    if not isinstance(selection, Mapping):
+        raise H800SearchExecutionError(
+            "stage5_selection_failed", "Stage5 selection must be an object"
+        )
+    return selection
+
+
+def _execute_selected_group(
+    *,
+    local: LocalH800SearchConfig,
+    command_runner: CommandRunner,
+    selected_group: Any,
+    round_index: int,
+    candidate_index: int,
+    candidate_count: int,
+    feedback_count: int,
+) -> tuple[
+    tuple[Mapping[str, Any], ...],
+    Mapping[str, Any],
+    tuple[Mapping[str, float], ...],
+]:
+    if not isinstance(selected_group, Mapping):
+        raise H800SearchExecutionError(
+            "stage5_selection_failed", "selected candidate group must be an object"
+        )
+    candidate_id = selected_group.get("group_id")
+    rows = selected_group.get("rows")
+    if not isinstance(candidate_id, str) or not candidate_id or not isinstance(rows, list) or not rows:
+        raise H800SearchExecutionError(
+            "stage5_selection_failed", "selected candidate group is incomplete"
+        )
+    if not all(isinstance(row, Mapping) for row in rows):
+        raise H800SearchExecutionError(
+            "stage5_selection_failed", "selected candidate rows are invalid"
+        )
+
+    round_directory = local.local_output_root / f"round-{round_index:04d}"
+    candidate_directory = (
+        round_directory
+        if candidate_count == 1
+        else round_directory / f"candidate-{candidate_index:04d}"
+    )
+    request_path = candidate_directory / "candidate_request.json"
+    request = {
+        "schema_version": "p6_h800_candidate_request_v1",
+        "round_index": round_index,
+        "candidate_index": candidate_index,
+        "candidate_id": candidate_id,
+        "feedback_count": feedback_count,
+        "rows": [dict(row) for row in rows],
+    }
+    _write_json_record(request_path, request)
+
+    result_path = local.result_path_template
+    replacements = {
+        "{candidate_request}": str(request_path),
+        "{result_json}": str(result_path),
+        "{local_output_root}": str(local.local_output_root),
+    }
+    for step in local.steps:
+        if step.name == local.result_step:
+            try:
+                result_path.unlink(missing_ok=True)
+            except OSError as error:
+                raise H800SearchExecutionError(
+                    "local_record_write_failed", "stale result could not be removed"
+                ) from error
+        argv = tuple(replacements.get(token, token) for token in step.argv)
+        try:
+            return_code = command_runner(argv, candidate_directory)
+        except Exception as error:
+            raise H800SearchExecutionError("command_failed", "local command runner failed") from error
+        if isinstance(return_code, bool) or not isinstance(return_code, int) or return_code != 0:
+            raise H800SearchExecutionError("command_failed", "local command returned nonzero")
+
+    result = _load_result(result_path)
+    return _validate_result(candidate_id, rows, result)
+
+
+def _write_json_record(path: Path, payload: Mapping[str, Any]) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(payload, ensure_ascii=True, sort_keys=True),
+            encoding="utf-8",
+        )
+    except (OSError, TypeError, ValueError) as error:
+        raise H800SearchExecutionError(
+            "local_record_write_failed", "local execution record could not be written"
+        ) from error
+
+
+def _load_result(path: Path) -> Mapping[str, Any]:
+    if not path.is_file():
+        raise H800SearchExecutionError("result_missing", "result JSON was not produced")
+    try:
+        result = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise H800SearchExecutionError("result_invalid_json", "result JSON could not be loaded") from error
+    if not isinstance(result, Mapping):
+        raise H800SearchExecutionError("result_invalid_json", "result JSON must be an object")
+    return result
+
+
+def _validate_result(
+    candidate_id: str,
+    selected_rows: Sequence[Mapping[str, Any]],
+    result: Mapping[str, Any],
+) -> tuple[
+    tuple[Mapping[str, Any], ...],
+    Mapping[str, Any],
+    tuple[Mapping[str, float], ...],
+]:
+    if set(result) != {"candidate_id", "measurements"}:
+        raise H800SearchExecutionError("result_metrics_invalid", "result fields are invalid")
+    if result.get("candidate_id") != candidate_id:
+        raise H800SearchExecutionError(
+            "result_candidate_mismatch", "result candidate does not match request"
+        )
+    measurements = result.get("measurements")
+    if not isinstance(measurements, list) or len(measurements) != len(selected_rows):
+        raise H800SearchExecutionError(
+            "result_metrics_invalid", "result measurements are incomplete"
+        )
+
+    expected_keys = {"candidate_id", *_MEASUREMENT_METRICS}
+    feedback_rows: list[Mapping[str, Any]] = []
+    metric_rows: list[Mapping[str, float]] = []
+    for selected_row, measurement in zip(selected_rows, measurements, strict=True):
+        if not isinstance(measurement, Mapping) or set(measurement) != expected_keys:
+            raise H800SearchExecutionError(
+                "result_metrics_invalid", "measurement fields are invalid"
+            )
+        if measurement.get("candidate_id") != selected_row.get("row_id"):
+            raise H800SearchExecutionError(
+                "result_candidate_mismatch", "measurement candidate does not match request"
+            )
+        metrics = {name: measurement[name] for name in _MEASUREMENT_METRICS}
+        if not all(_finite_number(value) for value in metrics.values()):
+            raise H800SearchExecutionError(
+                "result_metrics_invalid", "measurement values must be finite numbers"
+            )
+        detached_metrics = MappingProxyType(
+            {name: float(value) for name, value in metrics.items()}
+        )
+        source = {
+            name: value
+            for name, value in selected_row.items()
+            if name not in {"schema_version", "graph_features", "predictions", "prediction_intervals", "prediction_bundle_sha256"}
+        }
+        feedback_rows.append(
+            MappingProxyType(
+                {
+                    **source,
+                    **detached_metrics,
+                    "training_source": "online_feedback",
+                    "terminal_status": "measured_success_gold",
+                }
+            )
+        )
+        metric_rows.append(detached_metrics)
+
+    graph = selected_rows[0].get("graph_features")
+    if not isinstance(graph, Mapping):
+        raise H800SearchExecutionError(
+            "stage5_selection_failed", "selected candidate graph features are missing"
+        )
+    return tuple(feedback_rows), dict(graph), tuple(metric_rows)
+
+
+def _finite_number(value: Any) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+
+
+def _aggregate_metrics(
+    measured_metrics: Sequence[Mapping[str, float]],
+) -> Mapping[str, Mapping[str, float]]:
+    aggregates: dict[str, Mapping[str, float]] = {}
+    for name in _MEASUREMENT_METRICS:
+        values = [float(row[name]) for row in measured_metrics]
+        if values:
+            aggregates[name] = MappingProxyType(
+                {
+                    "count": float(len(values)),
+                    "min": min(values),
+                    "max": max(values),
+                    "mean": sum(values) / len(values),
+                }
+            )
+    return MappingProxyType(aggregates)
+
+
+def _build_summary(
+    *,
+    contract: PublicH800SearchContract,
+    code_revision: str,
+    status: Literal["completed", "failed"],
+    completed_rounds: int,
+    successful_candidate_count: int,
+    measured_metrics: Sequence[Mapping[str, float]],
+    failure_code: str | None,
+) -> H800SearchSummary:
+    return H800SearchSummary(
+        schema=SUMMARY_SCHEMA_VERSION,
+        target=contract.target,
+        code_revision=code_revision,
+        seed=contract.seed,
+        configuration_label=contract.configuration_label,
+        assets=contract.assets,
+        status=status,
+        planned_rounds=contract.max_rounds,
+        completed_rounds=completed_rounds,
+        successful_candidate_count=successful_candidate_count,
+        aggregate_metrics=_aggregate_metrics(measured_metrics),
+        failure_code=failure_code,
+    )
+
+
+def _write_failure_record(output_root: Path, error: H800SearchExecutionError) -> None:
+    try:
+        _write_json_record(
+            output_root / "failure.json",
+            {"failure_code": error.failure_code, "detail": str(error)},
+        )
+    except H800SearchExecutionError:
+        return
 
 
 def _load_mapping(path: Path, description: str) -> Mapping[str, Any]:
