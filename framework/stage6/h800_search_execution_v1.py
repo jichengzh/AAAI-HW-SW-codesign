@@ -50,7 +50,10 @@ _PUBLIC_RESTRICTED_VALUE_PATTERNS = (
     re.compile(r"(?:^|[-_\s])host(?:name)?(?:[-_\s]|\d|$)", re.IGNORECASE),
     re.compile(r"(?:^|[-_\s])raw[-_\s]?logs?(?:[-_\s]|$)", re.IGNORECASE),
     re.compile(r"(?:^|[-_\s])checkpoint(?:[-_\s]|$)", re.IGNORECASE),
-    re.compile(r"(?:^|[-_\s])candidate(?:[-_\s]*id)?[-_\s]*\d+(?:[-_\s]|$)", re.IGNORECASE),
+    re.compile(
+        r"(?:^|[-_\s])candidate(?:[-_\s]+id)?[-_\s]+[a-z0-9]+(?:[-_\s]|$)",
+        re.IGNORECASE,
+    ),
     re.compile(r"(?:^|[-_\s])(?:sha(?:1|224|256|384|512)?|hash)(?:[:=_-]|$)", re.IGNORECASE),
     re.compile(r"^(?:python(?:\d+(?:\.\d+)?)?|bash|sh|zsh|cmd(?:\.exe)?|powershell|pwsh)\b", re.IGNORECASE),
 )
@@ -301,9 +304,9 @@ def _require_nonempty_string(value: Any, description: str) -> str:
 
 def _require_public_identifier(value: Any, description: str) -> str:
     identifier = _require_nonempty_string(value, description)
-    if "/" in identifier or "\\" in identifier:
+    if "/" in identifier or "\\" in identifier or any(character.isspace() for character in identifier):
         raise H800SearchContractError(f"{description} contains restricted public information")
-    if _RAW_DIGEST_PATTERN.fullmatch(identifier) or any(
+    if _RAW_DIGEST_PATTERN.search(identifier) or any(
         pattern.search(identifier) for pattern in _PUBLIC_RESTRICTED_VALUE_PATTERNS
     ):
         raise H800SearchContractError(f"{description} contains restricted public information")

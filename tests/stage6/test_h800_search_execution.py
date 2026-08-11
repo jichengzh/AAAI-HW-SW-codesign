@@ -168,6 +168,35 @@ def test_load_public_contract_rejects_restricted_information_in_allowed_strings(
 
 
 @pytest.mark.parametrize(
+    "value",
+    ["run python train.py", "train.py --out result.json", "echo secret"],
+)
+def test_load_public_contract_rejects_embedded_command_style_strings(
+    tmp_path: Path, value: str
+) -> None:
+    with pytest.raises(H800SearchContractError, match="restricted"):
+        load_public_contract(
+            _write_yaml(tmp_path / "contract.yaml", _public_contract(configuration_label=value))
+        )
+
+
+@pytest.mark.parametrize("value", ["candidate-alpha", "candidate-id-alpha"])
+def test_load_public_contract_rejects_non_numeric_candidate_identifiers(
+    tmp_path: Path, value: str
+) -> None:
+    with pytest.raises(H800SearchContractError, match="restricted"):
+        load_public_contract(
+            _write_yaml(tmp_path / "contract.yaml", _public_contract(configuration_label=value))
+        )
+
+
+@pytest.mark.parametrize("value", [f"build-{'a' * 64}", f"v1-{'b' * 40}"])
+def test_load_public_contract_rejects_embedded_raw_digests(tmp_path: Path, value: str) -> None:
+    with pytest.raises(H800SearchContractError, match="restricted"):
+        load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract(target_model=value)))
+
+
+@pytest.mark.parametrize(
     "asset",
     [
         {"label": "checkpoint", "version": "v1", "license_status": "cleared"},
