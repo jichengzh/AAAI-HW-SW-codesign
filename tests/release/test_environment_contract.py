@@ -1,0 +1,158 @@
+"""Public environment contract loading tests."""
+
+from __future__ import annotations
+
+import importlib
+import json
+from pathlib import Path
+from typing import Any, Callable
+
+import pytest
+import yaml
+
+
+def _module() -> Any:
+    return importlib.import_module("framework.environment_contract")
+
+
+def _write_contract_tree(tmp_path: Path, *, target: str) -> tuple[Path, Path]:
+    root = tmp_path / "repository"
+    capability_path = root / "configs" / "hardware" / f"{target}.yaml"
+    capability_path.parent.mkdir(parents=True)
+    capability_path.write_text(
+        yaml.safe_dump(
+            {
+                "name": target,
+                "arch": {"family": "Ada", "sm": "sm89"},
+                "ips": {"gpu": {"precisions": ["FP16"]}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    requires_gpu = target != "cpu"
+    runtime = {
+        "python": "3.11",
+        "cuda": "12.1" if requires_gpu else None,
+        "driver": "535.104" if requires_gpu else None,
+        "framework_name": "torch",
+        "framework_version": "2.4",
+    }
+    contract_path = root / "environment-contract.yaml"
+    contract_path.write_text(
+        yaml.safe_dump(
+            {
+                "target": target,
+                "hardware_capability": f"configs/hardware/{target}.yaml",
+                "requires_gpu": requires_gpu,
+                "runtime": runtime,
+            }
+        ),
+        encoding="utf-8",
+    )
+    observation_path = root / "environment-observation.json"
+    observation_path.write_text(
+        json.dumps({"target": target, "runtime": runtime, "gpu_count": 1 if requires_gpu else 0}),
+        encoding="utf-8",
+    )
+    return root, contract_path
+
+
+def _observation_path(contract_path: Path) -> Path:
+    return contract_path.with_name("environment-observation.json")
+
+
+def test_load_environment_contract_accepts_only_declared_shape(tmp_path: Path) -> None:
+    module = _module()
+    root, contract_path = _write_contract_tree(tmp_path, target="rtx4090")
+
+    contract = module.load_environment_contract(contract_path, repository_root=root)
+
+    assert contract.target == "rtx4090"
+    assert contract.requires_gpu is True
+    assert contract.hardware_capability == Path("configs/hardware/rtx4090.yaml")
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda value: value.update({"unexpected": True}),
+        lambda value: value.update({"hardware_capability": "../outside.yaml"}),
+        lambda value: value.update({"target": "unknown"}),
+    ],
+)
+def test_load_environment_contract_rejects_invalid_public_shape(
+    tmp_path: Path, mutate: Callable[[dict[str, Any]], None]
+) -> None:
+    module = _module()
+    root, contract_path = _write_contract_tree(tmp_path, target="rtx4090")
+    document = yaml.safe_load(contract_path.read_text(encoding="utf-8"))
+    mutate(document)
+    contract_path.write_text(yaml.safe_dump(document), encoding="utf-8")
+
+    with pytest.raises(module.EnvironmentContractError):
+        module.load_environment_contract(contract_path, repository_root=root)
+
+
+@pytest.mark.parametrize(
+    ("target", "runtime_update"),
+    [
+        ("cpu", {"cuda": "12.1"}),
+        ("cpu", {"driver": "535.104"}),
+        ("rtx4090", {"cuda": None}),
+        ("rtx4090", {"driver": None}),
+    ],
+)
+def test_load_environment_contract_enforces_cpu_gpu_runtime_exclusivity(
+    tmp_path: Path, target: str, runtime_update: dict[str, str | None]
+) -> None:
+    module = _module()
+    root, contract_path = _write_contract_tree(tmp_path, target=target)
+    document = yaml.safe_load(contract_path.read_text(encoding="utf-8"))
+    document["runtime"].update(runtime_update)
+    contract_path.write_text(yaml.safe_dump(document), encoding="utf-8")
+
+    with pytest.raises(module.EnvironmentContractError):
+        module.load_environment_contract(contract_path, repository_root=root)
+
+
+def test_load_environment_contract_rejects_invalid_hardware_capability(tmp_path: Path) -> None:
+    module = _module()
+    root, contract_path = _write_contract_tree(tmp_path, target="rtx4090")
+    (root / "configs" / "hardware" / "rtx4090.yaml").write_text("ips: {}\n", encoding="utf-8")
+
+    with pytest.raises(module.EnvironmentContractError):
+        module.load_environment_contract(contract_path, repository_root=root)
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        {"target": "rtx4090", "runtime": {}, "gpu_count": 1},
+        {"target": "rtx4090", "runtime": {"python": "3.11"}, "gpu_count": True},
+        {"target": "cpu", "runtime": {"python": "3.11"}, "gpu_count": 1},
+    ],
+)
+def test_load_environment_observation_rejects_invalid_schema(
+    tmp_path: Path, document: dict[str, Any]
+) -> None:
+    module = _module()
+    observation_path = tmp_path / "observation.json"
+    observation_path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(module.EnvironmentContractError):
+        module.load_environment_observation(observation_path)
+
+
+def test_load_environment_observation_drops_extra_note(tmp_path: Path) -> None:
+    module = _module()
+    _, contract_path = _write_contract_tree(tmp_path, target="rtx4090")
+    observation_path = _observation_path(contract_path)
+    document = json.loads(observation_path.read_text(encoding="utf-8"))
+    document["note"] = "collected by operator"
+    observation_path.write_text(json.dumps(document), encoding="utf-8")
+
+    observation = module.load_environment_observation(observation_path)
+
+    assert observation.target == "rtx4090"
+    assert observation.gpu_count == 1
+    assert not hasattr(observation, "note")
