@@ -968,3 +968,138 @@ def test_run_h800_search_fails_closed_when_local_record_cannot_be_written(
     assert summary.completed_rounds == 0
     assert summary.successful_candidate_count == 0
     assert calls == 0
+
+
+def _public_summary_fixture() -> H800SearchSummary:
+    return H800SearchSummary(
+        schema="PRIVATE_SCHEMA_SENTINEL",
+        target="h800",
+        code_revision="test-revision",
+        seed=73,
+        configuration_label="p6-h800-baseline",
+        assets=(execution.RegisteredAsset("training-data", "v1", "cleared"),),
+        status="completed",
+        planned_rounds=2,
+        completed_rounds=2,
+        successful_candidate_count=2,
+        aggregate_metrics={
+            "latency_ms": {"count": 8.0, "min": 1.0, "max": 3.0, "mean": 2.0},
+            "PRIVATE_METRIC_SENTINEL": {
+                "count": 1.0,
+                "min": 9.0,
+                "max": 9.0,
+                "mean": 9.0,
+            },
+        },
+        failure_code=None,
+    )
+
+
+def test_summary_to_public_dict_emits_only_fixed_redacted_fields(tmp_path: Path) -> None:
+    sentinels = (
+        str(tmp_path / "private-output"),
+        "PRIVATE_COMMAND_TOKEN",
+        "candidate-private-001",
+        "secret-checkpoint.bin",
+        "PRIVATE_STDERR_TEXT",
+        "raw-round-metric-0.123456789",
+        "a" * 64,
+        "PRIVATE_SCHEMA_SENTINEL",
+        "PRIVATE_METRIC_SENTINEL",
+    )
+    _write_yaml(
+        tmp_path / "local.yaml",
+        {
+            "local_output_root": sentinels[0],
+            "argv": [sentinels[1]],
+            "checkpoint": sentinels[3],
+        },
+    )
+    (tmp_path / "local-record.json").write_text(
+        json.dumps(
+            {
+                "candidate_id": sentinels[2],
+                "stderr": sentinels[4],
+                "round_metrics": [sentinels[5]],
+                "sha256": sentinels[6],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    public = execution.summary_to_public_dict(_public_summary_fixture())
+    serialized = json.dumps(public, sort_keys=True)
+
+    assert set(public) == {
+        "schema",
+        "target",
+        "code_revision",
+        "seed",
+        "configuration_label",
+        "assets",
+        "status",
+        "planned_rounds",
+        "completed_rounds",
+        "successful_candidate_count",
+        "aggregate_metrics",
+        "failure_code",
+    }
+    assert public["assets"] == [
+        {"label": "training-data", "version": "v1", "license_status": "cleared"}
+    ]
+    assert public["schema"] == "p6_h800_search_summary_v1"
+    assert set(public["aggregate_metrics"]) == {"latency_ms"}
+    assert set(public["aggregate_metrics"]["latency_ms"]) == {
+        "count",
+        "min",
+        "max",
+        "mean",
+    }
+    assert all(sentinel not in serialized for sentinel in sentinels)
+
+
+def test_write_public_summary_publishes_with_same_directory_atomic_replace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "public" / "summary.json"
+    replacements: list[tuple[Path, Path]] = []
+    real_replace = execution.os.replace
+
+    def recording_replace(source: str | Path, destination: str | Path) -> None:
+        source_path = Path(source)
+        destination_path = Path(destination)
+        replacements.append((source_path, destination_path))
+        assert source_path.parent == destination_path.parent
+        real_replace(source_path, destination_path)
+
+    monkeypatch.setattr(execution.os, "replace", recording_replace)
+
+    execution.write_public_summary(output, _public_summary_fixture())
+
+    assert json.loads(output.read_text(encoding="utf-8"))["status"] == "completed"
+    assert len(replacements) == 1
+    assert replacements[0][1] == output
+
+
+@pytest.mark.parametrize("code_revision", ["/private/revision", "a" * 64])
+def test_run_h800_search_rejects_private_code_revision_before_execution(
+    tmp_path: Path,
+    code_revision: str,
+) -> None:
+    calls = 0
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        nonlocal calls
+        del argv, cwd
+        calls += 1
+        return 0
+
+    with pytest.raises(H800SearchContractError, match="code_revision"):
+        run_h800_search(
+            _loaded_contract(tmp_path, max_rounds=1, batch_size=1),
+            _loaded_local_config(tmp_path),
+            code_revision,
+            runner,
+        )
+
+    assert calls == 0

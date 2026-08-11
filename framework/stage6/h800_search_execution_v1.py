@@ -6,8 +6,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import json
 import math
+import os
 from pathlib import Path
 import re
+import tempfile
 from types import MappingProxyType
 from typing import Any, Literal, Protocol
 
@@ -174,6 +176,91 @@ class H800SearchSummary:
     failure_code: str | None
 
 
+def validate_code_revision(value: str) -> str:
+    """Validate one explicit, public-safe code revision label."""
+    return _require_public_identifier(value, "code_revision")
+
+
+def summary_to_public_dict(summary: H800SearchSummary) -> dict[str, object]:
+    """Render the fixed public summary surface without local execution details."""
+    return {
+        "schema": SUMMARY_SCHEMA_VERSION,
+        "target": summary.target,
+        "code_revision": summary.code_revision,
+        "seed": summary.seed,
+        "configuration_label": summary.configuration_label,
+        "assets": [
+            {
+                "label": asset.label,
+                "version": asset.version,
+                "license_status": asset.license_status,
+            }
+            for asset in summary.assets
+        ],
+        "status": summary.status,
+        "planned_rounds": summary.planned_rounds,
+        "completed_rounds": summary.completed_rounds,
+        "successful_candidate_count": summary.successful_candidate_count,
+        "aggregate_metrics": {
+            name: {
+                "count": values["count"],
+                "min": values["min"],
+                "max": values["max"],
+                "mean": values["mean"],
+            }
+            for name in _MEASUREMENT_METRICS
+            if (values := summary.aggregate_metrics.get(name)) is not None
+        },
+        "failure_code": summary.failure_code,
+    }
+
+
+def write_public_summary(path: Path, summary: H800SearchSummary) -> None:
+    """Atomically publish a JSON summary through a temporary sibling file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(
+                summary_to_public_dict(summary),
+                handle,
+                ensure_ascii=True,
+                indent=2,
+                sort_keys=True,
+            )
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+    except BaseException:
+        try:
+            temporary_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def build_contract_failure_summary(
+    contract: PublicH800SearchContract,
+    code_revision: str,
+) -> H800SearchSummary:
+    """Build the fixed public failure summary for invalid local execution input."""
+    return _build_summary(
+        contract=contract,
+        code_revision=validate_code_revision(code_revision),
+        status="failed",
+        completed_rounds=0,
+        successful_candidate_count=0,
+        measured_metrics=(),
+        failure_code="contract_invalid",
+    )
+
+
 def load_public_contract(path: Path) -> PublicH800SearchContract:
     """Load a public, location-free H800 search declaration without side effects."""
     raw_contract = _load_mapping(path, "public contract")
@@ -251,6 +338,7 @@ def run_h800_search(
     command_runner: CommandRunner,
 ) -> H800SearchSummary:
     """Run a fail-closed H800 feedback loop through injected argv execution."""
+    code_revision = validate_code_revision(code_revision)
     feedback_rows: tuple[Mapping[str, Any], ...] = ()
     feedback_graphs: tuple[Mapping[str, Any], ...] = ()
     measured_metrics: tuple[Mapping[str, float], ...] = ()
