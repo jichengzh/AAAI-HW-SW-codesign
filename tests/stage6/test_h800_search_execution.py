@@ -37,7 +37,7 @@ def _public_contract(**overrides: Any) -> dict[str, Any]:
         "max_rounds": 2,
         "batch_size": 2,
         "configuration_label": "p6-h800-baseline",
-        "metric_names": ["ap", "latency_ms"],
+        "metric_names": ["latency_ms", "energy_j", "ap30", "ap50", "ap70"],
         "candidate_space_label": "pyramid-v1",
         "assets": [
             {"label": "training-data", "version": "v1", "license_status": "cleared"},
@@ -86,6 +86,25 @@ def test_load_public_contract_rejects_an_invalid_schema_version(tmp_path: Path) 
     )
 
     with pytest.raises(H800SearchContractError, match="schema_version"):
+        load_public_contract(path)
+
+
+@pytest.mark.parametrize(
+    "metric_names",
+    [
+        ["latency_ms", "energy_j", "ap30", "ap50"],
+        ["latency_ms", "energy_j", "ap30", "ap50", "ap70", "throughput"],
+        ["latency_ms", "energy_j", "ap30", "ap50", "ap70", "latency_ms"],
+    ],
+)
+def test_load_public_contract_requires_the_exact_runtime_metric_set(
+    tmp_path: Path, metric_names: list[str]
+) -> None:
+    path = _write_yaml(
+        tmp_path / "contract.yaml", _public_contract(metric_names=metric_names)
+    )
+
+    with pytest.raises(H800SearchContractError, match="metric_names"):
         load_public_contract(path)
 
 
@@ -274,6 +293,52 @@ def test_load_local_config_rejects_shell_executables(
 
     with pytest.raises(H800SearchContractError, match="shell executable"):
         load_local_config(path, contract)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["/usr/bin/env", "bash", "-c", "private-command", "{result_json}"],
+        ["ENV", "sh", "-c", "private-command", "{result_json}"],
+        [
+            "C:\\Windows\\System32\\env.exe",
+            "PowerShell",
+            "-Command",
+            "private-command",
+            "{result_json}",
+        ],
+    ],
+)
+def test_load_local_config_rejects_env_command_wrappers(
+    tmp_path: Path, argv: list[str]
+) -> None:
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    path = _write_yaml(
+        tmp_path / "local.yaml",
+        _local_config(steps=[{"name": "evaluate", "argv": argv}]),
+    )
+
+    with pytest.raises(H800SearchContractError, match="command wrapper"):
+        load_local_config(path, contract)
+
+
+def test_load_local_config_allows_direct_non_shell_argv(tmp_path: Path) -> None:
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    path = _write_yaml(
+        tmp_path / "local.yaml",
+        _local_config(
+            steps=[
+                {
+                    "name": "evaluate",
+                    "argv": ["/usr/bin/python3", "evaluate.py", "{result_json}"],
+                }
+            ]
+        ),
+    )
+
+    loaded = load_local_config(path, contract)
+
+    assert loaded.steps[0].argv[0] == "/usr/bin/python3"
 
 
 @pytest.mark.parametrize(

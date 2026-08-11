@@ -56,6 +56,7 @@ _SHELL_EXECUTABLES = frozenset(
         "zsh",
     }
 )
+_COMMAND_WRAPPER_EXECUTABLES = frozenset({"env", "env.exe"})
 _PUBLIC_KEYS = frozenset(
     {
         "schema_version",
@@ -186,6 +187,8 @@ def load_public_contract(path: Path) -> PublicH800SearchContract:
 
     assets = _parse_assets(raw_contract["assets"])
     metric_names = _parse_string_list(raw_contract["metric_names"], "metric_names")
+    if frozenset(metric_names) != frozenset(_MEASUREMENT_METRICS):
+        raise H800SearchContractError("metric_names must exactly match runtime metrics")
     return PublicH800SearchContract(
         search_id=_require_public_identifier(raw_contract["search_id"], "search_id"),
         target="h800",
@@ -773,6 +776,8 @@ def _parse_argv(value: Any) -> tuple[str, ...]:
     executable = argv[0].replace("\\", "/").rsplit("/", 1)[-1].casefold()
     if executable in _SHELL_EXECUTABLES:
         raise H800SearchContractError("step argv must not invoke a shell executable")
+    if executable in _COMMAND_WRAPPER_EXECUTABLES:
+        raise H800SearchContractError("step argv must not invoke a command wrapper")
     for token in argv:
         if ("{" in token or "}" in token) and token not in _ALLOWED_TEMPLATE_TOKENS:
             raise H800SearchContractError("argv contains an unknown or embedded placeholder")
