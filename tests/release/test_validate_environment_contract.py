@@ -47,8 +47,7 @@ def _write_rtx_inputs(tmp_path: Path, *, cuda: str) -> tuple[Path, Path, Path]:
         "python": "3.11",
         "cuda": "12.1",
         "driver": "535.104",
-        "framework_name": "torch",
-        "framework_version": "2.4",
+        "framework": {"name": "torch", "version": "2.4"},
     }
     contract = root / "environment-contract.yaml"
     contract.write_text(
@@ -142,6 +141,51 @@ def test_cli_writes_invalid_report_and_returns_two_for_invalid_observation(tmp_p
         "passed": False,
         "failures": [{"code": "input.invalid", "field": "input"}],
     }
+
+
+@pytest.mark.parametrize("input_kind", ["python_version", "json_gpu_count", "yaml_integer"])
+def test_cli_normalizes_oversized_numeric_inputs_to_redacted_invalid_report(
+    tmp_path: Path, input_kind: str
+) -> None:
+    root, contract, observation = _write_rtx_inputs(tmp_path, cuda="12.1")
+    output = tmp_path / "private-marker" / "report.json"
+    oversized_number = "9" * 5_000
+
+    if input_kind == "python_version":
+        document = json.loads(observation.read_text(encoding="utf-8"))
+        document["runtime"]["python"] = oversized_number
+        observation.write_text(json.dumps(document), encoding="utf-8")
+    elif input_kind == "json_gpu_count":
+        document = json.loads(observation.read_text(encoding="utf-8"))
+        observation.write_text(
+            json.dumps({key: value for key, value in document.items() if key != "gpu_count"})
+            .removesuffix("}")
+            + ', "gpu_count": '
+            + oversized_number
+            + "}",
+            encoding="utf-8",
+        )
+    else:
+        contract.write_text(
+            contract.read_text(encoding="utf-8").replace(
+                "requires_gpu: true", f"requires_gpu: {oversized_number}"
+            ),
+            encoding="utf-8",
+        )
+
+    result = _run_cli(contract, observation, output, cwd=root)
+    output_text = result.stdout + result.stderr
+
+    assert result.returncode == 2
+    assert json.loads(output.read_text(encoding="utf-8")) == {
+        "schema": "environment_contract_report_v1",
+        "target": None,
+        "passed": False,
+        "failures": [{"code": "input.invalid", "field": "input"}],
+    }
+    assert "Traceback" not in output_text
+    assert str(tmp_path) not in output_text
+    assert str(REPOSITORY_ROOT) not in output_text
 
 
 def test_cli_rejects_abbreviated_arguments_without_writing_a_report(tmp_path: Path) -> None:

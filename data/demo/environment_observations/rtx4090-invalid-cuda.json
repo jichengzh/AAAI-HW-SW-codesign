@@ -5,8 +5,7 @@
     "python": "3.11.9",
     "cuda": "11.8",
     "driver": "550.54",
-    "framework_name": "pytorch",
-    "framework_version": "2.4.0"
+    "framework": {"name": "pytorch", "version": "2.4.0"}
   },
   "gpu_count": 1
 }

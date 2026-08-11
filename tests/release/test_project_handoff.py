@@ -132,6 +132,8 @@ def test_p5_environment_contract_is_discoverable() -> None:
     assert contract.is_file()
     contract_text = contract.read_text(encoding="utf-8")
     assert "validate_environment_contract.py" in contract_text
+    assert "已完成（本地）" in contract_text
+    assert "进行中（本地）" not in contract_text
     assert "只读取这三个显式路径" not in contract_text
     assert "验证 environment contract 引用的公开 hardware capability YAML" in contract_text
     assert "不访问网络或读取外部资源" in contract_text

@@ -68,7 +68,8 @@ class ValidationResult:
 
 
 _CONTRACT_FIELDS = {"schema", "target", "hardware_capability", "requires_gpu", "runtime"}
-_RUNTIME_FIELDS = {"python", "cuda", "driver", "framework_name", "framework_version"}
+_RUNTIME_FIELDS = {"python", "cuda", "driver", "framework"}
+_FRAMEWORK_FIELDS = {"name", "version"}
 _OBSERVATION_FIELDS = {"schema", "target", "runtime", "gpu_count", "note"}
 _OBSERVATION_REQUIRED_FIELDS = _OBSERVATION_FIELDS - {"note"}
 _CPU_TARGET = "cpu_reference"
@@ -131,7 +132,10 @@ def validate_environment(
 def _version_parts(version: str) -> tuple[int, ...]:
     if type(version) is not str or _VERSION_PATTERN.fullmatch(version) is None:
         raise EnvironmentContractError("version must use numeric dotted parts")
-    return tuple(int(part) for part in version.split("."))
+    try:
+        return tuple(int(part) for part in version.split("."))
+    except ValueError as exc:
+        raise EnvironmentContractError("version must use numeric dotted parts") from exc
 
 
 def _compare_versions(left: tuple[int, ...], right: tuple[int, ...]) -> int:
@@ -230,7 +234,7 @@ def load_environment_observation(path: Path) -> EnvironmentObservation:
 def _load_yaml_object(path: Path) -> dict[str, Any]:
     try:
         document = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except (OSError, yaml.YAMLError) as exc:
+    except (OSError, ValueError, yaml.YAMLError) as exc:
         raise EnvironmentContractError("contract YAML could not be loaded") from exc
     return _require_object(document, "contract")
 
@@ -238,7 +242,7 @@ def _load_yaml_object(path: Path) -> dict[str, Any]:
 def _load_json_object(path: Path) -> dict[str, Any]:
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError) as exc:
         raise EnvironmentContractError("observation JSON could not be loaded") from exc
     return _require_object(document, "observation")
 
@@ -282,8 +286,10 @@ def _parse_runtime(
     runtime = _require_object(value, label)
     _require_exact_fields(runtime, _RUNTIME_FIELDS, label)
     python = _require_string(runtime, "python", label)
-    framework_name = _require_string(runtime, "framework_name", label)
-    framework_version = _require_string(runtime, "framework_version", label)
+    framework = _require_object(runtime["framework"], f"{label}.framework")
+    _require_exact_fields(framework, _FRAMEWORK_FIELDS, f"{label}.framework")
+    framework_name = _require_string(framework, "name", f"{label}.framework")
+    framework_version = _require_string(framework, "version", f"{label}.framework")
     cuda = runtime["cuda"]
     driver = runtime["driver"]
     if cuda is not None and (type(cuda) is not str or not cuda):

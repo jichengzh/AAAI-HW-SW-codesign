@@ -34,8 +34,7 @@ def _write_contract_tree(tmp_path: Path, *, target: str) -> tuple[Path, Path]:
         "python": "3.11",
         "cuda": "12.1" if requires_gpu else None,
         "driver": "535.104" if requires_gpu else None,
-        "framework_name": "torch",
-        "framework_version": "2.4",
+        "framework": {"name": "torch", "version": "2.4"},
     }
     contract_path = root / "environment-contract.yaml"
     contract_path.write_text(
@@ -181,6 +180,22 @@ def test_load_environment_contract_accepts_only_declared_shape(tmp_path: Path) -
     assert contract.hardware_capability == Path("configs/hardware/rtx4090.yaml")
 
 
+def test_load_environment_contract_requires_nested_framework_input(tmp_path: Path) -> None:
+    module = _module()
+    root, contract_path = _write_contract_tree(tmp_path, target="rtx4090")
+    document = yaml.safe_load(contract_path.read_text(encoding="utf-8"))
+    document["runtime"] = {
+        **document["runtime"],
+        "framework_name": document["runtime"]["framework"]["name"],
+        "framework_version": document["runtime"]["framework"]["version"],
+    }
+    document["runtime"].pop("framework")
+    contract_path.write_text(yaml.safe_dump(document), encoding="utf-8")
+
+    with pytest.raises(module.EnvironmentContractError):
+        module.load_environment_contract(contract_path, repository_root=root)
+
+
 @pytest.mark.parametrize("schema", [None, "environment_contract_v2"])
 def test_load_environment_contract_requires_exact_schema_version(
     tmp_path: Path, schema: str | None
@@ -316,8 +331,7 @@ def test_load_environment_observation_accepts_cpu_reference_without_gpu_runtime(
                     "python": "3.11",
                     "cuda": None,
                     "driver": None,
-                    "framework_name": "torch",
-                    "framework_version": "2.4",
+                    "framework": {"name": "torch", "version": "2.4"},
                 },
                 "gpu_count": 0,
             }
@@ -357,8 +371,7 @@ def test_load_environment_observation_defers_cpu_gpu_count_to_validation(tmp_pat
                 "python": "3.11",
                 "cuda": "12.1",
                 "driver": "535.104",
-                "framework_name": "torch",
-                "framework_version": "2.4",
+                "framework": {"name": "torch", "version": "2.4"},
             },
             0,
             "CPU targets cannot declare CUDA or a driver",
@@ -417,3 +430,32 @@ def test_load_environment_observation_drops_extra_note(tmp_path: Path) -> None:
     assert observation.target == "rtx4090"
     assert observation.gpu_count == 1
     assert not hasattr(observation, "note")
+
+
+def test_load_environment_observation_rejects_unknown_top_level_field(tmp_path: Path) -> None:
+    module = _module()
+    _, contract_path = _write_contract_tree(tmp_path, target="rtx4090")
+    observation_path = _observation_path(contract_path)
+    document = json.loads(observation_path.read_text(encoding="utf-8"))
+    document["operator"] = "redacted"
+    observation_path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(module.EnvironmentContractError):
+        module.load_environment_observation(observation_path)
+
+
+def test_load_environment_observation_rejects_flat_framework_input(tmp_path: Path) -> None:
+    module = _module()
+    _, contract_path = _write_contract_tree(tmp_path, target="rtx4090")
+    observation_path = _observation_path(contract_path)
+    document = json.loads(observation_path.read_text(encoding="utf-8"))
+    document["runtime"] = {
+        **document["runtime"],
+        "framework_name": document["runtime"]["framework"]["name"],
+        "framework_version": document["runtime"]["framework"]["version"],
+    }
+    document["runtime"].pop("framework")
+    observation_path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(module.EnvironmentContractError):
+        module.load_environment_observation(observation_path)

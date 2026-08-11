@@ -156,8 +156,7 @@ def test_public_profiles_declare_the_published_capabilities_and_constraints(
     assert contract["target"] == target
     assert contract["hardware_capability"] == f"configs/hardware/{target}.yaml"
     assert contract["requires_gpu"] is requires_gpu
-    assert contract["runtime"]["framework_name"] == "pytorch"
-    assert contract["runtime"]["framework_version"] == ">=2.0"
+    assert contract["runtime"]["framework"] == {"name": "pytorch", "version": ">=2.0"}
     assert contract["runtime"]["python"] == ">=3.10,<3.12"
     assert contract["runtime"]["cuda"] == (">=12.0,<13" if requires_gpu else None)
     assert contract["runtime"]["driver"] == (">=525" if requires_gpu else None)
@@ -194,8 +193,7 @@ def test_public_observation_fixtures_use_only_the_declared_runtime_deltas(target
         "python": "3.11.9",
         "cuda": "12.4" if target != "cpu_reference" else None,
         "driver": "550.54" if target != "cpu_reference" else None,
-        "framework_name": "pytorch",
-        "framework_version": "2.4.0",
+        "framework": {"name": "pytorch", "version": "2.4.0"},
     }
     assert valid["gpu_count"] == (1 if target != "cpu_reference" else 0)
     deltas = {
