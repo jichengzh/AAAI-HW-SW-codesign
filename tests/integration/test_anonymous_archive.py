@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import subprocess
 import sys
 import warnings
 import zipfile
@@ -179,7 +180,7 @@ def test_builder_includes_release_tools_required_by_archive_tests(
 
 
 def test_builder_keeps_p6_public_contracts_but_excludes_local_execution_material(
-    anonymous_repo: Path, tmp_path: Path
+    anonymous_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The P6 archive boundary keeps runner metadata public without local execution state."""
     entries = {
@@ -196,6 +197,12 @@ def test_builder_keeps_p6_public_contracts_but_excludes_local_execution_material
     _write(anonymous_repo / "configs/execution/p6_h800_search.example.yaml")
     _write(anonymous_repo / "configs/local/p6_h800_search.local.yaml", "local sentinel\n")
     _write(anonymous_repo / "outputs/p6-h800-search/sentinel-raw.log", "raw sentinel\n")
+    original_read_allowlist = archive_builder._read_allowlist
+    monkeypatch.setattr(
+        archive_builder,
+        "_read_allowlist",
+        lambda: (*original_read_allowlist(), "outputs/p6-h800-search/**/*"),
+    )
 
     result = _run_builder(anonymous_repo, tmp_path / "output")
 
@@ -209,6 +216,39 @@ def test_builder_keeps_p6_public_contracts_but_excludes_local_execution_material
     } <= names
     assert "configs/local/p6_h800_search.local.yaml" not in names
     assert "outputs/p6-h800-search/sentinel-raw.log" not in names
+
+
+def test_p6_handoff_check_skips_from_anonymous_archive(
+    anonymous_repo: Path, tmp_path: Path
+) -> None:
+    """The public release ledger check must not require excluded docs in the reviewer ZIP."""
+    source = (REPOSITORY_ROOT / "tests/release/test_project_handoff.py").read_text(
+        encoding="utf-8"
+    )
+    _write(anonymous_repo / "tests/release/test_project_handoff.py", source)
+    _write(anonymous_repo / "README.anonymous.md", "# Anonymous AAAI Submission\n")
+    output = tmp_path / "output"
+
+    assert _run_builder(anonymous_repo, output).returncode == 0
+    extracted = tmp_path / "extracted"
+    with zipfile.ZipFile(output / ARCHIVE_NAME) as archive:
+        archive.extractall(extracted)
+    completed = subprocess.run(
+        (
+            sys.executable,
+            "-m",
+            "pytest",
+            "tests/release/test_project_handoff.py::test_p6_h800_execution_manifest_preserves_the_public_boundary",
+            "-q",
+        ),
+        cwd=extracted,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "skipped" in completed.stdout.lower()
 
 
 def test_builder_allows_only_the_anonymous_ci_hidden_path(anonymous_repo: Path, tmp_path: Path) -> None:

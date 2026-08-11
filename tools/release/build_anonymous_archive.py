@@ -106,7 +106,7 @@ DENIED_PATH_PARTS = frozenset(
 )
 DENIED_SUFFIXES = frozenset({".pyc", ".pyo", ".so", ".dll", ".dylib", ".onnx", ".engine", ".pt", ".pth", ".ckpt", ".zip", ".tar", ".gz", ".whl"})
 ANONYMOUS_HIDDEN_ALLOWLIST = frozenset({".github/workflows/ci.yml", ".gitignore"})
-DENIED_SOURCE_PREFIXES = ("configs/local/",)
+DENIED_SOURCE_PREFIXES = ("configs/local/", "outputs/p6-h800-search/")
 
 
 def _is_denied_source_path(relative_path: str) -> bool:
@@ -128,12 +128,17 @@ def _selected_source_paths(root: Path) -> tuple[Path, ...]:
     selected: set[Path] = set()
     missing: list[str] = []
     for entry in _read_allowlist():
-        matches = tuple(
+        candidates = tuple(
             path
             for path in root.glob(entry)
-            if (path.is_file() or path.is_symlink()) and not _is_denied_source_path(_safe_relative_path(path, root))
+            if path.is_file() or path.is_symlink()
         )
-        if not matches and entry not in OPTIONAL_ALLOWLIST_ENTRIES:
+        matches = tuple(
+            path
+            for path in candidates
+            if not _is_denied_source_path(_safe_relative_path(path, root))
+        )
+        if not candidates and entry not in OPTIONAL_ALLOWLIST_ENTRIES:
             missing.append(entry)
         selected.update(matches)
     if missing:

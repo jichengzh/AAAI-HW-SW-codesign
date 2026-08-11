@@ -187,6 +187,8 @@ def test_p5_local_closure_is_limited_to_offline_environment_contracts() -> None:
 
 def test_p6_h800_execution_manifest_preserves_the_public_boundary() -> None:
     """P6 remains a local H800 execution line with a deliberately small public surface."""
+    if _is_anonymous_reviewer_archive():
+        pytest.skip("the anonymous reviewer ZIP deliberately excludes public release documentation")
     manifest = REPOSITORY_ROOT / "docs/release-manifests/P6_H800_SEARCH_EXECUTION.md"
 
     assert manifest.is_file()
