@@ -22,6 +22,9 @@ from framework.stage6.h800_search_execution_v1 import (
 )
 
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+
+
 def _write_yaml(path: Path, content: Mapping[str, Any]) -> Path:
     path.write_text(yaml.safe_dump(dict(content), sort_keys=False), encoding="utf-8")
     return path
@@ -106,6 +109,20 @@ def test_load_public_contract_requires_the_exact_runtime_metric_set(
 
     with pytest.raises(H800SearchContractError, match="metric_names"):
         load_public_contract(path)
+
+
+def test_versioned_public_example_loads_with_exact_runtime_metrics() -> None:
+    contract = load_public_contract(
+        REPOSITORY_ROOT / "configs/execution/p6_h800_search.example.yaml"
+    )
+
+    assert contract.metric_names == (
+        "latency_ms",
+        "energy_j",
+        "ap30",
+        "ap50",
+        "ap70",
+    )
 
 
 @pytest.mark.parametrize(

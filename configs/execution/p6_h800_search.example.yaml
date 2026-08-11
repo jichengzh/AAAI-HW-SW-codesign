@@ -7,8 +7,11 @@ max_rounds: 2
 batch_size: 2
 configuration_label: p6-h800-example-baseline
 metric_names:
-  - ap
   - latency_ms
+  - energy_j
+  - ap30
+  - ap50
+  - ap70
 candidate_space_label: pyramid-search-space-v1
 assets:
   - label: training-data
