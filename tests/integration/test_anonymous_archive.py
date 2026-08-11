@@ -238,7 +238,7 @@ def test_p6_handoff_check_skips_from_anonymous_archive(
             sys.executable,
             "-m",
             "pytest",
-            "tests/release/test_project_handoff.py::test_p6_h800_execution_manifest_preserves_the_public_boundary",
+            "tests/release/test_project_handoff.py",
             "-q",
         ),
         cwd=extracted,
@@ -249,6 +249,7 @@ def test_p6_handoff_check_skips_from_anonymous_archive(
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert "skipped" in completed.stdout.lower()
+    assert "failed" not in completed.stdout.lower()
 
 
 def test_builder_allows_only_the_anonymous_ci_hidden_path(anonymous_repo: Path, tmp_path: Path) -> None:
