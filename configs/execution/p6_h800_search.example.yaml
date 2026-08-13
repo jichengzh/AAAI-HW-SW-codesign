@@ -1,25 +1,27 @@
-schema_version: p6_h800_search_contract_v1
-search_id: p6-h800-example
+schema_version: p6_h800_coptv2x_search_contract_v2
+search_id: p6-pyramid-h800-tvm
 target: h800
 target_model: pyramid
+execution_backend: tvm_auto
 seed: 73
-max_rounds: 2
-batch_size: 2
-configuration_label: p6-h800-example-baseline
+sample_budget: 16
+batch_size: 4
+round_count: 4
+configuration_label: p6-pyramid-h800-tvm
+candidate_space_label: coptv2x-pyramid-width-grid-v1
 metric_names:
   - latency_ms
   - energy_j
   - ap30
   - ap50
   - ap70
-candidate_space_label: pyramid-search-space-v1
 assets:
   - label: training-data
-    version: v1
+    version: local-cleared-v1
     license_status: cleared
   - label: model-init
-    version: v1
+    version: local-cleared-v1
     license_status: cleared
   - label: toolchain
-    version: v1
+    version: h800-tvm-local-v1
     license_status: cleared
