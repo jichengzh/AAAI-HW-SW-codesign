@@ -88,7 +88,7 @@ _COMMAND_WRAPPER_EXECUTABLES = frozenset({"env", "env.exe"})
 _PUBLIC_RESTRICTED_VALUE_PATTERNS = (
     re.compile(r"(?:^|[-_\s])host(?:name)?(?:[-_\s]|\d|$)", re.IGNORECASE),
     re.compile(r"(?:^|[-_\s])raw[-_\s]?logs?(?:[-_\s]|$)", re.IGNORECASE),
-    re.compile(r"(?:^|[-_\s])checkpoint(?:[-_\s]|$)", re.IGNORECASE),
+    re.compile(r"(?:^|[-_\s])checkpoints?(?:[-_\s]|$)", re.IGNORECASE),
     re.compile(
         r"(?:^|[-_\s])candidate(?:[-_\s]+id)?[-_\s]+[a-z0-9]+(?:[-_\s]|$)",
         re.IGNORECASE,
@@ -282,7 +282,7 @@ def _is_forbidden_public_key(key: object) -> bool:
         or "command" in normalized
         or "cmd" in normalized
         or "host" in normalized
-        or normalized == "candidate_id"
+        or normalized in {"argv", "candidate_id"}
         or "hash" in normalized
         or normalized.startswith("sha")
         or normalized in {"raw_log", "raw_logs", "checkpoint", "measurements"}

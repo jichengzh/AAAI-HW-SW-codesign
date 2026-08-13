@@ -102,6 +102,59 @@ def test_load_public_contract_requires_fixed_pyramid_h800_tvm_budget(tmp_path: P
             load_public_contract(_write_yaml(tmp_path / f"contract-{index}.yaml", payload))
 
 
+@pytest.mark.parametrize(
+    "forbidden_key",
+    ["path", "argv", "host", "candidate_id", "raw_logs", "checkpoint", "sha256", "hash"],
+)
+def test_load_public_contract_rejects_private_execution_keys(
+    tmp_path: Path, forbidden_key: str
+) -> None:
+    payload = _public_contract()
+    payload[forbidden_key] = "private-value"
+
+    with pytest.raises(P6CoptV2XContractError, match="forbidden"):
+        load_public_contract(_write_yaml(tmp_path / "contract.yaml", payload))
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("search_id", "/private/run"),
+        ("configuration_label", "h800-host-01"),
+        ("configuration_label", "hostname-01"),
+        ("configuration_label", "raw-logs-2026"),
+        ("configuration_label", "candidate-42"),
+        ("configuration_label", "candidate-id-42"),
+        ("target_model", "python train.py"),
+    ],
+)
+def test_load_public_contract_rejects_private_or_command_style_public_values(
+    tmp_path: Path, field: str, value: str
+) -> None:
+    with pytest.raises(P6CoptV2XContractError, match="restricted"):
+        load_public_contract(
+            _write_yaml(tmp_path / "contract.yaml", _public_contract(**{field: value}))
+        )
+
+
+@pytest.mark.parametrize(
+    "asset",
+    [
+        {"label": "checkpoints", "version": "v1", "license_status": "cleared"},
+        {"label": "training-data", "version": "sha256:abc123", "license_status": "cleared"},
+        {"label": "training-data", "version": "hash:abc123", "license_status": "cleared"},
+        {"label": "training-data", "version": "a" * 64, "license_status": "cleared"},
+    ],
+)
+def test_load_public_contract_rejects_restricted_asset_values(
+    tmp_path: Path, asset: dict[str, str]
+) -> None:
+    with pytest.raises(P6CoptV2XContractError, match="restricted"):
+        load_public_contract(
+            _write_yaml(tmp_path / "contract.yaml", _public_contract(assets=[asset]))
+        )
+
+
 def test_load_public_contract_accepts_the_public_example() -> None:
     contract = load_public_contract(
         REPOSITORY_ROOT / "configs/execution/p6_h800_search.example.yaml"
@@ -137,6 +190,18 @@ def test_load_local_config_requires_source_and_measurement_steps(tmp_path: Path)
     assert loaded.source_registry_step.name == "build_source_registry"
     assert loaded.measurement_step.name == "measure_batch"
     assert loaded.local_output_root == tmp_path / "private-output"
+
+
+def test_load_local_config_rejects_relative_asset_and_output_paths(tmp_path: Path) -> None:
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    relative_root_payload = _local_config(tmp_path, local_output_root="relative")
+    relative_asset_payload = _local_config(tmp_path)
+    relative_asset_payload["asset_paths"]["training-data"] = "relative"
+
+    with pytest.raises(P6CoptV2XContractError, match="absolute path"):
+        load_local_config(_write_yaml(tmp_path / "relative-root.yaml", relative_root_payload), contract)
+    with pytest.raises(P6CoptV2XContractError, match="absolute path"):
+        load_local_config(_write_yaml(tmp_path / "relative-asset.yaml", relative_asset_payload), contract)
 
 
 @pytest.mark.parametrize(
