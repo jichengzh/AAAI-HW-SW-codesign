@@ -86,6 +86,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         sys.stderr.write("execution_failed\n")
         return 1
+    except OSError:
+        sys.stderr.write("execution_failed\n")
+        return 1
     if state.status != "completed":
         sys.stderr.write("execution_failed\n")
         return 1

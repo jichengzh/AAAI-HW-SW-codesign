@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -12,6 +13,11 @@ import pytest
 import yaml
 
 from framework.stage2.canonical_search_v3 import build_capability_profile
+
+try:
+    import resource
+except ImportError:  # pragma: no cover - Windows does not provide POSIX limits.
+    resource = None
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -186,6 +192,18 @@ shutil.copyfile(template_path, output_path)
     return path
 
 
+def _write_noop_source_registry_adapter(path: Path) -> Path:
+    path.write_text(
+        """from __future__ import annotations
+import sys
+
+del sys.argv
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
 def _write_fake_measurement_adapter(path: Path) -> Path:
     path.write_text(
         """from __future__ import annotations
@@ -290,7 +308,12 @@ def _cli_fixture(tmp_path: Path, *, mode: str = "success") -> dict[str, Path]:
     }
 
 
-def _run_cli(paths: Mapping[str, Path], *extra: str) -> subprocess.CompletedProcess[str]:
+def _run_cli(
+    paths: Mapping[str, Path],
+    *extra: str,
+    env: Mapping[str, str] | None = None,
+    preexec_fn: object | None = None,
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
             sys.executable,
@@ -307,6 +330,8 @@ def _run_cli(paths: Mapping[str, Path], *extra: str) -> subprocess.CompletedProc
         text=True,
         capture_output=True,
         check=False,
+        env=env,
+        preexec_fn=preexec_fn,
     )
 
 
@@ -436,6 +461,50 @@ def test_cli_reports_a_local_measurement_failure_without_adapter_details(tmp_pat
     }
     for sentinel in ("PRIVATE_ADAPTER_STDERR", str(tmp_path), "candidate-", "checkpoint"):
         assert sentinel.lower() not in (result.stdout + result.stderr + state_text).lower()
+
+
+@pytest.mark.skipif(
+    resource is None or not hasattr(resource, "RLIMIT_FSIZE"),
+    reason="requires a POSIX process file-size limit",
+)
+def test_cli_normalizes_a_local_record_write_error(tmp_path: Path) -> None:
+    paths = _cli_fixture(tmp_path)
+    paths["output_root"].mkdir()
+    _write_source_template(paths["output_root"] / "source_registry.json")
+    noop_source = _write_noop_source_registry_adapter(tmp_path / "noop_source.py")
+    local = yaml.safe_load(paths["local"].read_text(encoding="utf-8"))
+    local["source_registry_step"]["argv"] = [
+        sys.executable,
+        str(noop_source),
+        "{local_output_root}",
+        "{source_registry_json}",
+    ]
+    _write_yaml(paths["local"], local)
+    assert resource is not None
+    _, hard_limit = resource.getrlimit(resource.RLIMIT_FSIZE)
+
+    def prevent_controller_record_writes() -> None:
+        resource.setrlimit(resource.RLIMIT_FSIZE, (0, hard_limit))
+
+    result = _run_cli(
+        paths,
+        env={
+            **os.environ,
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONWARNINGS": "ignore",
+        },
+        preexec_fn=prevent_controller_record_writes,
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "execution_failed\n"
+    request_path = paths["output_root"] / "round-00" / "measurement_request.json"
+    assert request_path.is_file()
+    assert request_path.stat().st_size == 0
+    assert not paths["call_log"].exists()
+    for sentinel in (str(tmp_path), str(REPOSITORY_ROOT), "argv", "Traceback"):
+        assert sentinel.lower() not in (result.stdout + result.stderr).lower()
 
 
 def test_cli_rejects_an_empty_code_revision_without_starting_an_adapter(tmp_path: Path) -> None:
