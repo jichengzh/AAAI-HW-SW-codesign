@@ -4,7 +4,7 @@
 
 ## 固定范围与预算
 
-P6.1 只验证 Pyramid/H800/TVM 的 CoptV2X 完整搜索闭环。候选空间有 343 个 Pyramid 结构，每个结构按 `q_mode` 展开为 `fp16` 与 `int8`，共 686 个可能的 TVM 候选。Gold176 仅复用于 cold-start cost model 拟合，绝不重新测量。
+P6.1 只验证 Pyramid/H800/TVM 的 CoptV2X 完整搜索闭环。候选空间有 343 个 Pyramid 结构，每个结构按 `q_mode` 展开为 `fp16` 与 `int8`，共 686 个可能的 TVM 候选。Gold176 保持为 176 条不可变 cold-start 证据：当前 174 条成功实测记录用于 cost model 回归，两条已确认真实可行性失败仅保留为可行性证据，不伪造指标、不进入回归，也绝不重新测量。
 
 本地循环严格执行 **4 轮 × 4 个候选**，共 16 个测量槽位。每一个选中的候选都必须经过剪枝、训练或微调、模型检查点选择、ONNX 导出、TVM 编译和运行，并得到五项测量证据：`latency_ms`、`energy_j`、`ap30`、`ap50` 与 `ap70`。其中 latency、energy 与 AP70 用于 cost model 选择；AP30 和 AP50 是必须保留的测量证据。
 

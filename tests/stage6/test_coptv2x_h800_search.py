@@ -145,6 +145,23 @@ def _gold176() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     return rows, graphs
 
 
+def test_initial_coldstart_keeps_true_failures_as_evidence_outside_value_fit() -> None:
+    """The reviewed Gold176 ledger has 174 value rows and two real failures."""
+    rows, graphs = _gold176()
+    for index, status in ((174, "feasibility_failure"), (175, "numerical_feasibility_failure")):
+        rows[index] = {
+            key: value
+            for key, value in rows[index].items()
+            if key not in {"latency_ms", "energy_j", "ap30", "ap50", "ap70"}
+        }
+        rows[index]["terminal_status"] = status
+
+    bundle = execution.fit_initial_coldstart_bundle(rows, graphs, [_profile()], seed=73)
+
+    assert bundle.manifest["input_row_count"] == 176
+    assert bundle.manifest["value_training_row_count"] == 174
+
+
 def _source_group(group_id: str, width: list[int]) -> dict[str, Any]:
     evidence_sha = hashlib.sha256(f"source:{group_id}".encode()).hexdigest()
     source_contract = {

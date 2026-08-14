@@ -612,11 +612,22 @@ def fit_initial_coldstart_bundle(
     *,
     seed: int,
 ) -> ProductionBundle:
-    """Fit the round-zero single-target heads from Gold176 and nothing else."""
-    source_rows = freeze_initial_coldstart(rows)
+    """Fit round zero from Gold176 successes while retaining true failures as evidence."""
+    frozen_rows = freeze_initial_coldstart(rows)
+    source_rows = [
+        row for row in frozen_rows if str(row.get("terminal_status")) == SUCCESS_STATUS
+    ]
+    failure_rows = [
+        row
+        for row in frozen_rows
+        if str(row.get("terminal_status")) in TRUE_FAILURE_STATUSES
+    ]
+    if len(source_rows) + len(failure_rows) != len(frozen_rows):
+        raise ValueError(
+            "initial_coldstart Gold176 contains a non-terminal or unsupported failure row"
+        )
     if any(
-        str(row.get("terminal_status")) != SUCCESS_STATUS
-        or not all(
+        not all(
             not isinstance(row.get(target), bool)
             and _finite(row.get(target))
             and float(row[target]) > 0.0
@@ -637,7 +648,7 @@ def fit_initial_coldstart_bundle(
         capability_profiles,
         seed=seed,
         schema_version="stage5_initial_coldstart_model_bundle_v2",
-        input_row_count=len(source_rows),
+        input_row_count=len(frozen_rows),
         training_view_policy="initial_coldstart_only",
     )
 
