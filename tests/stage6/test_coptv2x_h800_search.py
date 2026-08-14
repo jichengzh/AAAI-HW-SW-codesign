@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+import hashlib
+import json
 from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
 
+from framework.stage2.canonical_search_v3 import build_capability_profile
 from framework.stage6 import coptv2x_h800_search_v2 as execution
 from framework.stage6.coptv2x_h800_search_v2 import (
     LocalP6CoptV2XConfig,
@@ -13,6 +17,7 @@ from framework.stage6.coptv2x_h800_search_v2 import (
     PublicP6CoptV2XContract,
     load_local_config,
     load_public_contract,
+    run_p6_coptv2x_search,
 )
 
 
@@ -85,6 +90,255 @@ def _local_config(tmp_path: Path, **overrides: Any) -> dict[str, Any]:
         "local_output_root": str(output_root),
     }
     return {**payload, **overrides}
+
+
+def _profile() -> dict[str, Any]:
+    return build_capability_profile(
+        capability_profile_id="h800-tvm-auto",
+        hardware_target="h800",
+        compiler_fingerprint="a" * 64,
+        dispatch_key="tvm_auto",
+        features={"int8_propagation": 0.0, "qdq_fold": 0.0},
+    )
+
+
+def _graph(group_id: str, width: list[int]) -> dict[str, Any]:
+    return {
+        "group_id": group_id,
+        "model": "pyramid",
+        "width": list(width),
+        "conv_count": 27,
+        "conv_macs": float(width[0] * width[1] * width[2]),
+        "group_conv_count": 3,
+    }
+
+
+def _gold176() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    rows: list[dict[str, Any]] = []
+    graphs: list[dict[str, Any]] = []
+    for index in range(176):
+        width = [16 + (index % 7) * 8, 32 + (index % 8) * 8, 64 + (index % 9) * 8]
+        group_id = f"gold-{index:03d}"
+        q_mode = "int8" if index % 2 else "fp16"
+        graphs.append(_graph(group_id, width))
+        rows.append(
+            {
+                "manifest_job_id": f"{group_id}|q={q_mode}|profile=h800-tvm-auto",
+                "row_id": f"{group_id}|q={q_mode}|profile=h800-tvm-auto",
+                "group_id": group_id,
+                "model": "pyramid",
+                "width": width,
+                "dispatch_key": "tvm_auto",
+                "capability_profile_id": "h800-tvm-auto",
+                "q_mode": q_mode,
+                "latency_ms": 2.0 + index * 0.01,
+                "energy_j": 0.5 + index * 0.005,
+                "ap30": 0.90,
+                "ap50": 0.80,
+                "ap70": 0.70 - index * 0.0001,
+                "terminal_status": "measured_success_gold",
+                "training_source": "initial_coldstart",
+            }
+        )
+    return rows, graphs
+
+
+def _source_group(group_id: str, width: list[int]) -> dict[str, Any]:
+    evidence_sha = hashlib.sha256(f"source:{group_id}".encode()).hexdigest()
+    source_contract = {
+        "schema_version": "stage5_source_contract_v1",
+        "group_id": group_id,
+        "model": "pyramid",
+        "width": width,
+        "artifact_id": f"fixture-{group_id}",
+        "source_status": "ready",
+        "source_evidence_sha256": evidence_sha,
+        "materialization_scope": "synthetic_fixture",
+    }
+    contract_sha = hashlib.sha256(
+        json.dumps(
+            source_contract,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    return {
+        "group_id": group_id,
+        "model": "pyramid",
+        "width": width,
+        "source_status": "ready",
+        "source_evidence_sha256": evidence_sha,
+        "source_contract": source_contract,
+        "source_contract_sha256": contract_sha,
+        "materialization_kind": "local_pyramid_tvm",
+        "source_evidence_kind": "local_synthetic",
+        "graph_features": _graph(group_id, width),
+    }
+
+
+def _closure() -> dict[str, Any]:
+    return {
+        "schema_version": "stage4_p1_p3_closure_audit_v1",
+        "stage4_closed": True,
+        "stage5_search_ready": True,
+        "canonical_value_heads": {
+            "latency_ms": "extra_trees_log",
+            "energy_j": "extra_trees_log",
+            "ap70": "lgbm_huber_residual",
+        },
+        "uncertainty_policy": "lgbm_quantile_plus_group_conformal",
+        "selected_acquisition_policy": "predicted_frontier_diversity",
+        "training_source_rows": {"initial_coldstart": 176},
+        "frozen_holdout": {"groups": []},
+    }
+
+
+def _write_source_registry(path: Path, *, count: int) -> None:
+    widths = [
+        [16 + (index // 49) * 8, 32 + (index // 7 % 7) * 8, 64 + (index % 7) * 8]
+        for index in range(count)
+    ]
+    groups = [
+        _source_group(f"pyramid|{'x'.join(map(str, width))}", width) for width in widths
+    ]
+    path.write_text(
+        json.dumps({"schema_version": "stage5_candidate_source_registry_v1", "groups": groups}),
+        encoding="utf-8",
+    )
+
+
+def _write_feedback_from_request(request_path: Path, feedback_path: Path) -> None:
+    request = json.loads(request_path.read_text(encoding="utf-8"))
+    payload = {
+        "schema_version": "p6_h800_coptv2x_feedback_v2",
+        "measurement_request_sha256": request["measurement_request_sha256"],
+        "rows": [
+            {
+                "row_id": row["row_id"],
+                "terminal_status": "measured_success_gold",
+                "latency_ms": 3.0,
+                "energy_j": 0.8,
+                "ap30": 0.91,
+                "ap50": 0.82,
+                "ap70": 0.73,
+            }
+            for row in request["rows"]
+        ],
+    }
+    feedback_path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _loaded_local_config(
+    tmp_path: Path,
+    *,
+    source_group_count: int = 343,
+) -> LocalP6CoptV2XConfig:
+    del source_group_count
+    gold_rows, gold_graphs = _gold176()
+    payloads = {
+        "gold176_rows": gold_rows,
+        "gold176_graph_features": gold_graphs,
+        "capability_profiles": [_profile()],
+        "closure": _closure(),
+    }
+    for name, payload in payloads.items():
+        (tmp_path / f"{name}.json").write_text(json.dumps(payload), encoding="utf-8")
+    for label in ("training-data", "model-init", "toolchain"):
+        (tmp_path / label).mkdir()
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    return load_local_config(_write_yaml(tmp_path / "local.yaml", _local_config(tmp_path)), contract)
+
+
+def test_run_p6_builds_registry_refits_gold176_and_runs_four_rounds(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    local = _loaded_local_config(tmp_path)
+    requests: list[dict[str, Any]] = []
+    initial_fit_input_counts: list[int] = []
+    online_fit_input_counts: list[int] = []
+    real_initial_fit = execution.fit_initial_coldstart_bundle
+    real_online_fit = execution.fit_online_bundle
+
+    def recording_initial_fit(
+        rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any
+    ) -> Any:
+        initial_fit_input_counts.append(len(rows))
+        return real_initial_fit(rows, *args, **kwargs)
+
+    def recording_online_fit(
+        rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any
+    ) -> Any:
+        online_fit_input_counts.append(len(rows))
+        return real_online_fit(rows, *args, **kwargs)
+
+    monkeypatch.setattr(execution, "fit_initial_coldstart_bundle", recording_initial_fit)
+    monkeypatch.setattr(execution, "fit_online_bundle", recording_online_fit)
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        del cwd
+        if argv[1] == "local_build_registry.py":
+            source_registry_path = Path(argv[3])
+            _write_source_registry(source_registry_path, count=343)
+            return 0
+        request = json.loads(Path(argv[2]).read_text(encoding="utf-8"))
+        requests.append(request)
+        feedback = {
+            "schema_version": "p6_h800_coptv2x_feedback_v2",
+            "measurement_request_sha256": request["measurement_request_sha256"],
+            "rows": [
+                {
+                    "row_id": row["row_id"],
+                    "terminal_status": "measured_success_gold",
+                    "latency_ms": 3.0 + len(requests),
+                    "energy_j": 0.7 + len(requests) / 10,
+                    "ap30": 0.91,
+                    "ap50": 0.82,
+                    "ap70": 0.73,
+                }
+                for row in request["rows"]
+            ],
+        }
+        Path(argv[3]).write_text(json.dumps(feedback), encoding="utf-8")
+        return 0
+
+    state = run_p6_coptv2x_search(contract, local, "abc123", runner)
+
+    assert state.status == "completed"
+    assert state.completed_rounds == 4
+    assert state.measured_candidate_count == 16
+    assert len(requests) == 4
+    assert [request["round_index"] for request in requests] == [0, 1, 2, 3]
+    assert all(
+        request["required_metrics"] == ["latency_ms", "energy_j", "ap30", "ap50", "ap70"]
+        for request in requests
+    )
+    selected = [row["row_id"] for request in requests for row in request["rows"]]
+    assert len(selected) == len(set(selected)) == 16
+    assert {row["q_mode"] for request in requests for row in request["rows"]} <= {
+        "fp16",
+        "int8",
+    }
+    assert {row["dispatch_key"] for request in requests for row in request["rows"]} == {
+        "tvm_auto"
+    }
+    assert initial_fit_input_counts == [176]
+    assert online_fit_input_counts == [180, 184, 188]
+    assert state.local_state_path == local.local_output_root / "state.json"
+    stored_state = json.loads(state.local_state_path.read_text(encoding="utf-8"))
+    assert stored_state == {
+        "schema_version": "p6_h800_coptv2x_local_state_v2",
+        "status": "completed",
+        "code_revision": "abc123",
+        "completed_rounds": 4,
+        "measured_candidate_count": 16,
+        "failure_code": None,
+    }
+    serialized_state = json.dumps(stored_state, sort_keys=True)
+    assert str(tmp_path) not in serialized_state
+    assert not any(row_id in serialized_state for row_id in selected)
 
 
 def test_load_public_contract_requires_fixed_pyramid_h800_tvm_budget(tmp_path: Path) -> None:

@@ -400,6 +400,67 @@ def test_online_single_target_refit_preserves_real_heads_seed_and_calibration() 
     assert set(bundle.interval_heads) == {"latency_ms", "energy_j", "ap70"}
 
 
+def test_initial_single_target_fit_accepts_only_gold176_coldstart_rows() -> None:
+    """Catches restoring legacy four-arm fitting or admitting online rows at round zero."""
+    profile = build_capability_profile(
+        capability_profile_id="h800-tvm-auto",
+        hardware_target="h800",
+        compiler_fingerprint="a" * 64,
+        dispatch_key="tvm_auto",
+        features={"int8_propagation": 0.0, "qdq_fold": 0.0},
+    )
+    rows: list[dict[str, Any]] = []
+    graphs: list[dict[str, Any]] = []
+    for index in range(176):
+        width = [16 + index % 7 * 8, 32 + index % 8 * 8, 64 + index % 9 * 8]
+        group_id = f"gold-{index:03d}"
+        q_mode = "int8" if index % 2 else "fp16"
+        row_id = f"{group_id}|q={q_mode}|profile=h800-tvm-auto"
+        rows.append(
+            {
+                "manifest_job_id": row_id,
+                "row_id": row_id,
+                "group_id": group_id,
+                "model": "pyramid",
+                "width": width,
+                "dispatch_key": "tvm_auto",
+                "capability_profile_id": "h800-tvm-auto",
+                "q_mode": q_mode,
+                "latency_ms": 2.0 + index * 0.01,
+                "energy_j": 0.5 + index * 0.005,
+                "ap30": 0.90,
+                "ap50": 0.80,
+                "ap70": 0.70 - index * 0.0001,
+                "terminal_status": "measured_success_gold",
+                "training_source": "initial_coldstart",
+            }
+        )
+        graphs.append(
+            {
+                "group_id": group_id,
+                "model": "pyramid",
+                "width": width,
+                "conv_count": 27,
+                "conv_macs": float(width[0] * width[1] * width[2]),
+                "group_conv_count": 3,
+            }
+        )
+
+    bundle = single.fit_initial_coldstart_bundle(rows, graphs, [profile], seed=41)
+
+    assert bundle.manifest["schema_version"] == "stage5_initial_coldstart_model_bundle_v2"
+    assert bundle.manifest["training_view_policy"] == "initial_coldstart_only"
+    assert bundle.manifest["input_row_count"] == 176
+    assert bundle.manifest["value_training_row_count"] == 176
+    assert bundle.manifest["seed"] == 41
+    assert bundle.value_heads["latency_ms"].random_state == 41
+
+    contaminated = copy.deepcopy(rows)
+    contaminated[-1]["training_source"] = "online_feedback"
+    with pytest.raises(ValueError, match="initial_coldstart"):
+        single.fit_initial_coldstart_bundle(contaminated, graphs, [profile], seed=41)
+
+
 def test_coldstart_and_feedback_views_are_detached_and_task_bound() -> None:
     """Catches mutation, wrong coldstart cardinality, or cross-task feedback drift."""
     coldstart = [

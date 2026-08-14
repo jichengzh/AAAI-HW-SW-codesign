@@ -470,23 +470,12 @@ def select_task_batch(
     }
 
 
-def fit_online_bundle(
-    rows: Sequence[Mapping[str, Any]],
-    graph_features: Sequence[Mapping[str, Any]],
-    capability_profiles: Sequence[Mapping[str, Any]],
+def _fit_single_target_value_heads(
+    encoded: Any,
+    source_rows: Sequence[Mapping[str, Any]],
     *,
     seed: int,
-) -> ProductionBundle:
-    """Fit the frozen Stage4 heads after independent single-genome feedback."""
-    source_rows = [
-        dict(row)
-        for row in rows
-        if str(row.get("terminal_status")) == SUCCESS_STATUS
-        and all(_finite(row.get(target)) for target in ("latency_ms", "energy_j", "ap70"))
-    ]
-    if len(source_rows) < 20:
-        raise ValueError("at least 20 finite rows are required for online fitting")
-    encoded = encode_rows(source_rows, graph_features, capability_profiles)
+) -> tuple[dict[str, Any], dict[str, float]]:
     anchors = {
         model: float(
             np.median(
@@ -509,6 +498,19 @@ def fit_online_bundle(
         ),
     )
     value_heads["ap70"] = ap_model
+    return value_heads, anchors
+
+
+def _fit_single_target_intervals(
+    encoded: Any,
+    source_rows: Sequence[Mapping[str, Any]],
+    *,
+    seed: int,
+) -> tuple[
+    dict[str, tuple[Any, Any, Any]],
+    dict[str, dict[str, float]],
+    set[str],
+]:
 
     calibration_groups = _stable_calibration_groups(source_rows, seed)
     fit_indices = [
@@ -556,8 +558,26 @@ def fit_online_bundle(
         corrections[target] = {
             model_name: float(max(values)) for model_name, values in scores.items()
         }
+    return interval_heads, corrections, calibration_groups
+
+
+def _fit_single_target_bundle(
+    source_rows: Sequence[Mapping[str, Any]],
+    graph_features: Sequence[Mapping[str, Any]],
+    capability_profiles: Sequence[Mapping[str, Any]],
+    *,
+    seed: int,
+    schema_version: str,
+    input_row_count: int,
+    training_view_policy: str | None,
+) -> ProductionBundle:
+    encoded = encode_rows(source_rows, graph_features, capability_profiles)
+    value_heads, anchors = _fit_single_target_value_heads(encoded, source_rows, seed=seed)
+    interval_heads, corrections, calibration_groups = _fit_single_target_intervals(
+        encoded, source_rows, seed=seed
+    )
     manifest = {
-        "schema_version": "stage5_online_model_bundle_manifest_v2",
+        "schema_version": schema_version,
         "canonical_value_heads": {
             "latency_ms": "extra_trees_log",
             "energy_j": "extra_trees_log",
@@ -567,10 +587,12 @@ def fit_online_bundle(
         "acquisition_policy": "predicted_frontier_diversity",
         "seed": seed,
         "feature_names": list(encoded.feature_names),
-        "input_row_count": len(rows),
+        "input_row_count": input_row_count,
         "value_training_row_count": len(source_rows),
         "calibration_groups": sorted(calibration_groups),
     }
+    if training_view_policy is not None:
+        manifest = {**manifest, "training_view_policy": training_view_policy}
     manifest["bundle_config_sha256"] = _sha(manifest)
     return ProductionBundle(
         manifest=manifest,
@@ -580,6 +602,59 @@ def fit_online_bundle(
         interval_heads=interval_heads,
         conformal_corrections=corrections,
         model_anchors=anchors,
+    )
+
+
+def fit_initial_coldstart_bundle(
+    rows: Sequence[Mapping[str, Any]],
+    graph_features: Sequence[Mapping[str, Any]],
+    capability_profiles: Sequence[Mapping[str, Any]],
+    *,
+    seed: int,
+) -> ProductionBundle:
+    """Fit the round-zero single-target heads from Gold176 and nothing else."""
+    source_rows = freeze_initial_coldstart(rows)
+    if any(
+        str(row.get("terminal_status")) != SUCCESS_STATUS
+        or not all(_finite(row.get(target)) for target in ("latency_ms", "energy_j", "ap70"))
+        for row in source_rows
+    ):
+        raise ValueError("initial_coldstart Gold176 rows must contain finite successful evidence")
+    return _fit_single_target_bundle(
+        source_rows,
+        graph_features,
+        capability_profiles,
+        seed=seed,
+        schema_version="stage5_initial_coldstart_model_bundle_v2",
+        input_row_count=len(source_rows),
+        training_view_policy="initial_coldstart_only",
+    )
+
+
+def fit_online_bundle(
+    rows: Sequence[Mapping[str, Any]],
+    graph_features: Sequence[Mapping[str, Any]],
+    capability_profiles: Sequence[Mapping[str, Any]],
+    *,
+    seed: int,
+) -> ProductionBundle:
+    """Fit the frozen Stage4 heads after independent single-genome feedback."""
+    source_rows = [
+        dict(row)
+        for row in rows
+        if str(row.get("terminal_status")) == SUCCESS_STATUS
+        and all(_finite(row.get(target)) for target in ("latency_ms", "energy_j", "ap70"))
+    ]
+    if len(source_rows) < 20:
+        raise ValueError("at least 20 finite rows are required for online fitting")
+    return _fit_single_target_bundle(
+        source_rows,
+        graph_features,
+        capability_profiles,
+        seed=seed,
+        schema_version="stage5_online_model_bundle_manifest_v2",
+        input_row_count=len(rows),
+        training_view_policy=None,
     )
 
 

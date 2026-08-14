@@ -1,15 +1,30 @@
-"""Side-effect-free contracts for the local P6 CoptV2X H800/TVM search."""
+"""Contracts and local state machine for the P6 CoptV2X H800/TVM search."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+import json
+import math
 from pathlib import Path
 import re
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Literal
 
 import yaml
+
+from framework.stage2.canonical_search_v3 import validate_capability_profile
+from framework.stage5.production_search_v1 import predict_candidate_rows
+from framework.stage5.single_target_search_v2 import (
+    SearchTask,
+    build_measurement_request,
+    build_task_candidate_manifest,
+    fit_initial_coldstart_bundle,
+    fit_online_bundle,
+    freeze_initial_coldstart,
+    select_task_batch,
+    validate_task_feedback_history,
+)
 
 
 PUBLIC_SCHEMA_VERSION = "p6_h800_coptv2x_search_contract_v2"
@@ -106,6 +121,14 @@ class P6CoptV2XContractError(ValueError):
     """Raised when a P6 public or local CoptV2X contract is invalid."""
 
 
+class P6CoptV2XExecutionError(RuntimeError):
+    """Raised when an argv-only local P6 execution step fails."""
+
+    def __init__(self, failure_code: str, message: str) -> None:
+        super().__init__(message)
+        self.failure_code = failure_code
+
+
 @dataclass(frozen=True)
 class RegisteredAsset:
     label: str
@@ -142,6 +165,338 @@ class LocalP6CoptV2XConfig:
     source_registry_step: LocalExecutionStep
     measurement_step: LocalExecutionStep
     local_output_root: Path
+
+
+@dataclass(frozen=True)
+class P6CoptV2XRunState:
+    schema_version: str
+    status: Literal["completed", "failed"]
+    completed_rounds: int
+    measured_candidate_count: int
+    failure_code: str | None
+    local_state_path: Path
+
+
+CommandRunner = Callable[[tuple[str, ...], Path], int]
+
+
+def run_p6_coptv2x_search(
+    contract: PublicP6CoptV2XContract,
+    local: LocalP6CoptV2XConfig,
+    code_revision: str,
+    command_runner: CommandRunner,
+) -> P6CoptV2XRunState:
+    """Run the fixed four-round local Pyramid/H800/TVM search state machine."""
+    local.local_output_root.mkdir(parents=True, exist_ok=True)
+    frozen_gold, gold_graphs, profile = _load_search_inputs(local)
+    task = _build_search_task(contract, profile)
+    source_registry = _build_source_registry(local, command_runner)
+    online_feedback_rows: list[dict[str, Any]] = []
+    measured_row_ids: set[str] = set()
+    gold_selection_rows = _attach_graph_features(frozen_gold, gold_graphs)
+    for round_index in range(contract.round_count):
+        released_rows = _run_search_round(
+            contract=contract,
+            local=local,
+            task=task,
+            profile=profile,
+            source_registry=source_registry,
+            frozen_gold=frozen_gold,
+            gold_graphs=gold_graphs,
+            gold_selection_rows=gold_selection_rows,
+            online_feedback_rows=online_feedback_rows,
+            measured_row_ids=measured_row_ids,
+            round_index=round_index,
+            command_runner=command_runner,
+        )
+        online_feedback_rows = [*online_feedback_rows, *released_rows]
+        measured_row_ids.update(str(row["row_id"]) for row in released_rows)
+        if round_index < contract.round_count - 1:
+            validate_task_feedback_history(
+                online_feedback_rows,
+                task=task,
+                completed_rounds=round_index + 1,
+            )
+    return _complete_run_state(
+        local,
+        code_revision=code_revision,
+        completed_rounds=contract.round_count,
+        measured_candidate_count=len(measured_row_ids),
+    )
+
+
+def _load_search_inputs(
+    local: LocalP6CoptV2XConfig,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    gold_rows = _require_mapping_rows(
+        _read_json_object_or_list(local.local_input_paths["gold176_rows"]),
+        "gold176 rows",
+    )
+    gold_graphs = _require_mapping_rows(
+        _read_json_object_or_list(local.local_input_paths["gold176_graph_features"]),
+        "gold176 graph features",
+    )
+    raw_profiles = _require_mapping_rows(
+        _read_json_object_or_list(local.local_input_paths["capability_profiles"]),
+        "capability profiles",
+    )
+    closure = _read_json_object_or_list(local.local_input_paths["closure"])
+    if not isinstance(closure, Mapping):
+        raise P6CoptV2XContractError("closure must be an object")
+    frozen_gold = freeze_initial_coldstart(gold_rows)
+    profile = _select_profile(raw_profiles)
+    return frozen_gold, gold_graphs, profile
+
+
+def _build_source_registry(
+    local: LocalP6CoptV2XConfig, command_runner: CommandRunner
+) -> Mapping[str, Any]:
+    source_registry_path = local.local_output_root / "source_registry.json"
+    _run_step(
+        local.source_registry_step,
+        {
+            "{local_output_root}": local.local_output_root,
+            "{source_registry_json}": source_registry_path,
+        },
+        cwd=local.local_output_root,
+        runner=command_runner,
+    )
+    source_registry = _read_json_object_or_list(source_registry_path)
+    if not isinstance(source_registry, Mapping):
+        raise P6CoptV2XContractError("source registry must be an object")
+    return source_registry
+
+
+def _run_search_round(
+    *,
+    contract: PublicP6CoptV2XContract,
+    local: LocalP6CoptV2XConfig,
+    task: SearchTask,
+    profile: Mapping[str, Any],
+    source_registry: Mapping[str, Any],
+    frozen_gold: Sequence[Mapping[str, Any]],
+    gold_graphs: Sequence[Mapping[str, Any]],
+    gold_selection_rows: Sequence[Mapping[str, Any]],
+    online_feedback_rows: Sequence[Mapping[str, Any]],
+    measured_row_ids: set[str],
+    round_index: int,
+    command_runner: CommandRunner,
+) -> list[dict[str, Any]]:
+    training_rows = [*frozen_gold, *online_feedback_rows]
+    training_graphs = _unique_graph_features(
+        [*gold_graphs, *[dict(row["graph_features"]) for row in online_feedback_rows]]
+    )
+    bundle = (
+        fit_initial_coldstart_bundle(frozen_gold, gold_graphs, [profile], seed=contract.seed)
+        if round_index == 0
+        else fit_online_bundle(training_rows, training_graphs, [profile], seed=contract.seed)
+    )
+    manifest = build_task_candidate_manifest(
+        source_registry, task=task, measured_row_ids=measured_row_ids
+    )
+    predicted = predict_candidate_rows(bundle, manifest["rows"], [profile])
+    selection = select_task_batch(
+        predicted,
+        [*gold_selection_rows, *online_feedback_rows],
+        training_graphs,
+        task=task,
+    )
+    request = build_measurement_request(
+        task=task, selected_rows=selection["selected_rows"], round_index=round_index
+    )
+    round_root = local.local_output_root / f"round-{round_index:02d}"
+    round_root.mkdir(parents=True, exist_ok=True)
+    request_path = round_root / "measurement_request.json"
+    feedback_path = round_root / "feedback.json"
+    _write_json(request_path, request)
+    _run_step(
+        local.measurement_step,
+        {
+            "{measurement_request}": request_path,
+            "{feedback_json}": feedback_path,
+            "{round_output_root}": round_root,
+        },
+        cwd=round_root,
+        runner=command_runner,
+    )
+    return _release_feedback_rows(_read_json_object_or_list(feedback_path), request)
+
+
+def _complete_run_state(
+    local: LocalP6CoptV2XConfig,
+    *,
+    code_revision: str,
+    completed_rounds: int,
+    measured_candidate_count: int,
+) -> P6CoptV2XRunState:
+    state_path = local.local_output_root / "state.json"
+    state = P6CoptV2XRunState(
+        schema_version="p6_h800_coptv2x_local_state_v2",
+        status="completed",
+        completed_rounds=completed_rounds,
+        measured_candidate_count=measured_candidate_count,
+        failure_code=None,
+        local_state_path=state_path,
+    )
+    _write_state(state, code_revision=code_revision)
+    return state
+
+
+def _build_search_task(
+    contract: PublicP6CoptV2XContract, profile: Mapping[str, Any]
+) -> SearchTask:
+    return SearchTask(
+        task_id=contract.search_id,
+        target_model=contract.target_model,
+        hardware_id=contract.target,
+        capability_profile=profile,
+        sample_budget=contract.sample_budget,
+        batch_size=contract.batch_size,
+        round_count=contract.round_count,
+    )
+
+
+def _select_profile(profiles: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    try:
+        validated = [validate_capability_profile(profile) for profile in profiles]
+    except ValueError as exc:
+        raise P6CoptV2XContractError("capability profile invalid") from exc
+    matching = [
+        profile
+        for profile in validated
+        if str(profile["hardware_target"]).lower() == FIXED_TARGET
+        and str(profile["dispatch_key"]) == FIXED_BACKEND
+    ]
+    if len(matching) != 1:
+        raise P6CoptV2XContractError("exactly one H800 TVM capability profile is required")
+    return matching[0]
+
+
+def _attach_graph_features(
+    rows: Sequence[Mapping[str, Any]], graph_features: Sequence[Mapping[str, Any]]
+) -> list[dict[str, Any]]:
+    graph_by_group = {str(graph.get("group_id")): dict(graph) for graph in graph_features}
+    if len(graph_by_group) != len(graph_features):
+        raise P6CoptV2XContractError("gold176 graph feature identities must be unique")
+    if any(str(row.get("group_id")) not in graph_by_group for row in rows):
+        raise P6CoptV2XContractError("gold176 graph features are incomplete")
+    return [
+        {**dict(row), "graph_features": graph_by_group[str(row["group_id"])]}
+        for row in rows
+    ]
+
+
+def _unique_graph_features(
+    graph_features: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    by_group: dict[str, dict[str, Any]] = {}
+    for raw_graph in graph_features:
+        graph = dict(raw_graph)
+        group_id = str(graph.get("group_id") or "")
+        if not group_id:
+            raise P6CoptV2XContractError("graph feature group identity is missing")
+        if group_id in by_group and by_group[group_id] != graph:
+            raise P6CoptV2XContractError("graph feature identity drift")
+        by_group[group_id] = graph
+    return list(by_group.values())
+
+
+def _release_feedback_rows(
+    feedback: object, request: Mapping[str, Any]
+) -> list[dict[str, Any]]:
+    if not isinstance(feedback, Mapping):
+        raise P6CoptV2XContractError("feedback must be an object")
+    if feedback.get("schema_version") != "p6_h800_coptv2x_feedback_v2":
+        raise P6CoptV2XContractError("feedback schema is invalid")
+    if feedback.get("measurement_request_sha256") != request.get(
+        "measurement_request_sha256"
+    ):
+        raise P6CoptV2XContractError("feedback request identity mismatch")
+    request_rows = request.get("rows")
+    feedback_rows = feedback.get("rows")
+    if not isinstance(request_rows, list) or not isinstance(feedback_rows, list):
+        raise P6CoptV2XContractError("feedback rows are invalid")
+    request_by_id = {str(row.get("row_id")): row for row in request_rows}
+    feedback_by_id = {str(row.get("row_id")): row for row in feedback_rows}
+    if (
+        len(request_by_id) != 4
+        or len(feedback_by_id) != 4
+        or set(request_by_id) != set(feedback_by_id)
+    ):
+        raise P6CoptV2XContractError("feedback must contain the requested four rows")
+    released: list[dict[str, Any]] = []
+    for row_id, request_row in request_by_id.items():
+        feedback_row = feedback_by_id[row_id]
+        if feedback_row.get("terminal_status") != "measured_success_gold":
+            raise P6CoptV2XContractError("Task 2 feedback must be measured success")
+        metrics = {name: feedback_row.get(name) for name in METRIC_NAMES}
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            for value in metrics.values()
+        ):
+            raise P6CoptV2XContractError("feedback metrics must be finite")
+        released.append(
+            {
+                **dict(request_row),
+                **metrics,
+                "terminal_status": "measured_success_gold",
+                "training_source": "online_feedback",
+            }
+        )
+    return released
+
+
+def _read_json_object_or_list(path: Path) -> object:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise P6CoptV2XContractError("local input invalid") from exc
+
+
+def _require_mapping_rows(value: object, description: str) -> list[dict[str, Any]]:
+    if not isinstance(value, list) or not all(isinstance(row, Mapping) for row in value):
+        raise P6CoptV2XContractError(f"{description} must be a list of objects")
+    return [dict(row) for row in value]
+
+
+def _replace_exact_token(arg: str, replacements: Mapping[str, Path]) -> str:
+    replacement = replacements.get(arg)
+    return str(replacement) if replacement is not None else arg
+
+
+def _run_step(
+    step: LocalExecutionStep,
+    replacements: Mapping[str, Path],
+    *,
+    cwd: Path,
+    runner: CommandRunner,
+) -> None:
+    argv = tuple(_replace_exact_token(arg, replacements) for arg in step.argv)
+    if runner(argv, cwd) != 0:
+        raise P6CoptV2XExecutionError("command_failed", "local command failed")
+
+
+def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
+    path.write_text(
+        json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")),
+        encoding="utf-8",
+    )
+
+
+def _write_state(state: P6CoptV2XRunState, *, code_revision: str) -> None:
+    _write_json(
+        state.local_state_path,
+        {
+            "schema_version": state.schema_version,
+            "status": state.status,
+            "code_revision": code_revision,
+            "completed_rounds": state.completed_rounds,
+            "measured_candidate_count": state.measured_candidate_count,
+            "failure_code": state.failure_code,
+        },
+    )
 
 
 def load_public_contract(path: Path) -> PublicP6CoptV2XContract:
