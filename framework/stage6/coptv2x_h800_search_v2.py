@@ -43,6 +43,7 @@ FIXED_BATCH_SIZE = 4
 FIXED_ROUND_COUNT = 4
 FIXED_SOURCE_GROUP_COUNT = 343
 FIXED_ELIGIBLE_GENOME_COUNT = 686
+FIXED_COLDSTART_PROFILE_COUNT = 2
 EXPECTED_CLOSURE_HEADS = {
     "latency_ms": "extra_trees_log",
     "energy_j": "extra_trees_log",
@@ -219,7 +220,7 @@ def run_p6_coptv2x_search(
 ) -> P6CoptV2XRunState:
     """Run the fixed four-round local Pyramid/H800/TVM search state machine."""
     _prepare_local_output_root(local.local_output_root)
-    frozen_gold, gold_graphs, profile = _load_search_inputs(local)
+    frozen_gold, gold_graphs, capability_profiles, profile = _load_search_inputs(local)
     task = _build_search_task(contract, profile)
     source_registry = _build_source_registry(local, command_runner)
     try:
@@ -238,7 +239,7 @@ def run_p6_coptv2x_search(
                 contract=contract,
                 local=local,
                 task=task,
-                profile=profile,
+                capability_profiles=capability_profiles,
                 source_registry=source_registry,
                 frozen_gold=frozen_gold,
                 gold_graphs=gold_graphs,
@@ -283,7 +284,12 @@ def run_p6_coptv2x_search(
 
 def _load_search_inputs(
     local: LocalP6CoptV2XConfig,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    dict[str, Any],
+]:
     gold_rows = _require_mapping_rows(
         _read_local_input_json(local.local_input_paths["gold176_rows"]),
         "gold176 rows",
@@ -299,8 +305,24 @@ def _load_search_inputs(
     closure = _read_local_input_json(local.local_input_paths["closure"])
     _validate_closure(closure)
     frozen_gold = freeze_initial_coldstart(gold_rows)
-    profile = _select_profile(raw_profiles)
-    return frozen_gold, gold_graphs, profile
+    capability_profiles = [
+        validate_capability_profile(profile) for profile in raw_profiles
+    ]
+    coldstart_profile_ids = {
+        str(row.get("capability_profile_id") or "") for row in frozen_gold
+    }
+    capability_profile_ids = {
+        str(profile.get("capability_profile_id") or "")
+        for profile in capability_profiles
+    }
+    if (
+        len(coldstart_profile_ids) != FIXED_COLDSTART_PROFILE_COUNT
+        or len(capability_profiles) != FIXED_COLDSTART_PROFILE_COUNT
+        or capability_profile_ids != coldstart_profile_ids
+    ):
+        raise P6CoptV2XContractError("coldstart capability context is incomplete")
+    profile = _select_profile(capability_profiles)
+    return frozen_gold, gold_graphs, capability_profiles, profile
 
 
 def _build_source_registry(
@@ -360,7 +382,7 @@ def _run_search_round(
     contract: PublicP6CoptV2XContract,
     local: LocalP6CoptV2XConfig,
     task: SearchTask,
-    profile: Mapping[str, Any],
+    capability_profiles: Sequence[Mapping[str, Any]],
     source_registry: Mapping[str, Any],
     frozen_gold: Sequence[Mapping[str, Any]],
     gold_graphs: Sequence[Mapping[str, Any]],
@@ -381,9 +403,13 @@ def _run_search_round(
         [*gold_graphs, *[dict(row["graph_features"]) for row in successful_feedback_rows]]
     )
     bundle = (
-        fit_initial_coldstart_bundle(frozen_gold, gold_graphs, [profile], seed=contract.seed)
+        fit_initial_coldstart_bundle(
+            frozen_gold, gold_graphs, capability_profiles, seed=contract.seed
+        )
         if round_index == 0
-        else fit_online_bundle(training_rows, training_graphs, [profile], seed=contract.seed)
+        else fit_online_bundle(
+            training_rows, training_graphs, capability_profiles, seed=contract.seed
+        )
     )
     manifest = build_task_candidate_manifest(
         source_registry,
@@ -391,7 +417,7 @@ def _run_search_round(
         measured_row_ids=measured_row_ids,
         frozen_holdout_group_ids=frozen_holdout_group_ids,
     )
-    predicted = predict_candidate_rows(bundle, manifest["rows"], [profile])
+    predicted = predict_candidate_rows(bundle, manifest["rows"], capability_profiles)
     selection = select_task_batch(
         predicted,
         [*gold_selection_rows, *online_feedback_rows],

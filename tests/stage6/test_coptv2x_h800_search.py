@@ -104,6 +104,16 @@ def _profile() -> dict[str, Any]:
     )
 
 
+def _non_target_profile() -> dict[str, Any]:
+    return build_capability_profile(
+        capability_profile_id="h800-trt-engine",
+        hardware_target="h800",
+        compiler_fingerprint="b" * 64,
+        dispatch_key="trt_engine",
+        features={"int8_propagation": 1.0, "qdq_fold": 1.0},
+    )
+
+
 def _graph(group_id: str, width: list[int]) -> dict[str, Any]:
     return {
         "group_id": group_id,
@@ -115,23 +125,28 @@ def _graph(group_id: str, width: list[int]) -> dict[str, Any]:
     }
 
 
-def _gold176() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _gold176(
+    *, include_non_target_backend: bool = False
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     rows: list[dict[str, Any]] = []
     graphs: list[dict[str, Any]] = []
     for index in range(176):
         width = [16 + (index % 7) * 8, 32 + (index % 8) * 8, 64 + (index % 9) * 8]
         group_id = f"gold-{index:03d}"
         q_mode = "int8" if index % 2 else "fp16"
+        non_target = include_non_target_backend and index >= 88
+        dispatch_key = "trt_engine" if non_target else "tvm_auto"
+        profile_id = "h800-trt-engine" if non_target else "h800-tvm-auto"
         graphs.append(_graph(group_id, width))
         rows.append(
             {
-                "manifest_job_id": f"{group_id}|q={q_mode}|profile=h800-tvm-auto",
-                "row_id": f"{group_id}|q={q_mode}|profile=h800-tvm-auto",
+                "manifest_job_id": f"{group_id}|q={q_mode}|profile={profile_id}",
+                "row_id": f"{group_id}|q={q_mode}|profile={profile_id}",
                 "group_id": group_id,
                 "model": "pyramid",
                 "width": width,
-                "dispatch_key": "tvm_auto",
-                "capability_profile_id": "h800-tvm-auto",
+                "dispatch_key": dispatch_key,
+                "capability_profile_id": profile_id,
                 "q_mode": q_mode,
                 "latency_ms": 2.0 + index * 0.01,
                 "energy_j": 0.5 + index * 0.005,
@@ -147,7 +162,7 @@ def _gold176() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
 
 def test_initial_coldstart_keeps_true_failures_as_evidence_outside_value_fit() -> None:
     """The reviewed Gold176 ledger has 174 value rows and two real failures."""
-    rows, graphs = _gold176()
+    rows, graphs = _gold176(include_non_target_backend=True)
     for index, status in ((174, "feasibility_failure"), (175, "numerical_feasibility_failure")):
         rows[index] = {
             key: value
@@ -156,7 +171,9 @@ def test_initial_coldstart_keeps_true_failures_as_evidence_outside_value_fit() -
         }
         rows[index]["terminal_status"] = status
 
-    bundle = execution.fit_initial_coldstart_bundle(rows, graphs, [_profile()], seed=73)
+    bundle = execution.fit_initial_coldstart_bundle(
+        rows, graphs, [_profile(), _non_target_profile()], seed=73
+    )
 
     assert bundle.manifest["input_row_count"] == 176
     assert bundle.manifest["value_training_row_count"] == 174
@@ -287,13 +304,19 @@ def _loaded_local_config(
     tmp_path: Path,
     *,
     source_group_count: int = 343,
+    include_non_target_backend: bool = True,
 ) -> LocalP6CoptV2XConfig:
     del source_group_count
-    gold_rows, gold_graphs = _gold176()
+    gold_rows, gold_graphs = _gold176(
+        include_non_target_backend=include_non_target_backend
+    )
     payloads = {
         "gold176_rows": gold_rows,
         "gold176_graph_features": gold_graphs,
-        "capability_profiles": [_profile()],
+        "capability_profiles": [
+            _profile(),
+            *([_non_target_profile()] if include_non_target_backend else []),
+        ],
         "closure": _closure(),
     }
     for name, payload in payloads.items():
@@ -304,12 +327,30 @@ def _loaded_local_config(
     return load_local_config(_write_yaml(tmp_path / "local.yaml", _local_config(tmp_path)), contract)
 
 
+def test_run_p6_rejects_incomplete_coldstart_profile_context(tmp_path: Path) -> None:
+    """Gold176 fitting must receive every capability profile represented in its ledger."""
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    local = _loaded_local_config(tmp_path)
+    profiles_path = local.local_input_paths["capability_profiles"]
+    profiles_path.write_text(json.dumps([_profile()]), encoding="utf-8")
+
+    with pytest.raises(P6CoptV2XContractError, match="coldstart capability"):
+        run_p6_coptv2x_search(
+            contract,
+            local,
+            "abc123",
+            lambda argv, cwd: (_ for _ in ()).throw(
+                AssertionError(f"source step must not run: {argv} {cwd}")
+            ),
+        )
+
+
 def test_run_p6_builds_registry_refits_gold176_and_runs_four_rounds(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
-    local = _loaded_local_config(tmp_path)
+    local = _loaded_local_config(tmp_path, include_non_target_backend=True)
     requests: list[dict[str, Any]] = []
     initial_fit_input_counts: list[int] = []
     online_fit_input_counts: list[int] = []

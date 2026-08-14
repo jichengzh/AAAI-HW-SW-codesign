@@ -56,6 +56,16 @@ def _profile() -> dict[str, Any]:
     )
 
 
+def _non_target_profile() -> dict[str, Any]:
+    return build_capability_profile(
+        capability_profile_id="h800-trt-engine",
+        hardware_target="h800",
+        compiler_fingerprint="b" * 64,
+        dispatch_key="trt_engine",
+        features={"int8_propagation": 1.0, "qdq_fold": 1.0},
+    )
+
+
 def _graph(group_id: str, width: list[int]) -> dict[str, Any]:
     return {
         "group_id": group_id,
@@ -74,16 +84,19 @@ def _gold176() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         width = [16 + (index % 7) * 8, 32 + (index % 8) * 8, 64 + (index % 9) * 8]
         group_id = f"gold-{index:03d}"
         q_mode = "int8" if index % 2 else "fp16"
+        non_target = index >= 88
+        dispatch_key = "trt_engine" if non_target else "tvm_auto"
+        profile_id = "h800-trt-engine" if non_target else "h800-tvm-auto"
         graphs.append(_graph(group_id, width))
         rows.append(
             {
-                "manifest_job_id": f"{group_id}|q={q_mode}|profile=h800-tvm-auto",
-                "row_id": f"{group_id}|q={q_mode}|profile=h800-tvm-auto",
+                "manifest_job_id": f"{group_id}|q={q_mode}|profile={profile_id}",
+                "row_id": f"{group_id}|q={q_mode}|profile={profile_id}",
                 "group_id": group_id,
                 "model": "pyramid",
                 "width": width,
-                "dispatch_key": "tvm_auto",
-                "capability_profile_id": "h800-tvm-auto",
+                "dispatch_key": dispatch_key,
+                "capability_profile_id": profile_id,
                 "q_mode": q_mode,
                 "latency_ms": 2.0 + index * 0.01,
                 "energy_j": 0.5 + index * 0.005,
@@ -248,7 +261,7 @@ def _cli_fixture(tmp_path: Path, *, mode: str = "success") -> dict[str, Path]:
     input_payloads = {
         "gold176_rows": gold_rows,
         "gold176_graph_features": gold_graphs,
-        "capability_profiles": [_profile()],
+        "capability_profiles": [_profile(), _non_target_profile()],
         "closure": _closure(),
     }
     input_paths: dict[str, str] = {}
