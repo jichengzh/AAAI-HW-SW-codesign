@@ -1,5 +1,7 @@
 # P6 H800 自动搜索闭环实施计划
 
+> Superseded for implementation by `docs/superpowers/plans/2026-08-13-p6-1-coptv2x-tvm-search-loop.md` and `docs/superpowers/plans/2026-08-13-p6-2-framework-search-space-integration.md`; this file records the earlier design before the P6.1/P6.2 split.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在维护者已本地准备的 H800 资产上，以显式本地配置完成一次可审计的 Stage5 候选选择、训练/评测、反馈和汇总闭环；仓库仅产出脱敏、可公开的执行契约和结果摘要。

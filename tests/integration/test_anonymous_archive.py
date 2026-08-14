@@ -193,15 +193,20 @@ def test_builder_keeps_p6_public_contracts_but_excludes_local_execution_material
     assert {"framework/**/*", "tools/release/**/*", "configs/**/*"} <= entries
 
     _write(anonymous_repo / "tools/release/run_p6_h800_search.py")
-    _write(anonymous_repo / "framework/stage6/h800_search_execution_v1.py")
+    _write(anonymous_repo / "framework/stage6/coptv2x_h800_search_v2.py")
     _write(anonymous_repo / "configs/execution/p6_h800_search.example.yaml")
     _write(anonymous_repo / "configs/local/p6_h800_search.local.yaml", "local sentinel\n")
     _write(anonymous_repo / "outputs/p6-h800-search/sentinel-raw.log", "raw sentinel\n")
+    _write(anonymous_repo / "results/p6-h800-search/sentinel-raw.log", "raw sentinel\n")
     original_read_allowlist = archive_builder._read_allowlist
     monkeypatch.setattr(
         archive_builder,
         "_read_allowlist",
-        lambda: (*original_read_allowlist(), "outputs/p6-h800-search/**/*"),
+        lambda: (
+            *original_read_allowlist(),
+            "outputs/p6-h800-search/**/*",
+            "results/p6-h800-search/**/*",
+        ),
     )
 
     result = _run_builder(anonymous_repo, tmp_path / "output")
@@ -211,11 +216,12 @@ def test_builder_keeps_p6_public_contracts_but_excludes_local_execution_material
         names = set(archive.namelist())
     assert {
         "tools/release/run_p6_h800_search.py",
-        "framework/stage6/h800_search_execution_v1.py",
+        "framework/stage6/coptv2x_h800_search_v2.py",
         "configs/execution/p6_h800_search.example.yaml",
     } <= names
     assert "configs/local/p6_h800_search.local.yaml" not in names
     assert "outputs/p6-h800-search/sentinel-raw.log" not in names
+    assert "results/p6-h800-search/sentinel-raw.log" not in names
 
 
 def test_p6_handoff_check_skips_from_anonymous_archive(

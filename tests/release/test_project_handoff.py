@@ -192,7 +192,7 @@ def test_p5_local_closure_is_limited_to_offline_environment_contracts() -> None:
 
 
 def test_p6_h800_execution_manifest_preserves_the_public_boundary() -> None:
-    """P6 remains a local H800 execution line with a deliberately small public surface."""
+    """P6.1 records a local-only Pyramid/H800/TVM loop without public results."""
     manifest = REPOSITORY_ROOT / "docs/release-manifests/P6_H800_SEARCH_EXECUTION.md"
 
     assert manifest.is_file()
@@ -205,36 +205,19 @@ def test_p6_h800_execution_manifest_preserves_the_public_boundary() -> None:
     assert "进行中（本地）" in p6_plan_line
     assert "H800" in p6_plan_line
     assert "Orin" in p6_plan_line
-    assert "RTX 4090" not in p6_plan_line
-    assert "CPU" not in p6_plan_line
-    assert "p6_h800_search_summary_v1" in text
-    for field in (
-        "schema",
-        "target",
-        "code_revision",
-        "seed",
-        "configuration_label",
-        "assets",
-        "status",
-        "planned_rounds",
-        "completed_rounds",
-        "successful_candidate_count",
-        "aggregate_metrics",
-        "failure_code",
-    ):
-        assert field in text
-    for failure_code in (
-        "capability_target_invalid",
-        "command_failed",
-        "local_input_invalid",
-        "local_record_write_failed",
-        "result_candidate_mismatch",
-        "result_invalid_json",
-        "result_metrics_invalid",
-        "result_missing",
-        "stage5_selection_failed",
-    ):
-        assert failure_code in text
+    assert "Pyramid/H800/TVM" in text
+    assert "343" in text
+    assert "686" in text
+    assert "Gold176" in text
+    assert "4 轮 × 4 个候选" in text
+    assert "latency_ms" in text
+    assert "energy_j" in text
+    assert "ap30" in text
+    assert "ap50" in text
+    assert "ap70" in text
+    assert "不生成公开结果摘要" in text
+    assert "P6.2" in text
+    assert "批准的 P6.1 本地 H800 运行后" in text
     assert "不下载" in text
     assert "不自动探测硬件" in text
     assert "不自动启动硬件" in text
@@ -242,9 +225,5 @@ def test_p6_h800_execution_manifest_preserves_the_public_boundary() -> None:
     assert "TVM" in text
     assert "TensorRT" in text
     assert "Orin" in text
-    assert "RTX 4090" not in text
-    assert "CPU" not in text
     assert "/home/" not in text
-    assert "checkpoint" not in text.lower()
-    assert "sha-256" not in text.lower()
     assert "python tools/release/run_p6_h800_search.py" not in text

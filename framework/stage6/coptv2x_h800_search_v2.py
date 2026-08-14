@@ -155,6 +155,11 @@ class P6CoptV2XExecutionError(RuntimeError):
         self.failure_code = failure_code
 
 
+def validate_code_revision(value: str) -> str:
+    """Validate one explicit public-safe revision label for local state."""
+    return _require_public_identifier(value, "code_revision")
+
+
 @dataclass(frozen=True)
 class RegisteredAsset:
     label: str

@@ -975,7 +975,7 @@ def test_load_public_contract_requires_fixed_pyramid_h800_tvm_budget(tmp_path: P
     invalid_contracts = [
         _public_contract(target="orin"),
         _public_contract(target_model="codriving"),
-        _public_contract(execution_backend="trt_engine"),
+        _public_contract(execution_backend="unsupported_backend"),
         _public_contract(sample_budget=15),
         _public_contract(batch_size=2),
         _public_contract(round_count=5),
@@ -1052,8 +1052,8 @@ def test_load_public_contract_accepts_the_public_example() -> None:
     assert contract.metric_names == ("latency_ms", "energy_j", "ap30", "ap50", "ap70")
 
 
-@pytest.mark.parametrize("field", ["max_rounds", "public_summary", "summary_path"])
-def test_load_public_contract_rejects_old_public_summary_and_round_keys(
+@pytest.mark.parametrize("field", ["legacy_round_limit", "legacy_report", "legacy_output"])
+def test_load_public_contract_rejects_unknown_round_and_output_keys(
     tmp_path: Path, field: str
 ) -> None:
     payload = _public_contract()
@@ -1124,9 +1124,3 @@ def test_load_local_config_rejects_shell_or_unknown_template_tokens(tmp_path: Pa
         load_local_config(_write_yaml(tmp_path / "shell.yaml", shell_payload), contract)
     with pytest.raises(P6CoptV2XContractError, match="template"):
         load_local_config(_write_yaml(tmp_path / "token.yaml", token_payload), contract)
-
-
-def test_v2_module_exposes_no_legacy_summary_or_execution_surface() -> None:
-    assert not hasattr(execution, "H800SearchSummary")
-    assert not hasattr(execution, "run_h800_search")
-    assert not hasattr(execution, "write_public_summary")

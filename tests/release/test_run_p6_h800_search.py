@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -10,26 +11,135 @@ from typing import Any
 import pytest
 import yaml
 
-from tests.stage6.test_h800_search_execution import _public_contract, _stage5_inputs
-from tools.release import run_p6_h800_search as h800_cli
+from framework.stage2.canonical_search_v3 import build_capability_profile
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 CLI = REPOSITORY_ROOT / "tools/release/run_p6_h800_search.py"
-PUBLIC_SUMMARY_KEYS = {
-    "schema",
-    "target",
-    "code_revision",
-    "seed",
-    "configuration_label",
-    "assets",
-    "status",
-    "planned_rounds",
-    "completed_rounds",
-    "successful_candidate_count",
-    "aggregate_metrics",
-    "failure_code",
-}
+
+
+def _public_contract() -> dict[str, Any]:
+    return {
+        "schema_version": "p6_h800_coptv2x_search_contract_v2",
+        "search_id": "p6-pyramid-h800-tvm",
+        "target": "h800",
+        "target_model": "pyramid",
+        "execution_backend": "tvm_auto",
+        "seed": 73,
+        "sample_budget": 16,
+        "batch_size": 4,
+        "round_count": 4,
+        "configuration_label": "p6-pyramid-h800-tvm",
+        "candidate_space_label": "coptv2x-pyramid-width-grid-v1",
+        "metric_names": ["latency_ms", "energy_j", "ap30", "ap50", "ap70"],
+        "assets": [
+            {"label": "training-data", "version": "v1", "license_status": "cleared"},
+            {"label": "model-init", "version": "v2", "license_status": "cleared"},
+            {"label": "toolchain", "version": "v3", "license_status": "cleared"},
+        ],
+    }
+
+
+def _profile() -> dict[str, Any]:
+    return build_capability_profile(
+        capability_profile_id="h800-tvm-auto",
+        hardware_target="h800",
+        compiler_fingerprint="a" * 64,
+        dispatch_key="tvm_auto",
+        features={"int8_propagation": 0.0, "qdq_fold": 0.0},
+    )
+
+
+def _graph(group_id: str, width: list[int]) -> dict[str, Any]:
+    return {
+        "group_id": group_id,
+        "model": "pyramid",
+        "width": list(width),
+        "conv_count": 27,
+        "conv_macs": float(width[0] * width[1] * width[2]),
+        "group_conv_count": 3,
+    }
+
+
+def _gold176() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    rows: list[dict[str, Any]] = []
+    graphs: list[dict[str, Any]] = []
+    for index in range(176):
+        width = [16 + (index % 7) * 8, 32 + (index % 8) * 8, 64 + (index % 9) * 8]
+        group_id = f"gold-{index:03d}"
+        q_mode = "int8" if index % 2 else "fp16"
+        graphs.append(_graph(group_id, width))
+        rows.append(
+            {
+                "manifest_job_id": f"{group_id}|q={q_mode}|profile=h800-tvm-auto",
+                "row_id": f"{group_id}|q={q_mode}|profile=h800-tvm-auto",
+                "group_id": group_id,
+                "model": "pyramid",
+                "width": width,
+                "dispatch_key": "tvm_auto",
+                "capability_profile_id": "h800-tvm-auto",
+                "q_mode": q_mode,
+                "latency_ms": 2.0 + index * 0.01,
+                "energy_j": 0.5 + index * 0.005,
+                "ap30": 0.90,
+                "ap50": 0.80,
+                "ap70": 0.70 - index * 0.0001,
+                "terminal_status": "measured_success_gold",
+                "training_source": "initial_coldstart",
+            }
+        )
+    return rows, graphs
+
+
+def _closure() -> dict[str, Any]:
+    return {
+        "schema_version": "stage4_p1_p3_closure_audit_v1",
+        "stage4_closed": True,
+        "stage5_search_ready": True,
+        "canonical_value_heads": {
+            "latency_ms": "extra_trees_log",
+            "energy_j": "extra_trees_log",
+            "ap70": "lgbm_huber_residual",
+        },
+        "uncertainty_policy": "lgbm_quantile_plus_group_conformal",
+        "selected_acquisition_policy": "predicted_frontier_diversity",
+        "training_source_rows": {"initial_coldstart": 176},
+        "frozen_holdout": {"groups": []},
+    }
+
+
+def _source_group(group_id: str, width: list[int]) -> dict[str, Any]:
+    evidence_sha = hashlib.sha256(f"source:{group_id}".encode()).hexdigest()
+    source_contract = {
+        "schema_version": "stage5_source_contract_v1",
+        "group_id": group_id,
+        "model": "pyramid",
+        "width": width,
+        "artifact_id": f"fixture-{group_id}",
+        "source_status": "ready",
+        "source_evidence_sha256": evidence_sha,
+        "materialization_scope": "synthetic_fixture",
+    }
+    contract_sha = hashlib.sha256(
+        json.dumps(
+            source_contract,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    return {
+        "group_id": group_id,
+        "model": "pyramid",
+        "width": width,
+        "source_status": "ready",
+        "source_evidence_sha256": evidence_sha,
+        "source_contract": source_contract,
+        "source_contract_sha256": contract_sha,
+        "materialization_kind": "local_pyramid_tvm",
+        "source_evidence_kind": "local_synthetic",
+        "graph_features": _graph(group_id, width),
+    }
 
 
 def _write_yaml(path: Path, payload: Mapping[str, Any]) -> Path:
@@ -37,35 +147,77 @@ def _write_yaml(path: Path, payload: Mapping[str, Any]) -> Path:
     return path
 
 
-def _write_fake_trainer(path: Path) -> Path:
+def _write_source_template(path: Path) -> Path:
+    groups = [
+        _source_group(
+            f"pyramid|{first}x{second}x{third}",
+            [first, second, third],
+        )
+        for first in range(16, 72, 8)
+        for second in range(32, 88, 8)
+        for third in range(64, 120, 8)
+    ]
+    assert len(groups) == 343
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "stage5_candidate_source_registry_v1",
+                "groups": groups,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _write_fake_source_registry_adapter(path: Path) -> Path:
+    path.write_text(
+        """from __future__ import annotations
+from pathlib import Path
+import shutil
+import sys
+
+output_root, template_path, output_path = map(Path, sys.argv[1:])
+del output_root
+shutil.copyfile(template_path, output_path)
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _write_fake_measurement_adapter(path: Path) -> Path:
     path.write_text(
         """from __future__ import annotations
 import json
 from pathlib import Path
 import sys
 
-request_path, result_path, call_log, mode = sys.argv[1:]
-request = json.loads(Path(request_path).read_text(encoding=\"utf-8\"))
-with Path(call_log).open(\"a\", encoding=\"utf-8\") as handle:
-    handle.write(request[\"candidate_id\"] + \"\\n\")
-if mode == \"fail\":
-    sys.stderr.write(\"PRIVATE_TRAINER_STDERR\\n\")
+request_path, feedback_path, round_root, call_log, mode = sys.argv[1:]
+del round_root
+request = json.loads(Path(request_path).read_text(encoding="utf-8"))
+with Path(call_log).open("a", encoding="utf-8") as handle:
+    handle.write("measure\\n")
+if mode == "fail":
+    sys.stderr.write("PRIVATE_ADAPTER_STDERR\\n")
     raise SystemExit(9)
-result = {
-    \"candidate_id\": request[\"candidate_id\"],
-    \"measurements\": [
+feedback = {
+    "schema_version": "p6_h800_coptv2x_feedback_v2",
+    "measurement_request_sha256": request["measurement_request_sha256"],
+    "rows": [
         {
-            \"candidate_id\": row[\"row_id\"],
-            \"latency_ms\": 2.0,
-            \"energy_j\": 0.5,
-            \"ap30\": 0.9,
-            \"ap50\": 0.8,
-            \"ap70\": 0.7,
+            "row_id": row["row_id"],
+            "terminal_status": "measured_success_gold",
+            "latency_ms": 2.0,
+            "energy_j": 0.5,
+            "ap30": 0.9,
+            "ap50": 0.8,
+            "ap70": 0.7,
         }
-        for row in request[\"rows\"]
+        for row in request["rows"]
     ],
 }
-Path(result_path).write_text(json.dumps(result), encoding=\"utf-8\")
+Path(feedback_path).write_text(json.dumps(feedback), encoding="utf-8")
 """,
         encoding="utf-8",
     )
@@ -73,12 +225,16 @@ Path(result_path).write_text(json.dumps(result), encoding=\"utf-8\")
 
 
 def _cli_fixture(tmp_path: Path, *, mode: str = "success") -> dict[str, Path]:
-    contract_path = _write_yaml(
-        tmp_path / "contract.yaml",
-        _public_contract(max_rounds=1, batch_size=1),
-    )
+    contract_path = _write_yaml(tmp_path / "contract.yaml", _public_contract())
+    gold_rows, gold_graphs = _gold176()
+    input_payloads = {
+        "gold176_rows": gold_rows,
+        "gold176_graph_features": gold_graphs,
+        "capability_profiles": [_profile()],
+        "closure": _closure(),
+    }
     input_paths: dict[str, str] = {}
-    for name, payload in _stage5_inputs().items():
+    for name, payload in input_payloads.items():
         input_path = tmp_path / f"{name}.json"
         input_path.write_text(json.dumps(payload), encoding="utf-8")
         input_paths[name] = str(input_path)
@@ -89,43 +245,48 @@ def _cli_fixture(tmp_path: Path, *, mode: str = "success") -> dict[str, Path]:
         asset_path.mkdir()
         asset_paths[label] = str(asset_path)
 
-    trainer_path = _write_fake_trainer(tmp_path / "fake_trainer.py")
+    source_template = _write_source_template(tmp_path / "source_template.json")
+    source_adapter = _write_fake_source_registry_adapter(tmp_path / "fake_registry.py")
+    measurement_adapter = _write_fake_measurement_adapter(tmp_path / "fake_measurement.py")
     call_log = tmp_path / "PRIVATE_CALL_LOG.txt"
     output_root = tmp_path / "PRIVATE_LOCAL_OUTPUT"
-    result_path = output_root / "PRIVATE_CHECKPOINT_RESULT.json"
     local_path = _write_yaml(
         tmp_path / "local.yaml",
         {
-            "schema_version": "p6_h800_search_local_v1",
+            "schema_version": "p6_h800_coptv2x_local_v2",
             "target": "h800",
             "asset_paths": asset_paths,
-            "stage5_input_paths": input_paths,
-            "steps": [
-                {
-                    "name": "evaluate",
-                    "argv": [
-                        sys.executable,
-                        str(trainer_path),
-                        "{candidate_request}",
-                        "{result_json}",
-                        str(call_log),
-                        mode,
-                    ],
-                }
-            ],
-            "result_step": "evaluate",
-            "result_path_template": str(result_path),
+            "local_input_paths": input_paths,
+            "source_registry_step": {
+                "name": "build_source_registry",
+                "argv": [
+                    sys.executable,
+                    str(source_adapter),
+                    "{local_output_root}",
+                    str(source_template),
+                    "{source_registry_json}",
+                ],
+            },
+            "measurement_step": {
+                "name": "measure_batch",
+                "argv": [
+                    sys.executable,
+                    str(measurement_adapter),
+                    "{measurement_request}",
+                    "{feedback_json}",
+                    "{round_output_root}",
+                    str(call_log),
+                    mode,
+                ],
+            },
             "local_output_root": str(output_root),
         },
     )
     return {
         "contract": contract_path,
         "local": local_path,
-        "summary": tmp_path / "public-summary.json",
         "call_log": call_log,
         "output_root": output_root,
-        "result": result_path,
-        "trainer": trainer_path,
     }
 
 
@@ -138,8 +299,6 @@ def _run_cli(paths: Mapping[str, Path], *extra: str) -> subprocess.CompletedProc
             str(paths["contract"]),
             "--local-config",
             str(paths["local"]),
-            "--public-summary",
-            str(paths["summary"]),
             "--code-revision",
             "test-revision",
             *extra,
@@ -151,42 +310,41 @@ def _run_cli(paths: Mapping[str, Path], *extra: str) -> subprocess.CompletedProc
     )
 
 
-def test_cli_completes_with_fake_trainer_and_publishes_redacted_summary(
-    tmp_path: Path,
-) -> None:
+def test_cli_runs_v2_loop_without_public_summary_and_keeps_outputs_local(tmp_path: Path) -> None:
     paths = _cli_fixture(tmp_path)
 
     result = _run_cli(paths)
 
     assert result.returncode == 0, result.stderr
     assert result.stdout == "completed\n"
-    public = json.loads(paths["summary"].read_text(encoding="utf-8"))
-    serialized = json.dumps(public, sort_keys=True)
-    candidate_id = paths["call_log"].read_text(encoding="utf-8").strip()
-    assert set(public) == PUBLIC_SUMMARY_KEYS
-    assert public["status"] == "completed"
-    assert public["code_revision"] == "test-revision"
-    assert public["completed_rounds"] == 1
-    assert set(public["aggregate_metrics"]["latency_ms"]) == {
-        "count",
-        "min",
-        "max",
-        "mean",
-    }
-    for sentinel in (
-        str(tmp_path),
-        str(paths["trainer"]),
-        str(paths["result"]),
-        candidate_id,
-        "PRIVATE_CHECKPOINT_RESULT.json",
-        "PRIVATE_CALL_LOG",
-    ):
-        assert sentinel not in serialized
+    assert "public-summary" not in result.stdout + result.stderr
+    state = json.loads((paths["output_root"] / "state.json").read_text(encoding="utf-8"))
+    serialized_state = json.dumps(state, sort_keys=True)
+    assert state["status"] == "completed"
+    assert state["completed_rounds"] == 4
+    assert state["measured_candidate_count"] == 16
+    assert str(tmp_path) not in serialized_state
+    assert "candidate-" not in serialized_state
+    assert paths["call_log"].read_text(encoding="utf-8").splitlines() == [
+        "measure",
+        "measure",
+        "measure",
+        "measure",
+    ]
 
 
-def test_cli_requires_explicit_local_config_without_starting_a_candidate(
-    tmp_path: Path,
-) -> None:
+def test_cli_rejects_legacy_public_summary_argument(tmp_path: Path) -> None:
+    paths = _cli_fixture(tmp_path)
+
+    result = _run_cli(paths, "--public-summary", str(tmp_path / "summary.json"))
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert result.stderr == "argument_error\n"
+    assert not paths["call_log"].exists()
+
+
+def test_cli_requires_explicit_local_config_without_starting_an_adapter(tmp_path: Path) -> None:
     paths = _cli_fixture(tmp_path)
 
     result = subprocess.run(
@@ -195,8 +353,6 @@ def test_cli_requires_explicit_local_config_without_starting_a_candidate(
             str(CLI),
             "--contract",
             str(paths["contract"]),
-            "--public-summary",
-            str(paths["summary"]),
             "--code-revision",
             "test-revision",
         ],
@@ -207,45 +363,15 @@ def test_cli_requires_explicit_local_config_without_starting_a_candidate(
     )
 
     assert result.returncode == 2
+    assert result.stdout == ""
     assert result.stderr == "argument_error\n"
     assert not paths["call_log"].exists()
-    assert not paths["summary"].exists()
 
 
-def test_cli_rejects_invalid_local_config_without_publishing(
-    tmp_path: Path,
-) -> None:
+def test_cli_fails_closed_for_an_invalid_local_contract(tmp_path: Path) -> None:
     paths = _cli_fixture(tmp_path)
     local = yaml.safe_load(paths["local"].read_text(encoding="utf-8"))
-    local["local_output_root"] = "relative/private-output"
-    _write_yaml(paths["local"], local)
-
-    result = _run_cli(paths)
-
-    assert result.returncode == 2
-    assert result.stderr == "contract_error\n"
-    assert not paths["call_log"].exists()
-    assert not paths["summary"].exists()
-
-
-@pytest.mark.parametrize(
-    "case",
-    ["asset_label_mismatch", "duplicate_step", "shell_argv", "private_summary"],
-)
-def test_cli_fails_closed_for_invalid_local_yaml(
-    tmp_path: Path,
-    case: str,
-) -> None:
-    paths = _cli_fixture(tmp_path)
-    local = yaml.safe_load(paths["local"].read_text(encoding="utf-8"))
-    if case in {"asset_label_mismatch", "private_summary"}:
-        del local["asset_paths"]["toolchain"]
-    elif case == "duplicate_step":
-        local["steps"].append(dict(local["steps"][0]))
-    else:
-        local["steps"][0]["argv"] = ["bash", "-c", "PRIVATE_COMMAND", "{result_json}"]
-    if case == "private_summary":
-        paths["summary"] = paths["output_root"] / "public-summary.json"
+    local["measurement_step"]["argv"] = ["bash", "-c", "private"]
     _write_yaml(paths["local"], local)
 
     result = _run_cli(paths)
@@ -254,71 +380,26 @@ def test_cli_fails_closed_for_invalid_local_yaml(
     assert result.stdout == ""
     assert result.stderr == "contract_error\n"
     assert not paths["call_log"].exists()
-    assert not paths["summary"].exists()
 
 
-def test_cli_rejects_result_path_equal_to_public_summary_before_execution(
+def test_cli_reports_an_unsafe_local_output_boundary_as_a_contract_error(
     tmp_path: Path,
 ) -> None:
     paths = _cli_fixture(tmp_path)
-    local = yaml.safe_load(paths["local"].read_text(encoding="utf-8"))
-    local["result_path_template"] = str(paths["summary"])
-    _write_yaml(paths["local"], local)
+    protected_directory = tmp_path / "protected-output"
+    protected_directory.mkdir()
+    paths["output_root"].symlink_to(protected_directory, target_is_directory=True)
 
     result = _run_cli(paths)
 
     assert result.returncode == 2
+    assert result.stdout == ""
     assert result.stderr == "contract_error\n"
     assert not paths["call_log"].exists()
-    assert not paths["summary"].exists()
-
-
-def test_cli_passes_public_summary_to_controller_and_normalizes_boundary_error(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    paths = _cli_fixture(tmp_path)
-    seen_public_summaries: list[Path] = []
-
-    def reject_boundary(
-        contract: object,
-        local: object,
-        code_revision: str,
-        command_runner: object,
-        *,
-        public_summary_path: Path,
-    ) -> object:
-        del contract, local, code_revision, command_runner
-        seen_public_summaries.append(public_summary_path)
-        raise h800_cli.H800SearchContractError("public and private paths overlap")
-
-    monkeypatch.setattr(h800_cli, "run_h800_search", reject_boundary)
-
-    result = h800_cli.main(
-        [
-            "--contract",
-            str(paths["contract"]),
-            "--local-config",
-            str(paths["local"]),
-            "--public-summary",
-            str(paths["summary"]),
-            "--code-revision",
-            "test-revision",
-        ]
-    )
-
-    captured = capsys.readouterr()
-    assert result == 2
-    assert captured.out == ""
-    assert captured.err == "contract_error\n"
-    assert seen_public_summaries == [paths["summary"]]
-    assert not paths["call_log"].exists()
-    assert not paths["summary"].exists()
 
 
 @pytest.mark.parametrize("document", ["contract", "local"])
-def test_cli_reports_invalid_utf8_as_stable_contract_error(
+def test_cli_reports_invalid_utf8_as_a_stable_contract_error(
     tmp_path: Path,
     document: str,
 ) -> None:
@@ -332,12 +413,9 @@ def test_cli_reports_invalid_utf8_as_stable_contract_error(
     assert result.stderr == "contract_error\n"
     assert "Traceback" not in result.stderr
     assert not paths["call_log"].exists()
-    assert not paths["summary"].exists()
 
 
-def test_cli_stops_after_failed_subcommand_and_redacts_process_details(
-    tmp_path: Path,
-) -> None:
+def test_cli_reports_a_local_measurement_failure_without_adapter_details(tmp_path: Path) -> None:
     paths = _cli_fixture(tmp_path, mode="fail")
 
     result = _run_cli(paths)
@@ -345,28 +423,25 @@ def test_cli_stops_after_failed_subcommand_and_redacts_process_details(
     assert result.returncode == 1
     assert result.stdout == ""
     assert result.stderr == "execution_failed\n"
-    assert len(paths["call_log"].read_text(encoding="utf-8").splitlines()) == 1
-    public_text = paths["summary"].read_text(encoding="utf-8")
-    public = json.loads(public_text)
-    assert public["status"] == "failed"
-    assert public["failure_code"] == "command_failed"
-    for sentinel in (
-        "PRIVATE_TRAINER_STDERR",
-        str(tmp_path),
-        str(paths["trainer"]),
-        "candidate-",
-        "checkpoint",
-        "sha256",
-    ):
-        assert sentinel.lower() not in public_text.lower()
-        assert sentinel.lower() not in (result.stdout + result.stderr).lower()
+    assert paths["call_log"].read_text(encoding="utf-8").splitlines() == ["measure"]
+    state_text = (paths["output_root"] / "state.json").read_text(encoding="utf-8")
+    state = json.loads(state_text)
+    assert state == {
+        "code_revision": "test-revision",
+        "completed_rounds": 0,
+        "failure_code": "command_failed",
+        "measured_candidate_count": 0,
+        "schema_version": "p6_h800_coptv2x_local_state_v2",
+        "status": "failed",
+    }
+    for sentinel in ("PRIVATE_ADAPTER_STDERR", str(tmp_path), "candidate-", "checkpoint"):
+        assert sentinel.lower() not in (result.stdout + result.stderr + state_text).lower()
 
 
-def test_cli_rejects_local_output_override_and_empty_code_revision(tmp_path: Path) -> None:
+def test_cli_rejects_an_empty_code_revision_without_starting_an_adapter(tmp_path: Path) -> None:
     paths = _cli_fixture(tmp_path)
 
-    override = _run_cli(paths, "--local-output-root", str(tmp_path / "override"))
-    empty_revision = subprocess.run(
+    result = subprocess.run(
         [
             sys.executable,
             str(CLI),
@@ -374,8 +449,6 @@ def test_cli_rejects_local_output_override_and_empty_code_revision(tmp_path: Pat
             str(paths["contract"]),
             "--local-config",
             str(paths["local"]),
-            "--public-summary",
-            str(paths["summary"]),
             "--code-revision",
             "",
         ],
@@ -385,20 +458,7 @@ def test_cli_rejects_local_output_override_and_empty_code_revision(tmp_path: Pat
         check=False,
     )
 
-    assert override.returncode == 2
-    assert empty_revision.returncode == 2
-    assert not paths["call_log"].exists()
-
-
-def test_cli_rejects_public_summary_inside_private_output_without_publishing(
-    tmp_path: Path,
-) -> None:
-    paths = _cli_fixture(tmp_path)
-    paths["summary"] = paths["output_root"] / "public-summary.json"
-
-    result = _run_cli(paths)
-
     assert result.returncode == 2
-    assert result.stderr == "contract_error\n"
+    assert result.stdout == ""
+    assert result.stderr == "argument_error\n"
     assert not paths["call_log"].exists()
-    assert not paths["summary"].exists()
