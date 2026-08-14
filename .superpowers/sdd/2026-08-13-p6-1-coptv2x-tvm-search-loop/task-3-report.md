@@ -103,3 +103,73 @@ An independent scoped review found no correctness, security, or regression
 issues. It confirmed atomic release before history mutation, failure-row
 exclusion from metric fitting, stable source/local error mappings, and the
 redacted `failure.json` shape.
+
+## Fix round 1: isolate failure-only graph features and released identities
+
+An independent quality review found that failure rows were excluded from the
+online fitter's metric targets but their graph features were still included in
+the graph-feature context passed to `fit_online_bundle()`. A
+failure-only graph field could therefore change the learned bundle feature
+schema. It also found that released rows shallow-copied nested request
+identity fields, allowing a later request mutation to alter online feedback.
+
+### RED
+
+```text
+PYTHONPATH=. pytest tests/stage6/test_coptv2x_h800_search.py::test_run_p6_excludes_failure_only_graph_features_from_online_fitting tests/stage6/test_coptv2x_h800_search.py::test_release_feedback_rows_detaches_nested_request_identity_context -q
+2 failed in 4.10s
+```
+
+The first test put `failure_only_feature` on a selected true-failure candidate.
+The next online bundle exposed `graph:failure_only_feature` in its feature
+names. The second test changed nested `graph_features` and `source_contract`
+data on the request after release; the released row changed with it.
+
+### GREEN
+
+```text
+PYTHONPATH=. pytest tests/stage6/test_coptv2x_h800_search.py::test_run_p6_excludes_failure_only_graph_features_from_online_fitting tests/stage6/test_coptv2x_h800_search.py::test_release_feedback_rows_detaches_nested_request_identity_context -q
+2 passed in 4.06s
+```
+
+The controller now passes Gold176 plus only `measured_success_gold` feedback
+rows and their graph context to the online fitter. Failure rows remain in the
+feedback, budget, and acquisition history, but no failure-only field reaches
+any online cost-model input or feature schema. The mixed-feedback regression
+confirms fitter input and value-training counts `[179, 183, 187]` and a final
+16-candidate budget; the existing all-success loop regression retains its
+`[180, 184, 188]` online input counts. Released request rows now deep-copy
+nested identity context.
+
+### Follow-up review gate
+
+The first implementation filtered only the graph-context argument. Follow-up
+review correctly found that raw failure rows still reached the online fitter's
+`rows` argument, so the input boundary was not complete.
+
+```text
+PYTHONPATH=. pytest tests/stage6/test_coptv2x_h800_search.py::test_run_p6_excludes_failure_only_graph_features_from_online_fitting -q
+1 failed in 4.25s
+```
+
+The controller now filters both fitter arguments to successful feedback while
+retaining all feedback rows for measured IDs and acquisition history.
+
+```text
+PYTHONPATH=. pytest tests/stage6/test_coptv2x_h800_search.py::test_run_p6_excludes_failure_only_graph_features_from_online_fitting tests/stage6/test_coptv2x_h800_search.py::test_release_feedback_rows_detaches_nested_request_identity_context -q
+2 passed in 4.09s
+```
+
+```text
+PYTHONPATH=. pytest tests/stage6/test_coptv2x_h800_search.py tests/stage5/test_single_target_search.py -k 'not cli' -q
+97 passed, 13 deselected in 29.16s
+
+python -m ruff check framework/stage6/coptv2x_h800_search_v2.py tests/stage6/test_coptv2x_h800_search.py
+All checks passed!
+
+python -m compileall -q framework/stage6 tests/stage6
+exit 0
+
+git diff --check
+exit 0
+```

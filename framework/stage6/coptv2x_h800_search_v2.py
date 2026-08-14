@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+import copy
 from dataclasses import dataclass
 import json
 import math
@@ -365,9 +366,14 @@ def _run_search_round(
     round_index: int,
     command_runner: CommandRunner,
 ) -> list[dict[str, Any]]:
-    training_rows = [*frozen_gold, *online_feedback_rows]
+    successful_feedback_rows = [
+        row
+        for row in online_feedback_rows
+        if str(row.get("terminal_status")) == SUCCESS_STATUS
+    ]
+    training_rows = [*frozen_gold, *successful_feedback_rows]
     training_graphs = _unique_graph_features(
-        [*gold_graphs, *[dict(row["graph_features"]) for row in online_feedback_rows]]
+        [*gold_graphs, *[dict(row["graph_features"]) for row in successful_feedback_rows]]
     )
     bundle = (
         fit_initial_coldstart_bundle(frozen_gold, gold_graphs, [profile], seed=contract.seed)
@@ -620,7 +626,7 @@ def _release_feedback_rows(
         row = dict(by_feedback[row_id])
         status = str(row.get("terminal_status") or "")
         base = {
-            **dict(request_row),
+            **copy.deepcopy(dict(request_row)),
             "training_source": "online_feedback",
             "terminal_status": status,
         }

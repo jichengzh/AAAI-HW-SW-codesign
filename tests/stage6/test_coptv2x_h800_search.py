@@ -416,6 +416,142 @@ def test_run_p6_accepts_true_candidate_failures_as_budget_consuming_feedback(
     assert state.measured_candidate_count == 16
 
 
+def test_run_p6_excludes_failure_only_graph_features_from_online_fitting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches feasibility-only graph fields changing the online model schema."""
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    local = _loaded_local_config(tmp_path)
+    real_select = execution.select_task_batch
+    real_online_fit = execution.fit_online_bundle
+    online_bundles: list[Any] = []
+    online_fit_rows: list[list[dict[str, Any]]] = []
+    selection_call_count = 0
+
+    def select_failure_candidate(
+        predicted_rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any
+    ) -> dict[str, Any]:
+        nonlocal selection_call_count
+        selection = real_select(predicted_rows, *args, **kwargs)
+        failure_candidate = next(
+            (
+                row
+                for row in predicted_rows
+                if "failure_only_feature" in row["graph_features"]
+            ),
+            None,
+        )
+        selected_by_id: dict[str, Mapping[str, Any]] = {}
+        preferred = [failure_candidate] if selection_call_count == 0 and failure_candidate else []
+        for row in [*preferred, *selection["selected_rows"], *predicted_rows]:
+            if "failure_only_feature" in row["graph_features"] and row not in preferred:
+                continue
+            selected_by_id.setdefault(str(row["row_id"]), row)
+        selected = list(selected_by_id.values())[:4]
+        selection_call_count += 1
+        return {
+            **selection,
+            "selected_row_count": len(selected),
+            "selected_row_ids": [row["row_id"] for row in selected],
+            "selected_rows": selected,
+        }
+
+    def record_online_fit(
+        rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any
+    ) -> Any:
+        online_fit_rows.append([dict(row) for row in rows])
+        bundle = real_online_fit(rows, *args, **kwargs)
+        online_bundles.append(bundle)
+        return bundle
+
+    monkeypatch.setattr(execution, "select_task_batch", select_failure_candidate)
+    monkeypatch.setattr(execution, "fit_online_bundle", record_online_fit)
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        del cwd
+        if argv[1] == "local_build_registry.py":
+            registry_path = Path(argv[3])
+            _write_source_registry(registry_path, count=343)
+            registry = json.loads(registry_path.read_text(encoding="utf-8"))
+            registry["groups"][0]["graph_features"] = {
+                **registry["groups"][0]["graph_features"],
+                "failure_only_feature": 1.0,
+            }
+            registry_path.write_text(json.dumps(registry), encoding="utf-8")
+            return 0
+        request = json.loads(Path(argv[2]).read_text(encoding="utf-8"))
+        rows = []
+        for row in request["rows"]:
+            if "failure_only_feature" in row["graph_features"]:
+                rows.append(
+                    {
+                        "row_id": row["row_id"],
+                        "terminal_status": "feasibility_failure",
+                        "failure_reason": "synthetic_feasibility",
+                    }
+                )
+            else:
+                rows.append(
+                    {
+                        "row_id": row["row_id"],
+                        "terminal_status": "measured_success_gold",
+                        "latency_ms": 3.0,
+                        "energy_j": 0.8,
+                        "ap30": 0.91,
+                        "ap50": 0.82,
+                        "ap70": 0.73,
+                    }
+                )
+        Path(argv[3]).write_text(
+            json.dumps(
+                {
+                    "schema_version": "p6_h800_coptv2x_feedback_v2",
+                    "measurement_request_sha256": request["measurement_request_sha256"],
+                    "rows": rows,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return 0
+
+    state = run_p6_coptv2x_search(contract, local, "abc123", runner)
+
+    assert state.status == "completed"
+    assert state.measured_candidate_count == 16
+    assert [bundle.manifest["input_row_count"] for bundle in online_bundles] == [179, 183, 187]
+    assert [bundle.manifest["value_training_row_count"] for bundle in online_bundles] == [179, 183, 187]
+    assert all("graph:failure_only_feature" not in bundle.feature_names for bundle in online_bundles)
+    assert all(
+        "failure_only_feature" not in row.get("graph_features", {})
+        for rows in online_fit_rows
+        for row in rows
+    )
+
+
+def test_release_feedback_rows_detaches_nested_request_identity_context() -> None:
+    """Catches later request mutation changing released training rows."""
+    request = _minimal_request()
+    request["rows"][0].update(
+        {
+            "graph_features": {"group_id": "row-0", "stable_feature": 1.0},
+            "source_contract": {"group_id": "row-0", "artifact_id": "fixture-row-0"},
+        }
+    )
+
+    released = execution._release_feedback_rows(
+        _minimal_feedback(), request, task=_minimal_task()
+    )
+    request["rows"][0]["graph_features"]["stable_feature"] = 9.0
+    request["rows"][0]["source_contract"]["artifact_id"] = "mutated"
+
+    assert released[0]["graph_features"] == {"group_id": "row-0", "stable_feature": 1.0}
+    assert released[0]["source_contract"] == {
+        "group_id": "row-0",
+        "artifact_id": "fixture-row-0",
+    }
+
+
 @pytest.mark.parametrize(
     ("mutation", "expected_code"),
     [
