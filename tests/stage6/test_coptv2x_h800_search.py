@@ -512,6 +512,39 @@ def test_run_step_redacts_runner_exceptions() -> None:
 
     assert str(captured.value) == "local command failed"
     assert "/private" not in str(captured.value)
+    assert captured.value.__cause__ is None
+    assert captured.value.__context__ is None
+    assert "/private" not in repr(captured.value.__context__)
+
+
+def test_run_p6_rejects_symlinked_round_output_without_touching_victim(
+    tmp_path: Path,
+) -> None:
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    local = _loaded_local_config(tmp_path)
+    local.local_output_root.mkdir()
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    victim_feedback = victim / "feedback.json"
+    victim_feedback.write_text("retain", encoding="utf-8")
+    (local.local_output_root / "round-00").symlink_to(victim, target_is_directory=True)
+    measurement_started = False
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        nonlocal measurement_started
+        del cwd
+        if argv[1] == "local_build_registry.py":
+            _write_source_registry(Path(argv[3]), count=343)
+        else:
+            measurement_started = True
+        return 0
+
+    with pytest.raises(P6CoptV2XExecutionError, match="output"):
+        run_p6_coptv2x_search(contract, local, "abc123", runner)
+
+    assert measurement_started is False
+    assert victim_feedback.read_text(encoding="utf-8") == "retain"
+    assert not (victim / "measurement_request.json").exists()
 
 
 def test_release_feedback_rejects_duplicate_or_extra_rows() -> None:

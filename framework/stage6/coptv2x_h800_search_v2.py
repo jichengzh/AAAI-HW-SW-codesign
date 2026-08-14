@@ -196,7 +196,7 @@ def run_p6_coptv2x_search(
     command_runner: CommandRunner,
 ) -> P6CoptV2XRunState:
     """Run the fixed four-round local Pyramid/H800/TVM search state machine."""
-    local.local_output_root.mkdir(parents=True, exist_ok=True)
+    _prepare_local_output_root(local.local_output_root)
     frozen_gold, gold_graphs, profile = _load_search_inputs(local)
     task = _build_search_task(contract, profile)
     source_registry = _build_source_registry(local, command_runner)
@@ -353,10 +353,9 @@ def _run_search_round(
     request = build_measurement_request(
         task=task, selected_rows=selection["selected_rows"], round_index=round_index
     )
-    round_root = local.local_output_root / f"round-{round_index:02d}"
-    round_root.mkdir(parents=True, exist_ok=True)
-    request_path = round_root / "measurement_request.json"
-    feedback_path = round_root / "feedback.json"
+    round_root, request_path, feedback_path = _prepare_round_output(
+        local.local_output_root, round_index
+    )
     _write_json(request_path, request)
     try:
         feedback_path.unlink(missing_ok=True)
@@ -395,6 +394,44 @@ def _complete_run_state(
     )
     _write_state(state, code_revision=code_revision)
     return state
+
+
+def _prepare_local_output_root(local_output_root: Path) -> None:
+    if local_output_root.is_symlink() or (
+        local_output_root.exists() and not local_output_root.is_dir()
+    ):
+        raise P6CoptV2XExecutionError("unsafe_output", "local output is unsafe")
+    try:
+        local_output_root.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        raise P6CoptV2XExecutionError(
+            "output_setup_failed", "could not prepare local output"
+        ) from None
+    if local_output_root.is_symlink() or not local_output_root.is_dir():
+        raise P6CoptV2XExecutionError("unsafe_output", "local output is unsafe")
+
+
+def _prepare_round_output(
+    local_output_root: Path, round_index: int
+) -> tuple[Path, Path, Path]:
+    _prepare_local_output_root(local_output_root)
+    round_root = local_output_root / f"round-{round_index:02d}"
+    if round_root.is_symlink() or (round_root.exists() and not round_root.is_dir()):
+        raise P6CoptV2XExecutionError("unsafe_output", "round output is unsafe")
+    try:
+        round_root.mkdir(exist_ok=True)
+    except OSError:
+        raise P6CoptV2XExecutionError(
+            "output_setup_failed", "could not prepare round output"
+        ) from None
+    request_path = round_root / "measurement_request.json"
+    feedback_path = round_root / "feedback.json"
+    for output_path in (request_path, feedback_path):
+        if output_path.is_symlink() or (
+            output_path.exists() and not output_path.is_file()
+        ):
+            raise P6CoptV2XExecutionError("unsafe_output", "round output is unsafe")
+    return round_root, request_path, feedback_path
 
 
 def _build_search_task(
@@ -551,10 +588,14 @@ def _run_step(
     runner: CommandRunner,
 ) -> None:
     argv = tuple(_replace_exact_token(arg, replacements) for arg in step.argv)
+    runner_failed = False
     try:
         return_code = runner(argv, cwd)
     except Exception:
-        raise P6CoptV2XExecutionError("command_failed", "local command failed") from None
+        runner_failed = True
+        return_code = None
+    if runner_failed:
+        raise P6CoptV2XExecutionError("command_failed", "local command failed")
     if return_code != 0:
         raise P6CoptV2XExecutionError("command_failed", "local command failed")
 
