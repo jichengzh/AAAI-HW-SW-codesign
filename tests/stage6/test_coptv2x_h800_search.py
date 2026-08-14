@@ -126,7 +126,7 @@ def _graph(group_id: str, width: list[int]) -> dict[str, Any]:
 
 
 def _gold176(
-    *, include_non_target_backend: bool = False
+    *, include_non_target_backend: bool = False, include_graph_provenance: bool = False
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     rows: list[dict[str, Any]] = []
     graphs: list[dict[str, Any]] = []
@@ -137,7 +137,10 @@ def _gold176(
         non_target = include_non_target_backend and index >= 88
         dispatch_key = "trt_engine" if non_target else "tvm_auto"
         profile_id = "h800-trt-engine" if non_target else "h800-tvm-auto"
-        graphs.append(_graph(group_id, width))
+        graph = _graph(group_id, width)
+        if include_graph_provenance:
+            graph["source_annotation"] = "legacy_metadata"
+        graphs.append(graph)
         rows.append(
             {
                 "manifest_job_id": f"{group_id}|q={q_mode}|profile={profile_id}",
@@ -177,6 +180,38 @@ def test_initial_coldstart_keeps_true_failures_as_evidence_outside_value_fit() -
 
     assert bundle.manifest["input_row_count"] == 176
     assert bundle.manifest["value_training_row_count"] == 174
+
+
+def test_p6_graph_projection_keeps_only_structural_features() -> None:
+    """Numerical labels or provenance must not become cold-start model features."""
+    projected = execution._normalize_gold_graph_features(
+        [
+            {
+                "group_id": "gold-000",
+                "model": "pyramid",
+                "width": [16, 32, 64],
+                "input_dims": [1, 4, 192, 352],
+                "conv_count": 27,
+                "conv_macs": 32768,
+                "latency_ms": 1.0,
+                "ap70": 0.7,
+                "source_rank": 3,
+                "legacy_run_index": 4,
+                "source_annotation": "legacy_metadata",
+            }
+        ]
+    )
+
+    assert projected == [
+        {
+            "group_id": "gold-000",
+            "model": "pyramid",
+            "width": [16, 32, 64],
+            "input_dims": [1, 4, 192, 352],
+            "conv_count": 27.0,
+            "conv_macs": 32768.0,
+        }
+    ]
 
 
 def _source_group(group_id: str, width: list[int]) -> dict[str, Any]:
@@ -305,10 +340,12 @@ def _loaded_local_config(
     *,
     source_group_count: int = 343,
     include_non_target_backend: bool = True,
+    include_graph_provenance: bool = False,
 ) -> LocalP6CoptV2XConfig:
     del source_group_count
     gold_rows, gold_graphs = _gold176(
-        include_non_target_backend=include_non_target_backend
+        include_non_target_backend=include_non_target_backend,
+        include_graph_provenance=include_graph_provenance,
     )
     payloads = {
         "gold176_rows": gold_rows,
@@ -350,7 +387,11 @@ def test_run_p6_builds_registry_refits_gold176_and_runs_four_rounds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
-    local = _loaded_local_config(tmp_path, include_non_target_backend=True)
+    local = _loaded_local_config(
+        tmp_path,
+        include_non_target_backend=True,
+        include_graph_provenance=True,
+    )
     requests: list[dict[str, Any]] = []
     initial_fit_input_counts: list[int] = []
     online_fit_input_counts: list[int] = []

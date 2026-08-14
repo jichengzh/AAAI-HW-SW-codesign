@@ -44,6 +44,33 @@ FIXED_ROUND_COUNT = 4
 FIXED_SOURCE_GROUP_COUNT = 343
 FIXED_ELIGIBLE_GENOME_COUNT = 686
 FIXED_COLDSTART_PROFILE_COUNT = 2
+GRAPH_METADATA_FIELDS = frozenset({"group_id", "model", "width", "input_dims"})
+STRUCTURAL_GRAPH_FEATURE_FIELDS = frozenset(
+    {
+        "add_count",
+        "arithmetic_intensity_proxy",
+        "concat_count",
+        "conv_count",
+        "conv_flops",
+        "conv_macs",
+        "conv_output_elements",
+        "conv_parameter_elements",
+        "conv_transpose_count",
+        "depthwise_conv_count",
+        "group_conv_count",
+        "input_channels",
+        "input_elements",
+        "input_height",
+        "input_width",
+        "kernel1_conv_count",
+        "kernel3_conv_count",
+        "max_conv_channels",
+        "node_count",
+        "parameter_elements",
+        "relu_count",
+        "stride2_conv_count",
+    }
+)
 EXPECTED_CLOSURE_HEADS = {
     "latency_ms": "extra_trees_log",
     "energy_j": "extra_trees_log",
@@ -294,9 +321,11 @@ def _load_search_inputs(
         _read_local_input_json(local.local_input_paths["gold176_rows"]),
         "gold176 rows",
     )
-    gold_graphs = _require_mapping_rows(
-        _read_local_input_json(local.local_input_paths["gold176_graph_features"]),
-        "gold176 graph features",
+    gold_graphs = _normalize_gold_graph_features(
+        _require_mapping_rows(
+            _read_local_input_json(local.local_input_paths["gold176_graph_features"]),
+            "gold176 graph features",
+        )
     )
     raw_profiles = _require_mapping_rows(
         _read_local_input_json(local.local_input_paths["capability_profiles"]),
@@ -323,6 +352,26 @@ def _load_search_inputs(
         raise P6CoptV2XContractError("coldstart capability context is incomplete")
     profile = _select_profile(capability_profiles)
     return frozen_gold, gold_graphs, capability_profiles, profile
+
+
+def _normalize_gold_graph_features(
+    graph_features: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Project legacy graph evidence to the reviewed structural feature schema."""
+    normalized: list[dict[str, Any]] = []
+    for raw_graph in graph_features:
+        graph = dict(raw_graph)
+        normalized.append(
+            {
+                str(name): copy.deepcopy(value)
+                if str(name) in GRAPH_METADATA_FIELDS
+                else float(value)
+                for name, value in graph.items()
+                if str(name) in GRAPH_METADATA_FIELDS
+                or (str(name) in STRUCTURAL_GRAPH_FEATURE_FIELDS and _finite(value))
+            }
+        )
+    return normalized
 
 
 def _build_source_registry(
