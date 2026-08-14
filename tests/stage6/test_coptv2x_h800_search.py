@@ -547,6 +547,55 @@ def test_run_p6_rejects_symlinked_round_output_without_touching_victim(
     assert not (victim / "measurement_request.json").exists()
 
 
+def test_run_p6_rejects_symlinked_source_registry_before_adapter(
+    tmp_path: Path,
+) -> None:
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    local = _loaded_local_config(tmp_path)
+    local.local_output_root.mkdir()
+    victim = tmp_path / "victim-registry.json"
+    victim.write_text("retain", encoding="utf-8")
+    (local.local_output_root / "source_registry.json").symlink_to(victim)
+    adapter_started = False
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        nonlocal adapter_started
+        del cwd
+        adapter_started = True
+        if argv[1] == "local_build_registry.py":
+            _write_source_registry(Path(argv[3]), count=343)
+            return 0
+        return 1
+
+    with pytest.raises(P6CoptV2XExecutionError, match="output|command"):
+        run_p6_coptv2x_search(contract, local, "abc123", runner)
+
+    assert adapter_started is False
+    assert victim.read_text(encoding="utf-8") == "retain"
+
+
+def test_run_p6_rejects_symlinked_state_without_touching_victim(tmp_path: Path) -> None:
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    local = _loaded_local_config(tmp_path)
+    local.local_output_root.mkdir()
+    victim = tmp_path / "victim-state.json"
+    victim.write_text("retain", encoding="utf-8")
+    (local.local_output_root / "state.json").symlink_to(victim)
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        del cwd
+        if argv[1] == "local_build_registry.py":
+            _write_source_registry(Path(argv[3]), count=343)
+        else:
+            _write_feedback_from_request(Path(argv[2]), Path(argv[3]))
+        return 0
+
+    with pytest.raises(P6CoptV2XExecutionError, match="output"):
+        run_p6_coptv2x_search(contract, local, "abc123", runner)
+
+    assert victim.read_text(encoding="utf-8") == "retain"
+
+
 def test_release_feedback_rejects_duplicate_or_extra_rows() -> None:
     feedback = _minimal_feedback()
     feedback["rows"].append(dict(feedback["rows"][0]))

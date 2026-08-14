@@ -263,6 +263,7 @@ def _build_source_registry(
     local: LocalP6CoptV2XConfig, command_runner: CommandRunner
 ) -> Mapping[str, Any]:
     source_registry_path = local.local_output_root / "source_registry.json"
+    _validate_local_output_leaf(source_registry_path)
     _run_step(
         local.source_registry_step,
         {
@@ -272,6 +273,7 @@ def _build_source_registry(
         cwd=local.local_output_root,
         runner=command_runner,
     )
+    _validate_local_output_leaf(source_registry_path)
     source_registry = _read_json_object_or_list(source_registry_path)
     if not isinstance(source_registry, Mapping):
         raise P6CoptV2XContractError("source registry must be an object")
@@ -392,6 +394,7 @@ def _complete_run_state(
         failure_code=None,
         local_state_path=state_path,
     )
+    _validate_local_output_leaf(state_path)
     _write_state(state, code_revision=code_revision)
     return state
 
@@ -427,11 +430,13 @@ def _prepare_round_output(
     request_path = round_root / "measurement_request.json"
     feedback_path = round_root / "feedback.json"
     for output_path in (request_path, feedback_path):
-        if output_path.is_symlink() or (
-            output_path.exists() and not output_path.is_file()
-        ):
-            raise P6CoptV2XExecutionError("unsafe_output", "round output is unsafe")
+        _validate_local_output_leaf(output_path)
     return round_root, request_path, feedback_path
+
+
+def _validate_local_output_leaf(output_path: Path) -> None:
+    if output_path.is_symlink() or (output_path.exists() and not output_path.is_file()):
+        raise P6CoptV2XExecutionError("unsafe_output", "local output leaf is unsafe")
 
 
 def _build_search_task(
