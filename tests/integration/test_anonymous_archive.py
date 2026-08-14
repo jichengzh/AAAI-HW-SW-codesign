@@ -97,6 +97,29 @@ def _run_verifier(archive: Path) -> SimpleNamespace:
     return SimpleNamespace(returncode=0, stdout="archive verified", stderr="")
 
 
+def _extracted_archive_pytest_environment() -> dict[str, str]:
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith(("COV_CORE_", "COVERAGE_PROCESS_"))
+    }
+
+
+def test_extracted_archive_pytest_env_excludes_parent_coverage_startup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The extracted archive's black-box pytest must not inherit coverage startup."""
+    monkeypatch.setenv("COV_CORE_SOURCE", "framework")
+    monkeypatch.setenv("COVERAGE_PROCESS_START", "coverage.ini")
+    monkeypatch.setenv("ANONYMOUS_ARCHIVE_KEEP", "retained")
+
+    environment = _extracted_archive_pytest_environment()
+
+    assert "COV_CORE_SOURCE" not in environment
+    assert "COVERAGE_PROCESS_START" not in environment
+    assert environment["ANONYMOUS_ARCHIVE_KEEP"] == "retained"
+
+
 def _refresh_integrity_sidecars(output: Path) -> None:
     """Bind a deliberately altered ZIP so preflight checks, not stale metadata, reject it."""
     archive = output / ARCHIVE_NAME
@@ -251,6 +274,7 @@ def test_p6_handoff_check_skips_from_anonymous_archive(
         check=False,
         text=True,
         capture_output=True,
+        env=_extracted_archive_pytest_environment(),
     )
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
