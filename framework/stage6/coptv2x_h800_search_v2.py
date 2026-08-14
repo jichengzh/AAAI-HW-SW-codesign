@@ -30,6 +30,10 @@ from framework.stage5.single_target_search_v2 import (
 PUBLIC_SCHEMA_VERSION = "p6_h800_coptv2x_search_contract_v2"
 LOCAL_SCHEMA_VERSION = "p6_h800_coptv2x_local_v2"
 METRIC_NAMES = ("latency_ms", "energy_j", "ap30", "ap50", "ap70")
+SUCCESS_STATUS = "measured_success_gold"
+TRUE_FAILURE_STATUSES = frozenset({"feasibility_failure", "numerical_feasibility_failure"})
+FEEDBACK_SCHEMA_VERSION = "p6_h800_coptv2x_feedback_v2"
+FAILURE_SCHEMA_VERSION = "p6_h800_coptv2x_failure_v2"
 FIXED_TARGET = "h800"
 FIXED_MODEL = "pyramid"
 FIXED_BACKEND = "tvm_auto"
@@ -124,6 +128,18 @@ _PUBLIC_RESTRICTED_VALUE_PATTERNS = (
     ),
 )
 _RAW_DIGEST_PATTERN = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}|[0-9a-f]{128}", re.IGNORECASE)
+_PUBLIC_FAILURE_REASON_PATTERN = re.compile(r"^[a-z0-9_-]+$")
+_RECOVERABLE_ROUND_FAILURE_CODES = frozenset(
+    {
+        "command_failed",
+        "feedback_missing",
+        "feedback_invalid_json",
+        "feedback_request_mismatch",
+        "feedback_candidate_mismatch",
+        "feedback_metrics_invalid",
+        "feedback_terminal_status_invalid",
+    }
+)
 
 
 class P6CoptV2XContractError(ValueError):
@@ -200,27 +216,49 @@ def run_p6_coptv2x_search(
     frozen_gold, gold_graphs, profile = _load_search_inputs(local)
     task = _build_search_task(contract, profile)
     source_registry = _build_source_registry(local, command_runner)
-    _validate_p6_source_space(source_registry, task)
+    try:
+        _validate_p6_source_space(source_registry, task)
+    except (P6CoptV2XContractError, ValueError):
+        raise P6CoptV2XExecutionError(
+            "source_registry_invalid", "source registry invalid"
+        ) from None
     online_feedback_rows: list[dict[str, Any]] = []
     measured_row_ids: set[str] = set()
     frozen_holdout_group_ids = {str(row["group_id"]) for row in frozen_gold}
     gold_selection_rows = _attach_graph_features(frozen_gold, gold_graphs)
     for round_index in range(contract.round_count):
-        released_rows = _run_search_round(
-            contract=contract,
-            local=local,
-            task=task,
-            profile=profile,
-            source_registry=source_registry,
-            frozen_gold=frozen_gold,
-            gold_graphs=gold_graphs,
-            gold_selection_rows=gold_selection_rows,
-            online_feedback_rows=online_feedback_rows,
-            measured_row_ids=measured_row_ids,
-            frozen_holdout_group_ids=frozen_holdout_group_ids,
-            round_index=round_index,
-            command_runner=command_runner,
-        )
+        try:
+            released_rows = _run_search_round(
+                contract=contract,
+                local=local,
+                task=task,
+                profile=profile,
+                source_registry=source_registry,
+                frozen_gold=frozen_gold,
+                gold_graphs=gold_graphs,
+                gold_selection_rows=gold_selection_rows,
+                online_feedback_rows=online_feedback_rows,
+                measured_row_ids=measured_row_ids,
+                frozen_holdout_group_ids=frozen_holdout_group_ids,
+                round_index=round_index,
+                command_runner=command_runner,
+            )
+        except P6CoptV2XExecutionError as error:
+            if error.failure_code not in _RECOVERABLE_ROUND_FAILURE_CODES:
+                raise
+            _write_round_failure(
+                local.local_output_root,
+                round_index=round_index,
+                failure_code=error.failure_code,
+                completed_rounds=round_index,
+            )
+            return _failed_run_state(
+                local,
+                code_revision=code_revision,
+                completed_rounds=round_index,
+                measured_candidate_count=len(measured_row_ids),
+                failure_code=error.failure_code,
+            )
         online_feedback_rows = [*online_feedback_rows, *released_rows]
         measured_row_ids.update(str(row["row_id"]) for row in released_rows)
         if round_index < contract.round_count - 1:
@@ -241,18 +279,18 @@ def _load_search_inputs(
     local: LocalP6CoptV2XConfig,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     gold_rows = _require_mapping_rows(
-        _read_json_object_or_list(local.local_input_paths["gold176_rows"]),
+        _read_local_input_json(local.local_input_paths["gold176_rows"]),
         "gold176 rows",
     )
     gold_graphs = _require_mapping_rows(
-        _read_json_object_or_list(local.local_input_paths["gold176_graph_features"]),
+        _read_local_input_json(local.local_input_paths["gold176_graph_features"]),
         "gold176 graph features",
     )
     raw_profiles = _require_mapping_rows(
-        _read_json_object_or_list(local.local_input_paths["capability_profiles"]),
+        _read_local_input_json(local.local_input_paths["capability_profiles"]),
         "capability profiles",
     )
-    closure = _read_json_object_or_list(local.local_input_paths["closure"])
+    closure = _read_local_input_json(local.local_input_paths["closure"])
     _validate_closure(closure)
     frozen_gold = freeze_initial_coldstart(gold_rows)
     profile = _select_profile(raw_profiles)
@@ -274,10 +312,7 @@ def _build_source_registry(
         runner=command_runner,
     )
     _validate_local_output_leaf(source_registry_path)
-    source_registry = _read_json_object_or_list(source_registry_path)
-    if not isinstance(source_registry, Mapping):
-        raise P6CoptV2XContractError("source registry must be an object")
-    return source_registry
+    return _read_source_registry_json(source_registry_path)
 
 
 def _validate_p6_source_space(
@@ -376,7 +411,7 @@ def _run_search_round(
         runner=command_runner,
     )
     _validate_local_output_leaf(feedback_path)
-    return _release_feedback_rows(_read_json_object_or_list(feedback_path), request)
+    return _release_feedback_rows(_read_feedback_json(feedback_path), request, task=task)
 
 
 def _complete_run_state(
@@ -393,6 +428,28 @@ def _complete_run_state(
         completed_rounds=completed_rounds,
         measured_candidate_count=measured_candidate_count,
         failure_code=None,
+        local_state_path=state_path,
+    )
+    _validate_local_output_leaf(state_path)
+    _write_state(state, code_revision=code_revision)
+    return state
+
+
+def _failed_run_state(
+    local: LocalP6CoptV2XConfig,
+    *,
+    code_revision: str,
+    completed_rounds: int,
+    measured_candidate_count: int,
+    failure_code: str,
+) -> P6CoptV2XRunState:
+    state_path = local.local_output_root / "state.json"
+    state = P6CoptV2XRunState(
+        schema_version="p6_h800_coptv2x_local_state_v2",
+        status="failed",
+        completed_rounds=completed_rounds,
+        measured_candidate_count=measured_candidate_count,
+        failure_code=failure_code,
         local_state_path=state_path,
     )
     _validate_local_output_leaf(state_path)
@@ -433,6 +490,28 @@ def _prepare_round_output(
     for output_path in (request_path, feedback_path):
         _validate_local_output_leaf(output_path)
     return round_root, request_path, feedback_path
+
+
+def _write_round_failure(
+    local_output_root: Path,
+    *,
+    round_index: int,
+    failure_code: str,
+    completed_rounds: int,
+) -> None:
+    round_root = local_output_root / f"round-{round_index:02d}"
+    if round_root.is_symlink() or not round_root.is_dir():
+        raise P6CoptV2XExecutionError("unsafe_output", "round output is unsafe")
+    failure_path = round_root / "failure.json"
+    _validate_local_output_leaf(failure_path)
+    _write_json(
+        failure_path,
+        {
+            "schema_version": FAILURE_SCHEMA_VERSION,
+            "failure_code": failure_code,
+            "completed_rounds": completed_rounds,
+        },
+    )
 
 
 def _validate_local_output_leaf(output_path: Path) -> None:
@@ -500,26 +579,29 @@ def _unique_graph_features(
 
 
 def _release_feedback_rows(
-    feedback: object, request: Mapping[str, Any]
+    feedback: object,
+    request: Mapping[str, Any],
+    *,
+    task: SearchTask,
 ) -> list[dict[str, Any]]:
-    if not isinstance(feedback, Mapping):
-        raise P6CoptV2XContractError("feedback must be an object")
-    if feedback.get("schema_version") != "p6_h800_coptv2x_feedback_v2":
-        raise P6CoptV2XContractError("feedback schema is invalid")
+    if not isinstance(feedback, Mapping) or feedback.get("schema_version") != FEEDBACK_SCHEMA_VERSION:
+        raise P6CoptV2XExecutionError("feedback_invalid_json", "feedback schema invalid")
     if feedback.get("measurement_request_sha256") != request.get(
         "measurement_request_sha256"
     ):
-        raise P6CoptV2XContractError("feedback request identity mismatch")
+        raise P6CoptV2XExecutionError("feedback_request_mismatch", "feedback request mismatch")
     request_rows = request.get("rows")
     feedback_rows = feedback.get("rows")
-    if not isinstance(request_rows, list) or not isinstance(feedback_rows, list):
-        raise P6CoptV2XContractError("feedback rows are invalid")
     if (
-        len(request_rows) != FIXED_BATCH_SIZE
+        not isinstance(request_rows, list)
+        or not isinstance(feedback_rows, list)
+        or len(request_rows) != task.batch_size
         or len(feedback_rows) != len(request_rows)
         or not all(isinstance(row, Mapping) for row in [*request_rows, *feedback_rows])
     ):
-        raise P6CoptV2XContractError("feedback must contain the requested four rows")
+        raise P6CoptV2XExecutionError(
+            "feedback_candidate_mismatch", "feedback candidate mismatch"
+        )
     request_ids = [str(row.get("row_id") or "") for row in request_rows]
     feedback_ids = [str(row.get("row_id") or "") for row in feedback_rows]
     if (
@@ -528,51 +610,91 @@ def _release_feedback_rows(
         or len(set(feedback_ids)) != len(feedback_ids)
         or set(request_ids) != set(feedback_ids)
     ):
-        raise P6CoptV2XContractError("feedback must contain the requested four rows")
-    request_by_id = dict(zip(request_ids, request_rows))
-    feedback_by_id = dict(zip(feedback_ids, feedback_rows))
-    if (
-        len(request_by_id) != 4
-        or len(feedback_by_id) != 4
-        or set(request_by_id) != set(feedback_by_id)
-    ):
-        raise P6CoptV2XContractError("feedback must contain the requested four rows")
-    released: list[dict[str, Any]] = []
-    for row_id, request_row in request_by_id.items():
-        feedback_row = feedback_by_id[row_id]
-        if feedback_row.get("terminal_status") != "measured_success_gold":
-            raise P6CoptV2XContractError("Task 2 feedback must be measured success")
-        metrics = {name: feedback_row.get(name) for name in METRIC_NAMES}
-        if (
-            any(
-                isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or not math.isfinite(float(value))
-                for value in metrics.values()
-            )
-            or any(float(metrics[name]) <= 0.0 for name in ("latency_ms", "energy_j"))
-            or any(
-                not 0.0 <= float(metrics[name]) <= 1.0
-                for name in ("ap30", "ap50", "ap70")
-            )
-        ):
-            raise P6CoptV2XContractError("feedback metrics are outside physical bounds")
-        released.append(
-            {
-                **dict(request_row),
-                **metrics,
-                "terminal_status": "measured_success_gold",
-                "training_source": "online_feedback",
-            }
+        raise P6CoptV2XExecutionError(
+            "feedback_candidate_mismatch", "feedback candidate mismatch"
         )
+    by_request = dict(zip(request_ids, request_rows))
+    by_feedback = dict(zip(feedback_ids, feedback_rows))
+    released: list[dict[str, Any]] = []
+    for row_id, request_row in by_request.items():
+        row = dict(by_feedback[row_id])
+        status = str(row.get("terminal_status") or "")
+        base = {
+            **dict(request_row),
+            "training_source": "online_feedback",
+            "terminal_status": status,
+        }
+        if status == SUCCESS_STATUS:
+            metrics = {metric: row.get(metric) for metric in METRIC_NAMES}
+            if (
+                any(not _finite(metric) for metric in metrics.values())
+                or any(float(metrics[metric]) <= 0.0 for metric in ("latency_ms", "energy_j"))
+                or any(
+                    not 0.0 <= float(metrics[metric]) <= 1.0
+                    for metric in ("ap30", "ap50", "ap70")
+                )
+            ):
+                raise P6CoptV2XExecutionError(
+                    "feedback_metrics_invalid", "feedback metrics invalid"
+                )
+            released.append({**base, **{metric: float(metrics[metric]) for metric in METRIC_NAMES}})
+        elif status in TRUE_FAILURE_STATUSES:
+            reason = str(row.get("failure_reason") or "")
+            if not reason:
+                raise P6CoptV2XExecutionError(
+                    "feedback_terminal_status_invalid", "failure reason missing"
+                )
+            released.append({**base, "failure_reason": _redacted_reason(reason)})
+        else:
+            raise P6CoptV2XExecutionError(
+                "feedback_terminal_status_invalid", "feedback status invalid"
+            )
     return released
 
 
-def _read_json_object_or_list(path: Path) -> object:
+def _finite(value: object) -> bool:
+    try:
+        return not isinstance(value, bool) and math.isfinite(float(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def _redacted_reason(reason: str) -> str:
+    return reason if _PUBLIC_FAILURE_REASON_PATTERN.fullmatch(reason) else "unspecified"
+
+
+def _read_feedback_json(path: Path) -> object:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise P6CoptV2XContractError("local input invalid") from exc
+    except FileNotFoundError:
+        raise P6CoptV2XExecutionError("feedback_missing", "feedback missing") from None
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        raise P6CoptV2XExecutionError("feedback_invalid_json", "feedback invalid") from None
+
+
+def _read_source_registry_json(path: Path) -> Mapping[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise P6CoptV2XExecutionError(
+            "source_registry_missing", "source registry missing"
+        ) from None
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        raise P6CoptV2XExecutionError(
+            "source_registry_invalid", "source registry invalid"
+        ) from None
+    if not isinstance(payload, Mapping):
+        raise P6CoptV2XExecutionError(
+            "source_registry_invalid", "source registry invalid"
+        )
+    return payload
+
+
+def _read_local_input_json(path: Path) -> object:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        raise P6CoptV2XExecutionError("local_input_invalid", "local input invalid") from None
 
 
 def _require_mapping_rows(value: object, description: str) -> list[dict[str, Any]]:

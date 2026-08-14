@@ -257,6 +257,15 @@ def _minimal_feedback() -> dict[str, Any]:
     }
 
 
+def _minimal_task() -> execution.SearchTask:
+    return execution.SearchTask(
+        task_id="minimal-task",
+        target_model="pyramid",
+        hardware_id="h800",
+        capability_profile=_profile(),
+    )
+
+
 def _loaded_local_config(
     tmp_path: Path,
     *,
@@ -369,6 +378,117 @@ def test_run_p6_builds_registry_refits_gold176_and_runs_four_rounds(
     assert not any(row_id in serialized_state for row_id in selected)
 
 
+@pytest.mark.parametrize(
+    "terminal_status", ["feasibility_failure", "numerical_feasibility_failure"]
+)
+def test_run_p6_accepts_true_candidate_failures_as_budget_consuming_feedback(
+    tmp_path: Path,
+    terminal_status: str,
+) -> None:
+    """Catches treating valid candidate failures as an invalid or free batch."""
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    local = _loaded_local_config(tmp_path, source_group_count=343)
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        del cwd
+        if argv[1] == "local_build_registry.py":
+            _write_source_registry(Path(argv[3]), count=343)
+            return 0
+        request = json.loads(Path(argv[2]).read_text(encoding="utf-8"))
+        feedback = {
+            "schema_version": "p6_h800_coptv2x_feedback_v2",
+            "measurement_request_sha256": request["measurement_request_sha256"],
+            "rows": [
+                {
+                    "row_id": row["row_id"],
+                    "terminal_status": terminal_status,
+                    "failure_reason": "synthetic_feasibility",
+                }
+                for row in request["rows"]
+            ],
+        }
+        Path(argv[3]).write_text(json.dumps(feedback), encoding="utf-8")
+        return 0
+
+    state = run_p6_coptv2x_search(contract, local, "abc123", runner)
+
+    assert state.status == "completed"
+    assert state.measured_candidate_count == 16
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_code"),
+    [
+        ("missing_row", "feedback_candidate_mismatch"),
+        ("extra_row", "feedback_candidate_mismatch"),
+        ("wrong_request_sha", "feedback_request_mismatch"),
+        ("wrong_row_id", "feedback_candidate_mismatch"),
+        ("missing_metric", "feedback_metrics_invalid"),
+        ("nan_metric", "feedback_metrics_invalid"),
+        ("public_runner_failure", "feedback_terminal_status_invalid"),
+    ],
+)
+def test_run_p6_quarantines_invalid_feedback_batches(
+    tmp_path: Path, mutation: str, expected_code: str
+) -> None:
+    """Catches partial release or budget advancement from malformed feedback."""
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    local = _loaded_local_config(tmp_path, source_group_count=343)
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        del cwd
+        if argv[1] == "local_build_registry.py":
+            _write_source_registry(Path(argv[3]), count=343)
+            return 0
+        request = json.loads(Path(argv[2]).read_text(encoding="utf-8"))
+        rows = [
+            {
+                "row_id": row["row_id"],
+                "terminal_status": "measured_success_gold",
+                "latency_ms": 3.0,
+                "energy_j": 0.8,
+                "ap30": 0.91,
+                "ap50": 0.82,
+                "ap70": 0.73,
+            }
+            for row in request["rows"]
+        ]
+        if mutation == "missing_row":
+            rows.pop()
+        elif mutation == "extra_row":
+            rows.append(dict(rows[0]))
+        elif mutation == "wrong_row_id":
+            rows[0]["row_id"] = "wrong"
+        elif mutation == "missing_metric":
+            del rows[0]["ap50"]
+        elif mutation == "nan_metric":
+            rows[0]["latency_ms"] = float("nan")
+        elif mutation == "public_runner_failure":
+            rows[0] = {"row_id": rows[0]["row_id"], "terminal_status": "public_runner_failure"}
+        payload = {
+            "schema_version": "p6_h800_coptv2x_feedback_v2",
+            "measurement_request_sha256": (
+                "wrong" if mutation == "wrong_request_sha" else request["measurement_request_sha256"]
+            ),
+            "rows": rows,
+        }
+        Path(argv[3]).write_text(json.dumps(payload), encoding="utf-8")
+        return 0
+
+    state = run_p6_coptv2x_search(contract, local, "abc123", runner)
+
+    assert state.status == "failed"
+    assert state.failure_code == expected_code
+    assert state.completed_rounds == 0
+    assert state.measured_candidate_count == 0
+    failure = json.loads((local.local_output_root / "round-00" / "failure.json").read_text())
+    assert failure == {
+        "schema_version": "p6_h800_coptv2x_failure_v2",
+        "failure_code": expected_code,
+        "completed_rounds": 0,
+    }
+
+
 def test_run_p6_rejects_incomplete_source_space(tmp_path: Path) -> None:
     contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
     local = _loaded_local_config(tmp_path)
@@ -380,8 +500,52 @@ def test_run_p6_rejects_incomplete_source_space(tmp_path: Path) -> None:
         _write_source_registry(Path(argv[3]), count=342)
         return 0
 
-    with pytest.raises(P6CoptV2XContractError, match="343|686|space"):
+    with pytest.raises(P6CoptV2XExecutionError) as captured:
         run_p6_coptv2x_search(contract, local, "abc123", runner)
+
+    assert captured.value.failure_code == "source_registry_invalid"
+
+
+@pytest.mark.parametrize(
+    ("registry_payload", "expected_code"),
+    [(None, "source_registry_missing"), ([], "source_registry_invalid")],
+)
+def test_run_p6_reports_stable_source_registry_failures(
+    tmp_path: Path, registry_payload: object | None, expected_code: str
+) -> None:
+    """Catches source output errors escaping with unstable local exceptions."""
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    local = _loaded_local_config(tmp_path)
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        del cwd
+        if argv[1] != "local_build_registry.py":
+            raise AssertionError("measurement must not start after source failure")
+        if registry_payload is not None:
+            Path(argv[3]).write_text(json.dumps(registry_payload), encoding="utf-8")
+        return 0
+
+    with pytest.raises(P6CoptV2XExecutionError) as captured:
+        run_p6_coptv2x_search(contract, local, "abc123", runner)
+
+    assert captured.value.failure_code == expected_code
+
+
+def test_run_p6_reports_invalid_local_input_with_a_stable_code(tmp_path: Path) -> None:
+    """Catches unreadable controller inputs being mislabeled as contract failures."""
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    local = _loaded_local_config(tmp_path)
+    local.local_input_paths["gold176_rows"].unlink()
+
+    with pytest.raises(P6CoptV2XExecutionError) as captured:
+        run_p6_coptv2x_search(
+            contract,
+            local,
+            "abc123",
+            lambda argv, cwd: (_ for _ in ()).throw(AssertionError((argv, cwd))),
+        )
+
+    assert captured.value.failure_code == "local_input_invalid"
 
 
 def test_run_p6_never_selects_a_gold176_source_group(
@@ -474,8 +638,12 @@ def test_run_p6_does_not_reuse_feedback_from_an_earlier_run(tmp_path: Path) -> N
             _write_source_registry(Path(argv[3]), count=343)
         return 0
 
-    with pytest.raises(P6CoptV2XContractError, match="local input"):
-        run_p6_coptv2x_search(contract, local, "abc123", stale_runner)
+    state = run_p6_coptv2x_search(contract, local, "abc123", stale_runner)
+
+    assert state.status == "failed"
+    assert state.failure_code == "feedback_missing"
+    assert state.completed_rounds == 0
+    assert state.measured_candidate_count == 0
 
 
 @pytest.mark.parametrize(
@@ -492,8 +660,10 @@ def test_release_feedback_rejects_nonphysical_metrics(metric: str, value: float)
     feedback = _minimal_feedback()
     feedback["rows"][0][metric] = value
 
-    with pytest.raises(P6CoptV2XContractError, match="metric"):
-        execution._release_feedback_rows(feedback, _minimal_request())
+    with pytest.raises(P6CoptV2XExecutionError) as captured:
+        execution._release_feedback_rows(feedback, _minimal_request(), task=_minimal_task())
+
+    assert captured.value.failure_code == "feedback_metrics_invalid"
 
 
 def test_run_step_redacts_runner_exceptions() -> None:
@@ -610,8 +780,9 @@ def test_run_p6_revalidates_feedback_leaf_after_adapter(tmp_path: Path) -> None:
         captured_request = json.loads(Path(argv[2]).read_text(encoding="utf-8"))
         return 1
 
-    with pytest.raises(P6CoptV2XExecutionError, match="command"):
-        run_p6_coptv2x_search(contract, local, "abc123", capture_runner)
+    failed = run_p6_coptv2x_search(contract, local, "abc123", capture_runner)
+    assert failed.status == "failed"
+    assert failed.failure_code == "command_failed"
     assert captured_request is not None
     victim = tmp_path / "external-feedback.json"
     victim_payload = {
@@ -658,8 +829,10 @@ def test_release_feedback_rejects_duplicate_or_extra_rows() -> None:
     feedback = _minimal_feedback()
     feedback["rows"].append(dict(feedback["rows"][0]))
 
-    with pytest.raises(P6CoptV2XContractError, match="four rows"):
-        execution._release_feedback_rows(feedback, _minimal_request())
+    with pytest.raises(P6CoptV2XExecutionError) as captured:
+        execution._release_feedback_rows(feedback, _minimal_request(), task=_minimal_task())
+
+    assert captured.value.failure_code == "feedback_candidate_mismatch"
 
 
 def test_load_public_contract_requires_fixed_pyramid_h800_tvm_budget(tmp_path: Path) -> None:
