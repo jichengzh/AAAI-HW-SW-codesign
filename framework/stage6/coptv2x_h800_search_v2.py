@@ -375,6 +375,7 @@ def _run_search_round(
         cwd=round_root,
         runner=command_runner,
     )
+    _validate_local_output_leaf(feedback_path)
     return _release_feedback_rows(_read_json_object_or_list(feedback_path), request)
 
 

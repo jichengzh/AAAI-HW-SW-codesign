@@ -596,6 +596,64 @@ def test_run_p6_rejects_symlinked_state_without_touching_victim(tmp_path: Path) 
     assert victim.read_text(encoding="utf-8") == "retain"
 
 
+def test_run_p6_revalidates_feedback_leaf_after_adapter(tmp_path: Path) -> None:
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    local = _loaded_local_config(tmp_path)
+    captured_request: dict[str, Any] | None = None
+
+    def capture_runner(argv: tuple[str, ...], cwd: Path) -> int:
+        nonlocal captured_request
+        del cwd
+        if argv[1] == "local_build_registry.py":
+            _write_source_registry(Path(argv[3]), count=343)
+            return 0
+        captured_request = json.loads(Path(argv[2]).read_text(encoding="utf-8"))
+        return 1
+
+    with pytest.raises(P6CoptV2XExecutionError, match="command"):
+        run_p6_coptv2x_search(contract, local, "abc123", capture_runner)
+    assert captured_request is not None
+    victim = tmp_path / "external-feedback.json"
+    victim_payload = {
+        "schema_version": "p6_h800_coptv2x_feedback_v2",
+        "measurement_request_sha256": captured_request["measurement_request_sha256"],
+        "rows": [
+            {
+                "row_id": row["row_id"],
+                "terminal_status": "measured_success_gold",
+                "latency_ms": 3.0,
+                "energy_j": 0.8,
+                "ap30": 0.91,
+                "ap50": 0.82,
+                "ap70": 0.73,
+            }
+            for row in captured_request["rows"]
+        ],
+    }
+    victim_text = json.dumps(victim_payload, sort_keys=True)
+    victim.write_text(victim_text, encoding="utf-8")
+    measurement_calls = 0
+
+    def symlink_runner(argv: tuple[str, ...], cwd: Path) -> int:
+        nonlocal measurement_calls
+        del cwd
+        if argv[1] == "local_build_registry.py":
+            _write_source_registry(Path(argv[3]), count=343)
+            return 0
+        measurement_calls += 1
+        if measurement_calls == 1:
+            Path(argv[3]).symlink_to(victim)
+            return 0
+        return 1
+
+    with pytest.raises(P6CoptV2XExecutionError, match="output") as captured:
+        run_p6_coptv2x_search(contract, local, "abc123", symlink_runner)
+
+    assert captured.value.failure_code == "unsafe_output"
+    assert measurement_calls == 1
+    assert victim.read_text(encoding="utf-8") == victim_text
+
+
 def test_release_feedback_rejects_duplicate_or_extra_rows() -> None:
     feedback = _minimal_feedback()
     feedback["rows"].append(dict(feedback["rows"][0]))
