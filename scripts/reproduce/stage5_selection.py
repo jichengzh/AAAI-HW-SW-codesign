@@ -48,7 +48,7 @@ EXPECTED_MODULE_SHA256 = {
         "b4d128bfac5a3aa2cf19dd99816a38e58c0b2dc263c9c93a76d08ac8ab30bdb1"
     ),
     "single_target_search_v2.py": (
-        "5c75cbb66fcfa9182f5b02f38431b98e47dea74c1b319092888da8a0dd60ed37"
+        "dc8a9d52b433d3cd1ca9e834176070502cfd95de649569ef5ea1c5d5e75ef767"
     ),
 }
 SOURCE_MODULES = {

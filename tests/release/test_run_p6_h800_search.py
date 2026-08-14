@@ -489,7 +489,11 @@ def test_cli_normalizes_a_local_record_write_error(tmp_path: Path) -> None:
     result = _run_cli(
         paths,
         env={
-            **os.environ,
+            **{
+                key: value
+                for key, value in os.environ.items()
+                if not key.startswith(("COV_CORE_", "COVERAGE_PROCESS_"))
+            },
             "PYTHONDONTWRITEBYTECODE": "1",
             "PYTHONWARNINGS": "ignore",
         },
