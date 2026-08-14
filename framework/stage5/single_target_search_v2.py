@@ -616,10 +616,21 @@ def fit_initial_coldstart_bundle(
     source_rows = freeze_initial_coldstart(rows)
     if any(
         str(row.get("terminal_status")) != SUCCESS_STATUS
-        or not all(_finite(row.get(target)) for target in ("latency_ms", "energy_j", "ap70"))
+        or not all(
+            not isinstance(row.get(target), bool)
+            and _finite(row.get(target))
+            and float(row[target]) > 0.0
+            for target in ("latency_ms", "energy_j")
+        )
+        or not all(
+            not isinstance(row.get(target), bool)
+            and _finite(row.get(target))
+            and 0.0 <= float(row[target]) <= 1.0
+            for target in ("ap30", "ap50", "ap70")
+        )
         for row in source_rows
     ):
-        raise ValueError("initial_coldstart Gold176 rows must contain finite successful evidence")
+        raise ValueError("initial_coldstart Gold176 rows must contain physical five-metric evidence")
     return _fit_single_target_bundle(
         source_rows,
         graph_features,

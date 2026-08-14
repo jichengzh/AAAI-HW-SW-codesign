@@ -12,8 +12,10 @@ import yaml
 from framework.stage2.canonical_search_v3 import build_capability_profile
 from framework.stage6 import coptv2x_h800_search_v2 as execution
 from framework.stage6.coptv2x_h800_search_v2 import (
+    LocalExecutionStep,
     LocalP6CoptV2XConfig,
     P6CoptV2XContractError,
+    P6CoptV2XExecutionError,
     PublicP6CoptV2XContract,
     load_local_config,
     load_public_contract,
@@ -229,6 +231,32 @@ def _write_feedback_from_request(request_path: Path, feedback_path: Path) -> Non
     feedback_path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+def _minimal_request() -> dict[str, Any]:
+    return {
+        "measurement_request_sha256": "request-identity",
+        "rows": [{"row_id": f"row-{index}"} for index in range(4)],
+    }
+
+
+def _minimal_feedback() -> dict[str, Any]:
+    return {
+        "schema_version": "p6_h800_coptv2x_feedback_v2",
+        "measurement_request_sha256": "request-identity",
+        "rows": [
+            {
+                "row_id": f"row-{index}",
+                "terminal_status": "measured_success_gold",
+                "latency_ms": 3.0,
+                "energy_j": 0.8,
+                "ap30": 0.91,
+                "ap50": 0.82,
+                "ap70": 0.73,
+            }
+            for index in range(4)
+        ],
+    }
+
+
 def _loaded_local_config(
     tmp_path: Path,
     *,
@@ -339,6 +367,159 @@ def test_run_p6_builds_registry_refits_gold176_and_runs_four_rounds(
     serialized_state = json.dumps(stored_state, sort_keys=True)
     assert str(tmp_path) not in serialized_state
     assert not any(row_id in serialized_state for row_id in selected)
+
+
+def test_run_p6_rejects_incomplete_source_space(tmp_path: Path) -> None:
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    local = _loaded_local_config(tmp_path)
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        del cwd
+        if argv[1] != "local_build_registry.py":
+            raise AssertionError("measurement must not start for an incomplete space")
+        _write_source_registry(Path(argv[3]), count=342)
+        return 0
+
+    with pytest.raises(P6CoptV2XContractError, match="343|686|space"):
+        run_p6_coptv2x_search(contract, local, "abc123", runner)
+
+
+def test_run_p6_never_selects_a_gold176_source_group(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    local = _loaded_local_config(tmp_path)
+    overlap_group = "pyramid|16x32x64"
+    gold_rows_path = local.local_input_paths["gold176_rows"]
+    gold_graphs_path = local.local_input_paths["gold176_graph_features"]
+    gold_rows = json.loads(gold_rows_path.read_text(encoding="utf-8"))
+    gold_graphs = json.loads(gold_graphs_path.read_text(encoding="utf-8"))
+    gold_rows[0] = {**gold_rows[0], "group_id": overlap_group, "width": [16, 32, 64]}
+    gold_graphs[0] = {**gold_graphs[0], "group_id": overlap_group, "width": [16, 32, 64]}
+    gold_rows_path.write_text(json.dumps(gold_rows), encoding="utf-8")
+    gold_graphs_path.write_text(json.dumps(gold_graphs), encoding="utf-8")
+    selected_groups: list[str] = []
+    real_select = execution.select_task_batch
+
+    def select_without_gold(predicted_rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any):
+        assert all(str(row["group_id"]) != overlap_group for row in predicted_rows)
+        return real_select(predicted_rows, *args, **kwargs)
+
+    monkeypatch.setattr(execution, "select_task_batch", select_without_gold)
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        del cwd
+        if argv[1] == "local_build_registry.py":
+            _write_source_registry(Path(argv[3]), count=343)
+            return 0
+        request_path = Path(argv[2])
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+        selected_groups.extend(str(row["group_id"]) for row in request["rows"])
+        _write_feedback_from_request(request_path, Path(argv[3]))
+        return 0
+
+    state = run_p6_coptv2x_search(contract, local, "abc123", runner)
+
+    assert state.status == "completed"
+    assert overlap_group not in selected_groups
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda closure: closure.update(stage4_closed=False),
+        lambda closure: closure.update(stage5_search_ready=False),
+        lambda closure: closure["training_source_rows"].update(initial_coldstart=175),
+        lambda closure: closure["canonical_value_heads"].update(ap70="legacy-head"),
+        lambda closure: closure.update(uncertainty_policy="legacy-policy"),
+        lambda closure: closure.update(selected_acquisition_policy="legacy-policy"),
+    ],
+)
+def test_run_p6_rejects_unclosed_or_drifted_stage4_contract(
+    tmp_path: Path, mutation: Any
+) -> None:
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    local = _loaded_local_config(tmp_path)
+    closure_path = local.local_input_paths["closure"]
+    closure = json.loads(closure_path.read_text(encoding="utf-8"))
+    mutation(closure)
+    closure_path.write_text(json.dumps(closure), encoding="utf-8")
+
+    with pytest.raises(P6CoptV2XContractError, match="closure"):
+        run_p6_coptv2x_search(
+            contract,
+            local,
+            "abc123",
+            lambda argv, cwd: (_ for _ in ()).throw(AssertionError((argv, cwd))),
+        )
+
+
+def test_run_p6_does_not_reuse_feedback_from_an_earlier_run(tmp_path: Path) -> None:
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    local = _loaded_local_config(tmp_path)
+
+    def first_runner(argv: tuple[str, ...], cwd: Path) -> int:
+        del cwd
+        if argv[1] == "local_build_registry.py":
+            _write_source_registry(Path(argv[3]), count=343)
+        else:
+            _write_feedback_from_request(Path(argv[2]), Path(argv[3]))
+        return 0
+
+    assert run_p6_coptv2x_search(contract, local, "abc123", first_runner).status == "completed"
+
+    def stale_runner(argv: tuple[str, ...], cwd: Path) -> int:
+        del cwd
+        if argv[1] == "local_build_registry.py":
+            _write_source_registry(Path(argv[3]), count=343)
+        return 0
+
+    with pytest.raises(P6CoptV2XContractError, match="local input"):
+        run_p6_coptv2x_search(contract, local, "abc123", stale_runner)
+
+
+@pytest.mark.parametrize(
+    "metric,value",
+    [
+        ("latency_ms", 0.0),
+        ("energy_j", -0.1),
+        ("ap30", -0.01),
+        ("ap50", 1.01),
+        ("ap70", float("nan")),
+    ],
+)
+def test_release_feedback_rejects_nonphysical_metrics(metric: str, value: float) -> None:
+    feedback = _minimal_feedback()
+    feedback["rows"][0][metric] = value
+
+    with pytest.raises(P6CoptV2XContractError, match="metric"):
+        execution._release_feedback_rows(feedback, _minimal_request())
+
+
+def test_run_step_redacts_runner_exceptions() -> None:
+    step = LocalExecutionStep("measure_batch", ("python", "/private/adapter.py"))
+
+    def raising_runner(argv: tuple[str, ...], cwd: Path) -> int:
+        raise RuntimeError(f"secret failure: {argv!r} from {cwd}")
+
+    with pytest.raises(P6CoptV2XExecutionError) as captured:
+        execution._run_step(
+            step,
+            {},
+            cwd=Path("/private/output"),
+            runner=raising_runner,
+        )
+
+    assert str(captured.value) == "local command failed"
+    assert "/private" not in str(captured.value)
+
+
+def test_release_feedback_rejects_duplicate_or_extra_rows() -> None:
+    feedback = _minimal_feedback()
+    feedback["rows"].append(dict(feedback["rows"][0]))
+
+    with pytest.raises(P6CoptV2XContractError, match="four rows"):
+        execution._release_feedback_rows(feedback, _minimal_request())
 
 
 def test_load_public_contract_requires_fixed_pyramid_h800_tvm_budget(tmp_path: Path) -> None:

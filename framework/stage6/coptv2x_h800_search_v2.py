@@ -36,6 +36,15 @@ FIXED_BACKEND = "tvm_auto"
 FIXED_SAMPLE_BUDGET = 16
 FIXED_BATCH_SIZE = 4
 FIXED_ROUND_COUNT = 4
+FIXED_SOURCE_GROUP_COUNT = 343
+FIXED_ELIGIBLE_GENOME_COUNT = 686
+EXPECTED_CLOSURE_HEADS = {
+    "latency_ms": "extra_trees_log",
+    "energy_j": "extra_trees_log",
+    "ap70": "lgbm_huber_residual",
+}
+EXPECTED_UNCERTAINTY_POLICY = "lgbm_quantile_plus_group_conformal"
+EXPECTED_ACQUISITION_POLICY = "predicted_frontier_diversity"
 LOCAL_INPUT_NAMES = frozenset(
     {"gold176_rows", "gold176_graph_features", "capability_profiles", "closure"}
 )
@@ -191,8 +200,10 @@ def run_p6_coptv2x_search(
     frozen_gold, gold_graphs, profile = _load_search_inputs(local)
     task = _build_search_task(contract, profile)
     source_registry = _build_source_registry(local, command_runner)
+    _validate_p6_source_space(source_registry, task)
     online_feedback_rows: list[dict[str, Any]] = []
     measured_row_ids: set[str] = set()
+    frozen_holdout_group_ids = {str(row["group_id"]) for row in frozen_gold}
     gold_selection_rows = _attach_graph_features(frozen_gold, gold_graphs)
     for round_index in range(contract.round_count):
         released_rows = _run_search_round(
@@ -206,6 +217,7 @@ def run_p6_coptv2x_search(
             gold_selection_rows=gold_selection_rows,
             online_feedback_rows=online_feedback_rows,
             measured_row_ids=measured_row_ids,
+            frozen_holdout_group_ids=frozen_holdout_group_ids,
             round_index=round_index,
             command_runner=command_runner,
         )
@@ -241,8 +253,7 @@ def _load_search_inputs(
         "capability profiles",
     )
     closure = _read_json_object_or_list(local.local_input_paths["closure"])
-    if not isinstance(closure, Mapping):
-        raise P6CoptV2XContractError("closure must be an object")
+    _validate_closure(closure)
     frozen_gold = freeze_initial_coldstart(gold_rows)
     profile = _select_profile(raw_profiles)
     return frozen_gold, gold_graphs, profile
@@ -267,6 +278,40 @@ def _build_source_registry(
     return source_registry
 
 
+def _validate_p6_source_space(
+    source_registry: Mapping[str, Any], task: SearchTask
+) -> None:
+    groups = source_registry.get("groups")
+    if not isinstance(groups, list) or len(groups) != FIXED_SOURCE_GROUP_COUNT:
+        raise P6CoptV2XContractError("P6 source space must contain exactly 343 groups")
+    manifest = build_task_candidate_manifest(
+        source_registry, task=task, measured_row_ids=set()
+    )
+    if (
+        manifest.get("eligible_row_count") != FIXED_ELIGIBLE_GENOME_COUNT
+        or len(manifest.get("rows") or []) != FIXED_ELIGIBLE_GENOME_COUNT
+    ):
+        raise P6CoptV2XContractError("P6 source space must contain exactly 686 genomes")
+
+
+def _validate_closure(closure: object) -> None:
+    if not isinstance(closure, Mapping):
+        raise P6CoptV2XContractError("closure must be an object")
+    source_rows = closure.get("training_source_rows")
+    valid = (
+        closure.get("schema_version") == "stage4_p1_p3_closure_audit_v1"
+        and closure.get("stage4_closed") is True
+        and closure.get("stage5_search_ready") is True
+        and isinstance(source_rows, Mapping)
+        and source_rows.get("initial_coldstart") == 176
+        and closure.get("canonical_value_heads") == EXPECTED_CLOSURE_HEADS
+        and closure.get("uncertainty_policy") == EXPECTED_UNCERTAINTY_POLICY
+        and closure.get("selected_acquisition_policy") == EXPECTED_ACQUISITION_POLICY
+    )
+    if not valid:
+        raise P6CoptV2XContractError("closure does not admit the P6 search")
+
+
 def _run_search_round(
     *,
     contract: PublicP6CoptV2XContract,
@@ -279,6 +324,7 @@ def _run_search_round(
     gold_selection_rows: Sequence[Mapping[str, Any]],
     online_feedback_rows: Sequence[Mapping[str, Any]],
     measured_row_ids: set[str],
+    frozen_holdout_group_ids: set[str],
     round_index: int,
     command_runner: CommandRunner,
 ) -> list[dict[str, Any]]:
@@ -292,7 +338,10 @@ def _run_search_round(
         else fit_online_bundle(training_rows, training_graphs, [profile], seed=contract.seed)
     )
     manifest = build_task_candidate_manifest(
-        source_registry, task=task, measured_row_ids=measured_row_ids
+        source_registry,
+        task=task,
+        measured_row_ids=measured_row_ids,
+        frozen_holdout_group_ids=frozen_holdout_group_ids,
     )
     predicted = predict_candidate_rows(bundle, manifest["rows"], [profile])
     selection = select_task_batch(
@@ -309,6 +358,12 @@ def _run_search_round(
     request_path = round_root / "measurement_request.json"
     feedback_path = round_root / "feedback.json"
     _write_json(request_path, request)
+    try:
+        feedback_path.unlink(missing_ok=True)
+    except OSError:
+        raise P6CoptV2XExecutionError(
+            "feedback_cleanup_failed", "could not prepare local feedback output"
+        ) from None
     _run_step(
         local.measurement_step,
         {
@@ -416,8 +471,23 @@ def _release_feedback_rows(
     feedback_rows = feedback.get("rows")
     if not isinstance(request_rows, list) or not isinstance(feedback_rows, list):
         raise P6CoptV2XContractError("feedback rows are invalid")
-    request_by_id = {str(row.get("row_id")): row for row in request_rows}
-    feedback_by_id = {str(row.get("row_id")): row for row in feedback_rows}
+    if (
+        len(request_rows) != FIXED_BATCH_SIZE
+        or len(feedback_rows) != len(request_rows)
+        or not all(isinstance(row, Mapping) for row in [*request_rows, *feedback_rows])
+    ):
+        raise P6CoptV2XContractError("feedback must contain the requested four rows")
+    request_ids = [str(row.get("row_id") or "") for row in request_rows]
+    feedback_ids = [str(row.get("row_id") or "") for row in feedback_rows]
+    if (
+        any(not row_id for row_id in [*request_ids, *feedback_ids])
+        or len(set(request_ids)) != len(request_ids)
+        or len(set(feedback_ids)) != len(feedback_ids)
+        or set(request_ids) != set(feedback_ids)
+    ):
+        raise P6CoptV2XContractError("feedback must contain the requested four rows")
+    request_by_id = dict(zip(request_ids, request_rows))
+    feedback_by_id = dict(zip(feedback_ids, feedback_rows))
     if (
         len(request_by_id) != 4
         or len(feedback_by_id) != 4
@@ -430,13 +500,20 @@ def _release_feedback_rows(
         if feedback_row.get("terminal_status") != "measured_success_gold":
             raise P6CoptV2XContractError("Task 2 feedback must be measured success")
         metrics = {name: feedback_row.get(name) for name in METRIC_NAMES}
-        if any(
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(float(value))
-            for value in metrics.values()
+        if (
+            any(
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                for value in metrics.values()
+            )
+            or any(float(metrics[name]) <= 0.0 for name in ("latency_ms", "energy_j"))
+            or any(
+                not 0.0 <= float(metrics[name]) <= 1.0
+                for name in ("ap30", "ap50", "ap70")
+            )
         ):
-            raise P6CoptV2XContractError("feedback metrics must be finite")
+            raise P6CoptV2XContractError("feedback metrics are outside physical bounds")
         released.append(
             {
                 **dict(request_row),
@@ -474,7 +551,11 @@ def _run_step(
     runner: CommandRunner,
 ) -> None:
     argv = tuple(_replace_exact_token(arg, replacements) for arg in step.argv)
-    if runner(argv, cwd) != 0:
+    try:
+        return_code = runner(argv, cwd)
+    except Exception:
+        raise P6CoptV2XExecutionError("command_failed", "local command failed") from None
+    if return_code != 0:
         raise P6CoptV2XExecutionError("command_failed", "local command failed")
 
 

@@ -460,6 +460,18 @@ def test_initial_single_target_fit_accepts_only_gold176_coldstart_rows() -> None
     with pytest.raises(ValueError, match="initial_coldstart"):
         single.fit_initial_coldstart_bundle(contaminated, graphs, [profile], seed=41)
 
+    for metric, invalid_value in (
+        ("latency_ms", 0.0),
+        ("energy_j", -0.1),
+        ("ap30", float("nan")),
+        ("ap50", -0.01),
+        ("ap70", 1.01),
+    ):
+        invalid = copy.deepcopy(rows)
+        invalid[-1][metric] = invalid_value
+        with pytest.raises(ValueError, match="Gold176"):
+            single.fit_initial_coldstart_bundle(invalid, graphs, [profile], seed=41)
+
 
 def test_coldstart_and_feedback_views_are_detached_and_task_bound() -> None:
     """Catches mutation, wrong coldstart cardinality, or cross-task feedback drift."""
