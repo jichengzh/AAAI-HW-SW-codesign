@@ -27,7 +27,7 @@ from framework.stage5.single_target_search_v2 import (
     select_task_batch,
     validate_task_feedback_history,
 )
-from framework.stage6.pyramid_search_space_adapter_v1 import build_pyramid_structure_plan
+from framework.stage6.pyramid_search_space_adapter_v1 import build_pyramid_candidate_plan
 
 
 PUBLIC_SCHEMA_VERSION = "p6_h800_coptv2x_search_contract_v2"
@@ -87,7 +87,7 @@ ALLOWED_TEMPLATE_TOKENS = frozenset(
     {
         "{local_output_root}",
         "{source_registry_json}",
-        "{pyramid_structure_plan}",
+        "{pyramid_candidate_plan}",
         "{measurement_request}",
         "{feedback_json}",
         "{round_output_root}",
@@ -395,10 +395,10 @@ def _build_source_registry(
     plan: Mapping[str, Any] | None = None
     if local.candidate_source_mode == "framework_stage2_search_space":
         assert local.stage2_search_space_path is not None
-        plan = build_pyramid_structure_plan(
+        plan = build_pyramid_candidate_plan(
             load_stage2_search_space(local.stage2_search_space_path)
         )
-        plan_path = local.local_output_root / "pyramid_structure_plan.json"
+        plan_path = local.local_output_root / "pyramid_candidate_plan.json"
         _validate_local_output_leaf(plan_path)
         plan_path.write_text(
             json.dumps(plan, ensure_ascii=True, indent=2, sort_keys=True) + "\n",
@@ -410,7 +410,7 @@ def _build_source_registry(
             "{local_output_root}": local.local_output_root,
             "{source_registry_json}": source_registry_path,
             **(
-                {"{pyramid_structure_plan}": plan_path}
+                {"{pyramid_candidate_plan}": plan_path}
                 if plan_path is not None
                 else {}
             ),
@@ -428,36 +428,86 @@ def _build_source_registry(
 def _validate_framework_registry_plan(
     source_registry: Mapping[str, Any], plan: Mapping[str, Any]
 ) -> None:
-    """Require local materialization to preserve every framework width structure."""
-    structures = plan.get("structures")
+    """Require local materialization to preserve every dynamic candidate identity."""
+    if source_registry.get("schema_version") != "stage5_candidate_source_registry_v2":
+        raise P6CoptV2XContractError("framework registry schema must be v2")
     groups = source_registry.get("groups")
-    if not isinstance(structures, list) or not isinstance(groups, list):
+    if not isinstance(groups, list):
         raise P6CoptV2XContractError("framework registry plan identities are invalid")
-
-    def width_identity(value: Mapping[str, Any]) -> tuple[int, ...]:
-        width = value.get("width")
+    expected = _framework_plan_candidate_mapping(plan)
+    actual_entries: list[tuple[tuple[tuple[int, ...], str], tuple[str, ...]]] = []
+    for group in groups:
+        if not isinstance(group, Mapping):
+            raise P6CoptV2XContractError("framework registry plan identities are invalid")
+        width = _framework_width_identity(group)
+        available_q_modes = group.get("available_q_modes")
+        source_point_ids_by_q_mode = group.get("source_point_ids_by_q_mode")
         if (
-            not isinstance(width, list)
-            or not width
-            or any(isinstance(item, bool) or not isinstance(item, int) for item in width)
+            not isinstance(available_q_modes, list)
+            or not available_q_modes
+            or any(not isinstance(q_mode, str) for q_mode in available_q_modes)
+            or not isinstance(source_point_ids_by_q_mode, Mapping)
+            or set(source_point_ids_by_q_mode) != set(available_q_modes)
         ):
             raise P6CoptV2XContractError("framework registry plan identities are invalid")
-        return tuple(width)
-
-    expected = {
-        width_identity(structure)
-        for structure in structures
-        if isinstance(structure, Mapping)
-    }
-    actual = {
-        width_identity(group) for group in groups if isinstance(group, Mapping)
-    }
-    if (
-        len(expected) != len(structures)
-        or len(actual) != len(groups)
-        or actual != expected
-    ):
+        for q_mode in available_q_modes:
+            actual_entries.append(
+                (
+                    (width, q_mode),
+                    _framework_source_point_ids(source_point_ids_by_q_mode[q_mode]),
+                )
+            )
+    actual = dict(actual_entries)
+    if len(actual) != len(actual_entries) or actual != expected:
         raise P6CoptV2XContractError("framework registry plan identities do not match")
+
+
+def _framework_width_identity(value: Mapping[str, Any]) -> tuple[int, ...]:
+    width = value.get("width")
+    if (
+        not isinstance(width, list)
+        or not width
+        or any(isinstance(item, bool) or not isinstance(item, int) for item in width)
+    ):
+        raise P6CoptV2XContractError("framework candidate width is invalid")
+    return tuple(width)
+
+
+def _framework_source_point_ids(value: object) -> tuple[str, ...]:
+    if (
+        not isinstance(value, list)
+        or len(value) != 3
+        or any(not isinstance(item, str) or not item for item in value)
+    ):
+        raise P6CoptV2XContractError("framework candidate provenance is invalid")
+    return tuple(value)
+
+
+def _framework_plan_candidate_mapping(
+    plan: Mapping[str, Any],
+) -> dict[tuple[tuple[int, ...], str], tuple[str, ...]]:
+    if plan.get("schema_version") != "p6_pyramid_candidate_plan_v2":
+        raise P6CoptV2XContractError("framework candidate plan schema is invalid")
+    candidates = plan.get("candidates")
+    if not isinstance(candidates, list):
+        raise P6CoptV2XContractError("framework candidate plan identities are invalid")
+    entries: list[tuple[tuple[tuple[int, ...], str], tuple[str, ...]]] = []
+    for candidate in candidates:
+        if not isinstance(candidate, Mapping):
+            raise P6CoptV2XContractError("framework candidate plan identities are invalid")
+        q_mode = candidate.get("q_mode")
+        if q_mode not in {"fp16", "int8"}:
+            raise P6CoptV2XContractError("framework candidate q_mode is invalid")
+        entries.append(
+            (
+                (_framework_width_identity(candidate), q_mode),
+                _framework_source_point_ids(candidate.get("source_point_ids")),
+            )
+        )
+    mapping = dict(entries)
+    if len(mapping) != len(entries):
+        raise P6CoptV2XContractError("framework candidate plan identities are duplicated")
+    return mapping
 
 
 def _validate_p6_source_space(
@@ -467,55 +517,54 @@ def _validate_p6_source_space(
     framework_plan: Mapping[str, Any] | None,
 ) -> None:
     groups = source_registry.get("groups")
-    if not isinstance(groups, list) or len(groups) != FIXED_SOURCE_GROUP_COUNT:
+    if not isinstance(groups, list):
+        raise P6CoptV2XContractError("P6 source space groups are invalid")
+    if framework_plan is None and len(groups) != FIXED_SOURCE_GROUP_COUNT:
         raise P6CoptV2XContractError("P6 source space must contain exactly 343 groups")
     manifest = build_task_candidate_manifest(
         source_registry, task=task, measured_row_ids=set()
     )
+    if framework_plan is None:
+        if (
+            manifest.get("eligible_row_count") != FIXED_ELIGIBLE_GENOME_COUNT
+            or len(manifest.get("rows") or []) != FIXED_ELIGIBLE_GENOME_COUNT
+        ):
+            raise P6CoptV2XContractError("P6 source space must contain exactly 686 genomes")
+        return
+    candidates = framework_plan.get("candidates")
+    candidate_count = framework_plan.get("candidate_count")
     if (
-        manifest.get("eligible_row_count") != FIXED_ELIGIBLE_GENOME_COUNT
-        or len(manifest.get("rows") or []) != FIXED_ELIGIBLE_GENOME_COUNT
+        not isinstance(candidates, list)
+        or isinstance(candidate_count, bool)
+        or not isinstance(candidate_count, int)
+        or candidate_count != len(candidates)
     ):
-        raise P6CoptV2XContractError("P6 source space must contain exactly 686 genomes")
-    if framework_plan is not None:
-        _validate_framework_manifest_identities(manifest, framework_plan)
+        raise P6CoptV2XContractError("framework candidate count is invalid")
+    _validate_framework_manifest_identities(manifest, framework_plan)
+    eligible_row_count = manifest.get("eligible_row_count")
+    if (
+        isinstance(eligible_row_count, bool)
+        or not isinstance(eligible_row_count, int)
+        or eligible_row_count < task.sample_budget
+    ):
+        raise P6CoptV2XContractError("framework source space is below the sample budget")
 
 
 def _validate_framework_manifest_identities(
     manifest: Mapping[str, Any], plan: Mapping[str, Any]
 ) -> None:
-    """Ensure Stage5 expands framework structures into precisely both q-mode genomes."""
-    structures = plan.get("structures")
+    """Ensure Stage5 expands precisely the q-mode genomes declared by the plan."""
     rows = manifest.get("rows")
-    if not isinstance(structures, list) or not isinstance(rows, list):
+    if not isinstance(rows, list):
         raise P6CoptV2XContractError("framework manifest identities are invalid")
-
-    def width(value: Mapping[str, Any]) -> tuple[int, ...]:
-        raw_width = value.get("width")
-        if (
-            not isinstance(raw_width, list)
-            or not raw_width
-            or any(isinstance(item, bool) or not isinstance(item, int) for item in raw_width)
-        ):
+    expected = set(_framework_plan_candidate_mapping(plan))
+    actual_entries: list[tuple[tuple[int, ...], str]] = []
+    for row in rows:
+        if not isinstance(row, Mapping) or row.get("q_mode") not in {"fp16", "int8"}:
             raise P6CoptV2XContractError("framework manifest identities are invalid")
-        return tuple(raw_width)
-
-    expected = {
-        (width(structure), q_mode)
-        for structure in structures
-        if isinstance(structure, Mapping)
-        for q_mode in ("fp16", "int8")
-    }
-    actual = {
-        (width(row), row.get("q_mode"))
-        for row in rows
-        if isinstance(row, Mapping)
-    }
-    if (
-        len(expected) != len(structures) * 2
-        or len(actual) != len(rows)
-        or actual != expected
-    ):
+        actual_entries.append((_framework_width_identity(row), str(row["q_mode"])))
+    actual = set(actual_entries)
+    if len(actual) != len(actual_entries) or actual != expected:
         raise P6CoptV2XContractError("framework manifest identities do not match")
 
 
@@ -1030,7 +1079,7 @@ def load_local_config(path: Path, contract: PublicP6CoptV2XContract) -> LocalP6C
         source_required_tokens = {
             "{local_output_root}",
             "{source_registry_json}",
-            "{pyramid_structure_plan}",
+            "{pyramid_candidate_plan}",
         }
     else:
         if payload.get("stage2_search_space_path") is not None:

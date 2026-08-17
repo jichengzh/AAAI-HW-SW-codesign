@@ -420,6 +420,22 @@ def test_cli_fails_closed_for_an_invalid_local_contract(tmp_path: Path) -> None:
     assert not paths["call_log"].exists()
 
 
+def test_cli_rejects_framework_candidate_plan_token_in_static_source_mode(
+    tmp_path: Path,
+) -> None:
+    paths = _cli_fixture(tmp_path)
+    local = yaml.safe_load(paths["local"].read_text(encoding="utf-8"))
+    local["source_registry_step"]["argv"].append("{pyramid_candidate_plan}")
+    _write_yaml(paths["local"], local)
+
+    result = _run_cli(paths)
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert result.stderr == "contract_error\n"
+    assert not paths["call_log"].exists()
+
+
 def test_cli_reports_an_unsafe_local_output_boundary_as_a_contract_error(
     tmp_path: Path,
 ) -> None:

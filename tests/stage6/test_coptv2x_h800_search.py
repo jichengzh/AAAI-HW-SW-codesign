@@ -282,28 +282,33 @@ def _write_source_registry(path: Path, *, count: int) -> None:
 
 
 def _write_source_registry_from_plan(path: Path, plan: Mapping[str, Any]) -> None:
+    candidates_by_width: dict[tuple[int, ...], list[Mapping[str, Any]]] = {}
+    for candidate in plan["candidates"]:
+        candidates_by_width.setdefault(tuple(candidate["width"]), []).append(candidate)
     groups = []
-    for structure in plan["structures"]:
-        width = list(structure["width"])
+    for width_identity, candidates in sorted(candidates_by_width.items()):
+        width = list(width_identity)
         group = _source_group(f"pyramid|{'x'.join(map(str, width))}", width)
+        group["available_q_modes"] = sorted(
+            str(candidate["q_mode"]) for candidate in candidates
+        )
+        group["source_point_ids_by_q_mode"] = {
+            str(candidate["q_mode"]): list(candidate["source_point_ids"])
+            for candidate in candidates
+        }
         groups.append(group)
     path.write_text(
-        json.dumps({"schema_version": "stage5_candidate_source_registry_v1", "groups": groups}),
+        json.dumps({"schema_version": "stage5_candidate_source_registry_v2", "groups": groups}),
         encoding="utf-8",
     )
 
 
-def _framework_plan_structures() -> list[dict[str, Any]]:
-    return [
-        {"width": [stage1, stage2, stage3]}
-        for stage1 in range(32, 225, 32)
-        for stage2 in range(32, 225, 32)
-        for stage3 in range(32, 225, 32)
-    ]
-
-
 def _complete_framework_stage2_search_space() -> dict[str, Any]:
-    widths = list(range(32, 225, 32))
+    widths_by_stage_and_q_mode = {
+        "stage1": {"fp16": [32, 64, 96], "int8": [32, 64, 96]},
+        "stage2": {"fp16": [32, 64, 96], "int8": [32, 64]},
+        "stage3": {"fp16": [32, 64], "int8": [32]},
+    }
     return {
         "schema": "stage2_search_space_v1",
         "model": "pyramid_lidar",
@@ -327,8 +332,8 @@ def _complete_framework_stage2_search_space() -> dict[str, Any]:
                         "buildable": True,
                         "status": "active",
                     }
-                    for width in widths
                     for q_mode in ("fp16", "int8")
+                    for width in widths_by_stage_and_q_mode[stage][q_mode]
                 ],
             }
             for stage in ("stage1", "stage2", "stage3")
@@ -433,7 +438,6 @@ def _loaded_local_config(
     tmp_path: Path,
     *,
     contract: PublicP6CoptV2XContract | None = None,
-    source_group_count: int = 343,
     include_stage2_search_space: bool = False,
     include_non_target_backend: bool = True,
     include_graph_provenance: bool = False,
@@ -459,7 +463,6 @@ def _loaded_local_config(
         _write_yaml(tmp_path / "contract.yaml", _public_contract())
     )
     if include_stage2_search_space:
-        assert source_group_count == len(_framework_plan_structures())
         local_config = _local_config(
             tmp_path,
             candidate_source_mode="framework_stage2_search_space",
@@ -471,7 +474,7 @@ def _loaded_local_config(
                     "local_build_registry.py",
                     "{local_output_root}",
                     "{source_registry_json}",
-                    "{pyramid_structure_plan}",
+                    "{pyramid_candidate_plan}",
                 ],
             },
         )
@@ -504,7 +507,7 @@ def test_local_contract_accepts_only_known_candidate_source_modes(tmp_path: Path
                         "local_build_registry.py",
                         "{local_output_root}",
                         "{source_registry_json}",
-                        "{pyramid_structure_plan}",
+                        "{pyramid_candidate_plan}",
                     ],
                 },
             ),
@@ -557,7 +560,7 @@ def test_local_contract_defaults_legacy_local_configuration_to_static_mode(
                         "local_build_registry.py",
                         "{local_output_root}",
                         "{source_registry_json}",
-                        "{pyramid_structure_plan}",
+                        "{pyramid_candidate_plan}",
                     ],
                 },
             ),
@@ -579,7 +582,7 @@ def test_local_contract_defaults_legacy_local_configuration_to_static_mode(
                         "local_build_registry.py",
                         "{local_output_root}",
                         "{source_registry_json}",
-                        "{pyramid_structure_plan}",
+                        "{pyramid_candidate_plan}",
                     ],
                 },
             ),
@@ -599,7 +602,7 @@ def test_local_contract_rejects_stage2_paths_and_plan_tokens_outside_framework_m
         load_local_config(_write_yaml(tmp_path / "local.yaml", payload(tmp_path)), contract)
 
 
-def test_run_p6_framework_mode_builds_structure_plan_before_source_registry(
+def test_run_p6_framework_mode_builds_dynamic_candidate_plan_and_runs_four_rounds(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Framework candidates must originate from the Stage1-to-Stage2 path."""
@@ -607,7 +610,6 @@ def test_run_p6_framework_mode_builds_structure_plan_before_source_registry(
     local = _loaded_local_config(
         tmp_path,
         contract=contract,
-        source_group_count=len(_framework_plan_structures()),
         include_stage2_search_space=True,
     )
     monkeypatch.setattr(
@@ -616,53 +618,59 @@ def test_run_p6_framework_mode_builds_structure_plan_before_source_registry(
         lambda path: _complete_framework_stage2_search_space(),
     )
     calls: list[tuple[str, tuple[str, ...]]] = []
+    observed_plan: dict[str, Any] = {}
+    observed_manifest_candidate_identities: set[tuple[tuple[int, ...], str]] = set()
 
     def runner(argv: tuple[str, ...], cwd: Path) -> int:
         del cwd
+        nonlocal observed_plan, observed_manifest_candidate_identities
         calls.append((argv[0], argv))
         if argv[1] == "local_build_registry.py":
-            structure_plan_path = Path(argv[4])
-            plan = json.loads(structure_plan_path.read_text(encoding="utf-8"))
-            assert plan["schema_version"] == "p6_pyramid_structure_plan_v1"
+            candidate_plan_path = Path(argv[4])
+            plan = json.loads(candidate_plan_path.read_text(encoding="utf-8"))
+            observed_plan = plan
+            assert candidate_plan_path.name == "pyramid_candidate_plan.json"
+            assert plan["schema_version"] == "p6_pyramid_candidate_plan_v2"
             assert plan["candidate_source_mode"] == "framework_stage2_search_space"
-            assert plan["structure_count"] == 343
-            assert plan["candidate_count"] == 686
+            assert plan["structure_count"] == 18
+            assert plan["candidate_count"] == 24
             _write_source_registry_from_plan(Path(argv[3]), plan)
             registry = json.loads(Path(argv[3]).read_text(encoding="utf-8"))
             manifest = execution.build_task_candidate_manifest(
                 registry, task=_minimal_task(), measured_row_ids=set()
             )
-            expected_identities = {
-                (tuple(structure["width"]), q_mode)
-                for structure in plan["structures"]
-                for q_mode in ("fp16", "int8")
-            }
-            assert len(registry["groups"]) == 343
-            assert manifest["eligible_row_count"] == 686
-            assert {
+            observed_manifest_candidate_identities = {
                 (tuple(row["width"]), row["q_mode"])
                 for row in manifest["rows"]
-            } == expected_identities
+            }
             return 0
         _write_feedback_from_request(Path(argv[2]), Path(argv[3]))
         return 0
 
     state = run_p6_coptv2x_search(contract, local, "abc123", runner)
 
+    observed_plan_candidate_identities = {
+        (tuple(candidate["width"]), candidate["q_mode"])
+        for candidate in observed_plan["candidates"]
+    }
+
     assert state.status == "completed"
+    assert state.completed_rounds == 4
+    assert state.measured_candidate_count == 16
+    assert observed_plan["candidate_count"] == 24
+    assert observed_manifest_candidate_identities == observed_plan_candidate_identities
     assert calls[0][0] == "python"
 
 
-@pytest.mark.parametrize("mutation", ["altered", "missing", "duplicate"])
+@pytest.mark.parametrize("mutation", ["changed", "omitted", "added", "duplicate"])
 def test_run_p6_framework_mode_rejects_registry_plan_identity_mismatches_before_measurement(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
 ) -> None:
-    """An adapter cannot substitute, omit, or duplicate a framework structure."""
+    """An adapter cannot change, omit, add, or duplicate a framework candidate."""
     contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
     local = _loaded_local_config(
         tmp_path,
         contract=contract,
-        source_group_count=len(_framework_plan_structures()),
         include_stage2_search_space=True,
     )
     monkeypatch.setattr(
@@ -682,10 +690,18 @@ def test_run_p6_framework_mode_rejects_registry_plan_identity_mismatches_before_
         registry_path = Path(argv[3])
         _write_source_registry_from_plan(registry_path, plan)
         registry = json.loads(registry_path.read_text(encoding="utf-8"))
-        if mutation == "altered":
-            registry["groups"][0]["width"][0] += 32
-        elif mutation == "missing":
-            registry["groups"].pop()
+        if mutation == "changed":
+            q_mode = registry["groups"][0]["available_q_modes"][0]
+            registry["groups"][0]["source_point_ids_by_q_mode"][q_mode][0] = "changed"
+        elif mutation == "omitted":
+            q_mode = registry["groups"][0]["available_q_modes"].pop()
+            del registry["groups"][0]["source_point_ids_by_q_mode"][q_mode]
+        elif mutation == "added":
+            group = next(
+                item for item in registry["groups"] if item["available_q_modes"] == ["fp16"]
+            )
+            group["available_q_modes"] = ["fp16", "int8"]
+            group["source_point_ids_by_q_mode"]["int8"] = ["extra-s1", "extra-s2", "extra-s3"]
         else:
             registry["groups"][-1] = dict(registry["groups"][0])
         registry_path.write_text(json.dumps(registry), encoding="utf-8")
@@ -698,21 +714,102 @@ def test_run_p6_framework_mode_rejects_registry_plan_identity_mismatches_before_
     assert measurement_calls == 0
 
 
+def test_run_p6_framework_mode_rejects_v1_registry_before_measurement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Framework provenance cannot be erased behind the static v1 registry schema."""
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    local = _loaded_local_config(
+        tmp_path,
+        contract=contract,
+        include_stage2_search_space=True,
+    )
+    monkeypatch.setattr(
+        execution,
+        "load_stage2_search_space",
+        lambda path: _complete_framework_stage2_search_space(),
+    )
+    measurement_calls = 0
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        nonlocal measurement_calls
+        del cwd
+        if argv[1] != "local_build_registry.py":
+            measurement_calls += 1
+            raise AssertionError("measurement must not start for a framework v1 registry")
+        plan = json.loads(Path(argv[4]).read_text(encoding="utf-8"))
+        widths = sorted({tuple(candidate["width"]) for candidate in plan["candidates"]})
+        groups = [
+            _source_group(f"pyramid|{'x'.join(map(str, width))}", list(width))
+            for width in widths
+        ]
+        Path(argv[3]).write_text(
+            json.dumps(
+                {
+                    "schema_version": "stage5_candidate_source_registry_v1",
+                    "groups": groups,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return 0
+
+    with pytest.raises(P6CoptV2XExecutionError) as captured:
+        run_p6_coptv2x_search(contract, local, "abc123", runner)
+
+    assert captured.value.failure_code == "source_registry_invalid"
+    assert measurement_calls == 0
+
+
+def test_run_p6_framework_source_space_rejects_fewer_than_16_eligible_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dynamic source must still provide the frozen public sample budget."""
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    local = _loaded_local_config(
+        tmp_path,
+        contract=contract,
+        include_stage2_search_space=True,
+    )
+    def undersized_search_space(path: Path) -> dict[str, Any]:
+        del path
+        search_space = _complete_framework_stage2_search_space()
+        for candidate in search_space["software_candidates"]:
+            candidate["software_points"] = [
+                point
+                for point in candidate["software_points"]
+                if point["quant_policy"] == "fp16"
+            ]
+        search_space["software_candidates"][1]["software_points"] = search_space[
+            "software_candidates"
+        ][1]["software_points"][:2]
+        return search_space
+
+    monkeypatch.setattr(execution, "load_stage2_search_space", undersized_search_space)
+    measurement_calls = 0
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        nonlocal measurement_calls
+        del cwd
+        if argv[1] != "local_build_registry.py":
+            measurement_calls += 1
+            raise AssertionError("measurement must not start below the sample budget")
+        plan = json.loads(Path(argv[4]).read_text(encoding="utf-8"))
+        assert plan["candidate_count"] == 12
+        _write_source_registry_from_plan(Path(argv[3]), plan)
+        return 0
+
+    with pytest.raises(P6CoptV2XExecutionError) as captured:
+        run_p6_coptv2x_search(contract, local, "abc123", runner)
+
+    assert captured.value.failure_code == "source_registry_invalid"
+    assert measurement_calls == 0
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
-        lambda space: [
-            candidate.update(
-                {
-                    "software_points": [
-                        point
-                        for point in candidate["software_points"]
-                        if point["quant_policy"] != "int8"
-                    ]
-                }
-            )
-            for candidate in space["software_candidates"]
-        ],
+        lambda space: space["software_candidates"][0].update({"software_points": []}),
         lambda space: space["software_candidates"][0]["software_points"][0].update(
             {"quant_policy": "fp32"}
         ),
@@ -720,7 +817,7 @@ def test_run_p6_framework_mode_rejects_registry_plan_identity_mismatches_before_
             {"buildable": False}
         ),
     ],
-    ids=["missing-int8", "unsupported-fp32", "active-nonbuildable"],
+    ids=["missing-stage-points", "unsupported-fp32", "active-nonbuildable"],
 )
 def test_run_p6_framework_mode_rejects_invalid_stage2_points_before_measurement(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: Callable[[dict[str, Any]], Any]
@@ -730,7 +827,6 @@ def test_run_p6_framework_mode_rejects_invalid_stage2_points_before_measurement(
     local = _loaded_local_config(
         tmp_path,
         contract=contract,
-        source_group_count=len(_framework_plan_structures()),
         include_stage2_search_space=True,
     )
     command_calls = 0
@@ -905,7 +1001,7 @@ def test_run_p6_accepts_true_candidate_failures_as_budget_consuming_feedback(
 ) -> None:
     """Catches treating valid candidate failures as an invalid or free batch."""
     contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
-    local = _loaded_local_config(tmp_path, source_group_count=343)
+    local = _loaded_local_config(tmp_path)
 
     def runner(argv: tuple[str, ...], cwd: Path) -> int:
         del cwd
@@ -1087,7 +1183,7 @@ def test_run_p6_quarantines_invalid_feedback_batches(
 ) -> None:
     """Catches partial release or budget advancement from malformed feedback."""
     contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
-    local = _loaded_local_config(tmp_path, source_group_count=343)
+    local = _loaded_local_config(tmp_path)
 
     def runner(argv: tuple[str, ...], cwd: Path) -> int:
         del cwd
