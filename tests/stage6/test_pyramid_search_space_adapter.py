@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+import yaml
 
+from framework.stage1_bridge import load_stage2_search_space
 from framework.stage6.pyramid_search_space_adapter_v1 import (
     PyramidSearchSpaceAdapterError,
     build_pyramid_structure_plan,
@@ -82,9 +84,6 @@ def test_build_pyramid_structure_plan_maps_complete_stage2_space() -> None:
         (lambda data: data.update({"hardware_target": {"name": "orin"}}), "H800"),
         (lambda data: data.update({"hardware_candidates": []}), "TVM"),
         (lambda data: data["software_candidates"].pop(), "stage"),
-        (lambda data: data["software_candidates"][0]["software_points"][0].update({"status": "diagnostic_only"}), "active"),
-        (lambda data: data["software_candidates"][0]["software_points"][1].update({"buildable": False}), "buildable"),
-        (lambda data: data["software_candidates"][0]["software_points"][0].update({"quant_policy": "fp32"}), "quant"),
     ],
 )
 def test_build_pyramid_structure_plan_rejects_unmaterializable_spaces(
@@ -102,3 +101,88 @@ def test_build_pyramid_structure_plan_does_not_fall_back_to_static_grid() -> Non
 
     with pytest.raises(PyramidSearchSpaceAdapterError, match="stage"):
         build_pyramid_structure_plan(payload)
+
+
+def _write_real_stage2_fixture(tmp_path: Any) -> dict[str, Any]:
+    manifest = {
+        "schema": "stage1_partition_manifest_demo_v1",
+        "model": "pyramid_lidar",
+        "scan_status": "ok",
+        "hw_capability": {"name": "h800_tvm_demo"},
+        "view_b1_search_groups": [
+            {
+                "search_group_id": f"pyramid_group.{suffix}",
+                "bucket": "pyramid_backbone",
+                "widths": widths,
+                "round_to": 16,
+                "int8_buildable_align": 64,
+                "max_rate": 0.75,
+                "grouped_conv": True,
+                "criterion_pool": ["L1"],
+                "member_b1_groups": [f"pyramid_group.{suffix}"],
+            }
+            for suffix, widths in (("s0", [16, 32]), ("s1", [32]), ("s2", [64]))
+        ],
+        "view_b2_quant_units": [
+            {
+                "unit": "pyramid_backbone",
+                "quantizable": True,
+                "legal_bits": ["FP16", "INT8"],
+                "member_groups": ["pyramid_group.s0", "pyramid_group.s1", "pyramid_group.s2"],
+            }
+        ],
+        "view_d_routing_segments": {"segments": [{"device": "gpu", "n_nodes": 1}]},
+    }
+    path = tmp_path / "pyramid.yaml"
+    path.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+    return load_stage2_search_space(path)
+
+
+def test_adapter_accepts_real_stage2_contract_and_filters_diagnostic_points(tmp_path: Any) -> None:
+    search_space = _write_real_stage2_fixture(tmp_path)
+    for point in search_space["software_candidates"][0]["software_points"]:
+        if point["quant_policy"] == "int8" and point["width"] == 16:
+            point.update({"buildable": False, "status": "diagnostic_only"})
+    plan = build_pyramid_structure_plan(search_space)
+
+    assert plan["hardware_target"] == "h800_tvm_demo"
+    assert all(item["q_mode"] in {"fp16", "int8"} for item in plan["structures"])
+    assert all(len(item["source_point_ids"]) == 3 for item in plan["structures"])
+    assert [16, 32, 64] in [item["width"] for item in plan["structures"]]
+    assert [16, 32, 64] not in [
+        item["width"] for item in plan["structures"] if item["q_mode"] == "int8"
+    ]
+
+
+def test_adapter_allows_single_common_quantization_mode() -> None:
+    payload = _space()
+    for candidate in payload["software_candidates"]:
+        candidate["software_points"] = [
+            point for point in candidate["software_points"] if point["quant_policy"] == "fp16"
+        ]
+
+    plan = build_pyramid_structure_plan(payload)
+
+    assert plan["structure_count"] == 2
+    assert {item["q_mode"] for item in plan["structures"]} == {"fp16"}
+
+
+def test_adapter_rejects_duplicate_point_provenance() -> None:
+    payload = _space()
+    payload["software_candidates"][0]["software_points"].append(
+        payload["software_candidates"][0]["software_points"][0].copy()
+    )
+
+    with pytest.raises(PyramidSearchSpaceAdapterError, match="duplicate"):
+        build_pyramid_structure_plan(payload)
+
+
+def test_adapter_output_is_deterministic_when_input_is_reordered() -> None:
+    first = _space()
+    second = _space()
+    second["software_candidates"] = list(reversed(second["software_candidates"]))
+    for candidate in second["software_candidates"]:
+        candidate["software_points"] = list(reversed(candidate["software_points"]))
+    second["hardware_candidates"] = list(reversed(second["hardware_candidates"]))
+
+    assert build_pyramid_structure_plan(first) == build_pyramid_structure_plan(second)

@@ -39,7 +39,7 @@ def build_pyramid_structure_plan(search_space: Mapping[str, Any]) -> dict[str, A
     hardware_candidates = search_space.get("hardware_candidates")
     if not isinstance(hardware_candidates, list):
         _fail("TVM hardware candidate is required")
-    expected_hardware = {
+    required_hardware = {
         "id": "tvm_metaschedule_candidate",
         "backend_scope": "measured_h800_tvm",
         "hardware": hardware_name,
@@ -47,7 +47,7 @@ def build_pyramid_structure_plan(search_space: Mapping[str, Any]) -> dict[str, A
     }
     if not any(
         isinstance(candidate, Mapping)
-        and dict(candidate) == expected_hardware
+        and all(candidate.get(key) == value for key, value in required_hardware.items())
         for candidate in hardware_candidates
     ):
         _fail("TVM hardware candidate is required")
@@ -67,27 +67,33 @@ def build_pyramid_structure_plan(search_space: Mapping[str, Any]) -> dict[str, A
         _fail("stage candidates for stage1, stage2, and stage3 are required")
 
     points_by_stage: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    seen_point_ids: set[str] = set()
     for stage in _STAGES:
         points = by_stage[stage].get("software_points")
         if not isinstance(points, list) or not points:
             _fail(f"{stage} software points are required")
         by_q_mode = {q_mode: [] for q_mode in _Q_MODES}
+        seen_stage_shapes: set[tuple[str, int]] = set()
         for point in points:
             if not isinstance(point, Mapping):
                 _fail(f"{stage} software point must be a mapping")
             q_mode = point.get("quant_policy")
-            if q_mode not in _Q_MODES:
-                _fail("unsupported quant policy")
-            if point.get("buildable") is not True:
-                _fail("software point must be buildable")
-            if point.get("status") != "active":
-                _fail("software point must be active")
             point_id = point.get("id")
+            if isinstance(point_id, str) and point_id:
+                if point_id in seen_point_ids:
+                    _fail("duplicate software point id")
+                seen_point_ids.add(point_id)
+            if q_mode not in _Q_MODES or point.get("buildable") is not True or point.get("status") != "active":
+                continue
             width = point.get("width")
             if not isinstance(point_id, str) or not point_id:
                 _fail("software point id is required")
             if isinstance(width, bool) or not isinstance(width, int):
                 _fail("software point width is required")
+            shape = (q_mode, width)
+            if shape in seen_stage_shapes:
+                _fail("duplicate stage q_mode and width")
+            seen_stage_shapes.add(shape)
             by_q_mode[q_mode].append({"id": point_id, "width": width})
         points_by_stage[stage] = by_q_mode
 
