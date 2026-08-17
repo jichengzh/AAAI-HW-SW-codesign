@@ -14,6 +14,7 @@ from typing import Any, Literal
 
 import yaml
 
+from framework.stage1_bridge import load_stage2_search_space
 from framework.stage2.canonical_search_v3 import validate_capability_profile
 from framework.stage5.production_search_v1 import predict_candidate_rows
 from framework.stage5.single_target_search_v2 import (
@@ -26,6 +27,7 @@ from framework.stage5.single_target_search_v2 import (
     select_task_batch,
     validate_task_feedback_history,
 )
+from framework.stage6.pyramid_search_space_adapter_v1 import build_pyramid_structure_plan
 
 
 PUBLIC_SCHEMA_VERSION = "p6_h800_coptv2x_search_contract_v2"
@@ -85,6 +87,7 @@ ALLOWED_TEMPLATE_TOKENS = frozenset(
     {
         "{local_output_root}",
         "{source_registry_json}",
+        "{pyramid_structure_plan}",
         "{measurement_request}",
         "{feedback_json}",
         "{round_output_root}",
@@ -113,10 +116,15 @@ LOCAL_KEYS = frozenset(
         "target",
         "asset_paths",
         "local_input_paths",
+        "candidate_source_mode",
+        "stage2_search_space_path",
         "source_registry_step",
         "measurement_step",
         "local_output_root",
     }
+)
+_OPTIONAL_LEGACY_LOCAL_KEYS = frozenset(
+    {"candidate_source_mode", "stage2_search_space_path"}
 )
 
 _ASSET_KEYS = frozenset({"label", "version", "license_status"})
@@ -221,6 +229,10 @@ class LocalExecutionStep:
 class LocalP6CoptV2XConfig:
     asset_paths: Mapping[str, Path]
     local_input_paths: Mapping[str, Path]
+    candidate_source_mode: Literal[
+        "coptv2x_static_registry", "framework_stage2_search_space"
+    ]
+    stage2_search_space_path: Path | None
     source_registry_step: LocalExecutionStep
     measurement_step: LocalExecutionStep
     local_output_root: Path
@@ -379,17 +391,69 @@ def _build_source_registry(
 ) -> Mapping[str, Any]:
     source_registry_path = local.local_output_root / "source_registry.json"
     _validate_local_output_leaf(source_registry_path)
+    plan_path: Path | None = None
+    plan: Mapping[str, Any] | None = None
+    if local.candidate_source_mode == "framework_stage2_search_space":
+        assert local.stage2_search_space_path is not None
+        plan = build_pyramid_structure_plan(
+            load_stage2_search_space(local.stage2_search_space_path)
+        )
+        plan_path = local.local_output_root / "pyramid_structure_plan.json"
+        _validate_local_output_leaf(plan_path)
+        plan_path.write_text(
+            json.dumps(plan, ensure_ascii=True, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     _run_step(
         local.source_registry_step,
         {
             "{local_output_root}": local.local_output_root,
             "{source_registry_json}": source_registry_path,
+            **(
+                {"{pyramid_structure_plan}": plan_path}
+                if plan_path is not None
+                else {}
+            ),
         },
         cwd=local.local_output_root,
         runner=command_runner,
     )
     _validate_local_output_leaf(source_registry_path)
-    return _read_source_registry_json(source_registry_path)
+    source_registry = _read_source_registry_json(source_registry_path)
+    if plan is not None:
+        _validate_framework_registry_plan(source_registry, plan)
+    return source_registry
+
+
+def _validate_framework_registry_plan(
+    source_registry: Mapping[str, Any], plan: Mapping[str, Any]
+) -> None:
+    """Require local materialization to preserve every framework structure identity."""
+    structures = plan.get("structures")
+    groups = source_registry.get("groups")
+    if not isinstance(structures, list) or not isinstance(groups, list):
+        raise P6CoptV2XContractError("framework registry plan identities are invalid")
+
+    def identity(value: Mapping[str, Any]) -> tuple[tuple[int, ...], str]:
+        width = value.get("width")
+        q_mode = value.get("q_mode")
+        if (
+            not isinstance(width, list)
+            or not width
+            or any(isinstance(item, bool) or not isinstance(item, int) for item in width)
+            or q_mode not in {"fp16", "int8"}
+        ):
+            raise P6CoptV2XContractError("framework registry plan identities are invalid")
+        return tuple(width), q_mode
+
+    expected = {identity(structure) for structure in structures if isinstance(structure, Mapping)}
+    actual = {identity(group) for group in groups if isinstance(group, Mapping)}
+    if (
+        len(expected) != len(structures)
+        or len(actual) != len(groups)
+        or actual != expected
+    ):
+        raise P6CoptV2XContractError("framework registry plan identities do not match")
 
 
 def _validate_p6_source_space(
@@ -882,7 +946,16 @@ def load_local_config(path: Path, contract: PublicP6CoptV2XContract) -> LocalP6C
     if not isinstance(contract, PublicP6CoptV2XContract):
         raise P6CoptV2XContractError("public contract is invalid")
     payload = _load_mapping(path, "local config")
-    _require_exact_keys(payload, LOCAL_KEYS, "local config")
+    unknown_keys = set(payload) - LOCAL_KEYS
+    if unknown_keys:
+        raise P6CoptV2XContractError(
+            f"local config contains unknown keys: {sorted(unknown_keys)}"
+        )
+    missing_keys = (LOCAL_KEYS - _OPTIONAL_LEGACY_LOCAL_KEYS) - set(payload)
+    if missing_keys:
+        raise P6CoptV2XContractError(
+            f"local config is missing required keys: {sorted(missing_keys)}"
+        )
     if payload["schema_version"] != LOCAL_SCHEMA_VERSION:
         raise P6CoptV2XContractError("local schema_version is invalid")
     if _require_nonempty_string(payload["target"], "local target") != contract.target:
@@ -893,13 +966,41 @@ def load_local_config(path: Path, contract: PublicP6CoptV2XContract) -> LocalP6C
     local_input_paths = _parse_path_mapping(payload["local_input_paths"], "local_input_paths")
     if set(local_input_paths) != LOCAL_INPUT_NAMES:
         raise P6CoptV2XContractError("local input labels are invalid")
+    candidate_source_mode = _require_nonempty_string(
+        payload.get("candidate_source_mode", "coptv2x_static_registry"),
+        "candidate_source_mode",
+    )
+    if candidate_source_mode not in {
+        "coptv2x_static_registry",
+        "framework_stage2_search_space",
+    }:
+        raise P6CoptV2XContractError("candidate_source_mode is invalid")
+    stage2_search_space_path: Path | None
+    if candidate_source_mode == "framework_stage2_search_space":
+        stage2_search_space_path = _parse_absolute_path(
+            payload.get("stage2_search_space_path"), "stage2_search_space_path"
+        )
+        source_required_tokens = {
+            "{local_output_root}",
+            "{source_registry_json}",
+            "{pyramid_structure_plan}",
+        }
+    else:
+        if payload.get("stage2_search_space_path") is not None:
+            raise P6CoptV2XContractError(
+                "stage2_search_space_path is only valid in framework mode"
+            )
+        stage2_search_space_path = None
+        source_required_tokens = {"{local_output_root}", "{source_registry_json}"}
     return LocalP6CoptV2XConfig(
         asset_paths=MappingProxyType(asset_paths),
         local_input_paths=MappingProxyType(local_input_paths),
+        candidate_source_mode=candidate_source_mode,
+        stage2_search_space_path=stage2_search_space_path,
         source_registry_step=_load_step(
             payload["source_registry_step"],
             expected_name="build_source_registry",
-            required_tokens={"{local_output_root}", "{source_registry_json}"},
+            required_tokens=source_required_tokens,
         ),
         measurement_step=_load_step(
             payload["measurement_step"],

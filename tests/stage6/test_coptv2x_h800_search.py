@@ -70,6 +70,8 @@ def _local_config(tmp_path: Path, **overrides: Any) -> dict[str, Any]:
             "capability_profiles": str(tmp_path / "capability_profiles.json"),
             "closure": str(tmp_path / "closure.json"),
         },
+        "candidate_source_mode": "coptv2x_static_registry",
+        "stage2_search_space_path": None,
         "source_registry_step": {
             "name": "build_source_registry",
             "argv": [
@@ -279,6 +281,65 @@ def _write_source_registry(path: Path, *, count: int) -> None:
     )
 
 
+def _write_source_registry_from_plan(path: Path, plan: Mapping[str, Any]) -> None:
+    groups = []
+    for structure in plan["structures"]:
+        width = list(structure["width"])
+        q_mode = str(structure["q_mode"])
+        group = _source_group(f"pyramid|{'x'.join(map(str, width))}", width)
+        groups.append({**group, "q_mode": q_mode})
+    path.write_text(
+        json.dumps({"schema_version": "stage5_candidate_source_registry_v1", "groups": groups}),
+        encoding="utf-8",
+    )
+
+
+def _framework_plan_structures() -> list[dict[str, Any]]:
+    return [
+        {"width": [stage1, stage2, stage3], "q_mode": "fp16"}
+        for stage1 in range(32, 225, 32)
+        for stage2 in range(32, 225, 32)
+        for stage3 in range(32, 225, 32)
+    ]
+
+
+def _write_framework_stage1_partition_manifest(tmp_path: Path) -> Path:
+    payload = {
+        "schema": "stage1_partition_manifest_demo_v1",
+        "model": "pyramid_lidar",
+        "scan_status": "ok",
+        "hw_capability": {"name": "h800"},
+        "view_b1_search_groups": [
+            {
+                "search_group_id": f"pyramid_group.{suffix}",
+                "bucket": "pyramid_backbone",
+                "widths": [224],
+                "round_to": 32,
+                "int8_buildable_align": 64,
+                "max_rate": 0.875,
+                "grouped_conv": True,
+                "criterion_pool": ["L1"],
+                "member_b1_groups": [f"pyramid_group.{suffix}"],
+            }
+            for suffix in ("s0", "s1", "s2")
+        ],
+        "view_b2_quant_units": [
+            {
+                "unit": "pyramid_backbone",
+                "quantizable": False,
+                "legal_bits": ["FP16"],
+                "member_groups": [
+                    "pyramid_group.s0",
+                    "pyramid_group.s1",
+                    "pyramid_group.s2",
+                ],
+            }
+        ],
+        "view_d_routing_segments": {"segments": [{"device": "gpu", "n_nodes": 1}]},
+    }
+    return _write_yaml(tmp_path / "framework-stage1.yaml", payload)
+
+
 def _write_feedback_from_request(request_path: Path, feedback_path: Path) -> None:
     request = json.loads(request_path.read_text(encoding="utf-8"))
     payload = {
@@ -338,11 +399,12 @@ def _minimal_task() -> execution.SearchTask:
 def _loaded_local_config(
     tmp_path: Path,
     *,
+    contract: PublicP6CoptV2XContract | None = None,
     source_group_count: int = 343,
+    include_stage2_search_space: bool = False,
     include_non_target_backend: bool = True,
     include_graph_provenance: bool = False,
 ) -> LocalP6CoptV2XConfig:
-    del source_group_count
     gold_rows, gold_graphs = _gold176(
         include_non_target_backend=include_non_target_backend,
         include_graph_provenance=include_graph_provenance,
@@ -360,8 +422,124 @@ def _loaded_local_config(
         (tmp_path / f"{name}.json").write_text(json.dumps(payload), encoding="utf-8")
     for label in ("training-data", "model-init", "toolchain"):
         (tmp_path / label).mkdir()
+    loaded_contract = contract or load_public_contract(
+        _write_yaml(tmp_path / "contract.yaml", _public_contract())
+    )
+    if include_stage2_search_space:
+        assert source_group_count == len(_framework_plan_structures())
+        local_config = _local_config(
+            tmp_path,
+            candidate_source_mode="framework_stage2_search_space",
+            stage2_search_space_path=str(_write_framework_stage1_partition_manifest(tmp_path)),
+            source_registry_step={
+                "name": "build_source_registry",
+                "argv": [
+                    "python",
+                    "local_build_registry.py",
+                    "{local_output_root}",
+                    "{source_registry_json}",
+                    "{pyramid_structure_plan}",
+                ],
+            },
+        )
+    else:
+        local_config = _local_config(tmp_path)
+    return load_local_config(_write_yaml(tmp_path / "local.yaml", local_config), loaded_contract)
+
+
+def test_local_contract_accepts_only_known_candidate_source_modes(tmp_path: Path) -> None:
+    """Unknown source modes cannot quietly restore a static candidate grid."""
+    contract = load_public_contract(_write_yaml(tmp_path / "public.yaml", _public_contract()))
+    static_contract = load_local_config(
+        _write_yaml(
+            tmp_path / "static.yaml",
+            _local_config(tmp_path, candidate_source_mode="coptv2x_static_registry"),
+        ),
+        contract,
+    )
+    framework_contract = load_local_config(
+        _write_yaml(
+            tmp_path / "framework.yaml",
+            _local_config(
+                tmp_path,
+                candidate_source_mode="framework_stage2_search_space",
+                stage2_search_space_path=str(tmp_path / "space.yaml"),
+                source_registry_step={
+                    "name": "build_source_registry",
+                    "argv": [
+                        "python",
+                        "local_build_registry.py",
+                        "{local_output_root}",
+                        "{source_registry_json}",
+                        "{pyramid_structure_plan}",
+                    ],
+                },
+            ),
+        ),
+        contract,
+    )
+
+    assert static_contract.candidate_source_mode == "coptv2x_static_registry"
+    assert framework_contract.candidate_source_mode == "framework_stage2_search_space"
+
+    with pytest.raises(P6CoptV2XContractError, match="candidate_source_mode"):
+        load_local_config(
+            _write_yaml(
+                tmp_path / "bad.yaml",
+                _local_config(tmp_path, candidate_source_mode="static_fallback"),
+            ),
+            contract,
+        )
+
+
+def test_local_contract_defaults_legacy_local_configuration_to_static_mode(
+    tmp_path: Path,
+) -> None:
+    """Existing private P6.1 configurations remain static unless they opt into framework mode."""
+    contract = load_public_contract(_write_yaml(tmp_path / "public.yaml", _public_contract()))
+    legacy_config = _local_config(tmp_path)
+    del legacy_config["candidate_source_mode"]
+    del legacy_config["stage2_search_space_path"]
+
+    loaded = load_local_config(
+        _write_yaml(tmp_path / "legacy.yaml", legacy_config), contract
+    )
+
+    assert loaded.candidate_source_mode == "coptv2x_static_registry"
+    assert loaded.stage2_search_space_path is None
+
+
+def test_run_p6_framework_mode_builds_structure_plan_before_source_registry(
+    tmp_path: Path,
+) -> None:
+    """Framework candidates must originate from the Stage1-to-Stage2 path."""
     contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
-    return load_local_config(_write_yaml(tmp_path / "local.yaml", _local_config(tmp_path)), contract)
+    local = _loaded_local_config(
+        tmp_path,
+        contract=contract,
+        source_group_count=len(_framework_plan_structures()),
+        include_stage2_search_space=True,
+    )
+    calls: list[tuple[str, tuple[str, ...]]] = []
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        del cwd
+        calls.append((argv[0], argv))
+        if argv[1] == "local_build_registry.py":
+            structure_plan_path = Path(argv[4])
+            plan = json.loads(structure_plan_path.read_text(encoding="utf-8"))
+            assert plan["schema_version"] == "p6_pyramid_structure_plan_v1"
+            assert plan["candidate_source_mode"] == "framework_stage2_search_space"
+            assert plan["structure_count"] == 343
+            _write_source_registry_from_plan(Path(argv[3]), plan)
+            return 0
+        _write_feedback_from_request(Path(argv[2]), Path(argv[3]))
+        return 0
+
+    state = run_p6_coptv2x_search(contract, local, "abc123", runner)
+
+    assert state.status == "completed"
+    assert calls[0][0] == "python"
 
 
 def test_run_p6_rejects_incomplete_coldstart_profile_context(tmp_path: Path) -> None:
