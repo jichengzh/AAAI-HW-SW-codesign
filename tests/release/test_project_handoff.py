@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,33 @@ import pytest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 HANDOFF = REPOSITORY_ROOT / "docs/AAAI27_RELEASE_AUDIT.md"
+
+
+_P6_PUBLIC_DISCLOSURE_PATTERNS = (
+    r"(?<![\w/])/(?:[^\s/]+/)+[^\s/]+",
+    r"\b[A-Za-z]:[\\/](?:[^\s\\/]+[\\/])*[^\s\\/]+",
+    r"[\"']?(?:candidate(?:[_ -]?id)?|候选\s*(?:ID|标识))[\"']?\s*[:：=]\s*\S+",
+    r"[\"']?(?:latency|energy|ap(?:30|50|70)?)(?:_[A-Za-z0-9]+)?[\"']?\s*[:=]\s*[-+]?\d",
+    r"[\"']?(?:延迟|能耗|原始结果|原始指标)[\"']?\s*[:：=]\s*[-+]?\d",
+    r"[\"']?(?:checkpoint|result|raw_result)[\"']?\s*[:=]\s*\S+",
+    r"\b\S+\.(?:ckpt|pth|pt|onnx)\b",
+    r"[\"']?(?:host|hostname|主机)[\"']?\s*[:：=]\s*\S+",
+    r"\b(?:\d{1,3}\.){3}\d{1,3}\b",
+    r"(?:^|\n)\s*(?:python(?:3)?|bash|sh|zsh)\s+\S+",
+    r"(?:\b\S+\.log\b|[\"']?(?:log|日志)[\"']?\s*[:：=]\s*\S+)",
+)
+
+
+def _assert_p6_public_disclosure_safe(documents: dict[str, str]) -> None:
+    """Reject concrete execution disclosures without rejecting policy prohibitions."""
+    for document_name, content in documents.items():
+        for pattern in _P6_PUBLIC_DISCLOSURE_PATTERNS:
+            assert not re.search(pattern, content, flags=re.MULTILINE), (
+                f"{document_name} exposes a P6 execution detail matching {pattern!r}"
+            )
+
+    combined = "\n".join(documents.values())
+    assert "python tools/release/run_p6_h800_search.py" not in combined
 
 
 def _is_anonymous_reviewer_archive() -> bool:
@@ -198,6 +226,10 @@ def test_p6_h800_execution_manifest_records_local_closure_without_public_results
     assert manifest.is_file()
     text = manifest.read_text(encoding="utf-8")
     handoff = HANDOFF.read_text(encoding="utf-8")
+    reproducibility = (REPOSITORY_ROOT / "REPRODUCIBILITY.md").read_text(
+        encoding="utf-8"
+    )
+    artifacts = (REPOSITORY_ROOT / "ARTIFACTS.md").read_text(encoding="utf-8")
     p6_plan_line = next(
         line for line in handoff.splitlines() if line.startswith("| P6 |")
     )
@@ -225,6 +257,13 @@ def test_p6_h800_execution_manifest_records_local_closure_without_public_results
     assert "Stage6/Stage7 论文证据" in handoff
     assert "unavailable" in handoff
     assert "/home/" not in handoff
+    assert "P6.1 has" in reproducibility
+    assert "completed a separate, Git-ignored local execution closure" in reproducibility
+    assert "no checked-in result bundle" in reproducibility
+    assert "Stage6 representative selection and the Stage7 formal aggregate remain" in reproducibility
+    assert "P6.1 execution result bundle" in artifacts
+    assert "does not add a checked-in artifact" in artifacts
+    assert "a verified\nStage6/Stage7 entry" in artifacts
     for prohibited_claim in (
         "P6 已完成（本地）",
         "P6 整体已关闭",
@@ -239,6 +278,35 @@ def test_p6_h800_execution_manifest_records_local_closure_without_public_results
         "| P8 | 已开始",
     ):
         assert prohibited_claim not in handoff
+
+    _assert_p6_public_disclosure_safe(
+        {
+            "manifest": text,
+            "handoff P6 material": "\n".join(
+                line for line in handoff.splitlines() if "P6" in line
+            ),
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "leaked_detail",
+    (
+        "/private/run/output",
+        "candidate_id: p6-h800-001",
+        "latency_ms: 12.34",
+        '{"latency_ms": 12.34}',
+        "checkpoint: model.ckpt",
+        "host: h800-worker",
+        "python tools/release/run_p6_h800_search.py",
+        "round-1.log",
+    ),
+)
+def test_p6_public_disclosure_guard_rejects_concrete_leaks(
+    leaked_detail: str,
+) -> None:
+    with pytest.raises(AssertionError):
+        _assert_p6_public_disclosure_safe({"synthetic public P6 text": leaked_detail})
 
 
 def test_p6_framework_search_space_gate_is_documented() -> None:
