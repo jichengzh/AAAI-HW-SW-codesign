@@ -66,14 +66,22 @@ def test_build_pyramid_structure_plan_maps_complete_stage2_space() -> None:
     assert plan["hardware_target"] == "h800"
     assert plan["execution_backend"] == "tvm_auto"
     assert plan["candidate_source_mode"] == "framework_stage2_search_space"
-    assert plan["structure_count"] == 4
+    assert plan["structure_count"] == 2
+    assert plan["candidate_count"] == 4
     assert [item["width"] for item in plan["structures"]] == [
         [16, 32, 64],
-        [16, 32, 64],
-        [32, 32, 64],
         [32, 32, 64],
     ]
-    assert [item["q_mode"] for item in plan["structures"]] == ["fp16", "int8", "fp16", "int8"]
+    assert [item["source_point_ids_by_q_mode"] for item in plan["structures"]] == [
+        {
+            "fp16": ["stage1:w16:fp16", "stage2:w32:fp16", "stage3:w64:fp16"],
+            "int8": ["stage1:w16:int8", "stage2:w32:int8", "stage3:w64:int8"],
+        },
+        {
+            "fp16": ["stage1:w32:fp16", "stage2:w32:fp16", "stage3:w64:fp16"],
+            "int8": ["stage1:w32:int8", "stage2:w32:int8", "stage3:w64:int8"],
+        },
+    ]
 
 
 @pytest.mark.parametrize(
@@ -138,33 +146,50 @@ def _write_real_stage2_fixture(tmp_path: Any) -> dict[str, Any]:
     return load_stage2_search_space(path)
 
 
-def test_adapter_accepts_real_stage2_contract_and_filters_diagnostic_points(tmp_path: Any) -> None:
+def test_adapter_filters_real_stage2_diagnostic_points_before_requiring_both_modes(
+    tmp_path: Any,
+) -> None:
     search_space = _write_real_stage2_fixture(tmp_path)
-    for point in search_space["software_candidates"][0]["software_points"]:
-        if point["quant_policy"] == "int8" and point["width"] == 16:
-            point.update({"buildable": False, "status": "diagnostic_only"})
-    plan = build_pyramid_structure_plan(search_space)
-
-    assert plan["hardware_target"] == "h800_tvm_demo"
-    assert all(item["q_mode"] in {"fp16", "int8"} for item in plan["structures"])
-    assert all(len(item["source_point_ids"]) == 3 for item in plan["structures"])
-    assert [16, 32, 64] in [item["width"] for item in plan["structures"]]
-    assert [16, 32, 64] not in [
-        item["width"] for item in plan["structures"] if item["q_mode"] == "int8"
-    ]
+    with pytest.raises(PyramidSearchSpaceAdapterError, match="int8"):
+        build_pyramid_structure_plan(search_space)
 
 
-def test_adapter_allows_single_common_quantization_mode() -> None:
+def test_adapter_rejects_stage_without_buildable_int8_provenance() -> None:
     payload = _space()
     for candidate in payload["software_candidates"]:
         candidate["software_points"] = [
             point for point in candidate["software_points"] if point["quant_policy"] == "fp16"
         ]
 
-    plan = build_pyramid_structure_plan(payload)
+    with pytest.raises(PyramidSearchSpaceAdapterError, match="int8"):
+        build_pyramid_structure_plan(payload)
 
-    assert plan["structure_count"] == 2
-    assert {item["q_mode"] for item in plan["structures"]} == {"fp16"}
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (
+            lambda data: data["software_candidates"][0]["software_points"][0].update(
+                {"quant_policy": "fp32"}
+            ),
+            "quant",
+        ),
+        (
+            lambda data: data["software_candidates"][0]["software_points"][0].update(
+                {"buildable": False}
+            ),
+            "active.*buildable",
+        ),
+    ],
+)
+def test_adapter_rejects_invalid_active_software_points(
+    mutate: Any, message: str
+) -> None:
+    payload = _space()
+    mutate(payload)
+
+    with pytest.raises(PyramidSearchSpaceAdapterError, match=message):
+        build_pyramid_structure_plan(payload)
 
 
 def test_adapter_rejects_duplicate_point_provenance() -> None:

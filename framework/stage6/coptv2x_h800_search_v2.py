@@ -262,8 +262,8 @@ def run_p6_coptv2x_search(
     frozen_gold, gold_graphs, capability_profiles, profile = _load_search_inputs(local)
     task = _build_search_task(contract, profile)
     try:
-        source_registry = _build_source_registry(local, command_runner)
-        _validate_p6_source_space(source_registry, task)
+        source_registry, framework_plan = _build_source_registry(local, command_runner)
+        _validate_p6_source_space(source_registry, task, framework_plan=framework_plan)
     except (P6CoptV2XContractError, ValueError):
         raise P6CoptV2XExecutionError(
             "source_registry_invalid", "source registry invalid"
@@ -388,7 +388,7 @@ def _normalize_gold_graph_features(
 
 def _build_source_registry(
     local: LocalP6CoptV2XConfig, command_runner: CommandRunner
-) -> Mapping[str, Any]:
+) -> tuple[Mapping[str, Any], Mapping[str, Any] | None]:
     source_registry_path = local.local_output_root / "source_registry.json"
     _validate_local_output_leaf(source_registry_path)
     plan_path: Path | None = None
@@ -422,32 +422,36 @@ def _build_source_registry(
     source_registry = _read_source_registry_json(source_registry_path)
     if plan is not None:
         _validate_framework_registry_plan(source_registry, plan)
-    return source_registry
+    return source_registry, plan
 
 
 def _validate_framework_registry_plan(
     source_registry: Mapping[str, Any], plan: Mapping[str, Any]
 ) -> None:
-    """Require local materialization to preserve every framework structure identity."""
+    """Require local materialization to preserve every framework width structure."""
     structures = plan.get("structures")
     groups = source_registry.get("groups")
     if not isinstance(structures, list) or not isinstance(groups, list):
         raise P6CoptV2XContractError("framework registry plan identities are invalid")
 
-    def identity(value: Mapping[str, Any]) -> tuple[tuple[int, ...], str]:
+    def width_identity(value: Mapping[str, Any]) -> tuple[int, ...]:
         width = value.get("width")
-        q_mode = value.get("q_mode")
         if (
             not isinstance(width, list)
             or not width
             or any(isinstance(item, bool) or not isinstance(item, int) for item in width)
-            or q_mode not in {"fp16", "int8"}
         ):
             raise P6CoptV2XContractError("framework registry plan identities are invalid")
-        return tuple(width), q_mode
+        return tuple(width)
 
-    expected = {identity(structure) for structure in structures if isinstance(structure, Mapping)}
-    actual = {identity(group) for group in groups if isinstance(group, Mapping)}
+    expected = {
+        width_identity(structure)
+        for structure in structures
+        if isinstance(structure, Mapping)
+    }
+    actual = {
+        width_identity(group) for group in groups if isinstance(group, Mapping)
+    }
     if (
         len(expected) != len(structures)
         or len(actual) != len(groups)
@@ -457,7 +461,10 @@ def _validate_framework_registry_plan(
 
 
 def _validate_p6_source_space(
-    source_registry: Mapping[str, Any], task: SearchTask
+    source_registry: Mapping[str, Any],
+    task: SearchTask,
+    *,
+    framework_plan: Mapping[str, Any] | None,
 ) -> None:
     groups = source_registry.get("groups")
     if not isinstance(groups, list) or len(groups) != FIXED_SOURCE_GROUP_COUNT:
@@ -470,6 +477,46 @@ def _validate_p6_source_space(
         or len(manifest.get("rows") or []) != FIXED_ELIGIBLE_GENOME_COUNT
     ):
         raise P6CoptV2XContractError("P6 source space must contain exactly 686 genomes")
+    if framework_plan is not None:
+        _validate_framework_manifest_identities(manifest, framework_plan)
+
+
+def _validate_framework_manifest_identities(
+    manifest: Mapping[str, Any], plan: Mapping[str, Any]
+) -> None:
+    """Ensure Stage5 expands framework structures into precisely both q-mode genomes."""
+    structures = plan.get("structures")
+    rows = manifest.get("rows")
+    if not isinstance(structures, list) or not isinstance(rows, list):
+        raise P6CoptV2XContractError("framework manifest identities are invalid")
+
+    def width(value: Mapping[str, Any]) -> tuple[int, ...]:
+        raw_width = value.get("width")
+        if (
+            not isinstance(raw_width, list)
+            or not raw_width
+            or any(isinstance(item, bool) or not isinstance(item, int) for item in raw_width)
+        ):
+            raise P6CoptV2XContractError("framework manifest identities are invalid")
+        return tuple(raw_width)
+
+    expected = {
+        (width(structure), q_mode)
+        for structure in structures
+        if isinstance(structure, Mapping)
+        for q_mode in ("fp16", "int8")
+    }
+    actual = {
+        (width(row), row.get("q_mode"))
+        for row in rows
+        if isinstance(row, Mapping)
+    }
+    if (
+        len(expected) != len(structures) * 2
+        or len(actual) != len(rows)
+        or actual != expected
+    ):
+        raise P6CoptV2XContractError("framework manifest identities do not match")
 
 
 def _validate_closure(closure: object) -> None:
