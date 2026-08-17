@@ -45,10 +45,10 @@ EXPECTED_MODULE_SHA256 = {
         "3b2666576822a42d3bd7079e9b65070ab1d2b476089ee78254961b875c863b46"
     ),
     "production_search_v1.py": (
-        "b4d128bfac5a3aa2cf19dd99816a38e58c0b2dc263c9c93a76d08ac8ab30bdb1"
+        "059baf86a83188813f3cf8088e0e246084f1448f781e8e4e4ebacf89f92b7f61"
     ),
     "single_target_search_v2.py": (
-        "1276fbbdff1ce791b18b66b2e7f25a5d200216d67bc1f8656d166552e9bf3d30"
+        "97c096a9f7f8bdac0ed07cc01888441663c756ce7f9944e102661d9adcd5842b"
     ),
 }
 SOURCE_MODULES = {
