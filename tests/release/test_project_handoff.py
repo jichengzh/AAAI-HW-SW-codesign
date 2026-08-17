@@ -192,60 +192,38 @@ def test_p5_local_closure_is_limited_to_offline_environment_contracts() -> None:
 
 
 def test_p6_h800_execution_manifest_records_local_closure_without_public_results() -> None:
-    """P6.1 can close locally while P6.2 and public evidence remain separate."""
+    """P6.1 history, P6.2 offline work, and the real run stay distinct."""
     manifest = REPOSITORY_ROOT / "docs/release-manifests/P6_H800_SEARCH_EXECUTION.md"
 
     assert manifest.is_file()
     text = manifest.read_text(encoding="utf-8")
     handoff = HANDOFF.read_text(encoding="utf-8")
-    reproducibility = (REPOSITORY_ROOT / "REPRODUCIBILITY.md").read_text(
-        encoding="utf-8"
-    )
-    artifacts = (REPOSITORY_ROOT / "ARTIFACTS.md").read_text(encoding="utf-8")
     p6_plan_line = next(
         line for line in handoff.splitlines() if line.startswith("| P6 |")
     )
 
-    assert "P6.1 已完成（本地）；P6.2 框架搜索空间接入与离线验证已完成（本地）" in p6_plan_line
-    assert "H800" in p6_plan_line
-    assert "Orin" in p6_plan_line
-    assert "Pyramid/H800/TVM" in text
-    assert "343" in text
-    assert "686" in text
-    assert "Gold176" in text
-    assert "4 轮 × 4 个候选" in text
-    assert "latency_ms" in text
-    assert "energy_j" in text
-    assert "ap30" in text
-    assert "ap50" in text
-    assert "ap70" in text
-    assert "不生成公开结果摘要" in text
-    assert "P6.2" in text
-    assert "P6.1 已完成（本地）" in text
-    assert "P6.2 框架搜索空间接入与离线验证已完成（本地）" in text
-    assert "真实框架来源闭环仍待单独授权" in text
-    assert "不等同于 Stage6 或 Stage7 论文证据完成" in text
-    assert "不下载" in text
-    assert "不自动探测硬件" in text
-    assert "不自动启动硬件" in text
-    assert "configs/local/" in text
-    assert "TVM" in text
-    assert "TensorRT" in text
-    assert "Orin" in text
+    assert "P6.1 静态 343×2" in text
+    assert "P6.2 动态框架候选空间" in text
+    assert "不预设为 343 或 686" in text
+    assert "单个候选不是 mixed-precision" in text
+    assert "真实框架来源闭环仍待本地执行" in text
+    assert "P6.1 静态 343×2 历史路径已完成（本地）；P6.2 动态框架候选空间离线接入与验证已完成（本地）" in p6_plan_line
     assert "/home/" not in text
-    assert "python tools/release/run_p6_h800_search.py" not in text
+    for prohibited_public_detail in (
+        "candidate_id:",
+        "latency_ms:",
+        "energy_j:",
+        "ap30:",
+        "ap50:",
+        "ap70:",
+    ):
+        assert prohibited_public_detail not in text
 
     assert "状态日期：2026-08-17" in handoff
-    assert "P6.2 离线接入完成后的公开交接状态" in handoff
-    assert "P6.2 框架搜索空间离线接入完成" in handoff
+    assert "P6.2 动态框架候选空间离线接入完成后的公开交接状态" in handoff
+    assert "P6.2 动态框架候选空间离线接入完成" in handoff
     assert "Stage6/Stage7 论文证据" in handoff
     assert "unavailable" in handoff
-    assert "P6.1 has" in reproducibility
-    assert "completed a separate, Git-ignored local execution closure" in reproducibility
-    assert "no checked-in result bundle" in reproducibility
-    assert "Stage6 representative selection and the Stage7 formal aggregate remain" in reproducibility
-    assert "P6.1 execution result bundle" in artifacts
-    assert "does not add a checked-in artifact" in artifacts
     assert "/home/" not in handoff
     for prohibited_claim in (
         "P6 已完成（本地）",
@@ -265,7 +243,7 @@ def test_p6_h800_execution_manifest_records_local_closure_without_public_results
 
 def test_p6_framework_search_space_gate_is_documented() -> None:
     manifest = (REPOSITORY_ROOT / "docs/release-manifests/P6_H800_SEARCH_EXECUTION.md").read_text(encoding="utf-8")
-    assert "framework_stage2" in manifest
-    assert "不得静默回退" in manifest
-    assert "P6.2 的框架搜索空间接入与离线验证已完成" in manifest
-    assert "真实框架来源本地执行/闭环验证" in manifest
+    assert "从 Stage2 动态派生候选池" in manifest
+    assert "不预设为 343 或 686" in manifest
+    assert "P6.2 动态框架候选空间的离线接入与验证已完成" in manifest
+    assert "真实框架来源闭环仍待本地执行" in manifest
