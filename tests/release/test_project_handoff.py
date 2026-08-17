@@ -206,7 +206,7 @@ def test_p6_h800_execution_manifest_records_local_closure_without_public_results
         line for line in handoff.splitlines() if line.startswith("| P6 |")
     )
 
-    assert "P6.1 已完成（本地）；P6.2 待开始" in p6_plan_line
+    assert "P6.1 已完成（本地）；P6.2 框架搜索空间接入与离线验证进行中（本地）" in p6_plan_line
     assert "H800" in p6_plan_line
     assert "Orin" in p6_plan_line
     assert "Pyramid/H800/TVM" in text
@@ -222,7 +222,7 @@ def test_p6_h800_execution_manifest_records_local_closure_without_public_results
     assert "不生成公开结果摘要" in text
     assert "P6.2" in text
     assert "P6.1 已完成（本地）" in text
-    assert "P6.2 待开始" in text
+    assert "P6.2 框架搜索空间接入与离线验证进行中（本地）" in text
     assert "不等同于 Stage6 或 Stage7 论文证据完成" in text
     assert "不下载" in text
     assert "不自动探测硬件" in text
@@ -235,7 +235,7 @@ def test_p6_h800_execution_manifest_records_local_closure_without_public_results
     assert "python tools/release/run_p6_h800_search.py" not in text
 
     assert "状态日期：2026-08-17" in handoff
-    assert "P6.2 framework search-space integration 尚未实施" in handoff
+    assert "P6.2 framework search-space integration" in handoff
     assert "Stage6/Stage7 论文证据" in handoff
     assert "unavailable" in handoff
     assert "P6.1 has" in reproducibility
@@ -244,3 +244,9 @@ def test_p6_h800_execution_manifest_records_local_closure_without_public_results
     assert "Stage6 representative selection and the Stage7 formal aggregate remain" in reproducibility
     assert "P6.1 execution result bundle" in artifacts
     assert "does not add a checked-in artifact" in artifacts
+
+
+def test_p6_framework_search_space_gate_is_documented() -> None:
+    manifest = (REPOSITORY_ROOT / "docs/release-manifests/P6_H800_SEARCH_EXECUTION.md").read_text(encoding="utf-8")
+    assert "framework_stage2" in manifest
+    assert "不得静默回退" in manifest

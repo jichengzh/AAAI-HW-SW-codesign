@@ -39,6 +39,7 @@ def anonymous_repo(tmp_path: Path) -> Path:
     _write(root / "pyproject.toml", "[project]\nname = 'anonymous'\nversion = '0'\n")
     _write(root / "requirements.txt", "pytest==9.0.3\n")
     _write(root / "framework/__init__.py")
+    _write(root / "framework/stage6/pyramid_search_space_adapter_v1.py")
     _write(root / "scripts/reproduce/run.py")
     _write(root / "scripts/prepare_stage2_demo_data.py")
     _write(root / "scripts/stage1_classify_models.py")
@@ -199,6 +200,7 @@ def test_builder_includes_release_tools_required_by_archive_tests(
         "tools/release/verify_archive.py",
         "tools/release/anonymous_allowlist.txt",
         "tools/release/forbidden_patterns.txt",
+        "framework/stage6/pyramid_search_space_adapter_v1.py",
     } <= names
 
 

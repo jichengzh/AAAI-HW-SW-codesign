@@ -1,6 +1,6 @@
 # P6.1 Pyramid/H800/TVM CoptV2X 本地搜索执行边界
 
-状态：**P6.1 已完成（本地）；P6.2 待开始**。本说明固定 P6.1 的公开契约和维护者本地执行边界；P6.1 的本地执行完成不表示 P6.2、公开论文结果、Stage6 或 Stage7 已关闭。
+状态：**P6.1 已完成（本地）；P6.2 框架搜索空间接入与离线验证进行中（本地）**。本说明固定 P6.1 的公开契约和维护者本地执行边界；P6.1 的本地执行完成不表示 P6.2、真实 H800 运行、公开论文结果、Stage6 或 Stage7 已关闭。
 
 ## 固定范围与预算
 
@@ -24,8 +24,18 @@ P6.1 不执行 Orin、TensorRT 或其他硬件路线；Orin 和 TensorRT 均为�
 
 本地 YAML 位于 Git 忽略的 `configs/local/`，只能通过显式 local config 输入提供资产位置和 argv-only 适配器。它与配置的本地输出根共同保存 Gold176 输入、候选注册表、逐轮请求/反馈及执行产物；这些内容都不从公共契约推断，也不进入版本控制或匿名归档。共享资产、命令或结果结构不符合契约时必须整批隔离；只有已验证的候选真实可行性失败才消耗测量预算。
 
+## P6.2 Framework Search Space Gate
+
+P6.2 does not replace the P6.1 search loop. It changes only the candidate-source construction step: `stage2_search_space_v1` is converted into `p6_pyramid_structure_plan_v1`, then a Git-ignored local adapter materializes that plan into the CoptV2X source registry consumed by P6.1.
+
+Framework mode is selected only in the Git-ignored local P6 configuration; the public contract stays path-free and contains no search-space or candidate identifiers. The converter rejects non-Pyramid models, non-H800 hardware, missing tuned TVM candidates, incomplete stage1/stage2/stage3 coverage, unsupported quantization policies, and non-buildable active points. It must not silently fall back to the static 343x2 grid（不得静默回退到静态网格）.
+
+The framework source mode is named `framework_stage2_search_space`; this label identifies the conversion contract only and does not expose local configuration or candidate identifiers.
+
+The offline converter and contract validation are not a P6.2 completion claim. A separately approved real local validation run is still required before P6 can close; no hardware or training is started by this documentation change.
+
 ## P6.2 与匿名归档
 
 P6.2 的 framework search-space integration 是独立阶段。P6.1 已完成不自动启动或关闭 P6.2；P6.2 仍需独立设计、实现、离线验证和真实本地执行授权。P6.1 不新增 P6.2 公开配置或示例。
 
-匿名归档可以包含 v2 控制器、公开 CLI 和 P6.1 示例契约；它必须排除 `configs/local/`、`outputs/`、`results/` 及任何本地运行材料。P6.1 的本地收口不改变这一归档边界，P6.2 仍为待开始的独立阶段。
+匿名归档可以包含 v2 控制器、公开 CLI、P6.1 示例契约和纯公开的 framework search-space adapter；它必须排除 `configs/local/`、`outputs/`、`results/` 及任何本地运行材料。P6.1 的本地收口不改变这一归档边界，P6.2 当前为框架搜索空间接入与离线验证进行中（本地），仍需单独授权真实本地验证。
