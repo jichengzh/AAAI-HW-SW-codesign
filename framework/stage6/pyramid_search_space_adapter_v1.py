@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 from collections.abc import Mapping
 from itertools import product
 from typing import Any
@@ -18,8 +17,8 @@ def _fail(message: str) -> None:
     raise PyramidSearchSpaceAdapterError(message)
 
 
-def build_pyramid_structure_plan(search_space: Mapping[str, Any]) -> dict[str, Any]:
-    """Convert a Stage2 Pyramid search space into executable structure candidates."""
+def build_pyramid_candidate_plan(search_space: Mapping[str, Any]) -> dict[str, Any]:
+    """Convert a Stage2 Pyramid search space into executable candidates."""
     if not isinstance(search_space, Mapping):
         _fail("search space must be a mapping")
     if search_space.get("schema") != "stage2_search_space_v1":
@@ -67,7 +66,6 @@ def build_pyramid_structure_plan(search_space: Mapping[str, Any]) -> dict[str, A
         _fail("stage candidates for stage1, stage2, and stage3 are required")
 
     points_by_stage: dict[str, dict[str, list[dict[str, Any]]]] = {}
-    seen_point_ids: set[str] = set()
     for stage in _STAGES:
         points = by_stage[stage].get("software_points")
         if not isinstance(points, list) or not points:
@@ -79,22 +77,16 @@ def build_pyramid_structure_plan(search_space: Mapping[str, Any]) -> dict[str, A
                 _fail(f"{stage} software point must be a mapping")
             q_mode = point.get("quant_policy")
             point_id = point.get("id")
-            if isinstance(point_id, str) and point_id:
-                if point_id in seen_point_ids:
-                    _fail("duplicate software point id")
-                seen_point_ids.add(point_id)
             if q_mode not in _Q_MODES:
                 _fail("unsupported quantization policy")
             status = point.get("status")
             buildable = point.get("buildable")
             if status == "active" and buildable is not True:
                 _fail("active software point must be buildable")
-            if status != "active":
-                if buildable is not True:
-                    continue
-                _fail("non-active software point must not be buildable")
-            if buildable is not True:
+            if status != "active" and buildable is not True:
                 continue
+            if status != "active" or buildable is not True:
+                _fail("non-active software point must not be buildable")
             width = point.get("width")
             if not isinstance(point_id, str) or not point_id:
                 _fail("software point id is required")
@@ -107,46 +99,48 @@ def build_pyramid_structure_plan(search_space: Mapping[str, Any]) -> dict[str, A
             by_q_mode[q_mode].append({"id": point_id, "width": width})
         points_by_stage[stage] = by_q_mode
 
-    point_ids_by_q_mode: dict[str, dict[tuple[int, ...], list[str]]] = {}
+    candidates: list[dict[str, Any]] = []
     for q_mode in _Q_MODES:
-        missing_stages = [
-            stage for stage in _STAGES if not points_by_stage[stage][q_mode]
-        ]
-        if missing_stages:
-            _fail(f"{q_mode} points are required for every stage")
-        point_ids_by_q_mode[q_mode] = {
-            tuple(item["width"] for item in selected): copy.deepcopy(
-                [item["id"] for item in selected]
+        if any(not points_by_stage[stage][q_mode] for stage in _STAGES):
+            continue
+        for selected in product(
+            *(points_by_stage[stage][q_mode] for stage in _STAGES)
+        ):
+            candidates.append(
+                {
+                    "width": [item["width"] for item in selected],
+                    "q_mode": q_mode,
+                    "source_point_ids": [item["id"] for item in selected],
+                }
             )
-            for selected in product(
-                *(points_by_stage[stage][q_mode] for stage in _STAGES)
-            )
-        }
+    if not candidates:
+        _fail("no q-mode has complete provenance across all stages")
 
-    common_widths = (
-        point_ids_by_q_mode["fp16"].keys() & point_ids_by_q_mode["int8"].keys()
+    candidates.sort(
+        key=lambda row: (
+            tuple(row["width"]),
+            row["q_mode"],
+            tuple(row["source_point_ids"]),
+        )
     )
-    if not common_widths:
-        _fail("no fp16/int8 structure has complete provenance")
-    structures = [
-        {
-            "width": list(width),
-            "source_point_ids_by_q_mode": {
-                q_mode: copy.deepcopy(point_ids_by_q_mode[q_mode][width])
-                for q_mode in _Q_MODES
-            },
-        }
-        for width in sorted(common_widths)
-    ]
+    identities = {(tuple(row["width"]), row["q_mode"]) for row in candidates}
+    if len(identities) != len(candidates):
+        _fail("duplicate candidate width and q_mode identity")
+    structure_count = len({tuple(row["width"]) for row in candidates})
 
     return {
-        "schema_version": "p6_pyramid_structure_plan_v1",
+        "schema_version": "p6_pyramid_candidate_plan_v2",
         "source_schema": "stage2_search_space_v1",
         "target_model": "pyramid",
         "hardware_target": hardware_name,
         "execution_backend": "tvm_auto",
         "candidate_source_mode": "framework_stage2_search_space",
-        "structure_count": len(structures),
-        "candidate_count": len(structures) * len(_Q_MODES),
-        "structures": structures,
+        "structure_count": structure_count,
+        "candidate_count": len(candidates),
+        "candidates": candidates,
     }
+
+
+def build_pyramid_structure_plan(search_space: Mapping[str, Any]) -> dict[str, Any]:
+    """Compatibility alias for callers using the P6.1 converter name."""
+    return build_pyramid_candidate_plan(search_space)
