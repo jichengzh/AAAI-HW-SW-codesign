@@ -153,6 +153,97 @@ def registry() -> dict[str, Any]:
     return {"schema_version": "stage5_candidate_source_registry_v1", "groups": groups}
 
 
+def dynamic_registry(
+    *,
+    available_q_modes: list[str] | None = None,
+    source_point_ids_by_q_mode: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build one valid v2 source group with q-mode-specific provenance."""
+    group = copy.deepcopy(registry()["groups"][0])
+    return {
+        "schema_version": "stage5_candidate_source_registry_v2",
+        "groups": [
+            {
+                **group,
+                "available_q_modes": available_q_modes
+                if available_q_modes is not None
+                else ["fp16"],
+                "source_point_ids_by_q_mode": source_point_ids_by_q_mode
+                if source_point_ids_by_q_mode is not None
+                else {"fp16": ["s1", "s2", "s3"]},
+            }
+        ],
+    }
+
+
+def test_candidate_manifest_expands_only_declared_v2_q_modes() -> None:
+    """Catches static q-mode expansion for a dynamically constrained source group."""
+    dynamic_manifest = search.build_candidate_manifest(
+        dynamic_registry(),
+        measured_group_ids=set(),
+        frozen_holdout={"groups": []},
+        capability_profiles=profiles(),
+    )
+    static_group = copy.deepcopy(registry()["groups"][0])
+    static_manifest = search.build_candidate_manifest(
+        {"schema_version": "stage5_candidate_source_registry_v1", "groups": [static_group]},
+        measured_group_ids=set(),
+        frozen_holdout={"groups": []},
+        capability_profiles=profiles(),
+    )
+
+    assert len(dynamic_manifest["rows"]) == len(profiles())
+    assert {row["q_mode"] for row in dynamic_manifest["rows"]} == {"fp16"}
+    assert len(static_manifest["rows"]) == 2 * len(profiles())
+    assert {row["q_mode"] for row in static_manifest["rows"]} == {"fp16", "int8"}
+
+
+@pytest.mark.parametrize(
+    ("available_q_modes", "source_point_ids_by_q_mode"),
+    [
+        ([], {}),
+        (["fp16", "fp16"], {"fp16": ["s1", "s2", "s3"]}),
+        (
+            ["int8", "fp16"],
+            {"int8": ["s1", "s2", "s3"], "fp16": ["s4", "s5", "s6"]},
+        ),
+        (["bf16"], {"bf16": ["s1", "s2", "s3"]}),
+        (["fp16"], {}),
+        (["fp16"], {"fp16": ["s1", "s2"]}),
+        (["fp16"], {"fp16": "s1,s2,s3"}),
+        (["fp16"], {"fp16": ["s1", "", "s3"]}),
+    ],
+)
+def test_candidate_manifest_rejects_invalid_v2_q_mode_declarations(
+    available_q_modes: list[str], source_point_ids_by_q_mode: dict[str, Any]
+) -> None:
+    """Catches unsafe q-mode lists and incomplete q-mode provenance."""
+    with pytest.raises(ValueError):
+        search.build_candidate_manifest(
+            dynamic_registry(
+                available_q_modes=available_q_modes,
+                source_point_ids_by_q_mode=source_point_ids_by_q_mode,
+            ),
+            measured_group_ids=set(),
+            frozen_holdout={"groups": []},
+            capability_profiles=profiles(),
+        )
+
+
+def test_candidate_manifest_rejects_v2_q_mode_fields_in_v1_registry() -> None:
+    """Catches v1 registry payloads that falsely declare dynamic q-mode provenance."""
+    static_group = copy.deepcopy(registry()["groups"][0])
+    static_group["available_q_modes"] = ["fp16"]
+
+    with pytest.raises(ValueError):
+        search.build_candidate_manifest(
+            {"schema_version": "stage5_candidate_source_registry_v1", "groups": [static_group]},
+            measured_group_ids=set(),
+            frozen_holdout={"groups": []},
+            capability_profiles=profiles(),
+        )
+
+
 def predicted_group(
     group_id: str,
     *,

@@ -31,6 +31,7 @@ from framework.stage5.production_search_v1 import (
     _validate_graph_features,
     _validate_graph_payload,
     _validate_prediction_payload,
+    source_group_q_modes,
     validate_source_contract,
 )
 
@@ -189,7 +190,11 @@ def build_task_candidate_manifest(
     frozen_holdout_group_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     """Expand source widths into independent q genomes for one fixed task."""
-    if source_registry.get("schema_version") != "stage5_candidate_source_registry_v1":
+    source_registry_schema = source_registry.get("schema_version")
+    if not isinstance(source_registry_schema, str) or source_registry_schema not in {
+        "stage5_candidate_source_registry_v1",
+        "stage5_candidate_source_registry_v2",
+    }:
         raise ValueError("unexpected candidate source registry schema")
     contract = validate_search_task(task)
     profile = validate_capability_profile(task.capability_profile)
@@ -209,6 +214,7 @@ def build_task_candidate_manifest(
             raise ValueError("empty or duplicate source group_id")
         observed.add(group_id)
         source_contract = validate_source_contract(group)
+        q_modes = source_group_q_modes(str(source_registry_schema), group)
         if str(group.get("model")) != task.target_model:
             continue
         identity = validate_structure_identity(group)
@@ -225,7 +231,7 @@ def build_task_candidate_manifest(
             raise ValueError("candidate graph features missing")
         _validate_graph_payload(group["graph_features"], expected_group_id=group_id)
         group["source_contract"] = source_contract
-        for q_mode in ("fp16", "int8"):
+        for q_mode in q_modes:
             profile_id = str(profile["capability_profile_id"])
             row_id = f"{group_id}|q={q_mode}|profile={profile_id}"
             if row_id in measured_row_ids:

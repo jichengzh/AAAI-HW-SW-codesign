@@ -88,6 +88,87 @@ def fcooper_registry() -> dict[str, Any]:
     return {"schema_version": "stage5_candidate_source_registry_v1", "groups": groups}
 
 
+def test_task_candidate_manifest_expands_only_declared_v2_q_modes() -> None:
+    """Catches static q-mode expansion for a dynamically constrained task source."""
+    dynamic_group = copy.deepcopy(registry()["groups"][0])
+    dynamic_manifest = single.build_task_candidate_manifest(
+        {
+            "schema_version": "stage5_candidate_source_registry_v2",
+            "groups": [
+                {
+                    **dynamic_group,
+                    "available_q_modes": ["fp16"],
+                    "source_point_ids_by_q_mode": {"fp16": ["s1", "s2", "s3"]},
+                }
+            ],
+        },
+        task=task(),
+        measured_row_ids=set(),
+    )
+    static_manifest = single.build_task_candidate_manifest(
+        {
+            "schema_version": "stage5_candidate_source_registry_v1",
+            "groups": [copy.deepcopy(registry()["groups"][0])],
+        },
+        task=task(),
+        measured_row_ids=set(),
+    )
+
+    assert [row["q_mode"] for row in dynamic_manifest["rows"]] == ["fp16"]
+    assert {row["q_mode"] for row in static_manifest["rows"]} == {"fp16", "int8"}
+
+
+@pytest.mark.parametrize(
+    ("available_q_modes", "source_point_ids_by_q_mode"),
+    [
+        ([], {}),
+        (["fp16", "fp16"], {"fp16": ["s1", "s2", "s3"]}),
+        (
+            ["int8", "fp16"],
+            {"int8": ["s1", "s2", "s3"], "fp16": ["s4", "s5", "s6"]},
+        ),
+        (["bf16"], {"bf16": ["s1", "s2", "s3"]}),
+        (["fp16"], {}),
+        (["fp16"], {"fp16": ["s1", "s2"]}),
+        (["fp16"], {"fp16": "s1,s2,s3"}),
+        (["fp16"], {"fp16": ["s1", "", "s3"]}),
+    ],
+)
+def test_task_candidate_manifest_rejects_invalid_v2_q_mode_declarations(
+    available_q_modes: list[str], source_point_ids_by_q_mode: dict[str, Any]
+) -> None:
+    """Catches unsafe task q-mode lists and incomplete q-mode provenance."""
+    group = copy.deepcopy(registry()["groups"][0])
+    with pytest.raises(ValueError):
+        single.build_task_candidate_manifest(
+            {
+                "schema_version": "stage5_candidate_source_registry_v2",
+                "groups": [
+                    {
+                        **group,
+                        "available_q_modes": available_q_modes,
+                        "source_point_ids_by_q_mode": source_point_ids_by_q_mode,
+                    }
+                ],
+            },
+            task=task(),
+            measured_row_ids=set(),
+        )
+
+
+def test_task_candidate_manifest_rejects_v2_q_mode_fields_in_v1_registry() -> None:
+    """Catches v1 task registries that falsely declare dynamic q-mode provenance."""
+    group = copy.deepcopy(registry()["groups"][0])
+    group["source_point_ids_by_q_mode"] = {"fp16": ["s1", "s2", "s3"]}
+
+    with pytest.raises(ValueError):
+        single.build_task_candidate_manifest(
+            {"schema_version": "stage5_candidate_source_registry_v1", "groups": [group]},
+            task=task(),
+            measured_row_ids=set(),
+        )
+
+
 def candidate_predictions(candidate_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     result = []
     for index, row in enumerate(candidate_rows):

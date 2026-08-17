@@ -43,6 +43,11 @@ ALLOWED_SOURCES = {"initial_coldstart", "online_feedback"}
 GRAPH_METADATA_FIELDS = {"group_id", "model", "width", "input_dims"}
 FORBIDDEN_LABEL_FIELDS = {"latency_ms", "energy_j", "ap30", "ap50", "ap70"}
 SOURCE_CONTRACT_SCHEMA = "stage5_source_contract_v1"
+SOURCE_REGISTRY_SCHEMAS = {
+    "stage5_candidate_source_registry_v1",
+    "stage5_candidate_source_registry_v2",
+}
+DEFAULT_SOURCE_Q_MODES = ("fp16", "int8")
 SOURCE_CONTRACT_REQUIRED_FIELDS = {
     "schema_version",
     "group_id",
@@ -179,6 +184,62 @@ def validate_source_contract(group: Mapping[str, Any]) -> dict[str, Any]:
     return detached
 
 
+def source_group_q_modes(
+    source_registry_schema: str, group: Mapping[str, Any]
+) -> tuple[str, ...]:
+    """Return v1's two default q modes or validate a v2 declared subset."""
+    if (
+        not isinstance(source_registry_schema, str)
+        or source_registry_schema not in SOURCE_REGISTRY_SCHEMAS
+    ):
+        raise ValueError("unexpected candidate source registry schema")
+    if source_registry_schema == "stage5_candidate_source_registry_v1":
+        if {
+            "available_q_modes",
+            "source_point_ids_by_q_mode",
+        } & set(group):
+            raise ValueError("v1 candidate source registry cannot declare q-mode fields")
+        return DEFAULT_SOURCE_Q_MODES
+
+    available_q_modes = group.get("available_q_modes")
+    if (
+        not isinstance(available_q_modes, Sequence)
+        or isinstance(available_q_modes, (str, bytes))
+        or not available_q_modes
+        or any(not isinstance(q_mode, str) for q_mode in available_q_modes)
+    ):
+        raise ValueError("v2 candidate source available_q_modes must be non-empty")
+    q_modes = tuple(available_q_modes)
+    if (
+        q_modes != tuple(sorted(q_modes))
+        or len(q_modes) != len(set(q_modes))
+        or not set(q_modes) <= set(DEFAULT_SOURCE_Q_MODES)
+    ):
+        raise ValueError(
+            "v2 candidate source available_q_modes must be sorted unique fp16/int8 modes"
+        )
+    source_point_ids_by_q_mode = group.get("source_point_ids_by_q_mode")
+    if (
+        not isinstance(source_point_ids_by_q_mode, Mapping)
+        or set(source_point_ids_by_q_mode) != set(q_modes)
+    ):
+        raise ValueError("v2 candidate source q-mode provenance keys must match modes")
+    for source_point_ids in source_point_ids_by_q_mode.values():
+        if (
+            not isinstance(source_point_ids, Sequence)
+            or isinstance(source_point_ids, (str, bytes))
+            or len(source_point_ids) != 3
+            or any(
+                not isinstance(source_point_id, str) or not source_point_id.strip()
+                for source_point_id in source_point_ids
+            )
+        ):
+            raise ValueError(
+                "v2 candidate source q-mode provenance must contain three non-empty IDs"
+            )
+    return q_modes
+
+
 def _forbidden_graph_field(name: Any) -> bool:
     lowered = str(name).lower()
     return (
@@ -280,7 +341,11 @@ def _group_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str, list[dict[str, A
     return dict(groups)
 
 
-def _validate_complete_groups(rows: Sequence[Mapping[str, Any]]) -> None:
+def _validate_complete_groups(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    q_modes_by_group: Mapping[str, tuple[str, ...]] | None = None,
+) -> None:
     groups = _group_rows(rows)
     profile_dispatch: dict[str, str] = {}
     for group_id, group_rows in groups.items():
@@ -288,7 +353,17 @@ def _validate_complete_groups(rows: Sequence[Mapping[str, Any]]) -> None:
             (str(row.get("dispatch_key")), str(row.get("q_mode")))
             for row in group_rows
         }
-        if len(group_rows) != 4 or arms != EXPECTED_ARMS:
+        q_modes = (
+            q_modes_by_group[group_id]
+            if q_modes_by_group is not None
+            else DEFAULT_SOURCE_Q_MODES
+        )
+        expected_arms = {
+            (dispatch_key, q_mode)
+            for dispatch_key in ("tvm_auto", "trt_engine")
+            for q_mode in q_modes
+        }
+        if len(group_rows) != len(expected_arms) or arms != expected_arms:
             raise ValueError("incomplete four-arm group")
         identities = {
             (
@@ -434,7 +509,11 @@ def build_candidate_manifest(
     frozen_holdout: Mapping[str, Any],
     capability_profiles: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
-    if source_registry.get("schema_version") != "stage5_candidate_source_registry_v1":
+    source_registry_schema = source_registry.get("schema_version")
+    if (
+        not isinstance(source_registry_schema, str)
+        or source_registry_schema not in SOURCE_REGISTRY_SCHEMAS
+    ):
         raise ValueError("unexpected Stage5 candidate source registry schema")
     profiles = _validate_profiles(capability_profiles)
     holdout_ids = {
@@ -444,7 +523,7 @@ def build_candidate_manifest(
     groups = source_registry.get("groups")
     if not isinstance(groups, list):
         raise ValueError("candidate source registry groups must be a list")
-    eligible: list[dict[str, Any]] = []
+    eligible: list[tuple[dict[str, Any], tuple[str, ...]]] = []
     excluded: list[dict[str, str]] = []
     observed_ids: set[str] = set()
     for source in groups:
@@ -462,6 +541,7 @@ def build_candidate_manifest(
         if group_id != f"{model}|{'x'.join(map(str, width))}":
             raise ValueError("candidate group identity mismatch")
         source_contract = validate_source_contract(group)
+        q_modes = source_group_q_modes(str(source_registry_schema), group)
         if group_id in measured_group_ids:
             excluded.append({"group_id": group_id, "reason": "already_measured"})
             continue
@@ -475,11 +555,11 @@ def build_candidate_manifest(
             raise ValueError("candidate graph features missing")
         _validate_graph_payload(group["graph_features"], expected_group_id=group_id)
         group["source_contract"] = source_contract
-        eligible.append(group)
+        eligible.append((group, q_modes))
     rows = []
-    for group in eligible:
+    for group, q_modes in eligible:
         for profile in profiles:
-            for q_mode in ("fp16", "int8"):
+            for q_mode in q_modes:
                 profile_id = str(profile["capability_profile_id"])
                 group_id = str(group["group_id"])
                 row_id = f"{group_id}|q={q_mode}|profile={profile_id}"
@@ -504,7 +584,13 @@ def build_candidate_manifest(
                         "graph_features": copy.deepcopy(group["graph_features"]),
                     }
                 )
-    _validate_complete_groups(rows) if rows else None
+    if rows:
+        _validate_complete_groups(
+            rows,
+            q_modes_by_group={
+                str(group["group_id"]): q_modes for group, q_modes in eligible
+            },
+        )
     return {
         "schema_version": "stage5_candidate_manifest_v1",
         "registry_group_count": len(groups),
