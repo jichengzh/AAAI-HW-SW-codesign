@@ -105,14 +105,15 @@ claim until such a reviewed artifact bundle is released.
 
 ## Known limitations
 
-Only the small Stage4 artifact set is currently verified. Stage6 representative
-selection and the Stage7 formal aggregate are unavailable, so this archive
-cannot reproduce a hardware/AP/energy paper table or an ablation aggregate.
-The smoke workflow demonstrates interfaces, not numerical conclusions. It does
-not validate any device, backend, compiler, cache, dataset, checkpoint, ONNX,
-or engine result. The complete paper implementation, formal execution
-manifests, and the corresponding reviewed experimental artifacts are planned
-for release upon publication.
+The checked-in verified artifact set remains the small Stage4 subset. P6.1 has
+completed a separate, Git-ignored local execution closure, but it contributes
+no checked-in result bundle, formal execution manifest, or public numerical
+claim. Stage6 representative selection and the Stage7 formal aggregate remain
+unavailable, so this archive cannot reproduce a hardware/AP/energy paper table
+or an ablation aggregate. The smoke workflow demonstrates interfaces, not
+numerical conclusions. It does not validate any device, backend, compiler,
+cache, dataset, checkpoint, ONNX, or engine result. Any future public paper
+evidence requires a separately reviewed artifact bundle.
 
 ## License and citation
 

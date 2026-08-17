@@ -191,18 +191,22 @@ def test_p5_local_closure_is_limited_to_offline_environment_contracts() -> None:
     assert "远端 CI" not in p5_completion_entry
 
 
-def test_p6_h800_execution_manifest_preserves_the_public_boundary() -> None:
-    """P6.1 records a local-only Pyramid/H800/TVM loop without public results."""
+def test_p6_h800_execution_manifest_records_local_closure_without_public_results() -> None:
+    """P6.1 can close locally while P6.2 and public evidence remain separate."""
     manifest = REPOSITORY_ROOT / "docs/release-manifests/P6_H800_SEARCH_EXECUTION.md"
 
     assert manifest.is_file()
     text = manifest.read_text(encoding="utf-8")
     handoff = HANDOFF.read_text(encoding="utf-8")
+    reproducibility = (REPOSITORY_ROOT / "REPRODUCIBILITY.md").read_text(
+        encoding="utf-8"
+    )
+    artifacts = (REPOSITORY_ROOT / "ARTIFACTS.md").read_text(encoding="utf-8")
     p6_plan_line = next(
         line for line in handoff.splitlines() if line.startswith("| P6 |")
     )
 
-    assert "进行中（本地）" in p6_plan_line
+    assert "P6.1 已完成（本地）；P6.2 待开始" in p6_plan_line
     assert "H800" in p6_plan_line
     assert "Orin" in p6_plan_line
     assert "Pyramid/H800/TVM" in text
@@ -217,7 +221,9 @@ def test_p6_h800_execution_manifest_preserves_the_public_boundary() -> None:
     assert "ap70" in text
     assert "不生成公开结果摘要" in text
     assert "P6.2" in text
-    assert "批准的 P6.1 本地 H800 运行后" in text
+    assert "P6.1 已完成（本地）" in text
+    assert "P6.2 待开始" in text
+    assert "不等同于 Stage6 或 Stage7 论文证据完成" in text
     assert "不下载" in text
     assert "不自动探测硬件" in text
     assert "不自动启动硬件" in text
@@ -227,3 +233,14 @@ def test_p6_h800_execution_manifest_preserves_the_public_boundary() -> None:
     assert "Orin" in text
     assert "/home/" not in text
     assert "python tools/release/run_p6_h800_search.py" not in text
+
+    assert "状态日期：2026-08-17" in handoff
+    assert "P6.2 framework search-space integration 尚未实施" in handoff
+    assert "Stage6/Stage7 论文证据" in handoff
+    assert "unavailable" in handoff
+    assert "P6.1 has" in reproducibility
+    assert "completed a separate, Git-ignored local execution closure" in reproducibility
+    assert "no checked-in result bundle" in reproducibility
+    assert "Stage6 representative selection and the Stage7 formal aggregate remain" in reproducibility
+    assert "P6.1 execution result bundle" in artifacts
+    assert "does not add a checked-in artifact" in artifacts

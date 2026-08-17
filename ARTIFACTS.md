@@ -25,6 +25,11 @@ listed until a formal aggregate confirms all 12 trajectories and 192 selected
 events. The verified mode therefore has an expected non-zero outcome today; it
 does not turn Stage4 bytes into a verified Stage6 or Stage7 result.
 
+P6.1 has completed a separate Git-ignored local execution closure. That fact
+does not add a checked-in artifact, a public result summary, or a verified
+Stage6/Stage7 entry: all inputs and outputs of that run remain external under
+the rules above.
+
 ## How to inspect an artifact
 
 Read the manifest before consuming a file. For a **verified** entry, compare the
@@ -39,14 +44,13 @@ requirements in [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
 
 The package contains no full dataset, trained model, private model source,
 checkpoint, ONNX file, compiled engine, device cache, TVM/TensorRT build output,
-latency/energy trace, AP evaluation output, or final Stage6/Stage7 paper
-aggregate. It also does not contain the complete paper-specific evolutionary
-candidate generator, model materialization and training stack, hardware
-scheduling and measurement executors, complete online-ablation pipelines,
-formal trajectories, or terminal-evidence manifests. Those absences are
-intentional release boundaries, not implicit permissions to reconstruct or
-infer missing numbers. The complete implementation and corresponding reviewed
-experiment manifests are planned for release upon publication.
+latency/energy trace, AP evaluation output, P6.1 execution result bundle, or
+final Stage6/Stage7 paper aggregate. It also does not contain the local model
+materialization and training assets, hardware measurement inputs, complete
+online-ablation outputs, formal trajectories, or terminal-evidence manifests.
+Those absences are intentional release boundaries, not implicit permissions to
+reconstruct or infer missing numbers. Public paper evidence requires a
+separately reviewed artifact bundle.
 
 ## License and citation
 
