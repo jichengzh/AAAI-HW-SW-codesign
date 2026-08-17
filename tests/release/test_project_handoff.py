@@ -15,11 +15,11 @@ HANDOFF = REPOSITORY_ROOT / "docs/AAAI27_RELEASE_AUDIT.md"
 
 _P6_PUBLIC_DISCLOSURE_PATTERNS = (
     r"(?<![\w/])/(?:[^\s/]+/)+[^\s/]+",
-    r"\b[A-Za-z]:[\\/](?:[^\s\\/]+[\\/])*[^\s\\/]+",
+    r"\b[A-Za-z]:[\\/]+(?:[^\s\\/]+[\\/]+)*[^\s\\/]+",
     r"[\"']?(?:candidate(?:[_ -]?id)?|候选\s*(?:ID|标识))[\"']?\s*[:：=]\s*\S+",
     r"[\"']?(?:latency|energy|ap(?:30|50|70)?)(?:_[A-Za-z0-9]+)?[\"']?\s*[:=]\s*[-+]?\d",
     r"[\"']?(?:延迟|能耗|原始结果|原始指标)[\"']?\s*[:：=]\s*[-+]?\d",
-    r"[\"']?(?:checkpoint|result|raw_result)[\"']?\s*[:=]\s*\S+",
+    r"[\"']?(?:checkpoint|results?|raw[_ -]?results?)[\"']?\s*[:=]\s*\S+",
     r"\b\S+\.(?:ckpt|pth|pt|onnx)\b",
     r"[\"']?(?:host|hostname|主机)[\"']?\s*[:：=]\s*\S+",
     r"\b(?:\d{1,3}\.){3}\d{1,3}\b",
@@ -38,6 +38,25 @@ def _assert_p6_public_disclosure_safe(documents: dict[str, str]) -> None:
 
     combined = "\n".join(documents.values())
     assert "python tools/release/run_p6_h800_search.py" not in combined
+
+
+def _p6_boundary_sections(content: str) -> str:
+    """Return P6 paragraphs with adjacent context, not only matching lines."""
+    paragraphs = content.split("\n\n")
+    p6_indices = {
+        index for index, paragraph in enumerate(paragraphs) if "P6" in paragraph
+    }
+    selected_indices = {
+        index + offset
+        for index in p6_indices
+        for offset in (-1, 0, 1)
+        if 0 <= index + offset < len(paragraphs)
+    }
+    return "\n\n".join(
+        paragraph
+        for index, paragraph in enumerate(paragraphs)
+        if index in selected_indices
+    )
 
 
 def _is_anonymous_reviewer_archive() -> bool:
@@ -282,9 +301,9 @@ def test_p6_h800_execution_manifest_records_local_closure_without_public_results
     _assert_p6_public_disclosure_safe(
         {
             "manifest": text,
-            "handoff P6 material": "\n".join(
-                line for line in handoff.splitlines() if "P6" in line
-            ),
+            "AAAI audit P6 boundary": _p6_boundary_sections(handoff),
+            "reproducibility P6 boundary": _p6_boundary_sections(reproducibility),
+            "artifacts P6 boundary": _p6_boundary_sections(artifacts),
         }
     )
 
@@ -293,9 +312,12 @@ def test_p6_h800_execution_manifest_records_local_closure_without_public_results
     "leaked_detail",
     (
         "/private/run/output",
+        r"C:\private\p6\run",
         "candidate_id: p6-h800-001",
         "latency_ms: 12.34",
         '{"latency_ms": 12.34}',
+        "results: results/p6-h800-search.json",
+        '"raw-results": "results/p6-h800-search.json"',
         "checkpoint: model.ckpt",
         "host: h800-worker",
         "python tools/release/run_p6_h800_search.py",
@@ -307,6 +329,21 @@ def test_p6_public_disclosure_guard_rejects_concrete_leaks(
 ) -> None:
     with pytest.raises(AssertionError):
         _assert_p6_public_disclosure_safe({"synthetic public P6 text": leaked_detail})
+
+
+def test_p6_public_disclosure_guard_allows_policy_prohibitions() -> None:
+    _assert_p6_public_disclosure_safe(
+        {"public policy": "不得公开命令、路径、候选标识、原始结果或日志。"}
+    )
+
+
+def test_p6_boundary_scope_includes_adjacent_non_p6_paragraphs() -> None:
+    scoped = _p6_boundary_sections(
+        "P6 status is pending.\n\nhost: private-worker\n\nUnrelated public text."
+    )
+
+    with pytest.raises(AssertionError):
+        _assert_p6_public_disclosure_safe({"P6 boundary": scoped})
 
 
 def test_p6_framework_search_space_gate_is_documented() -> None:
