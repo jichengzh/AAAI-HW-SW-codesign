@@ -250,3 +250,5 @@ def test_p6_framework_search_space_gate_is_documented() -> None:
     manifest = (REPOSITORY_ROOT / "docs/release-manifests/P6_H800_SEARCH_EXECUTION.md").read_text(encoding="utf-8")
     assert "framework_stage2" in manifest
     assert "不得静默回退" in manifest
+    assert "P6.2 的框架搜索空间接入与离线验证正在进行" in manifest
+    assert "仅剩经单独授权的真实本地执行/闭环验证" in manifest

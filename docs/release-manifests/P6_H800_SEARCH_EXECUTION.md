@@ -36,6 +36,6 @@ The offline converter and contract validation are not a P6.2 completion claim. A
 
 ## P6.2 与匿名归档
 
-P6.2 的 framework search-space integration 是独立阶段。P6.1 已完成不自动启动或关闭 P6.2；P6.2 仍需独立设计、实现、离线验证和真实本地执行授权。P6.1 不新增 P6.2 公开配置或示例。
+P6.2 的框架搜索空间接入与离线验证正在进行；离线转换契约已提供，当前仅剩经单独授权的真实本地执行/闭环验证，完成后方可关闭 P6.2。P6.1 已完成不自动启动或关闭 P6.2；P6.1 不新增 P6.2 公开配置或示例。
 
 匿名归档可以包含 v2 控制器、公开 CLI、P6.1 示例契约和纯公开的 framework search-space adapter；它必须排除 `configs/local/`、`outputs/`、`results/` 及任何本地运行材料。P6.1 的本地收口不改变这一归档边界，P6.2 当前为框架搜索空间接入与离线验证进行中（本地），仍需单独授权真实本地验证。

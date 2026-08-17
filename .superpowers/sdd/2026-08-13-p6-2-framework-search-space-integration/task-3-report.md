@@ -46,4 +46,11 @@ pytest tests/integration/test_anonymous_archive.py::test_builder_includes_releas
 
 ## Commit
 
-d53320949c08b862e6f5c409837e48bf91a726bf（报告更新后 amend，最终 SHA 以仓库为准）
+cb5f6c493a47f6a3bae471432ffd3a7ab034ed7c（Task 3 提交）
+
+## Review remediation 1
+
+- 修正报告中的 commit 引用：改为实际 Task 3 提交 `cb5f6c493a47f6a3bae471432ffd3a7ab034ed7c`；本报告位于 Git-ignored `.superpowers/`，不是公开制品。
+- 将 manifest 的 P6.2 描述从“仍需独立设计、实现、离线验证”收窄为：框架搜索空间接入与离线验证正在进行，离线转换契约已提供，仅剩经单独授权的真实本地执行/闭环验证。
+- 先更新 handoff 测试并运行 RED：`pytest tests/release/test_project_handoff.py::test_p6_framework_search_space_gate_is_documented -q` → `1 failed`（新措辞尚未存在）。
+- 修正文档后运行 GREEN：同一测试 → `1 passed`；随后完整 release 回归与 `git diff --check` 作为提交前验证。
