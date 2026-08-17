@@ -83,10 +83,10 @@ def build_pyramid_candidate_plan(search_space: Mapping[str, Any]) -> dict[str, A
             buildable = point.get("buildable")
             if status == "active" and buildable is not True:
                 _fail("active software point must be buildable")
-            if status != "active" and buildable is not True:
+            if status == "diagnostic" and buildable is False:
                 continue
             if status != "active" or buildable is not True:
-                _fail("non-active software point must not be buildable")
+                _fail("unsupported status/buildable combination")
             width = point.get("width")
             if not isinstance(point_id, str) or not point_id:
                 _fail("software point id is required")

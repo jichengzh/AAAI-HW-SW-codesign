@@ -130,7 +130,7 @@ def test_build_pyramid_candidate_plan_rejects_non_active_buildable_point() -> No
     payload["software_candidates"][0]["software_points"][0].update(
         {"status": "diagnostic", "buildable": True}
     )
-    with pytest.raises(PyramidSearchSpaceAdapterError, match="non-active"):
+    with pytest.raises(PyramidSearchSpaceAdapterError, match="unsupported"):
         build_pyramid_candidate_plan(payload)
 
 
@@ -146,6 +146,21 @@ def test_build_pyramid_candidate_plan_ignores_non_active_non_buildable_diagnosti
         }
     )
     assert build_pyramid_candidate_plan(payload)["candidate_count"] == 9
+
+
+def test_build_pyramid_candidate_plan_rejects_non_diagnostic_non_buildable_point() -> None:
+    payload = _space()
+    payload["software_candidates"][0]["software_points"].append(
+        {
+            "id": "retired",
+            "width": 128,
+            "quant_policy": "int8",
+            "buildable": False,
+            "status": "retired",
+        }
+    )
+    with pytest.raises(PyramidSearchSpaceAdapterError, match="unsupported"):
+        build_pyramid_candidate_plan(payload)
 
 
 def test_build_pyramid_candidate_plan_rejects_duplicate_point_identity() -> None:
