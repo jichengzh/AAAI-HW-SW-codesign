@@ -261,8 +261,8 @@ def run_p6_coptv2x_search(
     _prepare_local_output_root(local.local_output_root)
     frozen_gold, gold_graphs, capability_profiles, profile = _load_search_inputs(local)
     task = _build_search_task(contract, profile)
-    source_registry = _build_source_registry(local, command_runner)
     try:
+        source_registry = _build_source_registry(local, command_runner)
         _validate_p6_source_space(source_registry, task)
     except (P6CoptV2XContractError, ValueError):
         raise P6CoptV2XExecutionError(

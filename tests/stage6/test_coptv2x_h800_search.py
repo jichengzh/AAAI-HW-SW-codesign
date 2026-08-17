@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 import hashlib
 import json
 from pathlib import Path
@@ -509,6 +509,63 @@ def test_local_contract_defaults_legacy_local_configuration_to_static_mode(
     assert loaded.stage2_search_space_path is None
 
 
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        (
+            lambda tmp_path: _local_config(
+                tmp_path,
+                candidate_source_mode="framework_stage2_search_space",
+                stage2_search_space_path="relative-stage2.yaml",
+                source_registry_step={
+                    "name": "build_source_registry",
+                    "argv": [
+                        "python",
+                        "local_build_registry.py",
+                        "{local_output_root}",
+                        "{source_registry_json}",
+                        "{pyramid_structure_plan}",
+                    ],
+                },
+            ),
+            "stage2_search_space_path.*absolute path",
+        ),
+        (
+            lambda tmp_path: _local_config(
+                tmp_path, stage2_search_space_path=str(tmp_path / "stage2.yaml")
+            ),
+            "stage2_search_space_path.*framework mode",
+        ),
+        (
+            lambda tmp_path: _local_config(
+                tmp_path,
+                source_registry_step={
+                    "name": "build_source_registry",
+                    "argv": [
+                        "python",
+                        "local_build_registry.py",
+                        "{local_output_root}",
+                        "{source_registry_json}",
+                        "{pyramid_structure_plan}",
+                    ],
+                },
+            ),
+            "template tokens",
+        ),
+    ],
+)
+def test_local_contract_rejects_stage2_paths_and_plan_tokens_outside_framework_mode(
+    tmp_path: Path,
+    payload: Callable[[Path], dict[str, Any]],
+    message: str,
+) -> None:
+    """Framework-only inputs cannot change the static P6.1 boundary."""
+    contract = load_public_contract(_write_yaml(tmp_path / "public.yaml", _public_contract()))
+
+    with pytest.raises(P6CoptV2XContractError, match=message):
+        load_local_config(_write_yaml(tmp_path / "local.yaml", payload(tmp_path)), contract)
+
+
 def test_run_p6_framework_mode_builds_structure_plan_before_source_registry(
     tmp_path: Path,
 ) -> None:
@@ -540,6 +597,74 @@ def test_run_p6_framework_mode_builds_structure_plan_before_source_registry(
 
     assert state.status == "completed"
     assert calls[0][0] == "python"
+
+
+@pytest.mark.parametrize("mutation", ["altered", "missing", "duplicate"])
+def test_run_p6_framework_mode_rejects_registry_plan_identity_mismatches_before_measurement(
+    tmp_path: Path, mutation: str
+) -> None:
+    """An adapter cannot substitute, omit, or duplicate a framework structure."""
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    local = _loaded_local_config(
+        tmp_path,
+        contract=contract,
+        source_group_count=len(_framework_plan_structures()),
+        include_stage2_search_space=True,
+    )
+    measurement_calls = 0
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        nonlocal measurement_calls
+        del cwd
+        if argv[1] != "local_build_registry.py":
+            measurement_calls += 1
+            raise AssertionError("measurement must not start after a registry-plan mismatch")
+        plan = json.loads(Path(argv[4]).read_text(encoding="utf-8"))
+        registry_path = Path(argv[3])
+        _write_source_registry_from_plan(registry_path, plan)
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        if mutation == "altered":
+            registry["groups"][0]["q_mode"] = "int8"
+        elif mutation == "missing":
+            registry["groups"].pop()
+        else:
+            registry["groups"][-1] = dict(registry["groups"][0])
+        registry_path.write_text(json.dumps(registry), encoding="utf-8")
+        return 0
+
+    with pytest.raises(P6CoptV2XExecutionError) as captured:
+        run_p6_coptv2x_search(contract, local, "abc123", runner)
+
+    assert captured.value.failure_code == "source_registry_invalid"
+    assert measurement_calls == 0
+
+
+def test_run_p6_rejects_343_source_groups_that_do_not_expand_to_686_genomes(
+    tmp_path: Path,
+) -> None:
+    """The fixed genome gate remains independent of the source-group count gate."""
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    local = _loaded_local_config(tmp_path)
+    measurement_calls = 0
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        nonlocal measurement_calls
+        del cwd
+        if argv[1] != "local_build_registry.py":
+            measurement_calls += 1
+            raise AssertionError("measurement must not start below the 686-genome threshold")
+        registry_path = Path(argv[3])
+        _write_source_registry(registry_path, count=343)
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        registry["groups"][0]["source_status"] = "unavailable"
+        registry_path.write_text(json.dumps(registry), encoding="utf-8")
+        return 0
+
+    with pytest.raises(P6CoptV2XExecutionError) as captured:
+        run_p6_coptv2x_search(contract, local, "abc123", runner)
+
+    assert captured.value.failure_code == "source_registry_invalid"
+    assert measurement_calls == 0
 
 
 def test_run_p6_rejects_incomplete_coldstart_profile_context(tmp_path: Path) -> None:
