@@ -50,7 +50,12 @@ cb5f6c493a47f6a3bae471432ffd3a7ab034ed7c（Task 3 提交）
 
 ## Review remediation 1
 
-- 修正报告中的 commit 引用：改为实际 Task 3 提交 `cb5f6c493a47f6a3bae471432ffd3a7ab034ed7c`；本报告位于 Git-ignored `.superpowers/`，不是公开制品。
+- 修正报告中的 commit 引用：改为实际 Task 3 提交 `cb5f6c493a47f6a3bae471432ffd3a7ab034ed7c`；本报告是 tracked development/review record，不是 P6 执行结果制品，也不包含私有运行数据。
 - 将 manifest 的 P6.2 描述从“仍需独立设计、实现、离线验证”收窄为：框架搜索空间接入与离线验证正在进行，离线转换契约已提供，仅剩经单独授权的真实本地执行/闭环验证。
 - 先更新 handoff 测试并运行 RED：`pytest tests/release/test_project_handoff.py::test_p6_framework_search_space_gate_is_documented -q` → `1 failed`（新措辞尚未存在）。
 - 修正文档后运行 GREEN：同一测试 → `1 passed`；随后完整 release 回归与 `git diff --check` 作为提交前验证。
+
+## Review remediation 2
+
+- 根据路径核验结果更正报告定位：`git ls-files` 显示本文件已 tracked，`git check-ignore` 无命中；因此不再将其描述为 Git-ignored 或仅因路径而非公开。
+- 本报告仅记录公开安全的实现/审查元数据、状态和验证命令；不构成 P6 执行结果制品，也不记录任何私有运行数据。
