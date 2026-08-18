@@ -129,13 +129,11 @@ def run_history_measurement_batch(
     _validate_gpu(gpu_probe, gpu_policy)
     return _translate_feedback(verified_request, interface, paths, private_root)
 
-
 def _validated_interface(binding: Mapping[str, Any]) -> Mapping[str, Any]:
     try:
         return validate_history_execution_binding(binding)
     except (P6HistoryBindingError, OSError, TypeError, ValueError):
         raise P6HistoryMeasurementError("history_execution_invalid") from None
-
 
 def _validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
     try:
@@ -182,7 +180,6 @@ def _validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
     except (KeyError, OverflowError, TypeError, ValueError):
         raise P6HistoryMeasurementError("history_request_invalid") from None
 
-
 def _validate_request_row(row: Mapping[str, Any], task_id: str, task_sha: str) -> str:
     if set(row) != ROW_KEYS:
         _request_invalid()
@@ -223,7 +220,6 @@ def _validate_request_row(row: Mapping[str, Any], task_id: str, task_sha: str) -
     ):
         _request_invalid()
     return row_id
-
 
 def _validate_binding_runtime(
     binding: Mapping[str, Any],
@@ -267,7 +263,6 @@ def _validate_binding_runtime(
     except (KeyError, OSError, TypeError, ValueError):
         raise P6HistoryMeasurementError("history_execution_invalid") from None
 
-
 def _validate_gpu(gpu_probe: GpuProbe, policy: Mapping[str, Any]) -> None:
     try:
         snapshot = gpu_probe.snapshot(EXPECTED_GPU_INDICES)
@@ -292,7 +287,6 @@ def _validate_gpu(gpu_probe: GpuProbe, policy: Mapping[str, Any]) -> None:
                 raise ValueError
     except Exception:
         raise P6HistoryMeasurementError("history_gpu_admission_failed") from None
-
 
 def _resolve_round_paths(
     interface: Mapping[str, Any],
@@ -357,17 +351,17 @@ def _resolve_round_paths(
     except (KeyError, OSError, TypeError, ValueError):
         raise P6HistoryMeasurementError("history_execution_invalid") from None
 
-
 def _resolve_template(
     supplied_root: Path, template: object, round_index: int, private_root: Path
 ) -> Path:
     if not isinstance(template, str):
         raise ValueError
-    path = (supplied_root / template.replace("{round_id}", str(round_index))).resolve(strict=False)
+    lexical_path = supplied_root / template.replace("{round_id}", str(round_index))
+    _reject_symlink_components(lexical_path, supplied_root, allow_missing=True)
+    path = lexical_path.resolve(strict=False)
     if not _beneath(path, supplied_root) or not _beneath(path, private_root):
         raise ValueError
     return path
-
 
 def _initialize_private_round(
     request: Mapping[str, Any], interface: Mapping[str, Any], paths: Mapping[str, Path]
@@ -406,7 +400,6 @@ def _initialize_private_round(
         )
     except (KeyError, OSError, TypeError, ValueError):
         raise P6HistoryMeasurementError("history_execution_invalid") from None
-
 
 def _render_environment(interface: Mapping[str, Any], paths: Mapping[str, Path]) -> dict[str, str]:
     substitutions = _substitutions(paths)
@@ -681,7 +674,9 @@ def _read_private_json(path: Path, supplied_root: Path, private_root: Path) -> M
         raise ValueError
     return payload
 
-def _reject_symlink_components(path: Path, boundary: Path) -> None:
+def _reject_symlink_components(
+    path: Path, boundary: Path, *, allow_missing: bool = False
+) -> None:
     try:
         relative = path.relative_to(boundary)
     except ValueError:
@@ -693,12 +688,17 @@ def _reject_symlink_components(path: Path, boundary: Path) -> None:
     components = relative.parts
     for index, component in enumerate(components):
         current /= component
-        mode = current.lstat().st_mode
+        try:
+            mode = current.lstat().st_mode
+        except FileNotFoundError:
+            if allow_missing:
+                return
+            raise
         if stat.S_ISLNK(mode):
             raise OSError
         if index < len(components) - 1 and not stat.S_ISDIR(mode):
             raise OSError
-        if index == len(components) - 1 and not stat.S_ISREG(mode):
+        if not allow_missing and index == len(components) - 1 and not stat.S_ISREG(mode):
             raise OSError
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:

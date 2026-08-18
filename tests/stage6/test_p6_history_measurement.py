@@ -716,6 +716,36 @@ def test_unsafe_round_root_and_template_escape_fail_before_process(tmp_path: Pat
     assert runner.calls == []
 
 
+def test_template_resolution_rejects_preexisting_lexical_symlink_parent(
+    tmp_path: Path,
+) -> None:
+    """Catches resolve erasing an in-boundary symlink from a declared template."""
+    private_root = tmp_path / "private"
+    private_root.mkdir()
+    round_root = private_root / "controller-round"
+    round_root.mkdir()
+    unexpected_target = round_root / "unexpected-target"
+    unexpected_target.mkdir()
+    (round_root / "link-parent").symlink_to(
+        unexpected_target, target_is_directory=True
+    )
+    binding = _binding(private_root)
+    binding["execution_interface"]["output_layout"]["task_state"][
+        "path_template"
+    ] = "link-parent/{round_id}/task-state.json"
+    request = _request()
+    runner = FakeRunner(request)
+    probe = FakeProbe()
+
+    with pytest.raises(P6HistoryMeasurementError) as raised:
+        run_history_measurement_batch(request, binding, round_root, runner, probe)
+
+    assert raised.value.category == "history_execution_invalid"
+    assert runner.calls == []
+    assert probe.calls == []
+    assert not (unexpected_target / "0" / "task-state.json").exists()
+
+
 def test_binding_validation_precedes_gpu_and_process(tmp_path: Path) -> None:
     """Catches adapters consuming mutable/unvalidated interface data directly."""
     private_root = tmp_path / "private"
