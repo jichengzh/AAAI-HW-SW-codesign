@@ -20,6 +20,10 @@ from framework.stage5.production_search_v1 import (
     source_group_q_modes,
     validate_source_contract,
 )
+from framework.stage6.p6_history_binding_v1 import (
+    P6HistoryBindingError,
+    validate_history_execution_binding,
+)
 
 
 PLAN_SCHEMA_VERSION = "p6_pyramid_candidate_plan_v2"
@@ -236,6 +240,12 @@ def _validate_plan(
 def _validate_template(binding: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     if not isinstance(binding, Mapping):
         _invalid("history binding must be an object")
+    try:
+        validate_history_execution_binding(binding)
+    except P6HistoryBindingError as error:
+        raise P6HistoryRegistryError(
+            "source_registry_invalid", "history execution interface is invalid"
+        ) from error
     if (
         binding.get("schema_version") != BINDING_SCHEMA_VERSION
         or binding.get("target") != EXPECTED_BINDING_TARGET

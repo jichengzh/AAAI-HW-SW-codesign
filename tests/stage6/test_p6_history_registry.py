@@ -90,6 +90,162 @@ def _recipe() -> dict[str, Any]:
     }
 
 
+def _write_executable(path: Path) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("synthetic private executable\n", encoding="utf-8")
+    path.chmod(0o700)
+    return str(path)
+
+
+def _execution_binding_fields(private_root: Path) -> dict[str, Any]:
+    chain_root = private_root / "documented-stage5-chain"
+    component_names = {
+        "controller": "stage5_task_round_controller_v3.sh",
+        "source_materializer": "stage5_materialize_round_sources_v1.sh",
+        "performance_plan": "stage5_build_performance_plan_v2.py",
+        "finalizer": "stage5_finalize_feedback_v2.py",
+    }
+    components = {
+        role: _write_executable(chain_root / name)
+        for role, name in component_names.items()
+    }
+    private_bin = private_root / "private-runner" / "bin"
+    quantize = _write_executable(private_bin / "quantize-private")
+    measure_ap = _write_executable(private_bin / "measure-ap-private")
+    activate = _write_executable(private_bin / "activate-private")
+    terminal_statuses = [
+        "measured_success_gold",
+        "feasibility_failure",
+        "numerical_feasibility_failure",
+    ]
+    row_fields = {
+        "rows_key": "rows",
+        "row_id_key": "row_id",
+        "row_hash_key": "row_sha256",
+        "source_evidence_key": "source_evidence_sha256",
+        "status_key": "terminal_status",
+    }
+    validation_location = {
+        "format": "json",
+        "request_sha256_key": "measurement_request_sha256",
+        "row_hashes_key": "row_sha256",
+        "source_evidence_key": "source_evidence_sha256",
+    }
+    interface = {
+        "schema_version": "p6_history_runner_interface_v1",
+        "controller": {"argv": [components["controller"]]},
+        "execution_chain": [
+            {
+                "stage": "source_materialization",
+                "argv": [
+                    components["source_materializer"],
+                    "{measurement_request}",
+                    "{round_output_root}",
+                ],
+                "required_placeholders": [
+                    "{measurement_request}",
+                    "{round_output_root}",
+                ],
+            },
+            {
+                "stage": "quantization",
+                "argv": [quantize, "{task_state}", "{round_output_root}"],
+                "required_placeholders": ["{task_state}", "{round_output_root}"],
+            },
+            {
+                "stage": "performance",
+                "argv": [
+                    components["performance_plan"],
+                    "{task_state}",
+                    "{round_output_root}",
+                ],
+                "required_placeholders": ["{task_state}", "{round_output_root}"],
+            },
+            {
+                "stage": "ap",
+                "argv": [measure_ap, "{task_state}", "{round_output_root}"],
+                "required_placeholders": ["{task_state}", "{round_output_root}"],
+            },
+            {
+                "stage": "finalization",
+                "argv": [
+                    components["finalizer"],
+                    "{measurement_request}",
+                    "{task_state}",
+                    "{actual_feedback}",
+                    "{actual_receipt}",
+                    "{finalization_barrier}",
+                    "{round_output_root}",
+                ],
+                "required_placeholders": [
+                    "{measurement_request}",
+                    "{task_state}",
+                    "{actual_feedback}",
+                    "{actual_receipt}",
+                    "{finalization_barrier}",
+                    "{round_output_root}",
+                ],
+            },
+        ],
+        "environment": {
+            "values": {
+                "CUDA_VISIBLE_DEVICES": {"kind": "literal", "value": "5,6,7"},
+                "P6_HISTORY_RUN_MODE": {"kind": "literal", "value": "bound"},
+                "P6_HISTORY_PRIVATE_ROOT": {
+                    "kind": "private_path",
+                    "value": str(private_root),
+                },
+                "P6_HISTORY_TASK_STATE": {
+                    "kind": "placeholder",
+                    "value": "{task_state}",
+                },
+                "P6_HISTORY_ROUND_OUTPUT_ROOT": {
+                    "kind": "placeholder",
+                    "value": "{round_output_root}",
+                },
+            },
+            "activation_argv": [activate, "private-bound"],
+        },
+        "output_layout": {
+            "round_root_template": "private-runs/{round_id}",
+            "task_state": {
+                "path_template": "private-runs/{round_id}/state/task-state.json",
+                "format": "json",
+                **row_fields,
+                "stage_key": "stage",
+                "row_count": 4,
+                "allowed_terminal_statuses": terminal_statuses,
+                "stage_order": [
+                    "source_materialization",
+                    "quantization",
+                    "performance",
+                    "ap",
+                    "finalization",
+                ],
+            },
+        },
+        "actual_feedback": {
+            "result": {
+                "path_template": "private-runs/{round_id}/actual-feedback.json",
+                "format": "json",
+                **row_fields,
+                "row_count": 4,
+                "allowed_terminal_statuses": terminal_statuses,
+                "metric_keys": ["latency_ms", "energy_j", "ap30", "ap50", "ap70"],
+            },
+            "receipt": {
+                "path_template": "private-runs/{round_id}/receipt.json",
+                **validation_location,
+            },
+            "finalization_barrier": {
+                "path_template": "private-runs/{round_id}/barrier.json",
+                **validation_location,
+            },
+        },
+    }
+    return {"component_paths": components, "execution_interface": interface}
+
+
 def _binding(tmp_path: Path) -> dict[str, Any]:
     private_root = tmp_path / "synthetic-history"
     private_root.mkdir()
@@ -102,6 +258,7 @@ def _binding(tmp_path: Path) -> dict[str, Any]:
             "backend": "tvm_auto",
         },
         "private_root": str(private_root),
+        **_execution_binding_fields(private_root),
         "source_contract_template": {
             "schema_version": "stage5_source_contract_v1",
             "group_id": "pyramid|16x32x64",
@@ -115,6 +272,27 @@ def _binding(tmp_path: Path) -> dict[str, Any]:
         },
         "status": "validated",
     }
+
+
+@pytest.mark.parametrize("tampering", ["missing", "environment_field"])
+def test_registry_rejects_unverified_execution_interface_before_write(
+    tmp_path: Path, tampering: str
+) -> None:
+    binding = _binding(tmp_path)
+    if tampering == "missing":
+        binding.pop("execution_interface")
+    else:
+        binding["execution_interface"]["environment"]["values"].pop(
+            "CUDA_VISIBLE_DEVICES"
+        )
+    local_output_root = tmp_path / "private-output"
+    local_output_root.mkdir()
+    registry_path = local_output_root / "source_registry.json"
+
+    with pytest.raises(P6HistoryRegistryError, match=r"^source_registry_invalid:"):
+        materialize_history_registry(_plan(("fp16",)), binding, local_output_root)
+
+    assert not registry_path.exists()
 
 
 def _plan_identity_map(
