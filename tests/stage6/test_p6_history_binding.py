@@ -297,6 +297,34 @@ def test_gpu_admission_fails_closed(records: tuple[GpuRecord, ...], tmp_path: Pa
         discover_history_binding(_history_root(tmp_path), _probe(records))
 
 
+@pytest.mark.parametrize(
+    ("uuid", "occupancy"),
+    [
+        (None, 0.0),
+        (12345, 0.0),
+        ("GPU-5", "0"),
+        ("GPU-5", "idle"),
+    ],
+)
+def test_malformed_gpu_record_fields_fail_with_stable_admission_category(
+    tmp_path: Path,
+    uuid: Any,
+    occupancy: Any,
+) -> None:
+    records = list(_gpu_records())
+    records[0] = GpuRecord(5, uuid, "NVIDIA H800 80GB HBM3", occupancy)
+
+    with _expect_category("gpu_admission"):
+        discover_history_binding(_history_root(tmp_path), _probe(records))
+
+
+def test_deceptive_h800_substring_model_fails_admission(tmp_path: Path) -> None:
+    records = _gpu_records(model_name="NOT-H800-COMPATIBLE")
+
+    with _expect_category("gpu_admission"):
+        discover_history_binding(_history_root(tmp_path), _probe(records))
+
+
 def test_gpu_second_snapshot_uuid_drift_fails_closed(tmp_path: Path) -> None:
     drifted = list(_gpu_records())
     drifted[2] = GpuRecord(7, "GPU-drifted", "NVIDIA H800 80GB HBM3", 0.0)

@@ -21,6 +21,13 @@ PUBLIC_SCHEMA_VERSION = "p6_history_binding_public_v1"
 SOURCE_REGISTRY_SCHEMA_VERSION = "stage5_candidate_source_registry_v1"
 EXPECTED_GPU_INDICES = (5, 6, 7)
 MAX_GPU_OCCUPANCY = 0.05
+ALLOWED_NORMALIZED_H800_MODELS = frozenset(
+    {
+        "H800",
+        "NVIDIAH800",
+        "NVIDIAH80080GBHBM3",
+    }
+)
 TARGET = {
     "model": "pyramid",
     "hardware": "h800",
@@ -303,13 +310,19 @@ def _validate_gpu_snapshot(snapshot: tuple[GpuRecord, ...]) -> dict[str, str]:
             "gpu_admission", "GPU index set must be exactly [5, 6, 7]"
         )
     ordered = [by_index[index] for index in EXPECTED_GPU_INDICES]
+    if any(not isinstance(record.uuid, str) for record in ordered):
+        raise P6HistoryBindingError("gpu_admission", "GPU UUIDs must be strings")
     uuids = [record.uuid.strip() for record in ordered]
     if any(not uuid for uuid in uuids) or len(set(uuids)) != len(uuids):
         raise P6HistoryBindingError("gpu_admission", "GPU UUIDs must be non-empty and unique")
-    if any("H800" not in _normalize_model(record.model_name) for record in ordered):
+    if any(
+        _normalize_model(record.model_name) not in ALLOWED_NORMALIZED_H800_MODELS
+        for record in ordered
+    ):
         raise P6HistoryBindingError("gpu_admission", "all admitted GPUs must be H800 models")
     if any(
         isinstance(record.occupancy, bool)
+        or not isinstance(record.occupancy, (int, float))
         or not math.isfinite(record.occupancy)
         or record.occupancy < 0.0
         or record.occupancy > MAX_GPU_OCCUPANCY
