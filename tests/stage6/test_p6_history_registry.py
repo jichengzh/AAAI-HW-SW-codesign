@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 from typing import Any, Callable, Mapping
 
 import pytest
@@ -13,6 +14,7 @@ from framework.stage6.p6_history_registry_v1 import (
     P6HistoryRegistryError,
     materialize_history_registry,
 )
+import framework.stage6.p6_history_registry_v1 as registry_module
 
 
 def _canonical_sha(payload: Mapping[str, Any]) -> str:
@@ -398,6 +400,53 @@ def test_registry_output_contains_no_search_result_or_terminal_leakage(
                 walk(child)
 
     walk(registry)
+
+
+def test_registry_rejects_unignored_repository_destination_before_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Catches writing a private source contract into a trackable repository path."""
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    subprocess.run(["git", "init", "-q", str(repository)], check=True)
+    local_output_root = repository / "private-output"
+    local_output_root.mkdir()
+    registry_path = local_output_root / "source_registry.json"
+    monkeypatch.setattr(
+        registry_module, "REPOSITORY_ROOT", repository, raising=False
+    )
+
+    try:
+        with pytest.raises(P6HistoryRegistryError, match=r"^source_registry_invalid:"):
+            materialize_history_registry(
+                _plan(("fp16",)), _binding(tmp_path), local_output_root, registry_path
+            )
+    finally:
+        registry_path.unlink(missing_ok=True)
+
+    assert not registry_path.exists()
+
+
+def test_registry_accepts_ignored_repository_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Catches rejecting a private registry path that Git explicitly ignores."""
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    subprocess.run(["git", "init", "-q", str(repository)], check=True)
+    (repository / ".gitignore").write_text("private-output/\n", encoding="utf-8")
+    local_output_root = repository / "private-output"
+    local_output_root.mkdir()
+    registry_path = local_output_root / "source_registry.json"
+    monkeypatch.setattr(
+        registry_module, "REPOSITORY_ROOT", repository, raising=False
+    )
+
+    registry = materialize_history_registry(
+        _plan(("fp16",)), _binding(tmp_path), local_output_root, registry_path
+    )
+
+    assert json.loads(registry_path.read_text(encoding="utf-8")) == registry
 
 
 def _drop_recipe(binding: dict[str, Any]) -> None:

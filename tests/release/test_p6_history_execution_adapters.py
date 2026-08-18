@@ -499,6 +499,29 @@ def test_registry_cli_rejects_output_path_outside_local_root_without_leak(
     assert not registry_path.exists()
 
 
+def test_registry_cli_rejects_unignored_repository_destination_without_leak(
+    tmp_path: Path,
+) -> None:
+    """Catches the CLI exposing a source contract through a trackable repository path."""
+    registry_path = REPOSITORY_ROOT / "p6-private-registry-must-not-exist.json"
+    assert not registry_path.exists()
+    binding_path = _write_json(tmp_path / "binding.json", _binding(tmp_path))
+    plan_path = _write_json(tmp_path / "plan.json", _plan())
+
+    try:
+        result = _run_registry_cli(
+            binding_path, plan_path, registry_path, REPOSITORY_ROOT
+        )
+    finally:
+        registry_path.unlink(missing_ok=True)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "source_registry_invalid\n"
+    assert str(tmp_path) not in result.stderr
+    assert not registry_path.exists()
+
+
 def _canonical_sha(payload: Any) -> str:
     encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode(
         "utf-8"

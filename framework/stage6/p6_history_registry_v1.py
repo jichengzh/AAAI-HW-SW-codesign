@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import string
+import subprocess
 import tempfile
 from typing import Any
 
@@ -26,6 +27,7 @@ from framework.stage6.p6_history_binding_v1 import (
 )
 
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 PLAN_SCHEMA_VERSION = "p6_pyramid_candidate_plan_v2"
 BINDING_SCHEMA_VERSION = "p6_history_binding_v1"
 REGISTRY_SCHEMA_VERSION = "stage5_candidate_source_registry_v2"
@@ -161,6 +163,34 @@ def _resolve_registry_output(
     ):
         _invalid("source registry destination is invalid")
     return resolved
+
+
+def _registry_output_is_git_ignored(repository: Path, path: Path) -> bool:
+    try:
+        relative = path.relative_to(repository)
+        completed = subprocess.run(
+            ["git", "-C", str(repository), "check-ignore", "-q", "--", str(relative)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            shell=False,
+            check=False,
+        )
+    except (OSError, ValueError):
+        return False
+    return completed.returncode == 0
+
+
+def _require_private_registry_output(path: Path) -> None:
+    try:
+        repository = REPOSITORY_ROOT.resolve(strict=True)
+    except OSError as error:
+        raise P6HistoryRegistryError(
+            "source_registry_invalid", "source registry destination is unavailable"
+        ) from error
+    if _is_relative_to(path, repository) and not _registry_output_is_git_ignored(
+        repository, path
+    ):
+        _invalid("source registry destination is invalid")
 
 
 def _validate_plan(
@@ -657,6 +687,7 @@ def materialize_history_registry(
             local_registry_root, "local output root"
         )
         output_path = _resolve_registry_output(registry_output_path, local_output_root)
+        _require_private_registry_output(output_path)
         plan_mapping = _validate_plan(plan)
         template, recipe = _validate_template(binding)
         groups = _materialize_groups(
