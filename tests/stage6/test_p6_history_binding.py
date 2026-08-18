@@ -111,6 +111,101 @@ def _write_json(path: Path, payload: Any) -> Path:
     return path
 
 
+def _history_runner_manifest(root: Path) -> dict[str, Any]:
+    private_runner = root / "private-runner"
+    commands = private_runner / "bin"
+    commands.mkdir(parents=True, exist_ok=True)
+    for name in ("quantize-private", "measure-ap-private", "activate-private"):
+        (commands / name).write_text("synthetic private executable\n", encoding="utf-8")
+    chain_root = root / "documented-stage5-chain"
+    return {
+        "schema_version": "p6_history_runner_interface_v1",
+        "controller": {"argv": [str(chain_root / MARKERS["controller"])]},
+        "execution_chain": [
+            {
+                "stage": "source_materialization",
+                "argv": [
+                    str(chain_root / MARKERS["source_materializer"]),
+                    "{measurement_request}",
+                    "{round_output_root}",
+                ],
+            },
+            {
+                "stage": "quantization",
+                "argv": [
+                    str(commands / "quantize-private"),
+                    "{measurement_request}",
+                    "{round_output_root}",
+                ],
+            },
+            {
+                "stage": "performance",
+                "argv": [
+                    str(chain_root / MARKERS["performance_plan"]),
+                    "{measurement_request}",
+                    "{round_output_root}",
+                ],
+            },
+            {
+                "stage": "ap",
+                "argv": [
+                    str(commands / "measure-ap-private"),
+                    "{measurement_request}",
+                    "{round_output_root}",
+                ],
+            },
+            {
+                "stage": "finalization",
+                "argv": [
+                    str(chain_root / MARKERS["finalizer"]),
+                    "{measurement_request}",
+                    "{round_output_root}",
+                ],
+            },
+        ],
+        "environment": {
+            "values": {
+                "CUDA_VISIBLE_DEVICES": "5,6,7",
+                "P6_HISTORY_RUN_MODE": "private-bound",
+            },
+            "activation_argv": [str(commands / "activate-private"), "private-bound"],
+        },
+        "output_layout": {
+            "round_root_template": "private-runs/{round_id}",
+            "task_state": {
+                "path_template": "private-runs/{round_id}/state/task-state.json",
+                "format": "json",
+                "rows_key": "rows",
+                "row_id_key": "row_id",
+                "stage_key": "stage",
+                "status_key": "status",
+                "stage_order": [
+                    "source_materialization",
+                    "quantization",
+                    "performance",
+                    "ap",
+                    "finalization",
+                ],
+            },
+        },
+        "actual_feedback": {
+            "receipt": {
+                "path_template": "private-runs/{round_id}/receipt.json",
+                "format": "json",
+            },
+            "finalization_barrier": {
+                "path_template": "private-runs/{round_id}/barrier.json",
+                "format": "json",
+            },
+            "validation_fields": {
+                "request_sha256": "measurement_request_sha256",
+                "row_sha256": "row_sha256",
+                "source_evidence_sha256": "source_evidence_sha256",
+            },
+        },
+    }
+
+
 def _history_root(tmp_path: Path) -> Path:
     root = tmp_path / "history"
     marker_root = root / "documented-stage5-chain"
@@ -126,6 +221,10 @@ def _history_root(tmp_path: Path) -> Path:
     )
     for name in LOCAL_INPUT_NAMES:
         _write_json(root / "inputs" / f"{name}.json", {"fixture": name})
+    _write_json(
+        root / "private-runner" / "p6-history-runner-interface.json",
+        _history_runner_manifest(root),
+    )
     return root
 
 
@@ -168,10 +267,21 @@ def test_discovers_documented_history_and_returns_no_leak_projection(
         "stage5_source_contract_v1"
     )
     assert set(binding["local_input_paths"]) == set(LOCAL_INPUT_NAMES)
+    interface = binding["execution_interface"]
+    assert tuple(step["stage"] for step in interface["execution_chain"]) == (
+        "source_materialization",
+        "quantization",
+        "performance",
+        "ap",
+        "finalization",
+    )
+    with pytest.raises(TypeError):
+        interface["environment"] = {}  # type: ignore[index]
     assert "private_root" not in projected
     projected_strings = tuple(_walk_strings(projected))
     assert not any(str(history_root) in value for value in projected_strings)
     assert not any("GPU-fixture" in value for value in projected_strings)
+    assert not any("private-bound" in value for value in projected_strings)
     assert projected == {
         "schema_version": "p6_history_binding_public_v1",
         "binding_schema_version": "p6_history_binding_v1",
@@ -188,6 +298,147 @@ def test_discovers_documented_history_and_returns_no_leak_projection(
         },
         "status": "validated",
     }
+
+
+@pytest.mark.parametrize("count", [0, 2])
+def test_rejects_missing_or_ambiguous_private_history_runner_manifest(
+    tmp_path: Path,
+    count: int,
+) -> None:
+    history_root = _history_root(tmp_path)
+    manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
+    manifest_path.unlink()
+    for index in range(count):
+        _write_json(
+            history_root / f"manifest-{index}" / "interface.json",
+            _history_runner_manifest(history_root),
+        )
+
+    with _expect_category("execution_interface") as raised:
+        discover_history_binding(history_root, _probe())
+
+    assert str(history_root) not in str(raised.value)
+    assert "private-bound" not in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "missing",
+        "duplicate",
+        "out_of_order",
+        "controller_mismatch",
+        "source_materializer_mismatch",
+        "performance_mismatch",
+        "finalizer_mismatch",
+    ],
+)
+def test_rejects_invalid_or_mismatched_history_execution_chain(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    history_root = _history_root(tmp_path)
+    manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if mutation == "missing":
+        manifest["execution_chain"].pop(2)
+    elif mutation == "duplicate":
+        manifest["execution_chain"][2]["stage"] = "quantization"
+    elif mutation == "out_of_order":
+        manifest["execution_chain"][1], manifest["execution_chain"][2] = (
+            manifest["execution_chain"][2],
+            manifest["execution_chain"][1],
+        )
+    elif mutation == "controller_mismatch":
+        manifest["controller"]["argv"] = [
+            str(history_root / "private-runner" / "bin" / "quantize-private")
+        ]
+    else:
+        stage_index = {
+            "source_materializer_mismatch": 0,
+            "performance_mismatch": 2,
+            "finalizer_mismatch": 4,
+        }[mutation]
+        manifest["execution_chain"][stage_index]["argv"][0] = str(
+            history_root / "private-runner" / "bin" / "quantize-private"
+        )
+    _write_json(manifest_path, manifest)
+
+    with _expect_category("execution_interface"):
+        discover_history_binding(history_root, _probe())
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["shell_command", "unknown_token", "path_escape", "unknown_environment"],
+)
+def test_rejects_unsafe_private_execution_interface_values(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    history_root = _history_root(tmp_path)
+    manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if mutation == "shell_command":
+        manifest["execution_chain"][1]["argv"][0] = "bash -c private-bound"
+    elif mutation == "unknown_token":
+        manifest["execution_chain"][1]["argv"].append("{ambient_path}")
+    elif mutation == "path_escape":
+        manifest["execution_chain"][1]["argv"][0] = str(tmp_path / "outside")
+    else:
+        manifest["environment"]["ambient"] = "private-bound"
+    _write_json(manifest_path, manifest)
+
+    with _expect_category("execution_interface") as raised:
+        discover_history_binding(history_root, _probe())
+
+    assert "private-bound" not in str(raised.value)
+
+
+def test_rejects_duplicate_private_environment_key_without_leaking_value(
+    tmp_path: Path,
+) -> None:
+    history_root = _history_root(tmp_path)
+    manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
+    manifest_text = manifest_path.read_text(encoding="utf-8")
+    manifest_text = manifest_text.replace(
+        '"CUDA_VISIBLE_DEVICES": "5,6,7",',
+        '"CUDA_VISIBLE_DEVICES": "5,6,7", '
+        '"CUDA_VISIBLE_DEVICES": "private-duplicate",',
+    )
+    manifest_path.write_text(manifest_text, encoding="utf-8")
+
+    with _expect_category("execution_interface") as raised:
+        discover_history_binding(history_root, _probe())
+
+    assert "private-duplicate" not in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["task_state_omission", "output_escape", "receipt_omission", "barrier_escape"],
+)
+def test_rejects_incomplete_or_escaping_private_feedback_layout(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    history_root = _history_root(tmp_path)
+    manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if mutation == "task_state_omission":
+        manifest["output_layout"].pop("task_state")
+    elif mutation == "output_escape":
+        manifest["output_layout"]["round_root_template"] = "../outside/{round_id}"
+    elif mutation == "receipt_omission":
+        manifest["actual_feedback"].pop("receipt")
+    else:
+        manifest["actual_feedback"]["finalization_barrier"]["path_template"] = (
+            "../barrier.json"
+        )
+    _write_json(manifest_path, manifest)
+
+    with _expect_category("execution_interface"):
+        discover_history_binding(history_root, _probe())
 
 
 @pytest.mark.parametrize("mode", ["missing", "duplicate"])
