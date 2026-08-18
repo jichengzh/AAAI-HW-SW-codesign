@@ -13,6 +13,7 @@ from framework.stage5.single_target_search_v2 import (
     SearchTask,
     build_task_candidate_manifest,
 )
+from tools.release import measure_p6_history_batch as measurement_cli
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -753,3 +754,56 @@ def test_measurement_cli_private_binding_error_is_category_only(tmp_path: Path) 
     assert result.stderr == "history_execution_invalid\n"
     assert marker not in result.stderr
     assert not feedback_path.exists()
+
+
+def test_measurement_cli_rejects_symlinked_feedback_parent_within_private_root(
+    tmp_path: Path,
+) -> None:
+    """Catches writing through an in-boundary symlinked destination parent."""
+    binding = _binding(tmp_path)
+    private_root = Path(binding["private_root"])
+    round_output_root = private_root / "controller-round"
+    round_output_root.mkdir()
+    binding_path = _write_json(round_output_root / "binding.json", binding)
+    request_path = _write_json(round_output_root / "request.json", _measurement_request())
+    actual_parent = round_output_root / "actual-private-parent"
+    actual_parent.mkdir()
+    link_parent = round_output_root / "link-parent"
+    link_parent.symlink_to(actual_parent, target_is_directory=True)
+    feedback_path = link_parent / "feedback.json"
+    fake_bin = tmp_path / "fake-bin"
+    _write_fake_nvidia_smi(fake_bin / "nvidia-smi")
+
+    result = _run_measurement_cli(
+        binding_path,
+        request_path,
+        feedback_path,
+        round_output_root,
+        fake_bin,
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "unsafe_destination\n"
+    assert not (actual_parent / "feedback.json").exists()
+
+
+def test_prepare_destination_checks_git_ignore_on_exact_feedback_path(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Catches checking only the round root when a leaf may be explicitly unignored."""
+    repository = tmp_path
+    round_root = repository / "ignored-round"
+    round_root.mkdir()
+    feedback_path = round_root / "explicitly-unignored-feedback.json"
+    checked: list[Path] = []
+
+    monkeypatch.setattr(measurement_cli, "REPOSITORY_ROOT", repository)
+    monkeypatch.setattr(
+        measurement_cli,
+        "_git_ignored",
+        lambda _repository, candidate: checked.append(candidate) or True,
+    )
+
+    assert measurement_cli._prepare_destination(round_root, feedback_path) == feedback_path
+    assert checked == [feedback_path]

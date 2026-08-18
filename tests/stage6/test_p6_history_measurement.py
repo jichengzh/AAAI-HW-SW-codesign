@@ -391,6 +391,10 @@ class FakeRunner:
         ):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(payload), encoding="utf-8")
+        if self.mutation == "symlink_state_parent":
+            stale_parent = state_path.parent.with_name("stale-valid-state")
+            state_path.parent.rename(stale_parent)
+            state_path.parent.symlink_to(stale_parent, target_is_directory=True)
 
     def _mutate(
         self,
@@ -552,6 +556,7 @@ def test_allowed_failure_is_returned_with_public_safe_reason(tmp_path: Path) -> 
         "bad_state",
         "missing_state_row",
         "state_status_mismatch",
+        "symlink_state_parent",
         "missing_barrier",
     ],
 )

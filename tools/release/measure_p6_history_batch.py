@@ -8,6 +8,7 @@ from collections.abc import Mapping, Sequence
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
 import tempfile
@@ -150,25 +151,37 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 def _prepare_destination(round_root: Path, feedback_path: Path) -> Path:
-    if round_root.is_symlink():
-        raise P6HistoryMeasurementError("unsafe_destination")
     try:
-        root = round_root.resolve(strict=True)
-    except OSError:
+        root = round_root.absolute()
+        if root.is_symlink():
+            raise OSError
+        resolved_root = root.resolve(strict=True)
+        parent = _verified_destination_parent(root, feedback_path.parent.absolute())
+    except (OSError, ValueError):
         raise P6HistoryMeasurementError("unsafe_destination") from None
-    if not root.is_dir() or feedback_path.is_symlink() or feedback_path.exists():
+    if not resolved_root.is_dir() or feedback_path.is_symlink() or feedback_path.exists():
         raise P6HistoryMeasurementError("unsafe_destination")
-    try:
-        parent = feedback_path.parent.resolve(strict=True)
-    except OSError:
-        raise P6HistoryMeasurementError("unsafe_destination") from None
     destination = parent / feedback_path.name
-    if not _beneath(destination, root):
+    if not _beneath(destination, resolved_root):
         raise P6HistoryMeasurementError("unsafe_destination")
     repository = REPOSITORY_ROOT.resolve(strict=True)
-    if _beneath(root, repository) and not _git_ignored(repository, root):
+    if _beneath(destination, repository) and not _git_ignored(repository, destination):
         raise P6HistoryMeasurementError("unsafe_destination")
     return destination
+
+
+def _verified_destination_parent(root: Path, parent: Path) -> Path:
+    relative = parent.relative_to(root)
+    current = root
+    mode = current.lstat().st_mode
+    if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+        raise OSError
+    for component in relative.parts:
+        current /= component
+        mode = current.lstat().st_mode
+        if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+            raise OSError
+    return current.resolve(strict=True)
 
 
 def _git_ignored(repository: Path, path: Path) -> bool:
@@ -186,7 +199,10 @@ def _git_ignored(repository: Path, path: Path) -> bool:
     return completed.returncode == 0
 
 
-def _write_feedback_atomic(path: Path, feedback: Mapping[str, Any]) -> None:
+def _write_feedback_atomic(
+    round_root: Path, feedback_path: Path, feedback: Mapping[str, Any]
+) -> None:
+    path = _prepare_destination(round_root, feedback_path)
     encoded = (
         json.dumps(
             feedback,
@@ -241,7 +257,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except SystemExit as error:
         return int(error.code)
     try:
-        destination = _prepare_destination(args.round_output_root, args.feedback_json)
+        _prepare_destination(args.round_output_root, args.feedback_json)
         binding = _load_private_json(args.binding)
         request = _load_private_json(args.measurement_request)
         feedback = run_history_measurement_batch(
@@ -251,7 +267,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             SubprocessRunner(),
             NvidiaSmiGpuProbe(),
         )
-        _write_feedback_atomic(destination, feedback)
+        _write_feedback_atomic(args.round_output_root, args.feedback_json, feedback)
     except P6HistoryMeasurementError as error:
         sys.stderr.write(f"{error.category}\n")
         return 1

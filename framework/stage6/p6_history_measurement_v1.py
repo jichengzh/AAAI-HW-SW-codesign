@@ -9,6 +9,7 @@ import math
 import os
 from pathlib import Path
 import re
+import stat
 import tempfile
 from typing import Any, Protocol
 
@@ -80,7 +81,6 @@ ROW_KEYS = frozenset(
     }
 )
 
-
 class P6HistoryMeasurementError(ValueError):
     """Stable public category for private history measurement failures."""
 
@@ -88,12 +88,10 @@ class P6HistoryMeasurementError(ValueError):
         self.category = category
         super().__init__(category)
 
-
 class RunnerResult(Protocol):
     """Minimal completed-process surface consumed by the adapter."""
 
     returncode: int
-
 
 class Runner(Protocol):
     """Injected direct-argv process boundary."""
@@ -106,7 +104,6 @@ class Runner(Protocol):
         env: Mapping[str, str],
         shell: bool,
     ) -> RunnerResult: ...
-
 
 def run_history_measurement_batch(
     request: Mapping[str, Any],
@@ -130,7 +127,7 @@ def run_history_measurement_batch(
     for stage in interface["execution_chain"]:
         _execute(stage["argv"], substitutions, runner, paths, environment)
     _validate_gpu(gpu_probe, gpu_policy)
-    return _translate_feedback(verified_request, interface, paths)
+    return _translate_feedback(verified_request, interface, paths, private_root)
 
 
 def _validated_interface(binding: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -468,12 +465,17 @@ def _translate_feedback(
     request: Mapping[str, Any],
     interface: Mapping[str, Any],
     paths: Mapping[str, Path],
+    private_root: Path,
 ) -> dict[str, Any]:
     try:
-        state = _read_private_json(paths["task_state"])
-        result = _read_private_json(paths["actual_feedback"])
-        receipt = _read_private_json(paths["actual_receipt"])
-        barrier = _read_private_json(paths["finalization_barrier"])
+
+        def read_json(path: Path) -> Mapping[str, Any]:
+            return _read_private_json(path, paths["supplied_root"], private_root)
+
+        state = read_json(paths["task_state"])
+        result = read_json(paths["actual_feedback"])
+        receipt = read_json(paths["actual_receipt"])
+        barrier = read_json(paths["finalization_barrier"])
         task_schema = interface["output_layout"]["task_state"]
         result_schema = interface["actual_feedback"]["result"]
         expected = _expected_identity(request)
@@ -662,12 +664,15 @@ def _validate_completion_mapping(
     }:
         raise ValueError
 
-
-def _read_private_json(path: Path) -> Mapping[str, Any]:
-    if path.is_symlink():
-        raise OSError
+def _read_private_json(path: Path, supplied_root: Path, private_root: Path) -> Mapping[str, Any]:
+    _reject_symlink_components(path, supplied_root)
     resolved = path.resolve(strict=True)
-    if not resolved.is_file() or resolved.stat().st_size > MAX_PRIVATE_JSON_BYTES:
+    if (
+        not _beneath(resolved, supplied_root)
+        or not _beneath(resolved, private_root)
+        or not resolved.is_file()
+        or resolved.stat().st_size > MAX_PRIVATE_JSON_BYTES
+    ):
         raise OSError
     payload = json.loads(
         resolved.read_text(encoding="utf-8"), object_pairs_hook=_reject_duplicate_keys
@@ -676,6 +681,25 @@ def _read_private_json(path: Path) -> Mapping[str, Any]:
         raise ValueError
     return payload
 
+def _reject_symlink_components(path: Path, boundary: Path) -> None:
+    try:
+        relative = path.relative_to(boundary)
+    except ValueError:
+        raise OSError from None
+    current = boundary
+    boundary_mode = current.lstat().st_mode
+    if stat.S_ISLNK(boundary_mode) or not stat.S_ISDIR(boundary_mode):
+        raise OSError
+    components = relative.parts
+    for index, component in enumerate(components):
+        current /= component
+        mode = current.lstat().st_mode
+        if stat.S_ISLNK(mode):
+            raise OSError
+        if index < len(components) - 1 and not stat.S_ISDIR(mode):
+            raise OSError
+        if index == len(components) - 1 and not stat.S_ISREG(mode):
+            raise OSError
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     payload: dict[str, Any] = {}
@@ -684,7 +708,6 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
             raise ValueError
         payload[key] = value
     return payload
-
 
 def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
     encoded = (
@@ -712,7 +735,6 @@ def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
         temporary.unlink(missing_ok=True)
         raise
 
-
 def _mkdir_private(path: Path, boundary: Path) -> None:
     if not _beneath(path, boundary):
         raise OSError
@@ -724,7 +746,6 @@ def _mkdir_private(path: Path, boundary: Path) -> None:
             raise OSError
         current.mkdir(exist_ok=True)
 
-
 def _fsync_directory(directory: Path) -> None:
     flags = os.O_RDONLY
     if hasattr(os, "O_DIRECTORY"):
@@ -734,7 +755,6 @@ def _fsync_directory(directory: Path) -> None:
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
-
 
 def _canonical_sha(payload: Any) -> str:
     encoded = json.dumps(
@@ -746,10 +766,8 @@ def _canonical_sha(payload: Any) -> str:
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
-
 def _json_detached(payload: Mapping[str, Any]) -> dict[str, Any]:
     return json.loads(json.dumps(payload, ensure_ascii=True, allow_nan=False, sort_keys=True))
-
 
 def _is_sha(value: object) -> bool:
     return (
@@ -758,7 +776,6 @@ def _is_sha(value: object) -> bool:
         and all(character in "0123456789abcdef" for character in value)
     )
 
-
 def _finite(value: object) -> bool:
     return (
         not isinstance(value, bool)
@@ -766,12 +783,10 @@ def _finite(value: object) -> bool:
         and math.isfinite(float(value))
     )
 
-
 def _normalized_model(value: object) -> str:
     if not isinstance(value, str):
         return ""
     return "".join(character for character in value.upper() if character.isalnum())
-
 
 def _beneath(path: Path, parent: Path) -> bool:
     try:
@@ -779,7 +794,6 @@ def _beneath(path: Path, parent: Path) -> bool:
     except ValueError:
         return False
     return True
-
 
 def _request_invalid() -> None:
     raise P6HistoryMeasurementError("history_request_invalid")
