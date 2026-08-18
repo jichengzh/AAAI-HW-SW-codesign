@@ -79,12 +79,16 @@ class NvidiaSmiGpuProbe:
 
 def _parse_gpu_records(output: str) -> tuple[GpuRecord, ...]:
     records: list[GpuRecord] = []
+    seen_indices: set[int] = set()
     for line in output.splitlines():
         fields = tuple(field.strip() for field in line.split(","))
         if len(fields) != 5:
             raise ValueError("invalid GPU query row")
         index_text, uuid, model_name, used_text, total_text = fields
         index = int(index_text)
+        if index in seen_indices:
+            raise ValueError("duplicate GPU index")
+        seen_indices.add(index)
         used = float(used_text)
         total = float(total_text)
         if total <= 0.0:
@@ -185,7 +189,15 @@ def _discover_stage2_search_space(binding: Mapping[str, Any]) -> Path:
             ):
                 continue
             search_space = load_stage2_search_space(path)
-        except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+        except (
+            AttributeError,
+            KeyError,
+            OSError,
+            TypeError,
+            UnicodeError,
+            json.JSONDecodeError,
+            ValueError,
+        ):
             continue
         if search_space.get("schema") == "stage2_search_space_v1":
             candidates.append(path)

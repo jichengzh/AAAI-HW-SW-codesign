@@ -136,7 +136,12 @@ def _history_root(tmp_path: Path) -> Path:
     return root
 
 
-def _fake_nvidia_smi(tmp_path: Path, *, drift: bool = False) -> Path:
+def _fake_nvidia_smi(
+    tmp_path: Path,
+    *,
+    drift: bool = False,
+    indices: tuple[int, ...] = (5, 6, 7),
+) -> Path:
     binary = tmp_path / "fake-bin" / "nvidia-smi"
     binary.parent.mkdir()
     drift_source = """
@@ -149,7 +154,7 @@ drift = calls > 0
         f"#!{sys.executable}\n"
         "from pathlib import Path\n"
         f"{drift_source}"
-        "for index in (5, 6, 7):\n"
+        f"for index in {indices!r}:\n"
         "    suffix = '-drifted' if drift and index == 7 else ''\n"
         "    print(f'{index}, GPU-fixture-{index}{suffix}, NVIDIA H800 80GB HBM3, 0, 100')\n",
         encoding="utf-8",
@@ -332,6 +337,36 @@ def test_cli_requires_one_valid_stage2_json_without_writing(tmp_path: Path) -> N
     assert not config_path.exists()
 
 
+def test_cli_normalizes_non_value_stage2_loader_failure_without_writing(
+    tmp_path: Path,
+) -> None:
+    history_root = _history_root(tmp_path)
+    malformed_manifest = _stage1_manifest()
+    malformed_manifest["view_b2_quant_units"] = [None]
+    _write_json(
+        history_root / "stage2" / "pyramid_partition.json",
+        malformed_manifest,
+    )
+    private_root = tmp_path / "private-output"
+    private_root.mkdir()
+    binding_path = private_root / "binding.json"
+    config_path = private_root / "config.yaml"
+
+    result = _run_cli(
+        history_root,
+        private_root,
+        binding_path,
+        config_path,
+        _fake_nvidia_smi(tmp_path),
+    )
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert result.stderr == "stage2_search_space_unavailable\n"
+    assert not binding_path.exists()
+    assert not config_path.exists()
+
+
 def test_cli_rejects_gpu_drift_without_private_details_or_output(tmp_path: Path) -> None:
     history_root = _history_root(tmp_path)
     private_root = tmp_path / "private-output"
@@ -352,6 +387,28 @@ def test_cli_rejects_gpu_drift_without_private_details_or_output(tmp_path: Path)
     assert result.stderr == "gpu_drift\n"
     assert "GPU-fixture" not in result.stderr
     assert str(history_root) not in result.stderr
+    assert not binding_path.exists()
+    assert not config_path.exists()
+
+
+def test_cli_rejects_duplicate_gpu_indices_without_writing(tmp_path: Path) -> None:
+    history_root = _history_root(tmp_path)
+    private_root = tmp_path / "private-output"
+    private_root.mkdir()
+    binding_path = private_root / "binding.json"
+    config_path = private_root / "config.yaml"
+
+    result = _run_cli(
+        history_root,
+        private_root,
+        binding_path,
+        config_path,
+        _fake_nvidia_smi(tmp_path, indices=(5, 6, 7, 7)),
+    )
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert result.stderr == "gpu_admission\n"
     assert not binding_path.exists()
     assert not config_path.exists()
 
