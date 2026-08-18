@@ -929,17 +929,29 @@ def test_success_atomically_replaces_both_private_json_files(tmp_path: Path) -> 
     assert not tuple(output_root.glob("*.tmp"))
 
 
-def test_independent_replace_failure_exposes_documented_pair_limit(
+@pytest.mark.parametrize(
+    "initial_contents",
+    [
+        (b"old binding\xff\n", b"old config\x00\n"),
+        (None, None),
+    ],
+    ids=("preexisting_destinations", "initially_absent_destinations"),
+)
+def test_second_replace_failure_restores_the_original_private_pair(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    initial_contents: tuple[bytes | None, bytes | None],
 ) -> None:
     repo_root = tmp_path / "repo"
     output_root = repo_root / "private"
     output_root.mkdir(parents=True)
     binding_path = output_root / "binding.json"
     config_path = output_root / "config.json"
-    binding_path.write_text(json.dumps({"old": "binding"}), encoding="utf-8")
-    config_path.write_text(json.dumps({"old": "config"}), encoding="utf-8")
+    old_binding, old_config = initial_contents
+    if old_binding is not None:
+        binding_path.write_bytes(old_binding)
+    if old_config is not None:
+        config_path.write_bytes(old_config)
     binding, config = _private_payloads()
     real_replace = os.replace
     replace_count = 0
@@ -966,9 +978,57 @@ def test_independent_replace_failure_exposes_documented_pair_limit(
             ignore_predicate=lambda path: True,
         )
 
-    assert json.loads(binding_path.read_text(encoding="utf-8")) == binding
-    assert json.loads(config_path.read_text(encoding="utf-8")) == {"old": "config"}
+    assert _read_bytes_or_none(binding_path) == old_binding
+    assert _read_bytes_or_none(config_path) == old_config
     assert not tuple(output_root.glob("*.tmp"))
+
+
+def test_second_replace_failure_does_not_overwrite_a_competing_binding_update(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    output_root = repo_root / "private"
+    output_root.mkdir(parents=True)
+    binding_path = output_root / "binding.json"
+    config_path = output_root / "config.json"
+    binding_path.write_bytes(b"old binding\n")
+    config_path.write_bytes(b"old config\n")
+    binding, config = _private_payloads()
+    real_replace = os.replace
+    replace_count = 0
+    competitor_bytes = b"competing binding update\n"
+
+    def fail_second_replace(source: str | Path, destination: str | Path) -> None:
+        nonlocal replace_count
+        replace_count += 1
+        if replace_count == 2:
+            binding_path.write_bytes(competitor_bytes)
+            raise OSError("synthetic second replace failure")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(
+        "framework.stage6.p6_history_binding_v1.os.replace",
+        fail_second_replace,
+    )
+
+    with _expect_category("persistence"):
+        write_private_binding_pair(
+            binding,
+            config,
+            binding_path,
+            config_path,
+            repo_root,
+            ignore_predicate=lambda path: True,
+        )
+
+    assert binding_path.read_bytes() == competitor_bytes
+    assert config_path.read_bytes() == b"old config\n"
+    assert not tuple(output_root.glob("*.tmp"))
+
+
+def _read_bytes_or_none(path: Path) -> bytes | None:
+    return path.read_bytes() if path.exists() else None
 
 
 def test_discovery_builders_do_not_mutate_registry_or_gpu_records(tmp_path: Path) -> None:

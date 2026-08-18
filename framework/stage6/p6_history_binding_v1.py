@@ -249,12 +249,7 @@ def write_private_binding_pair(
     *,
     ignore_predicate: IgnorePredicate | None = None,
 ) -> None:
-    """Prevalidate, stage, and independently replace a private JSON pair.
-
-    The two sibling temporary files are complete before replacement begins. Filesystems
-    provide no portable transaction spanning two ``os.replace`` calls: if the second
-    replace fails after the first succeeds, the first destination remains replaced.
-    """
+    """Prevalidate, stage, and replace a private JSON pair with failure compensation."""
     serialized = (
         _serialize_json(binding, "binding"),
         _serialize_json(local_config, "local config"),
@@ -269,15 +264,30 @@ def write_private_binding_pair(
         _prevalidate_destination(path, repository, ignore_predicate)
         for path in destinations
     )
+    original_payloads = tuple(
+        _capture_destination_payload(destination) for destination in resolved_destinations
+    )
 
     temporary_paths: list[Path] = []
+    replaced_destinations: list[tuple[Path, bytes, bytes | None]] = []
     try:
         for destination, payload in zip(resolved_destinations, serialized, strict=True):
             temporary_paths.append(_write_temporary_sibling(destination, payload))
-        for temporary, destination in zip(
-            temporary_paths, resolved_destinations, strict=True
+        for temporary, destination, payload, previous_payload in zip(
+            temporary_paths,
+            resolved_destinations,
+            serialized,
+            original_payloads,
+            strict=True,
         ):
-            os.replace(temporary, destination)
+            try:
+                os.replace(temporary, destination)
+            except OSError as error:
+                _restore_replaced_destinations(replaced_destinations)
+                raise P6HistoryBindingError(
+                    "persistence", f"private pair replacement failed: {error}"
+                ) from error
+            replaced_destinations.append((destination, payload, previous_payload))
         for parent in {path.parent for path in resolved_destinations}:
             _fsync_directory(parent)
     except P6HistoryBindingError:
@@ -919,6 +929,44 @@ def _prevalidate_destination(
                 "unsafe_destination", "repository destination is not git-ignored"
             )
     return destination
+
+
+def _capture_destination_payload(destination: Path) -> bytes | None:
+    if destination.is_symlink():
+        raise P6HistoryBindingError("unsafe_destination", "destination cannot be a symlink")
+    try:
+        return destination.read_bytes()
+    except FileNotFoundError:
+        return None
+
+
+def _restore_replaced_destinations(
+    replacements: Sequence[tuple[Path, bytes, bytes | None]],
+) -> None:
+    for destination, published_payload, original_payload in reversed(replacements):
+        try:
+            if not _destination_has_payload(destination, published_payload):
+                continue
+            if original_payload is None:
+                destination.unlink()
+            else:
+                temporary = _write_temporary_sibling(destination, original_payload)
+                try:
+                    os.replace(temporary, destination)
+                finally:
+                    temporary.unlink(missing_ok=True)
+            _fsync_directory(destination.parent)
+        except OSError:
+            continue
+
+
+def _destination_has_payload(destination: Path, expected_payload: bytes) -> bool:
+    if destination.is_symlink():
+        return False
+    try:
+        return destination.read_bytes() == expected_payload
+    except OSError:
+        return False
 
 
 def _git_check_ignored(repository: Path, destination: Path) -> bool:
