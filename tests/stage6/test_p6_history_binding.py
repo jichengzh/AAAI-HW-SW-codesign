@@ -645,6 +645,8 @@ def test_rejects_incomplete_or_escaping_private_feedback_layout(
         ("round_root", "private-runs/{round_id}/{round_id}"),
         ("task_state", "private-runs/{unknown_round}/task-state.json"),
         ("result", "../outside/{round_id}/actual-feedback.json"),
+        ("receipt", "private-runs/{round_id}}/receipt.json"),
+        ("barrier", "private-runs/{{round_id}/barrier.json"),
     ],
 )
 def test_rejects_per_round_layout_template_without_exactly_one_round_id(

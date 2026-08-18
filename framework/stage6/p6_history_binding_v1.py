@@ -756,7 +756,8 @@ def _has_expected_row_field_names(payload: Mapping[str, Any]) -> bool:
 def _validate_private_template(raw: object, root: Path) -> str:
     if not isinstance(raw, str) or not raw or _contains_shell_token(raw):
         raise _execution_interface_error()
-    if raw.count("{round_id}") != 1 or "{" in raw.replace("{round_id}", ""):
+    remainder = raw.replace("{round_id}", "")
+    if raw.count("{round_id}") != 1 or "{" in remainder or "}" in remainder:
         raise _execution_interface_error()
     path = Path(raw)
     if path.is_absolute() or ".." in path.parts:
