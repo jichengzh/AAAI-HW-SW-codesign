@@ -454,6 +454,7 @@ def _history_cli_fixture(
                          "print('7, GPU-7, NVIDIA H800 80GB HBM3, 0, 100')\n", encoding="utf-8")
     gpu_probe.chmod(0o700)
     paths.update({"private_root": private_root,
+                  "binding": binding_path,
                   "env": {**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"}})
     return paths
 
@@ -524,6 +525,8 @@ def test_cli_runs_provisioned_history_binding_through_tracked_adapters(
 
     assert result.returncode == 0, result.stderr
     assert result.stdout == "completed\n"
+    binding = json.loads(paths["binding"].read_text(encoding="utf-8"))
+    binding_private_root = Path(binding["private_root"])
     plan = json.loads((paths["output_root"] / "pyramid_candidate_plan.json").read_text())
     registry = json.loads((paths["output_root"] / "source_registry.json").read_text())
     active_candidate_count = plan["candidate_count"]
@@ -556,8 +559,7 @@ def test_cli_runs_provisioned_history_binding_through_tracked_adapters(
     for request in requests:
         round_index = request["round_index"]
         history_root = (
-            paths["output_root"]
-            / f"round-{round_index:02d}"
+            binding_private_root
             / "private-runs"
             / str(round_index)
         )
@@ -573,6 +575,10 @@ def test_cli_runs_provisioned_history_binding_through_tracked_adapters(
             "ap",
             "finalization",
         ]
+    assert not any(
+        artifact.name == "private-runs"
+        for artifact in paths["output_root"].rglob("*")
+    )
 
     state = json.loads((paths["output_root"] / "state.json").read_text(encoding="utf-8"))
     assert state["status"] == "completed"
