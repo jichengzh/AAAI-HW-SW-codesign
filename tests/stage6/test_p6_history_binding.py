@@ -15,6 +15,7 @@ from framework.stage6.p6_history_binding_v1 import (
     P6HistoryBindingError,
     discover_history_binding,
     public_binding_projection,
+    validate_history_execution_binding,
     write_private_binding_pair,
 )
 
@@ -116,7 +117,9 @@ def _history_runner_manifest(root: Path) -> dict[str, Any]:
     commands = private_runner / "bin"
     commands.mkdir(parents=True, exist_ok=True)
     for name in ("quantize-private", "measure-ap-private", "activate-private"):
-        (commands / name).write_text("synthetic private executable\n", encoding="utf-8")
+        command = commands / name
+        command.write_text("synthetic private executable\n", encoding="utf-8")
+        command.chmod(0o700)
     chain_root = root / "documented-stage5-chain"
     return {
         "schema_version": "p6_history_runner_interface_v1",
@@ -129,44 +132,75 @@ def _history_runner_manifest(root: Path) -> dict[str, Any]:
                     "{measurement_request}",
                     "{round_output_root}",
                 ],
+                "required_placeholders": [
+                    "{measurement_request}",
+                    "{round_output_root}",
+                ],
             },
             {
                 "stage": "quantization",
                 "argv": [
                     str(commands / "quantize-private"),
-                    "{measurement_request}",
+                    "{task_state}",
                     "{round_output_root}",
                 ],
+                "required_placeholders": ["{task_state}", "{round_output_root}"],
             },
             {
                 "stage": "performance",
                 "argv": [
                     str(chain_root / MARKERS["performance_plan"]),
-                    "{measurement_request}",
+                    "{task_state}",
                     "{round_output_root}",
                 ],
+                "required_placeholders": ["{task_state}", "{round_output_root}"],
             },
             {
                 "stage": "ap",
                 "argv": [
                     str(commands / "measure-ap-private"),
-                    "{measurement_request}",
+                    "{task_state}",
                     "{round_output_root}",
                 ],
+                "required_placeholders": ["{task_state}", "{round_output_root}"],
             },
             {
                 "stage": "finalization",
                 "argv": [
                     str(chain_root / MARKERS["finalizer"]),
                     "{measurement_request}",
+                    "{task_state}",
+                    "{actual_feedback}",
+                    "{actual_receipt}",
+                    "{finalization_barrier}",
+                    "{round_output_root}",
+                ],
+                "required_placeholders": [
+                    "{measurement_request}",
+                    "{task_state}",
+                    "{actual_feedback}",
+                    "{actual_receipt}",
+                    "{finalization_barrier}",
                     "{round_output_root}",
                 ],
             },
         ],
         "environment": {
             "values": {
-                "CUDA_VISIBLE_DEVICES": "5,6,7",
-                "P6_HISTORY_RUN_MODE": "private-bound",
+                "CUDA_VISIBLE_DEVICES": {"kind": "literal", "value": "5,6,7"},
+                "P6_HISTORY_RUN_MODE": {"kind": "literal", "value": "bound"},
+                "P6_HISTORY_PRIVATE_ROOT": {
+                    "kind": "private_path",
+                    "value": str(root),
+                },
+                "P6_HISTORY_TASK_STATE": {
+                    "kind": "placeholder",
+                    "value": "{task_state}",
+                },
+                "P6_HISTORY_ROUND_OUTPUT_ROOT": {
+                    "kind": "placeholder",
+                    "value": "{round_output_root}",
+                },
             },
             "activation_argv": [str(commands / "activate-private"), "private-bound"],
         },
@@ -177,8 +211,16 @@ def _history_runner_manifest(root: Path) -> dict[str, Any]:
                 "format": "json",
                 "rows_key": "rows",
                 "row_id_key": "row_id",
+                "row_hash_key": "row_sha256",
+                "source_evidence_key": "source_evidence_sha256",
                 "stage_key": "stage",
-                "status_key": "status",
+                "status_key": "terminal_status",
+                "row_count": 4,
+                "allowed_terminal_statuses": [
+                    "measured_success_gold",
+                    "feasibility_failure",
+                    "numerical_feasibility_failure",
+                ],
                 "stage_order": [
                     "source_materialization",
                     "quantization",
@@ -189,18 +231,35 @@ def _history_runner_manifest(root: Path) -> dict[str, Any]:
             },
         },
         "actual_feedback": {
+            "result": {
+                "path_template": "private-runs/{round_id}/actual-feedback.json",
+                "format": "json",
+                "rows_key": "rows",
+                "row_count": 4,
+                "row_id_key": "row_id",
+                "row_hash_key": "row_sha256",
+                "source_evidence_key": "source_evidence_sha256",
+                "status_key": "terminal_status",
+                "allowed_terminal_statuses": [
+                    "measured_success_gold",
+                    "feasibility_failure",
+                    "numerical_feasibility_failure",
+                ],
+                "metric_keys": ["latency_ms", "energy_j", "ap30", "ap50", "ap70"],
+            },
             "receipt": {
                 "path_template": "private-runs/{round_id}/receipt.json",
                 "format": "json",
+                "request_sha256_key": "measurement_request_sha256",
+                "row_hashes_key": "row_sha256",
+                "source_evidence_key": "source_evidence_sha256",
             },
             "finalization_barrier": {
                 "path_template": "private-runs/{round_id}/barrier.json",
                 "format": "json",
-            },
-            "validation_fields": {
-                "request_sha256": "measurement_request_sha256",
-                "row_sha256": "row_sha256",
-                "source_evidence_sha256": "source_evidence_sha256",
+                "request_sha256_key": "measurement_request_sha256",
+                "row_hashes_key": "row_sha256",
+                "source_evidence_key": "source_evidence_sha256",
             },
         },
     }
@@ -211,7 +270,9 @@ def _history_root(tmp_path: Path) -> Path:
     marker_root = root / "documented-stage5-chain"
     marker_root.mkdir(parents=True)
     for marker in MARKERS.values():
-        (marker_root / marker).write_text("synthetic marker\n", encoding="utf-8")
+        command = marker_root / marker
+        command.write_text("synthetic marker\n", encoding="utf-8")
+        command.chmod(0o700)
     _write_json(
         root / "registry" / "candidate_source_registry.json",
         {
@@ -277,6 +338,15 @@ def test_discovers_documented_history_and_returns_no_leak_projection(
     )
     with pytest.raises(TypeError):
         interface["environment"] = {}  # type: ignore[index]
+    assert validate_history_execution_binding(binding) == interface
+    assert interface["actual_feedback"]["result"]["row_count"] == 4
+    assert interface["actual_feedback"]["result"]["metric_keys"] == (
+        "latency_ms",
+        "energy_j",
+        "ap30",
+        "ap50",
+        "ap70",
+    )
     assert "private_root" not in projected
     projected_strings = tuple(_walk_strings(projected))
     assert not any(str(history_root) in value for value in projected_strings)
@@ -298,6 +368,129 @@ def test_discovers_documented_history_and_returns_no_leak_projection(
         },
         "status": "validated",
     }
+
+
+@pytest.mark.parametrize(
+    ("stage_index", "placeholder"),
+    [
+        (0, "{measurement_request}"),
+        (1, "{task_state}"),
+        (2, "{round_output_root}"),
+        (3, "{task_state}"),
+        (4, "{actual_receipt}"),
+    ],
+)
+def test_rejects_stage_without_its_required_explicit_binding(
+    tmp_path: Path,
+    stage_index: int,
+    placeholder: str,
+) -> None:
+    history_root = _history_root(tmp_path)
+    manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["execution_chain"][stage_index]["argv"].remove(placeholder)
+    _write_json(manifest_path, manifest)
+
+    with _expect_category("execution_interface"):
+        discover_history_binding(history_root, _probe())
+
+
+def test_rejects_required_binding_descriptor_that_does_not_match_argv(
+    tmp_path: Path,
+) -> None:
+    history_root = _history_root(tmp_path)
+    manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["execution_chain"][4]["required_placeholders"].remove(
+        "{finalization_barrier}"
+    )
+    _write_json(manifest_path, manifest)
+
+    with _expect_category("execution_interface"):
+        discover_history_binding(history_root, _probe())
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "task_row_count",
+        "task_field",
+        "result_location",
+        "result_metric",
+        "result_status",
+        "receipt_validation",
+        "barrier_validation",
+    ],
+)
+def test_rejects_incomplete_or_unsupported_four_row_actual_feedback_schema(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    history_root = _history_root(tmp_path)
+    manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    task_state = manifest["output_layout"]["task_state"]
+    result = manifest["actual_feedback"]["result"]
+    if mutation == "task_row_count":
+        task_state["row_count"] = 3
+    elif mutation == "task_field":
+        task_state.pop("source_evidence_key")
+    elif mutation == "result_location":
+        result.pop("path_template")
+    elif mutation == "result_metric":
+        result["metric_keys"].pop()
+    elif mutation == "result_status":
+        result["allowed_terminal_statuses"] = ["private_unknown_status"]
+    elif mutation == "receipt_validation":
+        manifest["actual_feedback"]["receipt"].pop("row_hashes_key")
+    else:
+        manifest["actual_feedback"]["finalization_barrier"][
+            "source_evidence_key"
+        ] = "not a field"
+    _write_json(manifest_path, manifest)
+
+    with _expect_category("execution_interface"):
+        discover_history_binding(history_root, _probe())
+
+
+@pytest.mark.parametrize("environment_key", ["PATH", "PYTHONPATH", "LD_PRELOAD"])
+def test_rejects_ambient_or_loader_environment_keys(
+    tmp_path: Path,
+    environment_key: str,
+) -> None:
+    history_root = _history_root(tmp_path)
+    manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["environment"]["values"][environment_key] = {
+        "kind": "literal",
+        "value": "private-value",
+    }
+    _write_json(manifest_path, manifest)
+
+    with _expect_category("execution_interface"):
+        discover_history_binding(history_root, _probe())
+
+
+def test_rejects_private_environment_path_outside_history_root(tmp_path: Path) -> None:
+    history_root = _history_root(tmp_path)
+    manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["environment"]["values"]["P6_HISTORY_PRIVATE_ROOT"]["value"] = str(
+        tmp_path
+    )
+    _write_json(manifest_path, manifest)
+
+    with _expect_category("execution_interface"):
+        discover_history_binding(history_root, _probe())
+
+
+def test_rejects_non_executable_private_command_endpoint(tmp_path: Path) -> None:
+    history_root = _history_root(tmp_path)
+    command = history_root / "private-runner" / "bin" / "quantize-private"
+    command.chmod(0o600)
+
+    with _expect_category("execution_interface"):
+        discover_history_binding(history_root, _probe())
 
 
 @pytest.mark.parametrize("count", [0, 2])
@@ -402,9 +595,9 @@ def test_rejects_duplicate_private_environment_key_without_leaking_value(
     manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
     manifest_text = manifest_path.read_text(encoding="utf-8")
     manifest_text = manifest_text.replace(
-        '"CUDA_VISIBLE_DEVICES": "5,6,7",',
-        '"CUDA_VISIBLE_DEVICES": "5,6,7", '
-        '"CUDA_VISIBLE_DEVICES": "private-duplicate",',
+        '"P6_HISTORY_RUN_MODE": {',
+        '"CUDA_VISIBLE_DEVICES": {"kind": "literal", '
+        '"value": "private-duplicate"}, "P6_HISTORY_RUN_MODE": {',
     )
     manifest_path.write_text(manifest_text, encoding="utf-8")
 

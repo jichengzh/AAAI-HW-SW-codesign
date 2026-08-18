@@ -59,8 +59,49 @@ EXECUTION_PLACEHOLDERS = frozenset(
         "{measurement_request}",
         "{round_output_root}",
         "{p6_row_id}",
+        "{task_state}",
+        "{actual_feedback}",
+        "{actual_receipt}",
+        "{finalization_barrier}",
     }
 )
+REQUIRED_STAGE_PLACEHOLDERS = {
+    "source_materialization": (
+        "{measurement_request}",
+        "{round_output_root}",
+    ),
+    "quantization": ("{task_state}", "{round_output_root}"),
+    "performance": ("{task_state}", "{round_output_root}"),
+    "ap": ("{task_state}", "{round_output_root}"),
+    "finalization": (
+        "{measurement_request}",
+        "{task_state}",
+        "{actual_feedback}",
+        "{actual_receipt}",
+        "{finalization_barrier}",
+        "{round_output_root}",
+    ),
+}
+EXPECTED_ROW_FIELD_NAMES = {
+    "rows_key": "rows",
+    "row_id_key": "row_id",
+    "row_hash_key": "row_sha256",
+    "source_evidence_key": "source_evidence_sha256",
+    "status_key": "terminal_status",
+}
+ALLOWED_TERMINAL_STATUSES = (
+    "measured_success_gold",
+    "feasibility_failure",
+    "numerical_feasibility_failure",
+)
+METRIC_KEYS = ("latency_ms", "energy_j", "ap30", "ap50", "ap70")
+WRAPPER_ENVIRONMENT_SPEC = {
+    "CUDA_VISIBLE_DEVICES": ("literal", "5,6,7"),
+    "P6_HISTORY_RUN_MODE": ("literal", "bound"),
+    "P6_HISTORY_PRIVATE_ROOT": ("private_path", None),
+    "P6_HISTORY_TASK_STATE": ("placeholder", "{task_state}"),
+    "P6_HISTORY_ROUND_OUTPUT_ROOT": ("placeholder", "{round_output_root}"),
+}
 INTERFACE_TOP_LEVEL_KEYS = frozenset(
     {
         "schema_version",
@@ -181,6 +222,24 @@ def public_binding_projection(binding: Mapping[str, Any]) -> dict[str, Any]:
     return projection
 
 
+def validate_history_execution_binding(binding: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Return a canonical immutable execution interface from a private binding."""
+    if (
+        not isinstance(binding, Mapping)
+        or binding.get("schema_version") != BINDING_SCHEMA_VERSION
+        or binding.get("target") != TARGET
+    ):
+        raise _execution_interface_error()
+    root = _binding_private_root(binding.get("private_root"))
+    component_paths = _binding_component_paths(binding.get("component_paths"), root)
+    interface = binding.get("execution_interface")
+    if not isinstance(interface, Mapping):
+        raise _execution_interface_error()
+    return _freeze_mapping(
+        _validate_execution_interface(_json_compatible(interface), root, component_paths)
+    )
+
+
 def write_private_binding_pair(
     binding: Mapping[str, Any],
     local_config: Mapping[str, Any],
@@ -243,6 +302,30 @@ def _resolve_history_root(history_root: str | Path) -> Path:
     if not root.is_dir():
         raise P6HistoryBindingError("history_root", "history root is not a directory")
     return root
+
+
+def _binding_private_root(raw: object) -> Path:
+    if not isinstance(raw, str):
+        raise _execution_interface_error()
+    try:
+        root = Path(raw).resolve(strict=True)
+    except OSError as error:
+        raise _execution_interface_error() from error
+    if not root.is_dir():
+        raise _execution_interface_error()
+    return root
+
+
+def _binding_component_paths(raw: object, root: Path) -> dict[str, str]:
+    if not isinstance(raw, Mapping) or set(raw) != set(COMPONENT_MARKERS):
+        raise _execution_interface_error()
+    component_paths: dict[str, str] = {}
+    for role, (marker, _) in COMPONENT_MARKERS.items():
+        value = raw.get(role)
+        if not isinstance(value, str) or Path(value).name != marker:
+            raise _execution_interface_error()
+        component_paths[role] = str(_resolve_interface_executable(value, root))
+    return component_paths
 
 
 def _discover_one_named_path(
@@ -416,14 +499,28 @@ def _validate_execution_chain(
     for expected_stage, entry in zip(EXECUTION_STAGES, raw, strict=True):
         if not isinstance(entry, Mapping):
             raise _execution_interface_error()
-        _require_exact_keys(entry, {"stage", "argv"})
+        _require_exact_keys(entry, {"stage", "argv", "required_placeholders"})
         if entry.get("stage") != expected_stage:
             raise _execution_interface_error()
         argv = _validate_argv(entry.get("argv"), root)
+        required_placeholders = REQUIRED_STAGE_PLACEHOLDERS[expected_stage]
+        if entry.get("required_placeholders") != list(required_placeholders):
+            raise _execution_interface_error()
+        actual_placeholders = tuple(
+            token for token in argv if token in EXECUTION_PLACEHOLDERS
+        )
+        if actual_placeholders != required_placeholders:
+            raise _execution_interface_error()
         component_path = expected_component_paths.get(expected_stage)
         if component_path is not None and argv[0] != component_path:
             raise _execution_interface_error()
-        chain.append({"stage": expected_stage, "argv": argv})
+        chain.append(
+            {
+                "stage": expected_stage,
+                "argv": argv,
+                "required_placeholders": list(required_placeholders),
+            }
+        )
     return chain
 
 
@@ -461,7 +558,11 @@ def _resolve_interface_executable(raw_path: str, root: Path) -> Path:
         resolved = path.resolve(strict=True)
     except OSError as error:
         raise _execution_interface_error() from error
-    if not _is_relative_to(resolved, root) or not resolved.is_file():
+    if (
+        not _is_relative_to(resolved, root)
+        or not resolved.is_file()
+        or not os.access(resolved, os.X_OK)
+    ):
         raise _execution_interface_error()
     return resolved
 
@@ -471,24 +572,51 @@ def _validate_environment(raw: object, root: Path) -> dict[str, Any]:
         raise _execution_interface_error()
     _require_exact_keys(raw, {"values", "activation_argv"})
     values = raw.get("values")
-    if not isinstance(values, Mapping) or not values:
+    if not isinstance(values, Mapping) or set(values) != set(WRAPPER_ENVIRONMENT_SPEC):
         raise _execution_interface_error()
-    normalized_values: dict[str, str] = {}
-    for key, value in values.items():
+    normalized_values: dict[str, dict[str, str]] = {}
+    for key, expected in WRAPPER_ENVIRONMENT_SPEC.items():
+        value = values.get(key)
         if (
-            not isinstance(key, str)
-            or not key.isidentifier()
-            or key.upper() != key
-            or not isinstance(value, str)
-            or not value
-            or _contains_shell_token(value)
+            not isinstance(value, Mapping)
+            or set(value) != {"kind", "value"}
+            or value.get("kind") != expected[0]
+            or not isinstance(value.get("value"), str)
+            or not value["value"]
         ):
             raise _execution_interface_error()
-        normalized_values[key] = value
+        normalized_values[key] = _validate_environment_value(
+            key, expected, value["value"], root
+        )
+    activation_argv = _validate_argv(raw.get("activation_argv"), root)
+    if any(token in EXECUTION_PLACEHOLDERS for token in activation_argv):
+        raise _execution_interface_error()
     return {
         "values": normalized_values,
-        "activation_argv": _validate_argv(raw.get("activation_argv"), root),
+        "activation_argv": activation_argv,
     }
+
+
+def _validate_environment_value(
+    key: str,
+    expected: tuple[str, str | None],
+    value: str,
+    root: Path,
+) -> dict[str, str]:
+    kind, expected_value = expected
+    if _contains_shell_token(value):
+        raise _execution_interface_error()
+    if kind == "private_path":
+        try:
+            resolved = Path(value).resolve(strict=True)
+        except OSError as error:
+            raise _execution_interface_error() from error
+        if not Path(value).is_absolute() or not _is_relative_to(resolved, root):
+            raise _execution_interface_error()
+        return {"kind": kind, "value": str(resolved)}
+    if value != expected_value or "/" in value or "\\" in value:
+        raise _execution_interface_error()
+    return {"kind": kind, "value": value}
 
 
 def _validate_output_layout(raw: object, root: Path) -> dict[str, Any]:
@@ -506,17 +634,24 @@ def _validate_output_layout(raw: object, root: Path) -> dict[str, Any]:
             "format",
             "rows_key",
             "row_id_key",
+            "row_hash_key",
+            "source_evidence_key",
             "stage_key",
             "status_key",
+            "row_count",
+            "allowed_terminal_statuses",
             "stage_order",
         },
     )
-    if task_state.get("format") != "json":
-        raise _execution_interface_error()
-    if any(
-        not isinstance(task_state.get(key), str) or not task_state[key]
-        for key in ("rows_key", "row_id_key", "stage_key", "status_key")
+    if (
+        task_state.get("format") != "json"
+        or task_state.get("stage_key") != "stage"
+        or task_state.get("row_count") != 4
+        or task_state.get("allowed_terminal_statuses")
+        != list(ALLOWED_TERMINAL_STATUSES)
     ):
+        raise _execution_interface_error()
+    if not _has_expected_row_field_names(task_state):
         raise _execution_interface_error()
     if task_state.get("stage_order") != list(EXECUTION_STAGES):
         raise _execution_interface_error()
@@ -527,10 +662,10 @@ def _validate_output_layout(raw: object, root: Path) -> dict[str, Any]:
                 task_state.get("path_template"), root
             ),
             "format": "json",
-            "rows_key": task_state["rows_key"],
-            "row_id_key": task_state["row_id_key"],
-            "stage_key": task_state["stage_key"],
-            "status_key": task_state["status_key"],
+            **EXPECTED_ROW_FIELD_NAMES,
+            "stage_key": "stage",
+            "row_count": 4,
+            "allowed_terminal_statuses": list(ALLOWED_TERMINAL_STATUSES),
             "stage_order": list(EXECUTION_STAGES),
         },
     }
@@ -539,38 +674,83 @@ def _validate_output_layout(raw: object, root: Path) -> dict[str, Any]:
 def _validate_actual_feedback(raw: object, root: Path) -> dict[str, Any]:
     if not isinstance(raw, Mapping):
         raise _execution_interface_error()
-    _require_exact_keys(raw, {"receipt", "finalization_barrier", "validation_fields"})
-    fields = raw.get("validation_fields")
-    if not isinstance(fields, Mapping):
-        raise _execution_interface_error()
-    _require_exact_keys(
-        fields, {"request_sha256", "row_sha256", "source_evidence_sha256"}
-    )
-    normalized_fields: dict[str, str] = {}
-    for key in ("request_sha256", "row_sha256", "source_evidence_sha256"):
-        value = fields.get(key)
-        if not isinstance(value, str) or not value.isidentifier():
-            raise _execution_interface_error()
-        normalized_fields[key] = value
+    _require_exact_keys(raw, {"result", "receipt", "finalization_barrier"})
     return {
-        "receipt": _validate_private_json_location(raw.get("receipt"), root),
-        "finalization_barrier": _validate_private_json_location(
+        "result": _validate_actual_result_schema(raw.get("result"), root),
+        "receipt": _validate_feedback_validation_location(raw.get("receipt"), root),
+        "finalization_barrier": _validate_feedback_validation_location(
             raw.get("finalization_barrier"), root
         ),
-        "validation_fields": normalized_fields,
     }
 
 
-def _validate_private_json_location(raw: object, root: Path) -> dict[str, str]:
+def _validate_actual_result_schema(raw: object, root: Path) -> dict[str, Any]:
     if not isinstance(raw, Mapping):
         raise _execution_interface_error()
-    _require_exact_keys(raw, {"path_template", "format"})
-    if raw.get("format") != "json":
+    _require_exact_keys(
+        raw,
+        {
+            "path_template",
+            "format",
+            "rows_key",
+            "row_count",
+            "row_id_key",
+            "row_hash_key",
+            "source_evidence_key",
+            "status_key",
+            "allowed_terminal_statuses",
+            "metric_keys",
+        },
+    )
+    if (
+        raw.get("format") != "json"
+        or raw.get("row_count") != 4
+        or raw.get("allowed_terminal_statuses") != list(ALLOWED_TERMINAL_STATUSES)
+        or raw.get("metric_keys") != list(METRIC_KEYS)
+        or not _has_expected_row_field_names(raw)
+    ):
         raise _execution_interface_error()
     return {
         "path_template": _validate_private_template(raw.get("path_template"), root),
         "format": "json",
+        "row_count": 4,
+        **EXPECTED_ROW_FIELD_NAMES,
+        "allowed_terminal_statuses": list(ALLOWED_TERMINAL_STATUSES),
+        "metric_keys": list(METRIC_KEYS),
     }
+
+
+def _validate_feedback_validation_location(raw: object, root: Path) -> dict[str, str]:
+    if not isinstance(raw, Mapping):
+        raise _execution_interface_error()
+    _require_exact_keys(
+        raw,
+        {
+            "path_template",
+            "format",
+            "request_sha256_key",
+            "row_hashes_key",
+            "source_evidence_key",
+        },
+    )
+    if (
+        raw.get("format") != "json"
+        or raw.get("request_sha256_key") != "measurement_request_sha256"
+        or raw.get("row_hashes_key") != "row_sha256"
+        or raw.get("source_evidence_key") != "source_evidence_sha256"
+    ):
+        raise _execution_interface_error()
+    return {
+        "path_template": _validate_private_template(raw.get("path_template"), root),
+        "format": "json",
+        "request_sha256_key": "measurement_request_sha256",
+        "row_hashes_key": "row_sha256",
+        "source_evidence_key": "source_evidence_sha256",
+    }
+
+
+def _has_expected_row_field_names(payload: Mapping[str, Any]) -> bool:
+    return all(payload.get(key) == value for key, value in EXPECTED_ROW_FIELD_NAMES.items())
 
 
 def _validate_private_template(raw: object, root: Path) -> str:
