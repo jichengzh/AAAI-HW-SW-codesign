@@ -295,45 +295,41 @@ def _resolve_round_paths(
     round_index: int,
 ) -> dict[str, Path]:
     try:
-        if not supplied_root.is_absolute() or supplied_root.is_symlink():
-            raise ValueError
-        supplied = supplied_root.resolve(strict=True)
-        if not supplied.is_dir() or not _beneath(supplied, private_root):
-            raise ValueError
+        _validate_controller_round_root(supplied_root)
         round_root = _resolve_template(
-            supplied,
+            private_root,
             interface["output_layout"]["round_root_template"],
             round_index,
             private_root,
         )
         task_state = _resolve_template(
-            supplied,
+            private_root,
             interface["output_layout"]["task_state"]["path_template"],
             round_index,
             private_root,
         )
         actual_feedback = interface["actual_feedback"]
         result = _resolve_template(
-            supplied,
+            private_root,
             actual_feedback["result"]["path_template"],
             round_index,
             private_root,
         )
         receipt = _resolve_template(
-            supplied,
+            private_root,
             actual_feedback["receipt"]["path_template"],
             round_index,
             private_root,
         )
         barrier = _resolve_template(
-            supplied,
+            private_root,
             actual_feedback["finalization_barrier"]["path_template"],
             round_index,
             private_root,
         )
         request_path = (round_root / "measurement-request.json").resolve(strict=False)
         paths = {
-            "supplied_root": supplied,
+            "history_root": private_root,
             "round_root": round_root,
             "measurement_request": request_path,
             "task_state": task_state,
@@ -341,15 +337,27 @@ def _resolve_round_paths(
             "actual_receipt": receipt,
             "finalization_barrier": barrier,
         }
-        if len(set(paths.values())) != len(paths) or any(
-            not _beneath(path, supplied) or not _beneath(path, private_root)
-            for key, path in paths.items()
-            if key != "supplied_root"
+        artifact_paths = {key: path for key, path in paths.items() if key != "history_root"}
+        if len(set(artifact_paths.values())) != len(artifact_paths) or any(
+            not _beneath(path, private_root)
+            for path in artifact_paths.values()
         ):
             raise ValueError
         return paths
     except (KeyError, OSError, TypeError, ValueError):
         raise P6HistoryMeasurementError("history_execution_invalid") from None
+
+
+def _validate_controller_round_root(path: Path) -> Path:
+    if not path.is_absolute():
+        raise ValueError
+    current = Path(path.anchor)
+    for component in path.parts[1:]:
+        current /= component
+        mode = current.lstat().st_mode
+        if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+            raise ValueError
+    return path.resolve(strict=True)
 
 def _resolve_template(
     supplied_root: Path, template: object, round_index: int, private_root: Path
@@ -368,7 +376,7 @@ def _initialize_private_round(
 ) -> None:
     try:
         round_root = paths["round_root"]
-        _mkdir_private(round_root, paths["supplied_root"])
+        _mkdir_private(round_root, paths["history_root"])
         for key in (
             "measurement_request",
             "task_state",
@@ -379,7 +387,7 @@ def _initialize_private_round(
             path = paths[key]
             if path.is_symlink() or path.exists():
                 raise OSError
-            _mkdir_private(path.parent, paths["supplied_root"])
+            _mkdir_private(path.parent, paths["history_root"])
         _atomic_write_json(paths["measurement_request"], request)
         task_schema = interface["output_layout"]["task_state"]
         state_rows = [
@@ -463,7 +471,7 @@ def _translate_feedback(
     try:
 
         def read_json(path: Path) -> Mapping[str, Any]:
-            return _read_private_json(path, paths["supplied_root"], private_root)
+            return _read_private_json(path, paths["history_root"], private_root)
 
         state = read_json(paths["task_state"])
         result = read_json(paths["actual_feedback"])

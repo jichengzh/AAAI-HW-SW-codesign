@@ -700,20 +700,33 @@ def test_runner_failure_never_becomes_success(tmp_path: Path, mode: str) -> None
     assert "PRIVATE" not in str(raised.value)
 
 
-def test_unsafe_round_root_and_template_escape_fail_before_process(tmp_path: Path) -> None:
-    """Catches output escape from the validated private intersection."""
+@pytest.mark.parametrize("case", ["relative", "missing", "symlink"])
+def test_unsafe_or_symlinked_controller_round_root_fails_before_process(
+    tmp_path: Path, case: str
+) -> None:
+    """Catches use of an unvalidated controller-local feedback boundary."""
     private_root = tmp_path / "private"
     private_root.mkdir()
-    outside = tmp_path / "outside"
-    outside.mkdir()
+    external_root = tmp_path / "external-controller-root"
+    if case == "relative":
+        round_root = Path("relative-controller-root-must-not-exist")
+    elif case == "missing":
+        round_root = external_root
+    else:
+        actual_root = tmp_path / "actual-controller-root"
+        actual_root.mkdir()
+        external_root.symlink_to(actual_root, target_is_directory=True)
+        round_root = external_root
     request = _request()
     runner = FakeRunner(request)
+    probe = FakeProbe()
 
     with pytest.raises(P6HistoryMeasurementError) as raised:
-        run_history_measurement_batch(request, _binding(private_root), outside, runner, FakeProbe())
+        run_history_measurement_batch(request, _binding(private_root), round_root, runner, probe)
 
     assert raised.value.category == "history_execution_invalid"
     assert runner.calls == []
+    assert probe.calls == []
 
 
 def test_template_resolution_rejects_preexisting_lexical_symlink_parent(
@@ -724,9 +737,9 @@ def test_template_resolution_rejects_preexisting_lexical_symlink_parent(
     private_root.mkdir()
     round_root = private_root / "controller-round"
     round_root.mkdir()
-    unexpected_target = round_root / "unexpected-target"
+    unexpected_target = private_root / "unexpected-target"
     unexpected_target.mkdir()
-    (round_root / "link-parent").symlink_to(
+    (private_root / "link-parent").symlink_to(
         unexpected_target, target_is_directory=True
     )
     binding = _binding(private_root)

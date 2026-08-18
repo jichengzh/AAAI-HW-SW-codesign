@@ -50,7 +50,23 @@ def _plan() -> dict[str, Any]:
 def _write_executable(path: Path) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        f"#!{sys.executable}\nfrom __future__ import annotations\n",
+        f"""#!{sys.executable}
+from __future__ import annotations
+import json
+import os
+from pathlib import Path
+import sys
+
+stage_log = Path(os.environ["P6_HISTORY_ROUND_OUTPUT_ROOT"]) / "executed-stages.log"
+with stage_log.open("a", encoding="utf-8") as handle:
+    handle.write(json.dumps(dict(
+        stage=Path(__file__).name,
+        argv=sys.argv[1:],
+        cwd=str(Path.cwd()),
+        round_output_root=os.environ["P6_HISTORY_ROUND_OUTPUT_ROOT"],
+        task_state=os.environ["P6_HISTORY_TASK_STATE"],
+    ), sort_keys=True) + "\\n")
+""",
         encoding="utf-8",
     )
     path.chmod(0o700)
@@ -63,11 +79,20 @@ def _write_finalizer(path: Path) -> str:
         f"""#!{sys.executable}
 from __future__ import annotations
 import json
+import os
 from pathlib import Path
 import sys
 
 request_path, state_path, result_path, receipt_path, barrier_path, round_root = map(Path, sys.argv[1:])
-del round_root
+stage_log = Path(os.environ["P6_HISTORY_ROUND_OUTPUT_ROOT"]) / "executed-stages.log"
+with stage_log.open("a", encoding="utf-8") as handle:
+    handle.write(json.dumps(dict(
+        stage=Path(__file__).name,
+        argv=sys.argv[1:],
+        cwd=str(Path.cwd()),
+        round_output_root=os.environ["P6_HISTORY_ROUND_OUTPUT_ROOT"],
+        task_state=os.environ["P6_HISTORY_TASK_STATE"],
+    ), sort_keys=True) + "\\n")
 request = json.loads(request_path.read_text(encoding="utf-8"))
 row_hashes = request["row_sha256"]
 evidence = {{row["row_id"]: row["source_evidence_sha256"] for row in request["rows"]}}
@@ -624,6 +649,74 @@ def test_measurement_cli_executes_synthetic_chain_and_atomically_writes_feedback
     feedback = json.loads(feedback_path.read_text(encoding="utf-8"))
     assert feedback["measurement_request_sha256"] == request["measurement_request_sha256"]
     assert len(feedback["rows"]) == 4
+
+
+def test_measurement_cli_keeps_history_artifacts_separate_from_external_feedback_root(
+    tmp_path: Path,
+) -> None:
+    """Catches coupling controller feedback storage to the historical artifact root."""
+    binding = _binding(tmp_path)
+    history_root = Path(binding["private_root"])
+    controller_round_root = tmp_path / "external-controller-round"
+    controller_round_root.mkdir()
+    binding_path = _write_json(controller_round_root / "binding.json", binding)
+    request = _measurement_request()
+    request_path = _write_json(controller_round_root / "request.json", request)
+    feedback_path = controller_round_root / "feedback.json"
+    fake_bin = tmp_path / "fake-bin"
+    _write_fake_nvidia_smi(fake_bin / "nvidia-smi")
+
+    result = _run_measurement_cli(
+        binding_path,
+        request_path,
+        feedback_path,
+        controller_round_root,
+        fake_bin,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "measurement_feedback_written\n"
+    assert result.stderr == ""
+    feedback = json.loads(feedback_path.read_text(encoding="utf-8"))
+    assert feedback["measurement_request_sha256"] == request["measurement_request_sha256"]
+    assert len(feedback["rows"]) == 4
+    history_round = history_root / "private-runs" / "0"
+    assert (history_round / "measurement-request.json").is_file()
+    assert (history_round / "state" / "task-state.json").is_file()
+    assert (history_round / "actual-feedback.json").is_file()
+    assert (history_round / "receipt.json").is_file()
+    assert (history_round / "barrier.json").is_file()
+    stage_records = [
+        json.loads(line)
+        for line in (history_round / "executed-stages.log")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert [record["stage"] for record in stage_records] == [
+        "activate-private",
+        "stage5_materialize_round_sources_v1.sh",
+        "quantize-private",
+        "stage5_build_performance_plan_v2.py",
+        "measure-ap-private",
+        "stage5_finalize_feedback_v2.py",
+    ]
+    assert all(Path(record["cwd"]) == history_round for record in stage_records)
+    assert all(record["round_output_root"] == str(history_round) for record in stage_records)
+    assert all(
+        record["task_state"] == str(history_round / "state" / "task-state.json")
+        for record in stage_records
+    )
+    assert all(
+        not Path(token).is_absolute() or Path(token).is_relative_to(history_round)
+        for record in stage_records
+        for token in record["argv"]
+    )
+    assert not (controller_round_root / "private-runs").exists()
+    assert set(path.name for path in controller_round_root.iterdir()) == {
+        "binding.json",
+        "feedback.json",
+        "request.json",
+    }
 
 
 def test_measurement_cli_unknown_option_is_category_only_and_writes_nothing(
