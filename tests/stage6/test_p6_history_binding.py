@@ -634,6 +634,45 @@ def test_rejects_incomplete_or_escaping_private_feedback_layout(
         discover_history_binding(history_root, _probe())
 
 
+@pytest.mark.parametrize(
+    ("location", "template"),
+    [
+        ("round_root", "private-runs/fixed"),
+        ("task_state", "private-runs/fixed/task-state.json"),
+        ("result", "private-runs/fixed/actual-feedback.json"),
+        ("receipt", "private-runs/fixed/receipt.json"),
+        ("barrier", "private-runs/fixed/barrier.json"),
+        ("round_root", "private-runs/{round_id}/{round_id}"),
+        ("task_state", "private-runs/{unknown_round}/task-state.json"),
+        ("result", "../outside/{round_id}/actual-feedback.json"),
+    ],
+)
+def test_rejects_per_round_layout_template_without_exactly_one_round_id(
+    tmp_path: Path,
+    location: str,
+    template: str,
+) -> None:
+    history_root = _history_root(tmp_path)
+    manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if location == "round_root":
+        manifest["output_layout"]["round_root_template"] = template
+    elif location == "task_state":
+        manifest["output_layout"]["task_state"]["path_template"] = template
+    elif location == "result":
+        manifest["actual_feedback"]["result"]["path_template"] = template
+    elif location == "receipt":
+        manifest["actual_feedback"]["receipt"]["path_template"] = template
+    else:
+        manifest["actual_feedback"]["finalization_barrier"]["path_template"] = (
+            template
+        )
+    _write_json(manifest_path, manifest)
+
+    with _expect_category("execution_interface"):
+        discover_history_binding(history_root, _probe())
+
+
 @pytest.mark.parametrize("mode", ["missing", "duplicate"])
 def test_rejects_zero_or_multiple_documented_component_markers(
     tmp_path: Path,
