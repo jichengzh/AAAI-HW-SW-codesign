@@ -117,12 +117,170 @@ def _write_json(path: Path, payload: Any) -> Path:
     return path
 
 
-def _history_root(tmp_path: Path) -> Path:
+def _history_runner_manifest(root: Path) -> dict[str, Any]:
+    commands = root / "private-runner" / "bin"
+    commands.mkdir(parents=True, exist_ok=True)
+    for name in ("quantize-private", "measure-ap-private", "activate-private"):
+        command = commands / name
+        command.write_text("synthetic private executable\n", encoding="utf-8")
+        command.chmod(0o700)
+    chain_root = root / "documented-stage5-chain"
+    return {
+        "schema_version": "p6_history_runner_interface_v1",
+        "controller": {"argv": [str(chain_root / MARKERS[0])]},
+        "execution_chain": [
+            {
+                "stage": "source_materialization",
+                "argv": [
+                    str(chain_root / MARKERS[1]),
+                    "{measurement_request}",
+                    "{round_output_root}",
+                ],
+                "required_placeholders": [
+                    "{measurement_request}",
+                    "{round_output_root}",
+                ],
+            },
+            {
+                "stage": "quantization",
+                "argv": [
+                    str(commands / "quantize-private"),
+                    "{task_state}",
+                    "{round_output_root}",
+                ],
+                "required_placeholders": ["{task_state}", "{round_output_root}"],
+            },
+            {
+                "stage": "performance",
+                "argv": [
+                    str(chain_root / MARKERS[2]),
+                    "{task_state}",
+                    "{round_output_root}",
+                ],
+                "required_placeholders": ["{task_state}", "{round_output_root}"],
+            },
+            {
+                "stage": "ap",
+                "argv": [
+                    str(commands / "measure-ap-private"),
+                    "{task_state}",
+                    "{round_output_root}",
+                ],
+                "required_placeholders": ["{task_state}", "{round_output_root}"],
+            },
+            {
+                "stage": "finalization",
+                "argv": [
+                    str(chain_root / MARKERS[3]),
+                    "{measurement_request}",
+                    "{task_state}",
+                    "{actual_feedback}",
+                    "{actual_receipt}",
+                    "{finalization_barrier}",
+                    "{round_output_root}",
+                ],
+                "required_placeholders": [
+                    "{measurement_request}",
+                    "{task_state}",
+                    "{actual_feedback}",
+                    "{actual_receipt}",
+                    "{finalization_barrier}",
+                    "{round_output_root}",
+                ],
+            },
+        ],
+        "environment": {
+            "values": {
+                "CUDA_VISIBLE_DEVICES": {"kind": "literal", "value": "5,6,7"},
+                "P6_HISTORY_RUN_MODE": {"kind": "literal", "value": "bound"},
+                "P6_HISTORY_PRIVATE_ROOT": {
+                    "kind": "private_path",
+                    "value": str(root),
+                },
+                "P6_HISTORY_TASK_STATE": {
+                    "kind": "placeholder",
+                    "value": "{task_state}",
+                },
+                "P6_HISTORY_ROUND_OUTPUT_ROOT": {
+                    "kind": "placeholder",
+                    "value": "{round_output_root}",
+                },
+            },
+            "activation_argv": [str(commands / "activate-private"), "private-bound"],
+        },
+        "output_layout": {
+            "round_root_template": "private-runs/{round_id}",
+            "task_state": {
+                "path_template": "private-runs/{round_id}/state/task-state.json",
+                "format": "json",
+                "rows_key": "rows",
+                "row_id_key": "row_id",
+                "row_hash_key": "row_sha256",
+                "source_evidence_key": "source_evidence_sha256",
+                "stage_key": "stage",
+                "status_key": "terminal_status",
+                "row_count": 4,
+                "allowed_terminal_statuses": [
+                    "measured_success_gold",
+                    "feasibility_failure",
+                    "numerical_feasibility_failure",
+                ],
+                "stage_order": [
+                    "source_materialization",
+                    "quantization",
+                    "performance",
+                    "ap",
+                    "finalization",
+                ],
+            },
+        },
+        "actual_feedback": {
+            "result": {
+                "path_template": "private-runs/{round_id}/actual-feedback.json",
+                "format": "json",
+                "rows_key": "rows",
+                "row_count": 4,
+                "row_id_key": "row_id",
+                "row_hash_key": "row_sha256",
+                "source_evidence_key": "source_evidence_sha256",
+                "status_key": "terminal_status",
+                "allowed_terminal_statuses": [
+                    "measured_success_gold",
+                    "feasibility_failure",
+                    "numerical_feasibility_failure",
+                ],
+                "metric_keys": ["latency_ms", "energy_j", "ap30", "ap50", "ap70"],
+            },
+            "receipt": {
+                "path_template": "private-runs/{round_id}/receipt.json",
+                "format": "json",
+                "request_sha256_key": "measurement_request_sha256",
+                "row_hashes_key": "row_sha256",
+                "source_evidence_key": "source_evidence_sha256",
+            },
+            "finalization_barrier": {
+                "path_template": "private-runs/{round_id}/barrier.json",
+                "format": "json",
+                "request_sha256_key": "measurement_request_sha256",
+                "row_hashes_key": "row_sha256",
+                "source_evidence_key": "source_evidence_sha256",
+            },
+        },
+    }
+
+
+def _history_root(
+    tmp_path: Path,
+    *,
+    include_execution_interface: bool = True,
+) -> Path:
     root = tmp_path / "history"
     marker_root = root / "documented-stage5-chain"
     marker_root.mkdir(parents=True)
     for marker in MARKERS:
-        (marker_root / marker).write_text("synthetic marker\n", encoding="utf-8")
+        command = marker_root / marker
+        command.write_text("synthetic marker\n", encoding="utf-8")
+        command.chmod(0o700)
     _write_json(
         root / "registry" / "candidate_source_registry.json",
         {
@@ -133,6 +291,11 @@ def _history_root(tmp_path: Path) -> Path:
     for name in LOCAL_INPUT_NAMES:
         _write_json(root / "inputs" / f"{name}.json", {"fixture": name})
     _write_json(root / "stage2" / "pyramid_partition.json", _stage1_manifest())
+    if include_execution_interface:
+        _write_json(
+            root / "private-runner" / "p6-history-runner-interface.json",
+            _history_runner_manifest(root),
+        )
     return root
 
 
@@ -230,6 +393,16 @@ def test_cli_provisions_loader_compatible_framework_config_without_tracked_leak(
     assert result.returncode == 0, result.stderr
     assert result.stdout == "provisioned history-binding.json p6.local.yaml\n"
     assert result.stderr == ""
+    binding = json.loads(binding_path.read_text(encoding="utf-8"))
+    execution_interface = binding["execution_interface"]
+    assert execution_interface["schema_version"] == "p6_history_runner_interface_v1"
+    assert [step["stage"] for step in execution_interface["execution_chain"]] == [
+        "source_materialization",
+        "quantization",
+        "performance",
+        "ap",
+        "finalization",
+    ]
     payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     contract = load_public_contract(PUBLIC_CONTRACT)
     loaded = load_local_config(config_path, contract)
@@ -286,7 +459,57 @@ def test_cli_provisions_loader_compatible_framework_config_without_tracked_leak(
     generated_text = config_path.read_text(encoding="utf-8")
     assert "stage5_task_round_controller_v3.sh" not in generated_text
     assert "stage5_materialize_round_sources_v1.sh" not in generated_text
+    assert "stage5_finalize_feedback_v2.py" not in generated_text
+    for private_detail in (
+        "execution_interface",
+        "execution_chain",
+        "environment",
+        "output_layout",
+        "actual_feedback",
+        "task_state",
+        "task-state",
+        "actual_receipt",
+        "receipt",
+        "finalization_barrier",
+        "barrier",
+        "CUDA_VISIBLE_DEVICES",
+        "P6_HISTORY_",
+        "private_path",
+        "GPU-fixture",
+        "private-runner",
+        "private-runs/",
+        "private-bound",
+        "p6-history-runner-interface.json",
+        "quantize-private",
+        "measure-ap-private",
+        "activate-private",
+    ):
+        assert private_detail not in generated_text
     assert _tracked_snapshot() == tracked_before
+
+
+def test_cli_rejects_history_without_execution_interface_and_writes_nothing(
+    tmp_path: Path,
+) -> None:
+    history_root = _history_root(tmp_path, include_execution_interface=False)
+    private_root = tmp_path / "private-output"
+    private_root.mkdir()
+    binding_path = private_root / "binding.json"
+    config_path = private_root / "config.yaml"
+
+    result = _run_cli(
+        history_root,
+        private_root,
+        binding_path,
+        config_path,
+        _fake_nvidia_smi(tmp_path),
+    )
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert result.stderr == "execution_interface\n"
+    assert not binding_path.exists()
+    assert not config_path.exists()
 
 
 def test_cli_rejects_ambiguous_history_without_writing(tmp_path: Path) -> None:
