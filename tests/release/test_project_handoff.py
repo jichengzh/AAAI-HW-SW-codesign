@@ -25,6 +25,9 @@ _P6_PUBLIC_DISCLOSURE_PATTERNS = (
     r"\b(?:\d{1,3}\.){3}\d{1,3}\b",
     r"(?:^|\n)\s*(?:python(?:3)?|bash|sh|zsh)\s+\S+",
     r"(?:\b\S+\.log\b|[\"']?(?:log|日志)[\"']?\s*[:：=]\s*\S+)",
+    r"\bGPU-[A-Za-z0-9][A-Za-z0-9-]*\b",
+    r"[\"']?(?:command|cmd|argv|命令)[\"']?\s*[:：=]\s*\S+",
+    r"[\"']?(?:measurement[_ -]?request|feedback|请求|反馈)[\"']?\s*[:：=]\s*\S+",
 )
 
 
@@ -38,6 +41,12 @@ def _assert_p6_public_disclosure_safe(documents: dict[str, str]) -> None:
 
     combined = "\n".join(documents.values())
     assert "python tools/release/run_p6_h800_search.py" not in combined
+    for completed_real_run_claim in (
+        "真实 H800 框架来源四轮执行已完成",
+        "P6.3 真实 H800 运行已完成",
+        "P6.3 real H800 run completed",
+    ):
+        assert completed_real_run_claim not in combined
 
 
 def _p6_boundary_sections(content: str) -> str:
@@ -255,10 +264,11 @@ def test_p6_h800_execution_manifest_records_local_closure_without_public_results
 
     assert "P6.1 静态 343×2" in text
     assert "P6.2 动态框架候选空间" in text
+    assert "P6.3 历史执行适配器已实现并通过离线验证" in text
     assert "不预设为 343 或 686" in text
     assert "单个候选不是 mixed-precision" in text
-    assert "真实框架来源闭环仍待本地执行" in text
-    assert "P6.1 静态 343×2 历史路径已完成（本地）；P6.2 动态框架候选空间离线接入与验证已完成（本地）" in p6_plan_line
+    assert "真实 H800 框架来源四轮执行仍待本地运行" in text
+    assert "P6.3 历史执行适配器已实现并通过离线验证" in p6_plan_line
     assert "/home/" not in text
     for prohibited_public_detail in (
         "candidate_id:",
@@ -270,9 +280,11 @@ def test_p6_h800_execution_manifest_records_local_closure_without_public_results
     ):
         assert prohibited_public_detail not in text
 
-    assert "状态日期：2026-08-17" in handoff
-    assert "P6.2 动态框架候选空间离线接入完成后的公开交接状态" in handoff
+    assert "状态日期：2026-08-19" in handoff
+    assert "P6.3 历史执行适配器离线验证后的公开交接状态" in handoff
     assert "P6.2 动态框架候选空间离线接入完成" in handoff
+    assert "P6.3 历史执行适配器已实现并通过离线验证" in handoff
+    assert "真实 H800 框架来源四轮执行仍待本地运行" in handoff
     assert "Stage6/Stage7 论文证据" in handoff
     assert "unavailable" in handoff
     assert "/home/" not in handoff
@@ -289,6 +301,8 @@ def test_p6_h800_execution_manifest_records_local_closure_without_public_results
         "真实框架来源闭环已完成",
         "真实 H800 框架来源闭环已完成",
         "Stage6 或 Stage7 论文证据已完成",
+        "真实 H800 框架来源四轮执行已完成",
+        "P6.3 真实 H800 运行已完成",
         "| P7 | 已完成",
         "| P7 | 进行中",
         "| P7 | 已开始",
@@ -322,6 +336,11 @@ def test_p6_h800_execution_manifest_records_local_closure_without_public_results
         "host: h800-worker",
         "python tools/release/run_p6_h800_search.py",
         "round-1.log",
+        "GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "argv: python private_history_adapter.py",
+        "measurement_request: private-request.json",
+        "feedback: private-feedback.json",
+        "P6.3 真实 H800 运行已完成",
     ),
 )
 def test_p6_public_disclosure_guard_rejects_concrete_leaks(
@@ -333,7 +352,13 @@ def test_p6_public_disclosure_guard_rejects_concrete_leaks(
 
 def test_p6_public_disclosure_guard_allows_policy_prohibitions() -> None:
     _assert_p6_public_disclosure_safe(
-        {"public policy": "不得公开命令、路径、候选标识、原始结果或日志。"}
+        {
+            "public policy": (
+                "不得公开命令、路径、候选标识、原始结果或日志。"
+                "P6.3 历史执行适配器已实现并通过离线验证；"
+                "真实 H800 框架来源四轮执行仍待本地运行。"
+            )
+        }
     )
 
 
@@ -351,4 +376,5 @@ def test_p6_framework_search_space_gate_is_documented() -> None:
     assert "从 Stage2 动态派生候选池" in manifest
     assert "不预设为 343 或 686" in manifest
     assert "P6.2 动态框架候选空间的离线接入与验证已完成" in manifest
-    assert "真实框架来源闭环仍待本地执行" in manifest
+    assert "P6.3 历史执行适配器已实现并通过离线验证" in manifest
+    assert "真实 H800 框架来源四轮执行仍待本地运行" in manifest

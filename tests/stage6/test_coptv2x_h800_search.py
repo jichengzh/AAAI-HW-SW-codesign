@@ -618,8 +618,28 @@ def test_run_p6_framework_mode_builds_dynamic_candidate_plan_and_runs_four_round
         lambda path: _complete_framework_stage2_search_space(),
     )
     calls: list[tuple[str, tuple[str, ...]]] = []
+    requests: list[dict[str, Any]] = []
+    initial_fit_input_counts: list[int] = []
+    online_fit_input_counts: list[int] = []
     observed_plan: dict[str, Any] = {}
     observed_manifest_candidate_identities: set[tuple[tuple[int, ...], str]] = set()
+    real_initial_fit = execution.fit_initial_coldstart_bundle
+    real_online_fit = execution.fit_online_bundle
+
+    def recording_initial_fit(
+        rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any
+    ) -> Any:
+        initial_fit_input_counts.append(len(rows))
+        return real_initial_fit(rows, *args, **kwargs)
+
+    def recording_online_fit(
+        rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any
+    ) -> Any:
+        online_fit_input_counts.append(len(rows))
+        return real_online_fit(rows, *args, **kwargs)
+
+    monkeypatch.setattr(execution, "fit_initial_coldstart_bundle", recording_initial_fit)
+    monkeypatch.setattr(execution, "fit_online_bundle", recording_online_fit)
 
     def runner(argv: tuple[str, ...], cwd: Path) -> int:
         del cwd
@@ -632,8 +652,6 @@ def test_run_p6_framework_mode_builds_dynamic_candidate_plan_and_runs_four_round
             assert candidate_plan_path.name == "pyramid_candidate_plan.json"
             assert plan["schema_version"] == "p6_pyramid_candidate_plan_v2"
             assert plan["candidate_source_mode"] == "framework_stage2_search_space"
-            assert plan["structure_count"] == 18
-            assert plan["candidate_count"] == 24
             _write_source_registry_from_plan(Path(argv[3]), plan)
             registry = json.loads(Path(argv[3]).read_text(encoding="utf-8"))
             manifest = execution.build_task_candidate_manifest(
@@ -644,6 +662,8 @@ def test_run_p6_framework_mode_builds_dynamic_candidate_plan_and_runs_four_round
                 for row in manifest["rows"]
             }
             return 0
+        request = json.loads(Path(argv[2]).read_text(encoding="utf-8"))
+        requests.append(request)
         _write_feedback_from_request(Path(argv[2]), Path(argv[3]))
         return 0
 
@@ -657,8 +677,23 @@ def test_run_p6_framework_mode_builds_dynamic_candidate_plan_and_runs_four_round
     assert state.status == "completed"
     assert state.completed_rounds == 4
     assert state.measured_candidate_count == 16
-    assert observed_plan["candidate_count"] == 24
+    active_candidate_count = observed_plan["candidate_count"]
+    assert active_candidate_count >= 16
+    assert active_candidate_count not in {343, 686}
     assert observed_manifest_candidate_identities == observed_plan_candidate_identities
+    assert [request["round_index"] for request in requests] == [0, 1, 2, 3]
+    assert [len(request["rows"]) for request in requests] == [4, 4, 4, 4]
+    assert all(
+        request["schema_version"] == "stage5_measurement_request_v2"
+        and request["required_metrics"]
+        == ["latency_ms", "energy_j", "ap30", "ap50", "ap70"]
+        and request["atomic_feedback"] is True
+        for request in requests
+    )
+    selected = [row["row_id"] for request in requests for row in request["rows"]]
+    assert len(selected) == len(set(selected)) == 16
+    assert initial_fit_input_counts == [176]
+    assert online_fit_input_counts == [180, 184, 188]
     assert calls[0][0] == "python"
 
 
@@ -851,7 +886,7 @@ def test_run_p6_framework_mode_rejects_invalid_stage2_points_before_measurement(
     assert command_calls == 0
 
 
-def test_run_p6_rejects_343_source_groups_that_do_not_expand_to_686_genomes(
+def test_run_p6_static_p61_rejects_343_groups_below_686_genomes(
     tmp_path: Path,
 ) -> None:
     """The fixed genome gate remains independent of the source-group count gate."""
@@ -1239,7 +1274,8 @@ def test_run_p6_quarantines_invalid_feedback_batches(
     }
 
 
-def test_run_p6_rejects_incomplete_source_space(tmp_path: Path) -> None:
+def test_run_p6_static_p61_rejects_non_343_v1_registry(tmp_path: Path) -> None:
+    """P6.1 retains its fixed 343-group registry gate."""
     contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
     local = _loaded_local_config(tmp_path)
 

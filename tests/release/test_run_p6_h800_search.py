@@ -13,6 +13,7 @@ import pytest
 import yaml
 
 from framework.stage2.canonical_search_v3 import build_capability_profile
+from tests.stage6.test_p6_history_measurement import _binding as _measurement_binding
 
 try:
     import resource
@@ -321,6 +322,141 @@ def _cli_fixture(tmp_path: Path, *, mode: str = "success") -> dict[str, Path]:
     }
 
 
+def _history_stage_executable(path: Path) -> str:
+    path.write_text(
+        f"""#!{sys.executable}
+import json
+from pathlib import Path
+import sys
+names = {{"stage5_materialize_round_sources_v1.sh": "source_materialization",
+    "quantize-private": "quantization", "quantize": "quantization",
+    "stage5_build_performance_plan_v2.py": "performance",
+    "measure-ap-private": "ap", "measure-ap": "ap",
+    "stage5_finalize_feedback_v2.py": "finalization"}}
+stage = names.get(Path(sys.argv[0]).name)
+if stage is None:
+    raise SystemExit(0)
+round_root = Path(sys.argv[-1])
+with (round_root / "fake-stage5-chain.txt").open("a", encoding="utf-8") as handle:
+    handle.write(stage + "\\n")
+if stage != "finalization":
+    raise SystemExit(0)
+request = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+identity = {{
+    "measurement_request_sha256": request["measurement_request_sha256"],
+    "row_sha256": request["row_sha256"],
+    "source_evidence_sha256": {{
+        row["row_id"]: row["source_evidence_sha256"] for row in request["rows"]
+    }},
+}}
+state_rows = [{{
+    "row_id": row["row_id"],
+    "row_sha256": request["row_sha256"][row["row_id"]],
+    "source_evidence_sha256": row["source_evidence_sha256"],
+    "terminal_status": "measured_success_gold",
+}} for row in request["rows"]]
+result_rows = [{{**row, "latency_ms": 2.0 + index / 10,
+    "energy_j": 0.5 + index / 100, "ap30": 0.9, "ap50": 0.8, "ap70": 0.7}}
+    for index, row in enumerate(state_rows)]
+payloads = ({{"stage": "finalization", "rows": state_rows}},
+    {{"measurement_request_sha256": request["measurement_request_sha256"],
+     "rows": result_rows}}, identity, identity)
+for target, payload in zip(map(Path, sys.argv[2:6]), payloads, strict=True):
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(payload), encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
+    path.chmod(0o700)
+    return str(path)
+
+def _history_binding(private_root: Path) -> dict[str, Any]:
+    binding = _measurement_binding(private_root)
+    interface = binding["execution_interface"]
+    executables = {
+        *binding["component_paths"].values(),
+        interface["environment"]["activation_argv"][0],
+        *(stage["argv"][0] for stage in interface["execution_chain"]),
+    }
+    for executable in executables:
+        _history_stage_executable(Path(executable))
+    outputs = {
+        q_mode: {
+            f"{name}_path_template": f"materialized/{{group_id}}/{{q_mode}}/{name}.json"
+            for name in ("training", "checkpoint", "onnx", "calibration")
+        }
+        for q_mode in ("fp16", "int8")
+    }
+    evidence = hashlib.sha256(b"offline-history-evidence").hexdigest()
+    binding["source_contract_template"] = {
+        "schema_version": "stage5_source_contract_v1",
+        "group_id": "pyramid|32x32x32",
+        "model": "pyramid",
+        "width": [32, 32, 32],
+        "artifact_id": "offline-template",
+        "source_status": "ready",
+        "source_evidence_sha256": evidence,
+        "materialization_scope": "synthetic_fixture",
+        "dynamic_materialization_recipe": {
+            "schema_version": "p6_history_dynamic_materialization_recipe_v1",
+            "stage_width_fields": ["stage1_width", "stage2_width", "stage3_width"],
+            "group_id_template": "pyramid|{stage1_width}x{stage2_width}x{stage3_width}",
+            "artifact_id_template": "pyramid-{stage1_width}-{stage2_width}-{stage3_width}",
+            "output_path_templates_by_q_mode": outputs,
+        },
+    }
+    return binding
+
+def _history_cli_fixture(
+    tmp_path: Path, *, materializable: bool = True
+) -> dict[str, Any]:
+    """Build a private generated-binding integration fixture without real discovery."""
+    private_root = tmp_path / "private"
+    private_root.mkdir()
+    paths: dict[str, Any] = _cli_fixture(private_root)
+    stage1 = _write_yaml(private_root / "stage1.yaml", {
+        "schema": "stage1_partition_manifest_offline_v1", "model": "pyramid_lidar",
+        "scan_status": "ok", "hw_capability": {"name": "h800"},
+        "view_b1_search_groups": [{"search_group_id": f"pyramid_group.{suffix}",
+            "bucket": "pyramid_backbone", "widths": [96], "round_to": 32,
+            "int8_buildable_align": 32, "max_rate": 0.666667, "grouped_conv": True,
+            "member_b1_groups": [f"pyramid_group.{suffix}"]} for suffix in ("s0", "s1", "s2")],
+        "view_b2_quant_units": [{"unit": "pyramid_backbone", "quantizable": True,
+            "legal_bits": ["FP16", "INT8"],
+            "member_groups": [f"pyramid_group.{suffix}" for suffix in ("s0", "s1", "s2")]}],
+        "view_d_routing_segments": {"segments": [{"device": "gpu", "n_nodes": 1}]}})
+    binding_path = private_root / "p6-history-binding.json"
+    binding = _history_binding(private_root)
+    if not materializable:
+        binding["source_contract_template"]["dynamic_materialization_recipe"][
+            "output_path_templates_by_q_mode"
+        ]["int8"].pop("calibration_path_template")
+    binding_path.write_text(json.dumps(binding), encoding="utf-8")
+    local = yaml.safe_load(paths["local"].read_text(encoding="utf-8"))
+    local.update({"candidate_source_mode": "framework_stage2_search_space",
+                  "stage2_search_space_path": str(stage1),
+                  "source_registry_step": {"name": "build_source_registry", "argv": [
+                      sys.executable, str(REPOSITORY_ROOT / "tools/release/build_p6_history_registry.py"),
+                      "--binding", str(binding_path), "--pyramid-candidate-plan",
+                      "{pyramid_candidate_plan}", "--source-registry-json", "{source_registry_json}",
+                      "--local-output-root", "{local_output_root}"]},
+                  "measurement_step": {"name": "measure_batch", "argv": [
+                      sys.executable, str(REPOSITORY_ROOT / "tools/release/measure_p6_history_batch.py"),
+                      "--binding", str(binding_path), "--measurement-request",
+                      "{measurement_request}", "--feedback-json", "{feedback_json}",
+                      "--round-output-root", "{round_output_root}"]}})
+    _write_yaml(paths["local"], local)
+    fake_bin = private_root / "fake-bin"
+    fake_bin.mkdir()
+    gpu_probe = fake_bin / "nvidia-smi"
+    gpu_probe.write_text(f"#!{sys.executable}\nprint('5, GPU-5, NVIDIA H800 80GB HBM3, 0, 100')\n"
+                         "print('6, GPU-6, NVIDIA H800 80GB HBM3, 0, 100')\n"
+                         "print('7, GPU-7, NVIDIA H800 80GB HBM3, 0, 100')\n", encoding="utf-8")
+    gpu_probe.chmod(0o700)
+    paths.update({"private_root": private_root,
+                  "env": {**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"}})
+    return paths
+
 def _run_cli(
     paths: Mapping[str, Path],
     *extra: str,
@@ -369,6 +505,104 @@ def test_cli_runs_v2_loop_without_public_summary_and_keeps_outputs_local(tmp_pat
         "measure",
         "measure",
     ]
+
+
+def test_cli_runs_provisioned_history_binding_through_tracked_adapters(
+    tmp_path: Path,
+) -> None:
+    """A non-static Stage2 plan must traverse the complete fake history chain."""
+    paths = _history_cli_fixture(tmp_path)
+    public_documents = {
+        path: path.read_bytes()
+        for path in (
+            REPOSITORY_ROOT / "docs/release-manifests/P6_H800_SEARCH_EXECUTION.md",
+            REPOSITORY_ROOT / "docs/AAAI27_RELEASE_AUDIT.md",
+        )
+    }
+
+    result = _run_cli(paths, env=paths["env"])
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "completed\n"
+    plan = json.loads((paths["output_root"] / "pyramid_candidate_plan.json").read_text())
+    registry = json.loads((paths["output_root"] / "source_registry.json").read_text())
+    active_candidate_count = plan["candidate_count"]
+    assert active_candidate_count >= 16
+    assert active_candidate_count not in {343, 686}
+    plan_identities = {
+        (tuple(row["width"]), row["q_mode"]): tuple(row["source_point_ids"])
+        for row in plan["candidates"]
+    }
+    registry_identities = {
+        (tuple(group["width"]), q_mode): tuple(
+            group["source_point_ids_by_q_mode"][q_mode]
+        )
+        for group in registry["groups"]
+        for q_mode in group["available_q_modes"]
+    }
+    assert registry_identities == plan_identities
+
+    requests = [
+        json.loads(
+            (paths["output_root"] / f"round-{round_index:02d}" / "measurement_request.json")
+            .read_text(encoding="utf-8")
+        )
+        for round_index in range(4)
+    ]
+    assert [request["round_index"] for request in requests] == [0, 1, 2, 3]
+    assert [len(request["rows"]) for request in requests] == [4, 4, 4, 4]
+    selected = [row["row_id"] for request in requests for row in request["rows"]]
+    assert len(selected) == len(set(selected)) == 16
+    for request in requests:
+        round_index = request["round_index"]
+        history_root = (
+            paths["output_root"]
+            / f"round-{round_index:02d}"
+            / "private-runs"
+            / str(round_index)
+        )
+        assert json.loads(
+            (history_root / "measurement-request.json").read_text(encoding="utf-8")
+        ) == request
+        assert (history_root / "fake-stage5-chain.txt").read_text(
+            encoding="utf-8"
+        ).splitlines() == [
+            "source_materialization",
+            "quantization",
+            "performance",
+            "ap",
+            "finalization",
+        ]
+
+    state = json.loads((paths["output_root"] / "state.json").read_text(encoding="utf-8"))
+    assert state["status"] == "completed"
+    assert state["completed_rounds"] == 4
+    assert state["measured_candidate_count"] == 16
+    assert str(tmp_path) not in json.dumps(state, sort_keys=True)
+    assert all(path.read_bytes() == content for path, content in public_documents.items())
+    assert all(
+        artifact.resolve().is_relative_to(paths["private_root"].resolve())
+        for artifact in paths["private_root"].rglob("*")
+    )
+
+
+def test_cli_rejects_unmaterializable_history_candidate_before_measurement(
+    tmp_path: Path,
+) -> None:
+    """One incomplete source contract must reject the complete dynamic plan."""
+    paths = _history_cli_fixture(tmp_path, materializable=False)
+
+    result = _run_cli(paths, env=paths["env"])
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "execution_failed\n"
+    plan = json.loads((paths["output_root"] / "pyramid_candidate_plan.json").read_text())
+    assert plan["candidate_count"] >= 16
+    assert plan["candidate_count"] not in {343, 686}
+    assert not (paths["output_root"] / "source_registry.json").exists()
+    assert not any(paths["output_root"].glob("round-*"))
+    assert not any(paths["private_root"].rglob("fake-stage5-chain.txt"))
 
 
 def test_cli_rejects_legacy_public_summary_argument(tmp_path: Path) -> None:
