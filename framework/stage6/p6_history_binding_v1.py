@@ -280,16 +280,13 @@ def write_private_binding_pair(
         _serialize_json(binding, "binding"),
         _serialize_json(local_config, "local config"),
     )
-    repository = _resolve_directory(repo_root, "repository root")
-    destinations = (Path(binding_path), Path(config_path))
-    if destinations[0].absolute() == destinations[1].absolute():
-        raise P6HistoryBindingError(
-            "unsafe_destination", "binding and config destinations must differ"
-        )
-    resolved_destinations = tuple(
-        _prevalidate_destination(path, repository, ignore_predicate)
-        for path in destinations
+    resolved_destinations = prevalidate_private_binding_pair_destinations(
+        binding_path,
+        config_path,
+        repo_root,
+        ignore_predicate=ignore_predicate,
     )
+
     original_payloads = tuple(
         _capture_destination_payload(destination) for destination in resolved_destinations
     )
@@ -328,6 +325,27 @@ def write_private_binding_pair(
                 temporary.unlink(missing_ok=True)
             except OSError:
                 pass
+
+
+def prevalidate_private_binding_pair_destinations(
+    binding_path: str | Path,
+    config_path: str | Path,
+    repo_root: str | Path,
+    *,
+    ignore_predicate: IgnorePredicate | None = None,
+) -> tuple[Path, Path]:
+    """Return two safe pair destinations without serializing or writing payloads."""
+    repository = _resolve_directory(repo_root, "repository root")
+    destinations = (Path(binding_path), Path(config_path))
+    if destinations[0].absolute() == destinations[1].absolute():
+        raise P6HistoryBindingError(
+            "unsafe_destination", "binding and config destinations must differ"
+        )
+    resolved_destinations = tuple(
+        _prevalidate_destination(path, repository, ignore_predicate)
+        for path in destinations
+    )
+    return resolved_destinations
 
 
 def _resolve_history_root(history_root: str | Path) -> Path:

@@ -26,6 +26,7 @@ from framework.stage6.p6_history_binding_v1 import (
     LOCAL_INPUT_NAMES,
     P6HistoryBindingError,
     build_history_binding,
+    prevalidate_private_binding_pair_destinations,
     validate_history_execution_binding,
     write_private_binding_pair,
 )
@@ -133,6 +134,16 @@ def materialize_full_chain_binding(
     output_root, binding_path, config_path = _resolve_private_outputs(
         local_output_root, binding_output, config_output
     )
+    try:
+        prevalidate_private_binding_pair_destinations(
+            binding_path,
+            config_path,
+            REPOSITORY_ROOT,
+        )
+    except P6HistoryBindingError as error:
+        raise FullChainBootstrapError(
+            error.category, "private pair destination is unsafe"
+        ) from error
     locator = _load_legacy_local_locator(legacy_local_config)
     root, component_paths = _unique_common_history_root(locator)
     template = _load_runner_template(runner_template)
@@ -259,18 +270,31 @@ def _resolve_path_mapping(
     resolved_paths: dict[str, Path] = {}
     for key in expected_keys:
         value = raw.get(key)
-        if not isinstance(value, str) or not Path(value).is_absolute():
+        path = Path(value) if isinstance(value, str) else None
+        if (
+            path is None
+            or not path.is_absolute()
+            or _contains_symlink_component(path)
+        ):
             raise FullChainBootstrapError(
                 "legacy_locator_invalid", f"{label} path is invalid"
             )
         try:
-            resolved = Path(value).resolve(strict=True)
+            resolved = path.resolve(strict=True)
         except OSError as error:
             raise FullChainBootstrapError(
                 "legacy_locator_invalid", f"{label} path is unavailable"
             ) from error
         resolved_paths[key] = resolved
     return resolved_paths
+
+
+def _contains_symlink_component(path: Path) -> bool:
+    anchor = Path(path.anchor)
+    return any(
+        component != anchor and component.is_symlink()
+        for component in (path, *path.parents)
+    )
 
 
 def _unique_common_history_root(

@@ -9,6 +9,7 @@ from typing import Any, Mapping
 import pytest
 import yaml
 
+import framework.stage6.p6_full_chain_bootstrap_v1 as bootstrap
 from framework.stage6.coptv2x_h800_search_v2 import (
     PublicP6CoptV2XContract,
     load_local_config,
@@ -519,3 +520,72 @@ def test_bootstrap_rejects_binding_path_reserved_for_fresh_stage1_manifest(
 
     assert not (output_root / "stage1_partition_manifest.json").exists()
     assert not (output_root / "local.yaml").exists()
+
+
+@pytest.mark.parametrize("symlink_kind", ["leaf", "parent"])
+def test_bootstrap_rejects_symlinked_legacy_locator_paths_before_writing(
+    tmp_path: Path,
+    symlink_kind: str,
+) -> None:
+    legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
+    legacy_payload = yaml.safe_load(legacy_config.read_text(encoding="utf-8"))
+    closure = Path(legacy_payload["local_input_paths"]["closure"])
+    if symlink_kind == "leaf":
+        link = closure.parent / "linked" / closure.name
+        link.parent.mkdir()
+        link.symlink_to(closure)
+    else:
+        linked_parent = closure.parent.parent / "linked-inputs"
+        linked_parent.symlink_to(closure.parent, target_is_directory=True)
+        link = linked_parent / closure.name
+    legacy_payload["local_input_paths"]["closure"] = str(link)
+    _write_yaml(legacy_config, legacy_payload)
+
+    with pytest.raises(FullChainBootstrapError) as captured:
+        materialize_full_chain_binding(
+            legacy_config,
+            template,
+            output_root,
+            output_root / "binding.json",
+            output_root / "local.yaml",
+            _gpu_probe(),
+        )
+
+    assert captured.value.category == "legacy_locator_invalid"
+    assert not (output_root / "binding.json").exists()
+    assert not (output_root / "local.yaml").exists()
+
+
+def test_nonignored_repository_output_is_rejected_before_validation_temporary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    legacy_config, template, _ = _write_valid_private_inputs(tmp_path)
+    repository = tmp_path / "destination-repository"
+    repository.mkdir()
+    subprocess.run(["git", "init", "-q", str(repository)], check=True)
+    output_root = repository / "nonignored-output"
+    output_root.mkdir()
+    temporary_calls: list[Path] = []
+    real_mkstemp = bootstrap.tempfile.mkstemp
+
+    def recording_mkstemp(*args: Any, **kwargs: Any) -> tuple[int, str]:
+        temporary_calls.append(Path(kwargs["dir"]))
+        return real_mkstemp(*args, **kwargs)
+
+    monkeypatch.setattr(bootstrap, "REPOSITORY_ROOT", repository)
+    monkeypatch.setattr(bootstrap.tempfile, "mkstemp", recording_mkstemp)
+
+    with pytest.raises(FullChainBootstrapError) as captured:
+        materialize_full_chain_binding(
+            legacy_config,
+            template,
+            output_root,
+            output_root / "binding.json",
+            output_root / "local.yaml",
+            _gpu_probe(),
+        )
+
+    assert captured.value.category == "unsafe_destination"
+    assert temporary_calls == []
+    assert tuple(output_root.iterdir()) == ()
