@@ -134,7 +134,11 @@ def _resolve_history_root(raw: Path) -> Path:
 
 
 def _validate_runner_template_privacy(path: Path) -> None:
-    if not isinstance(path, Path) or not path.is_absolute() or path.is_symlink():
+    if (
+        not isinstance(path, Path)
+        or not path.is_absolute()
+        or _contains_symlink_component(path)
+    ):
         raise RunnerTemplateValidationError(
             "execution_interface_unavailable", "runner template path is invalid"
         )

@@ -650,6 +650,40 @@ def test_bootstrap_rejects_nonignored_repository_runner_template_before_probe(
     assert not (output_root / "local.yaml").exists()
 
 
+def test_bootstrap_rejects_symlinked_repository_template_parent_before_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches treating a repository symlink escape as an external template."""
+    legacy_config, external_template, output_root = _write_valid_private_inputs(
+        tmp_path
+    )
+    repository = tmp_path / "template-repository"
+    repository.mkdir()
+    subprocess.run(["git", "init", "-q", str(repository)], check=True)
+    (repository / "linked-private-inputs").symlink_to(
+        external_template.parent, target_is_directory=True
+    )
+    template = repository / "linked-private-inputs" / external_template.name
+    probe = _gpu_probe()
+    monkeypatch.setattr(runner_template_validator, "REPOSITORY_ROOT", repository)
+
+    with pytest.raises(FullChainBootstrapError) as captured:
+        materialize_full_chain_binding(
+            legacy_config,
+            template,
+            output_root,
+            output_root / "binding.json",
+            output_root / "local.yaml",
+            probe,
+        )
+
+    assert captured.value.category == "execution_interface_unavailable"
+    assert probe.calls == []
+    assert not (output_root / "binding.json").exists()
+    assert not (output_root / "local.yaml").exists()
+
+
 @pytest.mark.parametrize("template_location", ["ignored_repository", "repository_external"])
 def test_bootstrap_accepts_private_runner_template_locations(
     tmp_path: Path,
