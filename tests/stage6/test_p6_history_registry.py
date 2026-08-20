@@ -426,10 +426,23 @@ def test_registry_v2_materializes_one_shared_bundle_per_group(
             "base_checkpoint_path": str(private_root / "base" / "model.ckpt"),
             "dataset_root": str(private_root / "datasets"),
             "training_parameters": {"epochs": 7, "optimizer": "synthetic"},
+            **{
+                key: str(private_root / "legacy-flat" / key)
+                for key in (
+                    "training_path",
+                    "checkpoint_path",
+                    "onnx_path",
+                    "calibration_path",
+                )
+            },
             "materialization_outputs_by_q_mode": {
                 "fp16": {
-                    "checkpoint_path": str(
-                        private_root / "untrusted-self-report" / "fp16.ckpt"
+                    key: str(private_root / "legacy-per-q" / key)
+                    for key in (
+                        "training_path",
+                        "checkpoint_path",
+                        "onnx_path",
+                        "calibration_path",
                     )
                 }
             },
@@ -469,6 +482,12 @@ def test_registry_v2_materializes_one_shared_bundle_per_group(
         }
         assert "untrusted-self-report" not in json.dumps(shared_paths)
         assert "materialization_outputs_by_q_mode" not in contract
+        assert not {
+            "training_path",
+            "checkpoint_path",
+            "onnx_path",
+            "calibration_path",
+        }.intersection(contract)
         assert "dynamic_materialization_recipe" not in contract
         assert group["available_q_modes"] == sorted(q_modes)
 

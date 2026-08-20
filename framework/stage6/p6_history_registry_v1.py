@@ -44,6 +44,9 @@ OUTPUT_TEMPLATE_KEYS = (
     "onnx_path_template",
     "calibration_path_template",
 )
+LEGACY_OUTPUT_KEYS = tuple(
+    key.removesuffix("_template") for key in OUTPUT_TEMPLATE_KEYS
+)
 RECIPE_V1_KEYS = {
     "schema_version",
     "stage_width_fields",
@@ -575,7 +578,7 @@ def _materialize_groups(
         contract.pop("dynamic_materialization_recipe", None)
         if recipe_version == RECIPE_V2:
             contract.pop("materialization_outputs_by_q_mode", None)
-            for key in SHARED_SOURCE_PATH_KEYS:
+            for key in (*SHARED_SOURCE_PATH_KEYS, *LEGACY_OUTPUT_KEYS):
                 contract.pop(key, None)
         contract.update(
             {

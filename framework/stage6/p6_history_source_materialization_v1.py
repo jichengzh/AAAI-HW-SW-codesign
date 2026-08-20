@@ -66,6 +66,12 @@ ROW_KEYS = frozenset(
 METRIC_KEYS = ("latency_ms", "energy_j", "ap30", "ap50", "ap70")
 ALLOWED_Q_MODES = frozenset({"fp16", "int8"})
 STAGE_WIDTH_FIELDS = ("stage1_width", "stage2_width", "stage3_width")
+LEGACY_DYNAMIC_OUTPUT_KEYS = (
+    "training_path",
+    "checkpoint_path",
+    "onnx_path",
+    "calibration_path",
+)
 
 
 class P6HistorySourceMaterializationError(ValueError):
@@ -120,6 +126,9 @@ def project_source_materialization_request(
             flat_contract = copy.deepcopy(contract)
             flat_contract.pop("shared_source_paths")
             flat_contract.pop("dynamic_materialization_recipe", None)
+            flat_contract.pop("materialization_outputs_by_q_mode", None)
+            for key in LEGACY_DYNAMIC_OUTPUT_KEYS:
+                flat_contract.pop(key, None)
             flat_contract.update(shared_paths)
             canonical_contract = contract_by_group.setdefault(group_id, flat_contract)
             if canonical_contract != flat_contract:
@@ -234,8 +243,7 @@ def _validate_shared_identity(
     width = row["width"]
     width_values = dict(zip(STAGE_WIDTH_FIELDS, width, strict=True))
     if (
-        "materialization_outputs_by_q_mode" in contract
-        or row["group_id"] != canonical_group_id("pyramid", width)
+        row["group_id"] != canonical_group_id("pyramid", width)
         or contract.get("artifact_id")
         != f"pyramid-{width[0]}-{width[1]}-{width[2]}"
         or contract.get("stage_widths") != width_values

@@ -216,18 +216,43 @@ def test_projection_rejects_same_group_static_contract_drift() -> None:
     assert captured.value.category == "history_execution_invalid"
 
 
-def test_projection_rejects_legacy_q_mode_outputs_in_shared_contract() -> None:
-    """Catches a v2 request retaining a second q-mode-specific source truth."""
+def test_projection_strips_all_legacy_dynamic_output_aliases() -> None:
+    """Catches a v2 request retaining flat or per-q recipe-v1 source truths."""
     request = _request()
-    request["rows"][2]["source_contract"][
-        "materialization_outputs_by_q_mode"
-    ] = {"fp16": {"checkpoint_path": "/private/untrusted/fp16.ckpt"}}
-    _rehash_row_contract(request, 2)
+    original_shared_paths = [
+        copy.deepcopy(row["source_contract"]["shared_source_paths"])
+        for row in request["rows"]
+    ]
+    legacy_keys = (
+        "training_path",
+        "checkpoint_path",
+        "onnx_path",
+        "calibration_path",
+    )
+    for row in request["rows"]:
+        contract = row["source_contract"]
+        contract.update(
+            {key: f"/private/untrusted/legacy-flat/{key}" for key in legacy_keys}
+        )
+        contract["materialization_outputs_by_q_mode"] = {
+            "fp16": {key: f"/private/untrusted/per-q/{key}" for key in legacy_keys}
+        }
+        row["source_contract_sha256"] = _sha(contract)
+    _rehash_request(request)
+    original = copy.deepcopy(request)
 
-    with pytest.raises(P6HistorySourceMaterializationError) as captured:
-        project_source_materialization_request(request)
+    projected = project_source_materialization_request(request)
 
-    assert captured.value.category == "history_execution_invalid"
+    for row, shared_paths in zip(
+        projected.request["rows"], original_shared_paths, strict=True
+    ):
+        contract = row["source_contract"]
+        assert "materialization_outputs_by_q_mode" not in contract
+        assert "training_path" not in contract
+        assert "calibration_path" not in contract
+        assert contract["checkpoint_path"] == shared_paths["checkpoint_path"]
+        assert contract["onnx_path"] == shared_paths["onnx_path"]
+    assert request == original
 
 
 @pytest.mark.parametrize("mutation", ["identity", "missing_path", "extra_path"])
