@@ -77,6 +77,44 @@ def _public_metadata() -> dict[str, object]:
     ]
 
 
+def _artifact_build_argv(artifact_dir: Path) -> list[str]:
+    return [
+        sys.executable,
+        "-m",
+        "build",
+        "--wheel",
+        "--sdist",
+        "--no-isolation",
+        "--outdir",
+        str(artifact_dir),
+    ]
+
+
+def test_artifact_build_argv_uses_the_local_dev_build_environment(tmp_path: Path) -> None:
+    """Release artifacts must not create an isolated environment that resolves over TLS."""
+    artifact_dir = tmp_path / "release-artifacts"
+
+    assert _artifact_build_argv(artifact_dir) == [
+        sys.executable,
+        "-m",
+        "build",
+        "--wheel",
+        "--sdist",
+        "--no-isolation",
+        "--outdir",
+        str(artifact_dir),
+    ]
+
+
+def test_dev_dependencies_declare_local_build_requirements() -> None:
+    """The non-isolated release build depends on build requirements installed for developers."""
+    metadata = tomllib.loads((REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    dev_dependencies = metadata["project"]["optional-dependencies"]["dev"]
+
+    assert "setuptools>=77" in dev_dependencies
+    assert "wheel" in dev_dependencies
+
+
 def _assert_no_release_identity_leaks(text: str) -> None:
     for pattern in (*LOCAL_PATH_PATTERNS, EMAIL_PATTERN, SECRET_PATTERN):
         assert not pattern.search(text), f"release identity leak matched {pattern.pattern!r}"
@@ -216,15 +254,7 @@ def built_artifacts(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Pat
     """Build the release artifacts, instead of relying on editable-install imports."""
     artifact_dir = tmp_path_factory.mktemp("release-artifacts")
     subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "build",
-            "--wheel",
-            "--sdist",
-            "--outdir",
-            str(artifact_dir),
-        ],
+        _artifact_build_argv(artifact_dir),
         check=True,
         cwd=REPOSITORY_ROOT,
     )
