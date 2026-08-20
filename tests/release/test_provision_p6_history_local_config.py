@@ -27,7 +27,7 @@ LOCAL_INPUT_NAMES = (
     "capability_profiles",
     "closure",
 )
-SYNTHETIC_GPU_INDICES = (101, 103, 107)
+SYNTHETIC_GPU_INDICES = (107, 103, 101)
 
 
 def _canonical_json_sha(payload: Mapping[str, Any]) -> str:

@@ -83,7 +83,6 @@ def _validate_indices(indices: tuple[int, ...]) -> None:
         not isinstance(indices, tuple)
         or len(indices) != 3
         or any(isinstance(index, bool) or not isinstance(index, int) for index in indices)
-        or tuple(sorted(indices)) != indices
         or len(set(indices)) != 3
         or any(index < 0 for index in indices)
     ):

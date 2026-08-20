@@ -42,7 +42,7 @@ STAGES = (
     "ap",
     "finalization",
 )
-SYNTHETIC_GPU_INDICES = (17, 19, 23)
+SYNTHETIC_GPU_INDICES = (23, 19, 17)
 
 
 def _write_yaml(path: Path, payload: Any) -> Path:
@@ -393,10 +393,20 @@ def _fake_nvidia_smi(tmp_path: Path, rows: tuple[str, ...] | None = None) -> Pat
     return fake_bin
 
 
-def test_gpu_probe_builds_direct_argv_from_supplied_private_policy(
+def test_gpu_query_argv_preserves_supplied_private_policy_order() -> None:
+    """Catches a provision query that sorts the authoritative GPU policy."""
+    assert provision_cli._gpu_query_argv((23, 19, 17)) == (
+        "nvidia-smi",
+        "--id=23,19,17",
+        "--query-gpu=index,uuid,name,memory.used,memory.total",
+        "--format=csv,noheader,nounits",
+    )
+
+
+def test_gpu_probe_returns_records_in_supplied_private_policy_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Catches a provision probe that ignores its validated private GPU policy."""
+    """Catches a provision probe that returns nvidia-smi discovery order."""
     observed_argv: tuple[str, ...] | None = None
     observed_shell: object = None
 
@@ -415,30 +425,43 @@ def test_gpu_probe_builds_direct_argv_from_supplied_private_policy(
 
     monkeypatch.setattr(provision_cli.subprocess, "run", fake_run)
 
-    records = provision_cli.NvidiaSmiGpuProbe().snapshot((17, 19, 23))
+    records = provision_cli.NvidiaSmiGpuProbe().snapshot((23, 19, 17))
 
     assert observed_argv == (
         "nvidia-smi",
-        "--id=17,19,23",
+        "--id=23,19,17",
         "--query-gpu=index,uuid,name,memory.used,memory.total",
         "--format=csv,noheader,nounits",
     )
     assert observed_shell is False
-    assert [record.index for record in records] == [17, 19, 23]
+    assert [record.index for record in records] == [23, 19, 17]
 
 
-def test_gpu_probe_rejects_noncanonical_policy_before_subprocess(
+@pytest.mark.parametrize(
+    "indices",
+    [
+        pytest.param([23, 19, 17], id="non-tuple"),
+        pytest.param((23, 19), id="too-few"),
+        pytest.param((23, 19, 17, 11), id="too-many"),
+        pytest.param((23, 19, 23), id="duplicate"),
+        pytest.param((True, 19, 17), id="bool"),
+        pytest.param((23, "19", 17), id="non-int"),
+        pytest.param((23, 19, -1), id="negative"),
+    ],
+)
+def test_gpu_query_argv_rejects_malformed_policy(
+    indices: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Catches a provision probe that launches before rejecting an unsafe policy."""
+    """Catches malformed GPU policies reaching the production subprocess."""
     monkeypatch.setattr(
         provision_cli.subprocess,
         "run",
         lambda *_args, **_kwargs: pytest.fail("subprocess must not run"),
     )
 
-    with pytest.raises(ValueError):
-        provision_cli.NvidiaSmiGpuProbe().snapshot((19, 17, 23))
+    with pytest.raises(ValueError, match="canonical GPU indices required"):
+        provision_cli.NvidiaSmiGpuProbe().snapshot(indices)
 
 
 def _run_cli(tmp_path: Path, *args: str, rows: tuple[str, ...] | None = None) -> subprocess.CompletedProcess[str]:
@@ -464,6 +487,13 @@ def test_cli_writes_only_ignored_private_pair(tmp_path: Path) -> None:
     assert result.returncode == 0
     assert result.stdout == "p6_full_chain_config_written\n"
     assert result.stderr == ""
+    binding = json.loads(_private_pair_paths(tmp_path)[0].read_text(encoding="utf-8"))
+    assert binding["gpu_policy"]["indices"] == list(SYNTHETIC_GPU_INDICES)
+    assert (
+        binding["execution_interface"]["environment"]["values"]
+        ["CUDA_VISIBLE_DEVICES"]["value"]
+        == "23,19,17"
+    )
     assert _load_local_config_without_echoing_private_values(tmp_path).stage1_scan_step is not None
 
 
