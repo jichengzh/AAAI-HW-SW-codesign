@@ -625,10 +625,20 @@ def _write_synthetic_nvidia_smi(path: Path) -> None:
     path.chmod(0o700)
 
 
-def test_gpu_probe_builds_direct_argv_from_supplied_private_policy(
+def test_gpu_query_argv_preserves_supplied_private_policy_order() -> None:
+    """Catches a measurement query that sorts the authoritative GPU policy."""
+    assert measurement_cli._gpu_query_argv((23, 19, 17)) == (
+        "nvidia-smi",
+        "--id=23,19,17",
+        "--query-gpu=index,uuid,name,memory.used,memory.total",
+        "--format=csv,noheader,nounits",
+    )
+
+
+def test_gpu_probe_returns_records_in_supplied_private_policy_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Catches a measurement probe that ignores its validated private GPU policy."""
+    """Catches a measurement probe that returns nvidia-smi discovery order."""
     observed_argv: tuple[str, ...] | None = None
     observed_shell: object = None
 
@@ -647,30 +657,43 @@ def test_gpu_probe_builds_direct_argv_from_supplied_private_policy(
 
     monkeypatch.setattr(measurement_cli.subprocess, "run", fake_run)
 
-    records = measurement_cli.NvidiaSmiGpuProbe().snapshot((17, 19, 23))
+    records = measurement_cli.NvidiaSmiGpuProbe().snapshot((23, 19, 17))
 
     assert observed_argv == (
         "nvidia-smi",
-        "--id=17,19,23",
+        "--id=23,19,17",
         "--query-gpu=index,uuid,name,memory.used,memory.total",
         "--format=csv,noheader,nounits",
     )
     assert observed_shell is False
-    assert [record.index for record in records] == [17, 19, 23]
+    assert [record.index for record in records] == [23, 19, 17]
 
 
-def test_gpu_probe_rejects_noncanonical_policy_before_subprocess(
+@pytest.mark.parametrize(
+    "indices",
+    [
+        pytest.param([23, 19, 17], id="non-tuple"),
+        pytest.param((23, 19), id="too-few"),
+        pytest.param((23, 19, 17, 11), id="too-many"),
+        pytest.param((23, 19, 23), id="duplicate"),
+        pytest.param((True, 19, 17), id="bool"),
+        pytest.param((23, "19", 17), id="non-int"),
+        pytest.param((23, 19, -1), id="negative"),
+    ],
+)
+def test_gpu_query_argv_rejects_malformed_policy(
+    indices: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Catches a measurement probe that launches before rejecting an unsafe policy."""
+    """Catches malformed GPU policies reaching the production subprocess."""
     monkeypatch.setattr(
         measurement_cli.subprocess,
         "run",
         lambda *_args, **_kwargs: pytest.fail("subprocess must not run"),
     )
 
-    with pytest.raises(ValueError):
-        measurement_cli.NvidiaSmiGpuProbe().snapshot((19, 17, 23))
+    with pytest.raises(ValueError, match="canonical GPU indices required"):
+        measurement_cli.NvidiaSmiGpuProbe().snapshot(indices)
 
 
 def _run_measurement_cli(
