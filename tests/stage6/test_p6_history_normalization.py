@@ -323,3 +323,36 @@ def test_normalizer_rejects_symlink_history_root_argument_without_partial_root(
         normalize_history_inputs(source_map, symlink_root, private_dir)
 
     assert not private_dir.exists()
+
+
+def test_normalizer_rejects_history_root_below_git_top_level_without_partial_root(
+    tmp_path: Path,
+) -> None:
+    source_map = valid_private_source_map(tmp_path)
+    repository = tmp_path / "history-repository"
+    subprocess.run(["git", "init", "-q", str(repository)], check=True)
+    history_root = repository / "subdir-history-root"
+    (history_root / "registry").mkdir(parents=True)
+    (history_root / "documented-stage5-chain").mkdir()
+    input_paths = {
+        name: _write_json(
+            history_root / "inputs" / f"{name}.source.json",
+            {"schema_version": f"synthetic_{name}_v1", "name": name},
+        )
+        for name in INPUT_NAMES
+    }
+    source_map["history_root"] = str(history_root)
+    source_map["asset_paths"] = {
+        "training-data": str(history_root / "inputs"),
+        "model-init": str(history_root / "registry"),
+        "toolchain": str(history_root / "documented-stage5-chain"),
+    }
+    source_map["input_sources"] = input_paths
+    private_dir = tmp_path / "private-normalized"
+
+    with pytest.raises(
+        P6HistoryNormalizationError, match=r"^history_normalization_invalid:"
+    ):
+        normalize_history_inputs(source_map, history_root, private_dir)
+
+    assert not private_dir.exists()

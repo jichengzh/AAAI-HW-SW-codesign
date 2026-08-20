@@ -348,7 +348,7 @@ def _validate_private_source_map(
     if declared_history_root != resolved_history_root:
         _invalid("history root is inconsistent")
     git_root = _git_root_for(resolved_history_root)
-    if not _is_relative_to(resolved_history_root, git_root):
+    if resolved_history_root != git_root:
         _invalid("history root is invalid")
     assets = source_map.get("asset_paths")
     if not isinstance(assets, Mapping) or set(assets) != set(ASSET_LABELS):
