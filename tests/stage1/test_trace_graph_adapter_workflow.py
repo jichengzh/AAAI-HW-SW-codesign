@@ -100,6 +100,13 @@ def test_toy_adapter_executes_full_cpu_graph_scan_without_hardware_measurement()
     assert manifest["trace_plan"] is None
 
 
+def test_toy_scan_marks_real_partition_manifest_schema() -> None:
+    manifest = scan(_ToyAdapter(), _hardware(), device="cpu", profile_latency_mode="off")
+
+    assert manifest["schema"] == "stage1_partition_manifest_v1"
+    assert manifest["stage"] == "stage1_partition"
+
+
 def test_adapter_helpers_and_graph_shape_modes_are_explicit() -> None:
     """Small helpers keep naming buckets and CPU profiling policy deterministic."""
     adapter = _ToyAdapter()

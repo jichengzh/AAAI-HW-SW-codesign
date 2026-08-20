@@ -7,7 +7,9 @@ from pathlib import Path
 import pytest
 import yaml
 
+from framework.stage1.graph_scan import scan
 from framework.stage1_bridge import SpaceSpec, load_stage2_search_space
+from tests.stage1.test_trace_graph_adapter_workflow import _ToyAdapter, _hardware
 
 
 def _manifest(*, int8_buildable_align: int = 64) -> dict:
@@ -121,3 +123,10 @@ def test_legacy_manifest_without_int8_alignment_remains_deterministic(tmp_path: 
     assert first == second
     assert first["model_search_policy"]["selected"] == "serial"
     assert spec.coupling_summary()["n_serial"] == 1
+
+
+def test_stage2_loader_accepts_schema_tagged_real_scan_manifest(tmp_path: Path) -> None:
+    manifest = scan(_ToyAdapter(), _hardware(), device="cpu", profile_latency_mode="off")
+    path = _write_manifest(tmp_path / "partition.yaml", manifest)
+
+    assert load_stage2_search_space(path)["schema"] == "stage2_search_space_v1"

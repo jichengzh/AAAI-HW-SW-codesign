@@ -633,6 +633,7 @@ def scan(adapter: TraceAdapter, hw: HwCapability, device: str = "cpu",
 
     # S6 汇合 manifest
     manifest = {
+        "schema": "stage1_partition_manifest_v1",
         "stage": "stage1_partition",
         "model": adapter.name,
         "model_class": adapter.model_class,
