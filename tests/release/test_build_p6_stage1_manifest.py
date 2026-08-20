@@ -11,13 +11,13 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 CLI = REPOSITORY_ROOT / "tools/release/build_p6_stage1_manifest.py"
 
 
-def _valid_stage1_manifest() -> dict[str, Any]:
+def _valid_stage1_manifest(*, hardware_name: str = "h800") -> dict[str, Any]:
     return {
         "schema": "stage1_partition_manifest_v1",
         "stage": "stage1_partition",
         "model": "pyramid_lidar",
         "scan_status": "ok",
-        "hw_capability": {"name": "h800"},
+        "hw_capability": {"name": hardware_name},
         "view_b1_search_groups": [
             {
                 "search_group_id": "pyramid_group.s0",
@@ -79,7 +79,7 @@ class HwCapability:
 
     @classmethod
     def from_yaml(cls, path):
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8").casefold()
         if "h800" not in text:
             return cls("a100")
         return cls("h800")
@@ -120,7 +120,7 @@ def scan(adapter, hw, device: str = "cpu") -> dict:
 
 
 def _write_hardware(path: Path) -> Path:
-    path.write_text("basic:\n  name: h800\n", encoding="utf-8")
+    path.write_text("basic:\n  name: NVIDIA H800\n", encoding="utf-8")
     return path
 
 

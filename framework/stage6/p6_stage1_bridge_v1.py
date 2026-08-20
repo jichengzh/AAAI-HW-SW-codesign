@@ -288,7 +288,12 @@ def _validate_h800_hardware_yaml(path: Path) -> None:
 
 
 def _is_h800_name(value: object) -> bool:
-    return isinstance(value, str) and (value == "h800" or value.startswith("h800_"))
+    if not isinstance(value, str):
+        return False
+    normalized = "_".join(value.casefold().strip().split())
+    if normalized.startswith("nvidia_"):
+        normalized = normalized.removeprefix("nvidia_")
+    return normalized == "h800" or normalized.startswith("h800_")
 
 
 def _validate_output_path(path: Path) -> None:

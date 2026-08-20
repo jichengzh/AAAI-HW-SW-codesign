@@ -14,13 +14,13 @@ from framework.stage6.p6_stage1_bridge_v1 import (
 )
 
 
-def _valid_stage1_manifest() -> dict[str, Any]:
+def _valid_stage1_manifest(*, hardware_name: str = "h800") -> dict[str, Any]:
     return {
         "schema": "stage1_partition_manifest_v1",
         "stage": "stage1_partition",
         "model": "pyramid_lidar",
         "scan_status": "ok",
-        "hw_capability": {"name": "h800"},
+        "hw_capability": {"name": hardware_name},
         "view_b1_search_groups": [
             {
                 "search_group_id": "pyramid_group.s0",
@@ -46,9 +46,9 @@ def _valid_stage1_manifest() -> dict[str, Any]:
     }
 
 
-def _hardware_path(tmp_path: Path) -> Path:
+def _hardware_path(tmp_path: Path, *, hardware_name: str = "h800") -> Path:
     path = tmp_path / "h800.yaml"
-    path.write_text("basic:\n  name: h800\n", encoding="utf-8")
+    path.write_text(f"basic:\n  name: {hardware_name}\n", encoding="utf-8")
     return path
 
 
@@ -94,6 +94,26 @@ def test_bridge_calls_scanner_and_writes_only_valid_json_manifest(
             {"STAGE1_REPO_ROOT": "/private/stage1"},
         )
     ]
+    assert json.loads(output_path.read_text(encoding="utf-8")) == manifest
+
+
+@pytest.mark.parametrize("hardware_name", ["NVIDIA H800", "  nvidia   h800  "])
+def test_bridge_accepts_tracked_h800_vendor_name(
+    tmp_path: Path,
+    hardware_name: str,
+) -> None:
+    manifest = _valid_stage1_manifest(hardware_name=hardware_name)
+    output_path = tmp_path / "manifest.json"
+
+    result = build_p6_stage1_partition_manifest(
+        output_path,
+        _hardware_path(tmp_path, hardware_name=hardware_name),
+        "cuda:0",
+        {},
+        lambda *_args: manifest,
+    )
+
+    assert result == manifest
     assert json.loads(output_path.read_text(encoding="utf-8")) == manifest
 
 
@@ -167,6 +187,10 @@ def test_bridge_calls_scanner_and_writes_only_valid_json_manifest(
             **_valid_stage1_manifest(),
             "hw_capability": {"name": "a100"},
         },
+        {
+            **_valid_stage1_manifest(),
+            "hw_capability": {"name": "not-h800-compatible"},
+        },
     ],
 )
 def test_bridge_rejects_incomplete_or_wrong_manifest_without_output(
@@ -204,6 +228,24 @@ def test_bridge_rejects_non_h800_hardware_yaml_before_scanner_runs(
 
     assert calls == []
     assert not output_path.exists()
+
+
+def test_bridge_rejects_hardware_yaml_with_incidental_h800_substring(
+    tmp_path: Path,
+) -> None:
+    calls: list[str] = []
+
+    with pytest.raises(P6Stage1BridgeError, match="stage1_scan_invalid"):
+        build_p6_stage1_partition_manifest(
+            tmp_path / "manifest.json",
+            _hardware_path(tmp_path, hardware_name="not-h800-compatible"),
+            "cuda",
+            {},
+            lambda *_args: calls.append("called") or _valid_stage1_manifest(),
+        )
+
+    assert calls == []
+    assert not (tmp_path / "manifest.json").exists()
 
 
 def test_bridge_rejects_unsafe_paths_before_scanner_runs(tmp_path: Path) -> None:
