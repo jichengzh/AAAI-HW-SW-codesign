@@ -117,25 +117,20 @@ def _git_root_for(path: Path) -> Path:
             "history_normalization_invalid", "Git root resolution failed"
         ) from error
     lines = completed.stdout.splitlines()
-    if completed.returncode == 0 and len(lines) == 1 and lines[0]:
-        try:
-            root = Path(lines[0]).resolve(strict=True)
-        except OSError as error:
-            raise P6HistoryNormalizationError(
-                "history_normalization_invalid", "Git root is unavailable"
-            ) from error
-        if root.is_dir() and _is_relative_to(path.resolve(strict=False), root):
-            return root
-
-    for parent in (working_directory, *working_directory.parents):
-        if (parent / ".git").exists():
-            try:
-                return parent.resolve(strict=True)
-            except OSError as error:
-                raise P6HistoryNormalizationError(
-                    "history_normalization_invalid", "Git root is unavailable"
-                ) from error
-    _invalid("Git root resolution failed")
+    if completed.returncode != 0 or len(lines) != 1 or not lines[0]:
+        _invalid("Git root resolution failed")
+    raw_root = Path(lines[0])
+    if not raw_root.is_absolute() or _contains_symlink_component(raw_root):
+        _invalid("Git root is invalid")
+    try:
+        root = raw_root.resolve(strict=True)
+    except OSError as error:
+        raise P6HistoryNormalizationError(
+            "history_normalization_invalid", "Git root is unavailable"
+        ) from error
+    if not root.is_dir() or not _is_relative_to(path.resolve(strict=False), root):
+        _invalid("Git root does not contain the private input")
+    return root
 
 
 def _resolve_existing_root(raw_path: object, label: str) -> Path:
@@ -335,7 +330,11 @@ def _validate_private_source_map(
         or source_map.get("schema_version") != SOURCE_MAP_SCHEMA_VERSION
     ):
         _invalid("source map contract is invalid")
-    if not isinstance(history_root, Path) or not history_root.is_absolute():
+    if (
+        not isinstance(history_root, Path)
+        or not history_root.is_absolute()
+        or _contains_symlink_component(history_root)
+    ):
         _invalid("history root is invalid")
     try:
         resolved_history_root = history_root.resolve(strict=True)
@@ -358,7 +357,13 @@ def _validate_private_source_map(
         label: _resolve_existing_root(assets[label], f"{label} asset")
         for label in ASSET_LABELS
     }
-    if any(not _is_relative_to(path, resolved_history_root) for path in canonical_assets.values()):
+    if len(set(canonical_assets.values())) != len(ASSET_LABELS):
+        _invalid("asset mapping paths must be unique")
+    if any(
+        not _is_relative_to(path, resolved_history_root)
+        or _git_root_for(path) != git_root
+        for path in canonical_assets.values()
+    ):
         _invalid("asset mapping escapes history root")
     raw_inputs = source_map.get("input_sources")
     if not isinstance(raw_inputs, Mapping) or set(raw_inputs) != set(INPUT_NAMES):
@@ -367,6 +372,8 @@ def _validate_private_source_map(
         name: _resolve_existing_json(raw_inputs[name], resolved_history_root, name)
         for name in INPUT_NAMES
     }
+    if len(set(canonical_inputs.values())) != len(INPUT_NAMES):
+        _invalid("input source paths must be unique")
     recipe = _validate_recipe(source_map.get("dynamic_materialization_recipe"))
     source_group = _validate_source_group(source_map.get("source_contract"), recipe)
     return {

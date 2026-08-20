@@ -6,6 +6,7 @@ import argparse
 from collections.abc import Sequence
 import json
 from pathlib import Path
+import subprocess
 import sys
 
 
@@ -40,13 +41,69 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _load_source_map(path: Path) -> dict[str, object]:
-    if path.is_symlink():
+def _contains_symlink_component(path: Path) -> bool:
+    anchor = Path(path.anchor)
+    return any(
+        component != anchor and component.is_symlink()
+        for component in (path, *path.parents)
+    )
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def _git_check_ignored(repository: Path, path: Path) -> bool:
+    try:
+        relative = path.relative_to(repository)
+    except ValueError:
+        return True
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(repository), "check-ignore", "-q", "--", str(relative)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            shell=False,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return completed.returncode == 0
+
+
+def _validate_private_source_map_path(path: Path) -> Path:
+    if _contains_symlink_component(path):
         raise P6HistoryNormalizationError(
             "history_normalization_invalid", "source map path is invalid"
         )
     try:
         resolved = path.resolve(strict=True)
+        repository = REPOSITORY_ROOT.resolve(strict=True)
+    except OSError as error:
+        raise P6HistoryNormalizationError(
+            "history_normalization_invalid", "source map is unavailable"
+        ) from error
+    if not resolved.is_file():
+        raise P6HistoryNormalizationError(
+            "history_normalization_invalid", "source map path is invalid"
+        )
+    if _is_relative_to(resolved, repository) and not _git_check_ignored(
+        repository, resolved
+    ):
+        raise P6HistoryNormalizationError(
+            "history_normalization_invalid", "source map path is not private"
+        )
+    return resolved
+
+
+def _load_source_map(path: Path) -> dict[str, object]:
+    try:
+        resolved = _validate_private_source_map_path(path)
         payload = json.loads(resolved.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise P6HistoryNormalizationError(

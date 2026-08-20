@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 from typing import Any, Callable, Mapping
 
 import pytest
@@ -94,7 +95,7 @@ def valid_private_source_map(tmp_path: Path) -> dict[str, Any]:
     subprocess_safe_git_root = tmp_path / "history-root" / "source-git"
     history_root = subprocess_safe_git_root
     subprocess_safe_git_root.mkdir(parents=True)
-    (subprocess_safe_git_root / ".git").mkdir()
+    subprocess.run(["git", "init", "-q", str(subprocess_safe_git_root)], check=True)
     (subprocess_safe_git_root / "registry").mkdir()
     (subprocess_safe_git_root / "documented-stage5-chain").mkdir()
     input_paths = {
@@ -220,5 +221,105 @@ def test_normalizer_rejects_forbidden_result_context_without_partial_root(
         P6HistoryNormalizationError, match=r"^history_normalization_invalid:"
     ):
         normalize_history_inputs(source_map, _history_root(source_map), private_dir)
+
+    assert not private_dir.exists()
+
+
+def test_normalizer_rejects_fake_git_directory_without_partial_root(
+    tmp_path: Path,
+) -> None:
+    source_map = valid_private_source_map(tmp_path)
+    history_root = tmp_path / "fake-history-root"
+    history_root.mkdir()
+    (history_root / ".git").mkdir()
+    (history_root / "registry").mkdir()
+    (history_root / "documented-stage5-chain").mkdir()
+    input_paths = {
+        name: _write_json(
+            history_root / "inputs" / f"{name}.source.json",
+            {"schema_version": f"synthetic_{name}_v1", "name": name},
+        )
+        for name in INPUT_NAMES
+    }
+    source_map["history_root"] = str(history_root)
+    source_map["asset_paths"] = {
+        "training-data": str(history_root / "inputs"),
+        "model-init": str(history_root / "registry"),
+        "toolchain": str(history_root / "documented-stage5-chain"),
+    }
+    source_map["input_sources"] = input_paths
+    private_dir = tmp_path / "private-normalized"
+
+    with pytest.raises(
+        P6HistoryNormalizationError, match=r"^history_normalization_invalid:"
+    ):
+        normalize_history_inputs(source_map, history_root, private_dir)
+
+    assert not private_dir.exists()
+
+
+def test_normalizer_rejects_duplicate_input_sources_without_partial_root(
+    tmp_path: Path,
+) -> None:
+    source_map = valid_private_source_map(tmp_path)
+    source_map["input_sources"]["closure"] = source_map["input_sources"]["gold176_rows"]
+    private_dir = tmp_path / "private-normalized"
+
+    with pytest.raises(
+        P6HistoryNormalizationError, match=r"^history_normalization_invalid:"
+    ):
+        normalize_history_inputs(source_map, _history_root(source_map), private_dir)
+
+    assert not private_dir.exists()
+
+
+def test_normalizer_rejects_nonunique_asset_paths_without_partial_root(
+    tmp_path: Path,
+) -> None:
+    source_map = valid_private_source_map(tmp_path)
+    source_map["asset_paths"]["model-init"] = source_map["asset_paths"]["training-data"]
+    private_dir = tmp_path / "private-normalized"
+
+    with pytest.raises(
+        P6HistoryNormalizationError, match=r"^history_normalization_invalid:"
+    ):
+        normalize_history_inputs(source_map, _history_root(source_map), private_dir)
+
+    assert not private_dir.exists()
+
+
+def test_normalizer_rejects_asset_from_nested_git_root_without_copying(
+    tmp_path: Path,
+) -> None:
+    source_map = valid_private_source_map(tmp_path)
+    history_root = _history_root(source_map)
+    nested_toolchain = history_root / "documented-stage5-chain" / "nested"
+    nested_toolchain.mkdir()
+    subprocess.run(["git", "init", "-q", str(nested_toolchain)], check=True)
+    _write_json(nested_toolchain / "marker.json", {"name": "nested"})
+    source_map["asset_paths"]["toolchain"] = str(nested_toolchain)
+    private_dir = tmp_path / "private-normalized"
+
+    with pytest.raises(
+        P6HistoryNormalizationError, match=r"^history_normalization_invalid:"
+    ):
+        normalize_history_inputs(source_map, history_root, private_dir)
+
+    assert not private_dir.exists()
+
+
+def test_normalizer_rejects_symlink_history_root_argument_without_partial_root(
+    tmp_path: Path,
+) -> None:
+    source_map = valid_private_source_map(tmp_path)
+    history_root = _history_root(source_map)
+    symlink_root = tmp_path / "history-root-link"
+    symlink_root.symlink_to(history_root, target_is_directory=True)
+    private_dir = tmp_path / "private-normalized"
+
+    with pytest.raises(
+        P6HistoryNormalizationError, match=r"^history_normalization_invalid:"
+    ):
+        normalize_history_inputs(source_map, symlink_root, private_dir)
 
     assert not private_dir.exists()
