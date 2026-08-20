@@ -4,6 +4,8 @@ from collections.abc import Callable, Mapping, Sequence
 import hashlib
 import json
 from pathlib import Path
+import subprocess
+import sys
 from typing import Any
 
 import pytest
@@ -21,9 +23,29 @@ from framework.stage6.coptv2x_h800_search_v2 import (
     load_public_contract,
     run_p6_coptv2x_search,
 )
+from framework.stage6.p6_full_chain_bootstrap_v1 import materialize_full_chain_binding
+from framework.stage6.p6_history_binding_v1 import COMPONENT_MARKERS, GpuRecord
+from framework.stage6.p6_history_normalization_v1 import normalize_history_inputs
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+
+
+class _OfflineGpuProbe:
+    def __init__(self) -> None:
+        self.calls: list[tuple[int, ...]] = []
+
+    def snapshot(self, indices: tuple[int, ...]) -> tuple[GpuRecord, ...]:
+        self.calls.append(indices)
+        return tuple(
+            GpuRecord(
+                index=index,
+                uuid=f"GPU-synthetic-{index}",
+                model_name="NVIDIA H800 80GB HBM3",
+                occupancy=0.0,
+            )
+            for index in indices
+        )
 
 
 def _write_yaml(path: Path, content: dict[str, Any]) -> Path:
@@ -265,6 +287,319 @@ def _closure() -> dict[str, Any]:
         "training_source_rows": {"initial_coldstart": 176},
         "frozen_holdout": {"groups": []},
     }
+
+
+def _dynamic_recipe() -> dict[str, Any]:
+    outputs = {
+        q_mode: {
+            f"{kind}_path_template": (
+                f"materialized/{{group_id}}/{{q_mode}}/{kind}.json"
+            )
+            for kind in ("training", "checkpoint", "onnx", "calibration")
+        }
+        for q_mode in ("fp16", "int8")
+    }
+    return {
+        "schema_version": "p6_history_dynamic_materialization_recipe_v1",
+        "stage_width_fields": ["stage1_width", "stage2_width", "stage3_width"],
+        "group_id_template": "pyramid|{stage1_width}x{stage2_width}x{stage3_width}",
+        "artifact_id_template": "pyramid-{stage1_width}-{stage2_width}-{stage3_width}",
+        "output_path_templates_by_q_mode": outputs,
+    }
+
+
+def _dynamic_source_group() -> dict[str, Any]:
+    evidence_sha = hashlib.sha256(b"p6-normalized-full-chain-source").hexdigest()
+    contract = {
+        "schema_version": "stage5_source_contract_v1",
+        "group_id": "pyramid|16x32x64",
+        "model": "pyramid",
+        "width": [16, 32, 64],
+        "artifact_id": "pyramid-dynamic-template",
+        "source_status": "ready",
+        "source_evidence_sha256": evidence_sha,
+        "materialization_scope": "synthetic_fixture",
+        "dynamic_materialization_recipe": _dynamic_recipe(),
+    }
+    return {
+        "group_id": contract["group_id"],
+        "model": contract["model"],
+        "width": contract["width"],
+        "source_status": contract["source_status"],
+        "source_evidence_sha256": evidence_sha,
+        "source_contract": contract,
+        "source_contract_sha256": hashlib.sha256(
+            json.dumps(
+                contract,
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest(),
+        "materialization_kind": "local_pyramid_tvm",
+        "source_evidence_kind": "synthetic_fixture",
+    }
+
+
+def _write_executable(path: Path, body: str = "pass\n") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"#!{sys.executable}\nfrom __future__ import annotations\n{body}",
+        encoding="utf-8",
+    )
+    path.chmod(0o700)
+    return path
+
+
+def _write_stage1_scan_adapter(path: Path) -> Path:
+    manifest = json.dumps(_real_stage1_partition_manifest(), sort_keys=True)
+    return _write_executable(
+        path,
+        (
+            "from pathlib import Path\n"
+            "import sys\n"
+            "manifest_path, output_root = map(Path, sys.argv[1:])\n"
+            "del output_root\n"
+            f"manifest_path.write_text({manifest!r}, encoding='utf-8')\n"
+        ),
+    )
+
+
+def _write_normalized_history_source_map(tmp_path: Path) -> dict[str, Any]:
+    history_root = tmp_path / "history-source"
+    history_root.mkdir()
+    subprocess.run(["git", "init", "-q", str(history_root)], check=True)
+    inputs = history_root / "inputs"
+    inputs.mkdir()
+    gold_rows, gold_graphs = _gold176(include_non_target_backend=True)
+    for name, payload in {
+        "gold176_rows": gold_rows,
+        "gold176_graph_features": gold_graphs,
+        "capability_profiles": [_profile(), _non_target_profile()],
+        "closure": _closure(),
+    }.items():
+        (inputs / f"{name}.json").write_text(json.dumps(payload), encoding="utf-8")
+    (history_root / "training-data").mkdir()
+    (history_root / "model-init").mkdir()
+    toolchain = history_root / "toolchain"
+    _write_stage1_scan_adapter(toolchain / "scan-private")
+    for marker, _version in COMPONENT_MARKERS.values():
+        _write_executable(toolchain / marker)
+    for name in ("activate-private", "quantize-private", "measure-ap-private"):
+        _write_executable(toolchain / name)
+    return {
+        "schema_version": "p6_history_normalization_source_v1",
+        "history_root": str(history_root),
+        "asset_paths": {
+            "training-data": str(history_root / "training-data"),
+            "model-init": str(history_root / "model-init"),
+            "toolchain": str(toolchain),
+        },
+        "input_sources": {
+            name: str(inputs / f"{name}.json")
+            for name in (
+                "gold176_rows",
+                "gold176_graph_features",
+                "capability_profiles",
+                "closure",
+            )
+        },
+        "source_contract": _dynamic_source_group(),
+        "dynamic_materialization_recipe": _dynamic_recipe(),
+    }
+
+
+def _write_runner_template(path: Path) -> Path:
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "p6_history_runner_template_v1",
+                "stage1_scan": {
+                    "name": "build_stage1_partition",
+                    "argv": [
+                        "toolchain/scan-private",
+                        "{stage1_partition_manifest}",
+                        "{local_output_root}",
+                    ],
+                },
+                "execution_interface": {
+                    "schema_version": "p6_history_runner_interface_v1",
+                    "controller": {
+                        "argv": ["toolchain/stage5_task_round_controller_v3.sh"]
+                    },
+                    "execution_chain": [
+                        {
+                            "stage": "source_materialization",
+                            "argv": [
+                                "toolchain/stage5_materialize_round_sources_v1.sh",
+                                "{measurement_request}",
+                                "{round_output_root}",
+                            ],
+                            "required_placeholders": [
+                                "{measurement_request}",
+                                "{round_output_root}",
+                            ],
+                        },
+                        {
+                            "stage": "quantization",
+                            "argv": [
+                                "toolchain/quantize-private",
+                                "{task_state}",
+                                "{round_output_root}",
+                            ],
+                            "required_placeholders": [
+                                "{task_state}",
+                                "{round_output_root}",
+                            ],
+                        },
+                        {
+                            "stage": "performance",
+                            "argv": [
+                                "toolchain/stage5_build_performance_plan_v2.py",
+                                "{task_state}",
+                                "{round_output_root}",
+                            ],
+                            "required_placeholders": [
+                                "{task_state}",
+                                "{round_output_root}",
+                            ],
+                        },
+                        {
+                            "stage": "ap",
+                            "argv": [
+                                "toolchain/measure-ap-private",
+                                "{task_state}",
+                                "{round_output_root}",
+                            ],
+                            "required_placeholders": [
+                                "{task_state}",
+                                "{round_output_root}",
+                            ],
+                        },
+                        {
+                            "stage": "finalization",
+                            "argv": [
+                                "toolchain/stage5_finalize_feedback_v2.py",
+                                "{measurement_request}",
+                                "{task_state}",
+                                "{actual_feedback}",
+                                "{actual_receipt}",
+                                "{finalization_barrier}",
+                                "{round_output_root}",
+                            ],
+                            "required_placeholders": [
+                                "{measurement_request}",
+                                "{task_state}",
+                                "{actual_feedback}",
+                                "{actual_receipt}",
+                                "{finalization_barrier}",
+                                "{round_output_root}",
+                            ],
+                        },
+                    ],
+                    "environment": {
+                        "values": {
+                            "CUDA_VISIBLE_DEVICES": {
+                                "kind": "literal",
+                                "value": "17,19,23",
+                            },
+                            "P6_HISTORY_RUN_MODE": {
+                                "kind": "literal",
+                                "value": "bound",
+                            },
+                            "P6_HISTORY_PRIVATE_ROOT": {
+                                "kind": "private_path",
+                                "value": ".",
+                            },
+                            "P6_HISTORY_TASK_STATE": {
+                                "kind": "placeholder",
+                                "value": "{task_state}",
+                            },
+                            "P6_HISTORY_ROUND_OUTPUT_ROOT": {
+                                "kind": "placeholder",
+                                "value": "{round_output_root}",
+                            },
+                        },
+                        "activation_argv": [
+                            "toolchain/activate-private",
+                            "private-bound",
+                        ],
+                    },
+                    "output_layout": {
+                        "round_root_template": "private-runs/{round_id}",
+                        "task_state": {
+                            "path_template": (
+                                "private-runs/{round_id}/state/task-state.json"
+                            ),
+                            "format": "json",
+                            "rows_key": "rows",
+                            "row_id_key": "row_id",
+                            "row_hash_key": "row_sha256",
+                            "source_evidence_key": "source_evidence_sha256",
+                            "status_key": "terminal_status",
+                            "stage_key": "stage",
+                            "row_count": 4,
+                            "allowed_terminal_statuses": [
+                                "measured_success_gold",
+                                "feasibility_failure",
+                                "numerical_feasibility_failure",
+                            ],
+                            "stage_order": [
+                                "source_materialization",
+                                "quantization",
+                                "performance",
+                                "ap",
+                                "finalization",
+                            ],
+                        },
+                    },
+                    "actual_feedback": {
+                        "result": {
+                            "path_template": (
+                                "private-runs/{round_id}/actual-feedback.json"
+                            ),
+                            "format": "json",
+                            "rows_key": "rows",
+                            "row_id_key": "row_id",
+                            "row_hash_key": "row_sha256",
+                            "source_evidence_key": "source_evidence_sha256",
+                            "status_key": "terminal_status",
+                            "row_count": 4,
+                            "allowed_terminal_statuses": [
+                                "measured_success_gold",
+                                "feasibility_failure",
+                                "numerical_feasibility_failure",
+                            ],
+                            "metric_keys": [
+                                "latency_ms",
+                                "energy_j",
+                                "ap30",
+                                "ap50",
+                                "ap70",
+                            ],
+                        },
+                        "receipt": {
+                            "path_template": "private-runs/{round_id}/receipt.json",
+                            "format": "json",
+                            "request_sha256_key": "measurement_request_sha256",
+                            "row_hashes_key": "row_sha256",
+                            "source_evidence_key": "source_evidence_sha256",
+                        },
+                        "finalization_barrier": {
+                            "path_template": "private-runs/{round_id}/barrier.json",
+                            "format": "json",
+                            "request_sha256_key": "measurement_request_sha256",
+                            "row_hashes_key": "row_sha256",
+                            "source_evidence_key": "source_evidence_sha256",
+                        },
+                    },
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    return path
 
 
 def _write_source_registry(path: Path, *, count: int) -> None:
@@ -786,6 +1121,100 @@ def test_full_framework_lifecycle_uses_actual_scan_artifact_and_four_feedback_ro
     public_state = state.local_state_path.read_text(encoding="utf-8")
     assert str(tmp_path) not in public_state
     assert all(row_id not in public_state for row_id in selected)
+
+
+def test_normalized_private_root_reaches_dynamic_stage2_and_registry_without_measurement(
+    tmp_path: Path,
+) -> None:
+    """The normalizer/provision path must finish dynamic preflight before measurement."""
+    source_map = _write_normalized_history_source_map(tmp_path)
+    normalized_root = tmp_path / "normalized-private-root"
+    normalized = normalize_history_inputs(
+        source_map, Path(str(source_map["history_root"])), normalized_root
+    )
+    runner_template = _write_runner_template(normalized_root / "runner-template.yaml")
+    provisioned_root = normalized_root / "provisioned"
+    provisioned_root.mkdir()
+    binding_path = provisioned_root / "binding.json"
+    local_config_path = provisioned_root / "local.yaml"
+
+    probe = _OfflineGpuProbe()
+    materialize_full_chain_binding(
+        normalized["legacy"],
+        runner_template,
+        provisioned_root,
+        binding_path,
+        local_config_path,
+        probe,
+    )
+    local = load_local_config(
+        local_config_path,
+        load_public_contract(_write_yaml(tmp_path / "public.yaml", _public_contract())),
+    )
+    command_roles: list[str] = []
+    measurement_boundaries = 0
+    measurement_adapter_calls = 0
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        nonlocal measurement_adapter_calls, measurement_boundaries
+        if len(argv) > 1 and Path(argv[1]).name == "measure_p6_history_batch.py":
+            command_roles.append("measurement-boundary")
+            measurement_boundaries += 1
+            return 1
+        if len(argv) > 1 and Path(argv[1]).name == "build_p6_history_registry.py":
+            command_roles.append("registry")
+        else:
+            command_roles.append("stage1")
+        completed = subprocess.run(
+            argv,
+            cwd=cwd,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if Path(argv[0]).name == "measure_p6_history_batch.py":
+            measurement_adapter_calls += 1
+        return completed.returncode
+
+    state = run_p6_coptv2x_search(
+        load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract())),
+        local,
+        "test-revision",
+        runner,
+    )
+
+    assert state.status == "failed"
+    assert state.failure_code == "command_failed"
+    assert state.measured_candidate_count == 0
+    assert command_roles == ["stage1", "registry", "measurement-boundary"]
+    assert measurement_boundaries == 1
+    assert measurement_adapter_calls == 0
+    assert probe.calls == [(17, 19, 23), (17, 19, 23)]
+    manifest = yaml.safe_load(local.stage2_search_space_path.read_text(encoding="utf-8"))
+    assert manifest["schema"] == "stage1_partition_manifest_v1"
+    plan = json.loads(
+        (local.local_output_root / "pyramid_candidate_plan.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert plan["schema_version"] == "p6_pyramid_candidate_plan_v2"
+    assert plan["candidate_source_mode"] == "framework_stage2_search_space"
+    assert plan["candidate_count"] == len(plan["candidates"])
+    assert plan["candidate_count"] >= 16
+    registry = json.loads(
+        (local.local_output_root / "source_registry.json").read_text(encoding="utf-8")
+    )
+    assert registry["schema_version"] == "stage5_candidate_source_registry_v2"
+    task = execution.SearchTask(
+        task_id="pre-measurement-proof",
+        target_model="pyramid",
+        hardware_id="h800",
+        capability_profile=_profile(),
+    )
+    candidate_manifest = execution.build_task_candidate_manifest(
+        registry, task=task, measured_row_ids=set()
+    )
+    assert candidate_manifest["eligible_row_count"] >= 16
 
 
 def test_framework_lifecycle_never_uses_static_registry_after_stage1(

@@ -4,6 +4,8 @@
 
 让已有的 H800 历史资产在不公开路径、设备编号、checkpoint、数据或测量结果的前提下，能够生成可由 P6.4 消费的私有 binding 与 local YAML，并先完成真实 Stage1→Stage2 预检。
 
+当前公开状态：implementation complete; H800 private preflight pending。也就是说，公开仓库已具备离线桥接与无测量门禁；真实 H800 私有预检、真实四轮闭环和论文证据仍未完成。
+
 ## 现状与问题
 
 P6.4 的公开控制器已经实现了动态候选、Gold176 冷启动和四轮每轮四条实际反馈。但历史 H800 执行树不是一个可直接验证的 P6 root：其 Git 元数据不可用，输入分散，旧结果中存在重复组件，且没有可执行的 P6 Stage1 JSON launcher。
@@ -61,4 +63,4 @@ source-map、runner template、binding、local YAML、Stage1 manifest、registry
 
 ## 验证
 
-公开测试覆盖：Stage1 bridge JSON 产物、错误输出不落盘、normalizer 的 recipe/来源/输出模板校验，以及 provision→Stage1→Stage2 的无测量端到端路径。H800 验证只写 Git 忽略目录，先运行预检，再在用户已授权的三张私有 H800 上启动完整闭环。
+公开测试覆盖：Stage1 bridge JSON 产物、错误输出不落盘、normalizer 的 recipe/来源/输出模板校验，以及 normalizer→provision→Stage1 manifest→动态 Stage2 plan→registry-v2 的无测量端到端路径。H800 验证只写 Git 忽略目录，先运行私有预检，再在用户已授权的私有 H800 环境中启动完整闭环。

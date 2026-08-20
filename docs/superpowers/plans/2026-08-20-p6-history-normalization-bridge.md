@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-20-p6-history-normalization-bridge-design.md`
 
+**Current status:** implementation complete; H800 private preflight pending. Task 4 added the offline normalizer→provision→Stage1 manifest→dynamic Stage2 plan→registry-v2 gate and stops before measurement adapter execution. Task 5 remains responsible for the real private H800 preflight.
+
 ## Global Constraints
 
 - 不在 tracked 文件中写入真实设备编号、私有路径、资产 ID、候选 ID、checkpoint、指标或结果。
@@ -79,7 +81,7 @@ Run: `PYTHONPATH=. pytest tests/stage6/test_p6_stage1_bridge.py tests/release/te
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add framework/stage6/p6_stage1_bridge_v1.py tools/release/build_p6_stage1_manifest.py tests/stage6/test_p6_stage1_bridge.py tests/release/test_build_p6_stage1_manifest.py
@@ -225,7 +227,7 @@ git commit -m "feat: bind P6 history components from private template"
 - Consumes: Task 1 Stage1 bridge, Task 2 normalized private root, Task 3 explicit bootstrap components.
 - Produces: offline proof that provision → Stage1 manifest → Stage2 dynamic plan → registry-v2 succeeds before the measurement adapter is called.
 
-- [ ] **Step 1: Write the failing no-measurement full-chain test**
+- [x] **Step 1: Write the failing no-measurement full-chain test**
 
 ```python
 def test_normalized_private_root_reaches_dynamic_stage2_and_registry_without_measurement(...):
@@ -235,17 +237,17 @@ def test_normalized_private_root_reaches_dynamic_stage2_and_registry_without_mea
     assert state.measurement_calls == 0
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `PYTHONPATH=. pytest tests/stage6/test_coptv2x_h800_search.py tests/release/test_run_p6_h800_search.py -q`
 
 Expected: FAIL before Tasks 1–3 integration is wired.
 
-- [ ] **Step 3: Wire existing test seams and update documentation**
+- [x] **Step 3: Wire existing test seams and update documentation**
 
 Use the existing command-runner injection; do not introduce a second controller. Document P6 as `implementation complete; H800 private preflight pending` until the remote preflight succeeds. Do not record private sources, GPU identities, paths or outputs.
 
-- [ ] **Step 4: Run complete offline gates**
+- [x] **Step 4: Run complete offline gates**
 
 Run:
 

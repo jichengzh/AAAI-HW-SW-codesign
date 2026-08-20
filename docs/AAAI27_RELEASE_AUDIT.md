@@ -132,7 +132,7 @@ scripts/stage2_update_evidence.py
 
 ### 当前状态
 
-**状态日期：2026-08-19；此处记录 P6.3 历史执行适配器离线验证后的公开交接状态。** 当前工作分支为 `p6-h800-search-execution`。P1 最终候选 `c65b5fc7eb9d20e2d34928f7c948aea90f822754` 及其 tree `e9adfe9888a21ae0b5f819858e1cea001acbcecb` 仍只作为 P1 冻结证据；后续 P2--P6.3 离线状态由本台账追加记录约束。实时远端差异、工作树状态和新候选提交必须以 `git status --short --branch` 与当次验证输出为准，不能复用旧冻结数字。
+**状态日期：2026-08-19；此处记录 P6.3 历史执行适配器离线验证后的公开交接状态。** 当前工作分支为 `p6-h800-search-execution`。P1 最终候选 `c65b5fc7eb9d20e2d34928f7c948aea90f822754` 及其 tree `e9adfe9888a21ae0b5f819858e1cea001acbcecb` 仍只作为 P1 冻结证据；后续 P2--P6.3 离线状态由本台账追加记录约束。实时远端差异、工作树状态和新候选提交必须以 `git status --short --branch` 与当次验证输出为准，不能复用旧冻结数字。2026-08-20 追加记录见下方：P6 历史执行根归一桥接 implementation complete; H800 private preflight pending。
 
 | 范围 | 当前状态 | 可验证证据 | 仍缺少的内容 |
 | --- | --- | --- | --- |
@@ -140,7 +140,7 @@ scripts/stage2_update_evidence.py
 | 公开文档与新手入口 | 已完成 | `README.md`、`README.zh-CN.md`、`REPRODUCIBILITY.md` 说明浅克隆、固定依赖和 smoke；匿名 README 使用同一依赖入口。 | 全量训练/硬件运行说明尚未迁入。 |
 | 匿名审稿 ZIP | P1 本地验收完成 | allowlist、逐字节安全扫描、archive verifier 和解包后的新 venv 已验收；P1 ZIP 为 100 个成员。 | 每次候选 HEAD 改变都必须重建并记录新哈希。 |
 | 论文证据 | 受限 | 小型 Stage4 审计为 `verified`；demo 明确为非论文证据。P6.1 只记录 Git 忽略边界内的本地结构性闭环完成事实。规范定义见 [REPRODUCIBILITY.md](../REPRODUCIBILITY.md) 与 [ARTIFACTS.md](../ARTIFACTS.md)。 | Stage6/Stage7 论文证据、公开 P6 结果包及真实硬件/AP/能耗制品仍为 `external` 或 `unavailable`。 |
-| 完整项目源代码 | P3、P4、P5 已完成（本地）；P6.1 静态 343×2 历史路径已完成（本地）；P6.2 动态框架候选空间离线接入与验证已完成（本地）；P6.3 历史执行适配器已实现并通过离线验证 | 当前树含公开的接口、验证、选择、聚合、外部输入登记、环境契约、P6.1 本地执行边界文档、P6.2 动态离线契约和 P6.3 历史执行适配器；P6.1 只记录已完成的本地历史路径，P6.2 从 Stage2 动态派生候选池而不预设为 343 或 686。 | 真实 H800 框架来源四轮执行仍待本地运行；P7 安全/合规/供应链审查和 P8 发布候选验证尚未开始。 |
+| 完整项目源代码 | P3、P4、P5 已完成（本地）；P6.1 静态 343×2 历史路径已完成（本地）；P6.2 动态框架候选空间离线接入与验证已完成（本地）；P6.3 历史执行适配器已实现并通过离线验证；P6 历史执行根归一桥接实现完成，H800 私有预检待运行 | 当前树含公开的接口、验证、选择、聚合、外部输入登记、环境契约、P6.1 本地执行边界文档、P6.2 动态离线契约、P6.3 历史执行适配器，以及 normalizer→provision→Stage1 manifest→动态 Stage2 plan→registry-v2 的无测量离线门禁。P6.1 只记录已完成的本地历史路径，P6.2 从 Stage2 动态派生候选池而不预设为 343 或 686。 | 真实 H800 私有预检和框架来源四轮执行仍待本地运行；P7 安全/合规/供应链审查和 P8 发布候选验证尚未开始。 |
 | 私有源迁移清单 | P2a + P2b 盘点完成，P3 本地关闭 | [P2 脱敏汇总](release-manifests/P2_PRIVATE_SOURCE_SUMMARY.json)、v1.1.0 inventory 工具、[P3 全量关闭复核](release-manifests/P3_FULL_CLOSURE_REVALIDATION.md) 与 accepted-only manifest 覆盖 1,551/1,551。 | P7 仍需复核计划公开树和历史中的凭据、许可、隐私与来源边界。 |
 | 公开发布 | 未开始 | P1 本地发布候选、P3 本地关闭、P4/P5 本地收口、P6.1 静态历史收口、P6.2 动态离线接入验证及 P6.3 历史执行适配器离线验证均有台账记录；尚未执行合并、tag、Release 或仓库可见性变更。 | 需要完成真实 H800 框架来源四轮执行、P7 和 P8，并在最后取得推送/发布的明确授权。 |
 
@@ -156,7 +156,7 @@ scripts/stage2_update_evidence.py
 | P3 | 已完成（本地） | 按发布级逐项复审协议处置 P2b 冻结基线的全部候选；对迁入、改写、公开替代、外部输入、环境、执行与许可阻塞逐项绑定当前内容、职责/调用关系、来源/许可证和安全审查。 | accepted-only manifest 与路径无关 HMAC ledger 覆盖 **1,551/1,551**，缺失 0、额外身份 0；全量 CPU-only pytest 为 509 passed、83.09% 覆盖率，release 定向回归 81 passed，身份/路径扫描、Ruff、compileall、diff 检查和匿名 ZIP build/verify 均通过。详见 [P3 重审协议](release-manifests/P3_REAUDIT_PROTOCOL.md)、[P3 全量关闭复核](release-manifests/P3_FULL_CLOSURE_REVALIDATION.md) 与各批次记录。P3 本地关闭不启动 P4--P8，也不授权推送、发布或真实实验执行。 |
 | P4 | 已完成（本地） | [P4 外部输入契约](release-manifests/P4_EXTERNAL_INPUT_CONTRACT.md)以 `artifacts/external/registry.json` 为完整资源目录、以 `artifacts/external/coverage.json` 为完整性摘要。506 条 P3 转交候选均已在本地裁决为 document 或 asset：199 条为 document、307 条为 asset，去重后为 284 项资源；284 项均为 unavailable。该记录只说明离线登记与验证契约，不下载、不运行或迁入真实制品。 | 本地交接台账、P4 登记和相关 release/integration 门禁，以及 Ruff、compileall、diff 检查均通过；公开 [CI run 31404700281](https://github.com/jichengzh/AAAI-HW-SW-codesign/actions/runs/31404700281) 的 `public-smoke`、`quality (3.10)`、`quality (3.11)` 均成功。验证器仍只检查用户显式提供的本地输入；不得下载数据或权重，也不得读取维护者目录、缓存或真实外部资产。P5--P8 仍为待开始。 |
 | P5 | 已完成（本地） | 固化可复现环境：[P5 环境契约](release-manifests/P5_ENVIRONMENT_CONTRACT.md) 连接 CPU、RTX 4090 与 H800 三份公开 hardware capability YAML 和三份环境契约；离线验证器覆盖合成正负例。结论仅限本地离线环境契约：不探测本机 GPU，不运行 CUDA 编译、训练、评测、基准测试或任何外部资产，也不进行网络下载。 | 三个配置文件互不混淆且不含 SSH 信息；验证器只消费用户显式提供的本地探测输入，并验证每个环境的依赖约束和相应合成离线测试。 |
-| P6 | P6.1 静态 343×2 历史路径已完成（本地）；P6.2 动态框架候选空间离线接入与验证已完成（本地）；P6.3 历史执行适配器已实现并通过离线验证 | P6.1 的静态 343×2 是已完成的本地历史路径。P6.2 从 Stage2 动态派生候选池，不预设为 343 或 686；单个候选不是 mixed-precision。P6.3 历史执行适配器已实现并通过离线验证；真实 H800 框架来源四轮执行仍待本地运行。Orin 与 TensorRT 仍为后续独立线。 | P6.1 历史收口、P6.2 离线完成和 P6.3 离线验证都不生成公开 P6 结果摘要，也不等同于真实框架来源闭环、Stage6 或 Stage7 论文证据完成。Git 忽略的本地执行材料不进入公开面或匿名归档；不公开候选标识、执行位置、命令、结果、检查点或日志。 |
+| P6 | P6.1 静态 343×2 历史路径已完成（本地）；P6.2 动态框架候选空间离线接入与验证已完成（本地）；P6.3 历史执行适配器已实现并通过离线验证；历史执行根归一桥接实现完成，H800 私有预检待运行 | P6.1 的静态 343×2 是已完成的本地历史路径。P6.2 从 Stage2 动态派生候选池，不预设为 343 或 686；单个候选不是 mixed-precision。P6.3 历史执行适配器已实现并通过离线验证。归一桥接的公开离线门禁覆盖 normalizer→provision→真实 Stage1 manifest→动态 Stage2 plan→registry-v2，并在测量 adapter 前停止；真实 H800 私有预检和框架来源四轮执行仍待本地运行。Orin 与 TensorRT 仍为后续独立线。 | P6.1 历史收口、P6.2 离线完成、P6.3 离线验证和归一桥接实现完成都不生成公开 P6 结果摘要，也不等同于真实 H800 私有预检、真实框架来源闭环、Stage6 或 Stage7 论文证据完成。Git 忽略的本地执行材料不进入公开面或匿名归档；不公开候选标识、执行位置、命令、结果、检查点或日志。 |
 | P7 | 待开始 | 完成开源前安全、合规、文档和供应链审查。 | 全树/待发布历史凭据扫描为零；第三方许可和数据使用权明确；README、架构/设计说明、数据卡、复现指南、贡献/引用信息与真实入口一致；依赖漏洞处置或记录完成。 |
 | P8 | 待开始 | 形成发布候选并进行外部发布。 | 新目录 HTTPS clone、CPU smoke、全量测试、CI、匿名包（如仍在匿名期）和 4090/H800 最小验证均通过；获得明确授权后才推送、PR/合并、打 tag、设置可见性和发布版本。 |
 
@@ -803,6 +803,8 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 **P6.2 动态框架候选空间离线接入完成（2026-08-17）**：动态候选池由 Stage2 派生，不预设为 343 或 686；每个候选采用单一精度策略，单个候选不是 mixed-precision。该记录仅确认本地离线接入与验证完成：不执行真实 H800、训练、下载、外部资产或公开结果生成。真实框架来源闭环仍待本地执行；本记录不授权推送、合并或发布。
 
 **P6.3 历史执行适配器离线验证（2026-08-19）**：P6.3 历史执行适配器已实现并通过离线验证；真实 H800 框架来源四轮执行仍待本地运行。本记录不改变 P6.1、P6.2、P7 或 P8 状态，不生成公开结果或论文证据，也不授权真实硬件执行、推送、合并或发布。
+
+**P6 历史执行根归一桥接实现完成（2026-08-20）**：normalizer、full-chain provision、Stage1 manifest、动态 Stage2 plan 与 registry-v2 的公开离线集成门禁已补齐，并在测量 adapter 调用前停止验证。当前公开状态为 `implementation complete; H800 private preflight pending`。本记录不声称真实 H800 私有预检、真实四轮闭环或论文证据已完成，不公开私有路径、设备身份、资产/候选身份、checkpoint、指标、结果或日志，也不授权真实硬件执行、推送、合并或发布。
 
 P3-139 上一批完成后覆盖为 1,436/1,551（P4=12）。
 
