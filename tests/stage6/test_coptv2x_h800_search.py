@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -26,8 +27,20 @@ from framework.stage6.coptv2x_h800_search_v2 import (
 from framework.stage6.p6_full_chain_bootstrap_v1 import materialize_full_chain_binding
 from framework.stage6.p6_history_binding_v1 import COMPONENT_MARKERS, GpuRecord
 from framework.stage6.p6_history_normalization_v1 import normalize_history_inputs
+from framework.stage6.p6_history_recipe_profiles_v1 import (
+    RECIPE_V2,
+    SHARED_SOURCE_PATH_KEYS,
+    get_recipe_profile,
+)
+from framework.stage6.p6_history_registry_v1 import materialize_history_registry
+from framework.stage6.p6_runner_template_validator_v1 import (
+    validate_pre_provision_runner_template,
+)
 from framework.stage6.p6_history_source_materialization_v1 import (
     P6HistorySourceMaterializationError,
+    build_source_invocations,
+    project_source_materialization_request,
+    run_source_invocations,
 )
 
 
@@ -1218,6 +1231,257 @@ def test_normalized_private_root_reaches_dynamic_stage2_and_registry_without_mea
         registry, task=task, measured_row_ids=set()
     )
     assert candidate_manifest["eligible_row_count"] >= 16
+
+
+def test_zero_gpu_stage2_to_source_invocation_black_box(tmp_path: Path) -> None:
+    """Gate dynamic public planning through shared-source direct argv without processes."""
+    stage2_output = {
+        "schema": "stage2_search_space_v1",
+        "model": "pyramid_lidar",
+        "hardware_target": {"name": "h800"},
+        "hardware_candidates": [
+            {
+                "id": "tvm_metaschedule_candidate",
+                "backend_scope": "measured_h800_tvm",
+                "hardware": "h800",
+                "schedule_policy": "tuned",
+            }
+        ],
+        "software_candidates": [
+            {
+                "dense_stage": stage,
+                "software_points": [
+                    {
+                        "id": f"{stage}:w{width}:{q_mode}",
+                        "width": width,
+                        "quant_policy": q_mode,
+                        "buildable": True,
+                        "status": "active",
+                    }
+                    for q_mode, widths in q_widths.items()
+                    for width in widths
+                ],
+            }
+            for stage, q_widths in {
+                "stage1": {"fp16": [17, 23, 29], "int8": [17]},
+                "stage2": {"fp16": [31], "int8": [31]},
+                "stage3": {"fp16": [63], "int8": [63]},
+            }.items()
+        ],
+    }
+    plan = execution.build_pyramid_candidate_plan(stage2_output)
+
+    source_map = _write_normalized_history_source_map(tmp_path)
+    history_root = Path(str(source_map["history_root"]))
+    validated_template = validate_pre_provision_runner_template(
+        _write_runner_template(history_root / "runner-template.yaml"),
+        history_root,
+    )
+    profile = get_recipe_profile("p6_stage5_pyramid_h800_tvm_profile_v1")
+    assert profile is not None
+    template = copy.deepcopy(source_map["source_contract"]["source_contract"])
+    template["dynamic_materialization_recipe"] = {
+        "schema_version": RECIPE_V2,
+        "stage_width_fields": list(profile.stage_width_fields),
+        "group_id_template": profile.group_id_template,
+        "artifact_id_template": profile.artifact_id_template,
+        "shared_source_path_templates": dict(profile.shared_source_path_templates),
+    }
+    template.update(
+        {
+            "base_checkpoint_path": str(history_root / "base" / "model.ckpt"),
+            "dataset_root": str(history_root / "dataset"),
+            "training_parameters": {"epochs": 3, "optimizer": "synthetic"},
+        }
+    )
+    synthetic_gpu_indices = (17, 19, 23)
+    execution_interface = copy.deepcopy(validated_template.execution_interface)
+    execution_interface["environment"]["values"]["P6_HISTORY_PRIVATE_ROOT"][
+        "value"
+    ] = str(history_root)
+    binding = {
+        "schema_version": "p6_history_binding_v1",
+        "target": {"model": "pyramid", "hardware": "h800", "backend": "tvm_auto"},
+        "private_root": str(history_root),
+        "component_paths": {
+            role: str(path)
+            for role, path in validated_template.component_paths.items()
+        },
+        "execution_interface": execution_interface,
+        "source_contract_template": template,
+        "gpu_policy": {
+            "indices": list(synthetic_gpu_indices),
+            "uuid_by_index": {
+                str(index): f"GPU-offline-{index}"
+                for index in synthetic_gpu_indices
+            },
+            "model": "h800",
+            "maximum_occupancy": 0.05,
+        },
+        "status": "validated",
+    }
+    registry_root = tmp_path / "private-registry"
+    registry_root.mkdir()
+    registry = materialize_history_registry(plan, binding, registry_root)
+
+    plan_identity = {
+        (tuple(candidate["width"]), candidate["q_mode"]): tuple(
+            candidate["source_point_ids"]
+        )
+        for candidate in plan["candidates"]
+    }
+    registry_identity = {
+        (tuple(group["width"]), q_mode): tuple(
+            group["source_point_ids_by_q_mode"][q_mode]
+        )
+        for group in registry["groups"]
+        for q_mode in group["available_q_modes"]
+    }
+    task = _minimal_task()
+    manifest = execution.build_task_candidate_manifest(
+        registry, task=task, measured_row_ids=set()
+    )
+    predicted_rows = []
+    for index, row in enumerate(manifest["rows"]):
+        predictions = {
+            "latency_ms": 1.0 + index,
+            "energy_j": 0.2 + index / 10,
+            "ap70": 0.8 - index / 100,
+        }
+        predicted_rows.append(
+            {
+                **copy.deepcopy(row),
+                "predictions": predictions,
+                "prediction_intervals": {
+                    key: {
+                        "lower": value - 0.1,
+                        "median": value,
+                        "upper": value + 0.1,
+                    }
+                    for key, value in predictions.items()
+                },
+            }
+        )
+    selection = execution.select_task_batch(
+        predicted_rows,
+        measured_rows=[],
+        measured_graph_features=[],
+        task=task,
+    )
+    request = execution.build_measurement_request(
+        task=task,
+        selected_rows=selection["selected_rows"],
+        round_index=0,
+    )
+    projected = project_source_materialization_request(request)
+    projected_path = tmp_path / "projected-request.json"
+    projected_path.write_text(json.dumps(projected.request), encoding="utf-8")
+    invocations = build_source_invocations(
+        projected_path,
+        projected.ordered_group_ids,
+        source_materializer=validated_template.component_paths["source_materializer"],
+        validated_gpu_policy=binding["gpu_policy"],
+    )
+
+    class RecordingRunner:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, ...]] = []
+            self.subprocess_calls = 0
+
+        def run(
+            self,
+            argv: Sequence[str],
+            *,
+            cwd: Path,
+            env: Mapping[str, str],
+            shell: bool,
+        ) -> subprocess.CompletedProcess[str]:
+            assert cwd == tmp_path
+            assert env == {"P6_OFFLINE_GATE": "synthetic"}
+            assert shell is False
+            self.calls.append(tuple(argv))
+            return subprocess.CompletedProcess(argv, 0)
+
+    runner = RecordingRunner()
+    run_source_invocations(
+        invocations,
+        runner=runner,
+        cwd=tmp_path,
+        env={"P6_OFFLINE_GATE": "synthetic"},
+    )
+
+    assert plan_identity == registry_identity
+    assert plan["candidate_count"] == len(plan["candidates"])
+    assert manifest["eligible_row_count"] == plan["candidate_count"]
+    assert selection["selected_row_count"] == plan["candidate_count"] == 4
+    rows_by_group: dict[str, list[Mapping[str, Any]]] = {}
+    for row in projected.request["rows"]:
+        rows_by_group.setdefault(row["group_id"], []).append(row)
+    mixed_rows = rows_by_group["pyramid|17x31x63"]
+    assert {row["q_mode"] for row in mixed_rows} == {"fp16", "int8"}
+    assert {
+        key: mixed_rows[0]["source_contract"][key]
+        for key in SHARED_SOURCE_PATH_KEYS
+    } == {
+        key: mixed_rows[1]["source_contract"][key]
+        for key in SHARED_SOURCE_PATH_KEYS
+    }
+    all_paths = [
+        row_group[0]["source_contract"][key]
+        for row_group in rows_by_group.values()
+        for key in SHARED_SOURCE_PATH_KEYS
+    ]
+    assert len(all_paths) == len(set(all_paths)) == (
+        len(rows_by_group) * len(SHARED_SOURCE_PATH_KEYS)
+    )
+    assert len(runner.calls) == len(rows_by_group) == 3
+    assert [call[1::2] for call in runner.calls] == [
+        ("--request", "--model", "--group-id", "--gpu")
+    ] * 3
+    assert [call[6] for call in runner.calls] == sorted(rows_by_group)
+    assert [call[8] for call in runner.calls] == ["17", "19", "23"]
+    for row in projected.request["rows"]:
+        assert row["source_contract_sha256"] == hashlib.sha256(
+            json.dumps(
+                row["source_contract"],
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        assert projected.request["row_sha256"][row["row_id"]] == hashlib.sha256(
+            json.dumps(
+                row,
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+    request_body = {
+        key: value
+        for key, value in projected.request.items()
+        if key != "measurement_request_sha256"
+    }
+    assert projected.request["measurement_request_sha256"] == hashlib.sha256(
+        json.dumps(
+            request_body,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    assert runner.subprocess_calls == 0
+    called_executables = {Path(call[0]).name for call in runner.calls}
+    assert "stage5_task_round_controller_v3.sh" not in called_executables
+    assert called_executables == {"stage5_materialize_round_sources_v1.sh"}
+    assert not called_executables.intersection(
+        {
+            "quantize-private",
+            "stage5_build_performance_plan_v2.py",
+            "measure-ap-private",
+            "stage5_finalize_feedback_v2.py",
+        }
+    )
 
 
 def test_framework_lifecycle_never_uses_static_registry_after_stage1(

@@ -15,6 +15,10 @@ from framework.stage6.p6_history_measurement_v1 import (
     P6HistoryMeasurementError,
     run_history_measurement_batch,
 )
+from framework.stage6.p6_history_recipe_profiles_v1 import SHARED_SOURCE_PATH_KEYS
+from framework.stage6.p6_history_source_materialization_v1 import (
+    project_source_materialization_request,
+)
 
 
 METRICS = ("latency_ms", "energy_j", "ap30", "ap50", "ap70")
@@ -273,6 +277,36 @@ def _request() -> dict[str, Any]:
     return {**body, "measurement_request_sha256": _sha(body)}
 
 
+def _unprojected_recipe_v2_request() -> dict[str, Any]:
+    request = _request()
+    for row in request["rows"]:
+        group_slug = "-".join(map(str, row["width"]))
+        contract = row["source_contract"]
+        contract["artifact_id"] = f"pyramid-{group_slug}"
+        contract.update(
+            {
+                "stage_widths": {
+                    "stage1_width": row["width"][0],
+                    "stage2_width": row["width"][1],
+                    "stage3_width": row["width"][2],
+                },
+                "base_checkpoint_path": "/private/synthetic/base/model.ckpt",
+                "dataset_root": "/private/synthetic/dataset",
+                "training_parameters": {"epochs": 7, "optimizer": "synthetic"},
+                "shared_source_paths": {
+                    key: f"/private/synthetic/materialized/{group_slug}/{key}"
+                    for key in SHARED_SOURCE_PATH_KEYS
+                },
+            }
+        )
+        row["source_contract_sha256"] = _sha(contract)
+    request["row_sha256"] = {
+        row["row_id"]: _sha(row) for row in request["rows"]
+    }
+    _rehash_request(request)
+    return request
+
+
 def _records(
     *,
     indices: tuple[int, int, int] = SYNTHETIC_GPU_INDICES,
@@ -351,7 +385,7 @@ class FakeRunner:
             return Result(23)
         if Path(argv[0]).name == "stage5_materialize_round_sources_v1.sh":
             self.initial_state = json.loads(
-                Path(argv[2]).joinpath("state/task-state.json").read_text(encoding="utf-8")
+                cwd.joinpath("state/task-state.json").read_text(encoding="utf-8")
             )
         if Path(argv[0]).name == "stage5_finalize_feedback_v2.py":
             self._finalize(argv)
@@ -511,11 +545,34 @@ def test_valid_route_executes_activation_and_five_stages_then_returns_four_rows(
     assert [Path(call.argv[0]).name for call in runner.calls] == [
         "activate",
         "stage5_materialize_round_sources_v1.sh",
+        "stage5_materialize_round_sources_v1.sh",
+        "stage5_materialize_round_sources_v1.sh",
+        "stage5_materialize_round_sources_v1.sh",
         "quantize",
         "stage5_build_performance_plan_v2.py",
         "measure-ap",
         "stage5_finalize_feedback_v2.py",
     ]
+    source_calls = [
+        call
+        for call in runner.calls
+        if Path(call.argv[0]).name == "stage5_materialize_round_sources_v1.sh"
+    ]
+    assert [call.argv[1::2] for call in source_calls] == [
+        (
+            "--request",
+            "--model",
+            "--group-id",
+            "--gpu",
+        )
+    ] * 4
+    expected_request_path = str(source_calls[0].cwd / "measurement-request.json")
+    assert [call.argv[2] for call in source_calls] == [expected_request_path] * 4
+    assert [call.argv[4] for call in source_calls] == ["pyramid"] * 4
+    assert [call.argv[6] for call in source_calls] == sorted(
+        row["group_id"] for row in _request()["rows"]
+    )
+    assert [call.argv[8] for call in source_calls] == ["101", "103", "107", "101"]
     assert all(call.shell is False for call in runner.calls)
     assert all(Path(call.argv[0]).name not in {"sh", "bash", "shell"} for call in runner.calls)
     assert all(
@@ -533,6 +590,69 @@ def test_valid_route_executes_activation_and_five_stages_then_returns_four_rows(
     assert runner.initial_state is not None
     assert runner.initial_state["stage"] == "initialized"
     assert len(runner.initial_state["rows"]) == 4
+
+
+def test_measurement_projects_recipe_v2_before_write_invocation_and_feedback(
+    tmp_path: Path,
+) -> None:
+    """Catches original/projected request hashes becoming two measurement truths."""
+    original = _unprojected_recipe_v2_request()
+    original_snapshot = copy.deepcopy(original)
+    projected = dict(project_source_materialization_request(original).request)
+    private_root = tmp_path / "private"
+    private_root.mkdir()
+    round_root = private_root / "controller-round"
+    round_root.mkdir()
+    runner = FakeRunner(projected)
+
+    feedback = run_history_measurement_batch(
+        original, _binding(private_root), round_root, runner, FakeProbe()
+    )
+
+    request_path = private_root / "private-runs/0/measurement-request.json"
+    assert json.loads(request_path.read_text(encoding="utf-8")) == projected
+    assert original == original_snapshot
+    assert feedback["measurement_request_sha256"] == projected["measurement_request_sha256"]
+    source_calls = [
+        call
+        for call in runner.calls
+        if Path(call.argv[0]).name == "stage5_materialize_round_sources_v1.sh"
+    ]
+    assert [call.argv[2] for call in source_calls] == [str(request_path)] * 4
+    assert all(
+        "shared_source_paths" not in row["source_contract"]
+        for row in projected["rows"]
+    )
+
+
+def test_measurement_projection_is_idempotent_for_already_projected_request(
+    tmp_path: Path,
+) -> None:
+    """Catches a second projection changing canonical row or request hashes."""
+    projected = dict(
+        project_source_materialization_request(_unprojected_recipe_v2_request()).request
+    )
+    snapshot = copy.deepcopy(projected)
+    private_root = tmp_path / "private"
+    private_root.mkdir()
+    round_root = private_root / "controller-round"
+    round_root.mkdir()
+
+    feedback = run_history_measurement_batch(
+        projected,
+        _binding(private_root),
+        round_root,
+        FakeRunner(projected),
+        FakeProbe(),
+    )
+
+    assert projected == snapshot
+    assert feedback["measurement_request_sha256"] == projected["measurement_request_sha256"]
+    assert json.loads(
+        (private_root / "private-runs/0/measurement-request.json").read_text(
+            encoding="utf-8"
+        )
+    ) == projected
 
 
 def test_measurement_revalidates_the_binding_private_policy_before_and_after_execution(
@@ -816,8 +936,8 @@ def test_runner_failure_never_becomes_success(tmp_path: Path, mode: str) -> None
     request = _request()
     runner = FakeRunner(
         request,
-        fail_call=3 if mode == "nonzero" else None,
-        raise_call=3 if mode == "exception" else None,
+        fail_call=6 if mode == "nonzero" else None,
+        raise_call=6 if mode == "exception" else None,
     )
 
     with pytest.raises(P6HistoryMeasurementError) as raised:
@@ -827,6 +947,41 @@ def test_runner_failure_never_becomes_success(tmp_path: Path, mode: str) -> None
 
     assert raised.value.category == "history_execution_failed"
     assert "PRIVATE" not in str(raised.value)
+
+
+@pytest.mark.parametrize("mode", ["nonzero", "exception"])
+def test_source_runner_failure_stops_before_later_wrappers(
+    tmp_path: Path, mode: str
+) -> None:
+    """Catches source failure continuing into quantization or leaking private details."""
+    private_root = tmp_path / "private"
+    private_root.mkdir()
+    round_root = private_root / "controller-round"
+    round_root.mkdir()
+    request = _request()
+    runner = FakeRunner(
+        request,
+        fail_call=3 if mode == "nonzero" else None,
+        raise_call=3 if mode == "exception" else None,
+    )
+
+    with pytest.raises(P6HistoryMeasurementError) as raised:
+        run_history_measurement_batch(
+            request, _binding(private_root), round_root, runner, FakeProbe()
+        )
+
+    assert raised.value.category == "history_execution_invalid"
+    assert "PRIVATE" not in str(raised.value)
+    assert all(
+        Path(call.argv[0]).name
+        not in {
+            "quantize",
+            "stage5_build_performance_plan_v2.py",
+            "measure-ap",
+            "stage5_finalize_feedback_v2.py",
+        }
+        for call in runner.calls
+    )
 
 
 @pytest.mark.parametrize("case", ["relative", "missing", "symlink"])

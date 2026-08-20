@@ -806,6 +806,8 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 
 **P6 历史执行根归一桥接实现完成（2026-08-20）**：normalizer、full-chain provision、Stage1 manifest、动态 Stage2 plan 与 registry-v2 的公开离线集成门禁已补齐，并在测量 adapter 调用前停止验证。当前公开状态为 `implementation complete; H800 private preflight pending`。本记录不声称真实 H800 私有预检、真实四轮闭环或论文证据已完成，不公开私有路径、设备身份、资产/候选身份、checkpoint、指标、结果或日志，也不授权真实硬件执行、推送、合并或发布。
 
+**P6 程序式 recipe source 调用离线门禁（2026-08-21）**：offline recipe/projection/invocation-shape gate 已完成；H800 preflight 与真实四轮仍未完成。本记录不包含私有实例或结果，也不授权真实硬件执行、推送、合并或发布。
+
 P3-139 上一批完成后覆盖为 1,436/1,551（P4=12）。
 
 P3-138 上一批完成后覆盖为 1,424/1,551（P4=12）。

@@ -23,6 +23,16 @@ from framework.stage6.p6_history_binding_v1 import (
     P6HistoryBindingError,
     validate_history_execution_binding,
 )
+from framework.stage6.p6_history_feedback_validation_v1 import (
+    P6HistoryFeedbackValidationError,
+    translate_history_feedback,
+)
+from framework.stage6.p6_history_source_materialization_v1 import (
+    P6HistorySourceMaterializationError,
+    build_source_invocations,
+    project_source_materialization_request,
+    run_source_invocations,
+)
 
 
 REQUEST_SCHEMA_VERSION = "stage5_measurement_request_v2"
@@ -114,20 +124,40 @@ def run_history_measurement_batch(
     """Execute one validated four-row history batch and return safe P6 feedback."""
     interface = _validated_interface(binding)
     verified_request = _validate_request(request)
+    try:
+        projected = project_source_materialization_request(verified_request)
+    except P6HistorySourceMaterializationError:
+        raise P6HistoryMeasurementError("history_execution_invalid") from None
+    canonical_request = projected.request
     private_root, gpu_policy = _validate_binding_runtime(binding)
     _validate_interface_gpu_policy(interface, gpu_policy)
     paths = _resolve_round_paths(
-        interface, private_root, Path(round_output_root), verified_request["round_index"]
+        interface, private_root, Path(round_output_root), canonical_request["round_index"]
+    )
+    source_invocations = build_source_invocations(
+        paths["measurement_request"],
+        projected.ordered_group_ids,
+        source_materializer=Path(interface["execution_chain"][0]["argv"][0]),
+        validated_gpu_policy=gpu_policy,
     )
     _validate_gpu(gpu_probe, gpu_policy)
-    _initialize_private_round(verified_request, interface, paths)
+    _initialize_private_round(canonical_request, interface, paths)
     environment = _render_environment(interface, paths)
     substitutions = _substitutions(paths)
     _execute(interface["environment"]["activation_argv"], substitutions, runner, paths, environment)
-    for stage in interface["execution_chain"]:
+    try:
+        run_source_invocations(
+            source_invocations,
+            runner=runner,
+            cwd=paths["round_root"],
+            env=environment,
+        )
+    except P6HistorySourceMaterializationError:
+        raise P6HistoryMeasurementError("history_execution_invalid") from None
+    for stage in interface["execution_chain"][1:]:
         _execute(stage["argv"], substitutions, runner, paths, environment)
     _validate_gpu(gpu_probe, gpu_policy)
-    return _translate_feedback(verified_request, interface, paths, private_root)
+    return _translate_feedback(canonical_request, interface, paths, private_root)
 
 def _validated_interface(binding: Mapping[str, Any]) -> Mapping[str, Any]:
     try:
@@ -268,6 +298,7 @@ def _validate_binding_runtime(
             "uuid_by_index": {
                 str(index): uuid for index, uuid in zip(indices, uuids, strict=True)
             },
+            "model": "h800",
             "maximum_occupancy": MAX_GPU_OCCUPANCY,
         }
         return private_root, policy
@@ -502,201 +533,16 @@ def _translate_feedback(
     private_root: Path,
 ) -> dict[str, Any]:
     try:
-
-        def read_json(path: Path) -> Mapping[str, Any]:
-            return _read_private_json(path, paths["history_root"], private_root)
-
-        state = read_json(paths["task_state"])
-        result = read_json(paths["actual_feedback"])
-        receipt = read_json(paths["actual_receipt"])
-        barrier = read_json(paths["finalization_barrier"])
-        task_schema = interface["output_layout"]["task_state"]
-        result_schema = interface["actual_feedback"]["result"]
-        expected = _expected_identity(request)
-        state_statuses = _validate_task_state(state, task_schema, expected)
-        feedback_rows = _validate_result(result, result_schema, request, expected, state_statuses)
-        _validate_completion_mapping(
-            receipt, interface["actual_feedback"]["receipt"], request, expected
-        )
-        _validate_completion_mapping(
-            barrier,
-            interface["actual_feedback"]["finalization_barrier"],
+        return translate_history_feedback(
             request,
-            expected,
+            interface,
+            paths,
+            read_json=lambda path: _read_private_json(
+                path, paths["history_root"], private_root
+            ),
         )
-        return {
-            "schema_version": FEEDBACK_SCHEMA_VERSION,
-            "measurement_request_sha256": request["measurement_request_sha256"],
-            "rows": feedback_rows,
-        }
-    except P6HistoryMeasurementError:
-        raise
-    except (KeyError, OSError, TypeError, ValueError):
+    except P6HistoryFeedbackValidationError:
         raise P6HistoryMeasurementError("history_execution_invalid") from None
-
-
-def _expected_identity(request: Mapping[str, Any]) -> dict[str, Any]:
-    return {
-        row["row_id"]: {
-            "row_sha256": request["row_sha256"][row["row_id"]],
-            "source_evidence_sha256": row["source_evidence_sha256"],
-        }
-        for row in request["rows"]
-    }
-
-
-def _validate_task_state(
-    state: Mapping[str, Any], schema: Mapping[str, Any], expected: Mapping[str, Any]
-) -> dict[str, str]:
-    stage_key = schema["stage_key"]
-    rows_key = schema["rows_key"]
-    if set(state) != {stage_key, rows_key} or state.get(stage_key) != schema["stage_order"][-1]:
-        raise ValueError
-    rows = _exact_rows(state.get(rows_key), expected, schema)
-    for row_id, row in rows.items():
-        if row[schema["status_key"]] not in ALLOWED_STATUSES:
-            raise ValueError
-        _validate_identity_row(row, row_id, schema, expected)
-    return {row_id: str(row[schema["status_key"]]) for row_id, row in rows.items()}
-
-
-def _validate_result(
-    result: Mapping[str, Any],
-    schema: Mapping[str, Any],
-    request: Mapping[str, Any],
-    expected: Mapping[str, Any],
-    state_statuses: Mapping[str, str],
-) -> list[dict[str, Any]]:
-    if (
-        set(result) != {"measurement_request_sha256", schema["rows_key"]}
-        or result.get("measurement_request_sha256") != request["measurement_request_sha256"]
-    ):
-        raise ValueError
-    rows = _exact_rows(result.get(schema["rows_key"]), expected, schema, variable=True)
-    translated: list[dict[str, Any]] = []
-    for request_row in request["rows"]:
-        row_id = request_row["row_id"]
-        row = rows[row_id]
-        _validate_identity_row(row, row_id, schema, expected)
-        status = row[schema["status_key"]]
-        if status != state_statuses.get(row_id):
-            raise ValueError
-        base = {"row_id": row_id, "terminal_status": status}
-        if status == SUCCESS_STATUS:
-            expected_keys = {
-                schema["row_id_key"],
-                schema["row_hash_key"],
-                schema["source_evidence_key"],
-                schema["status_key"],
-                *schema["metric_keys"],
-            }
-            if set(row) != expected_keys:
-                raise ValueError
-            metrics = {key: row[key] for key in schema["metric_keys"]}
-            if (
-                any(not _finite(value) for value in metrics.values())
-                or float(metrics["latency_ms"]) <= 0.0
-                or float(metrics["energy_j"]) <= 0.0
-                or any(not 0.0 <= float(metrics[key]) <= 1.0 for key in ("ap30", "ap50", "ap70"))
-            ):
-                raise ValueError
-            translated.append(
-                {**base, **{key: float(metrics[key]) for key in schema["metric_keys"]}}
-            )
-        elif status in FAILURE_STATUSES:
-            expected_keys = {
-                schema["row_id_key"],
-                schema["row_hash_key"],
-                schema["source_evidence_key"],
-                schema["status_key"],
-                "failure_reason",
-            }
-            reason = row.get("failure_reason")
-            if set(row) != expected_keys or not isinstance(reason, str) or not reason:
-                raise ValueError
-            translated.append(
-                {
-                    **base,
-                    "failure_reason": (
-                        reason if PUBLIC_FAILURE_REASON.fullmatch(reason) else "unspecified"
-                    ),
-                }
-            )
-        else:
-            raise ValueError
-    return translated
-
-
-def _exact_rows(
-    raw_rows: object,
-    expected: Mapping[str, Any],
-    schema: Mapping[str, Any],
-    *,
-    variable: bool = False,
-) -> dict[str, Mapping[str, Any]]:
-    if (
-        not isinstance(raw_rows, list)
-        or len(raw_rows) != 4
-        or not all(isinstance(row, Mapping) for row in raw_rows)
-    ):
-        raise ValueError
-    row_ids = [row.get(schema["row_id_key"]) for row in raw_rows]
-    if any(not isinstance(row_id, str) or not row_id for row_id in row_ids):
-        raise ValueError
-    if len(set(row_ids)) != 4 or set(row_ids) != set(expected):
-        raise ValueError
-    rows = dict(zip(row_ids, raw_rows, strict=True))
-    if not variable:
-        required = {
-            schema["row_id_key"],
-            schema["row_hash_key"],
-            schema["source_evidence_key"],
-            schema["status_key"],
-        }
-        if any(set(row) != required for row in rows.values()):
-            raise ValueError
-    return rows
-
-
-def _validate_identity_row(
-    row: Mapping[str, Any],
-    row_id: str,
-    schema: Mapping[str, Any],
-    expected: Mapping[str, Any],
-) -> None:
-    identity = expected[row_id]
-    if (
-        row.get(schema["row_hash_key"]) != identity["row_sha256"]
-        or row.get(schema["source_evidence_key"]) != identity["source_evidence_sha256"]
-    ):
-        raise ValueError
-
-
-def _validate_completion_mapping(
-    payload: Mapping[str, Any],
-    schema: Mapping[str, Any],
-    request: Mapping[str, Any],
-    expected: Mapping[str, Any],
-) -> None:
-    request_key = schema["request_sha256_key"]
-    row_hashes_key = schema["row_hashes_key"]
-    evidence_key = schema["source_evidence_key"]
-    if set(payload) != {request_key, row_hashes_key, evidence_key}:
-        raise ValueError
-    if payload.get(request_key) != request["measurement_request_sha256"]:
-        raise ValueError
-    row_hashes = payload.get(row_hashes_key)
-    evidence = payload.get(evidence_key)
-    if not isinstance(row_hashes, Mapping) or not isinstance(evidence, Mapping):
-        raise ValueError
-    if set(row_hashes) != set(expected) or set(evidence) != set(expected):
-        raise ValueError
-    if row_hashes != {row_id: values["row_sha256"] for row_id, values in expected.items()}:
-        raise ValueError
-    if evidence != {
-        row_id: values["source_evidence_sha256"] for row_id, values in expected.items()
-    }:
-        raise ValueError
 
 def _read_private_json(path: Path, supplied_root: Path, private_root: Path) -> Mapping[str, Any]:
     _reject_symlink_components(path, supplied_root)

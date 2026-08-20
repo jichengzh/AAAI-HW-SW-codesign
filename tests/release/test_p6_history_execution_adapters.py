@@ -779,13 +779,33 @@ def test_measurement_cli_keeps_history_artifacts_separate_from_external_feedback
         .read_text(encoding="utf-8")
         .splitlines()
     ]
+    expected_groups = sorted({row["group_id"] for row in request["rows"]})
     assert [record["stage"] for record in stage_records] == [
         "activate-private",
-        "stage5_materialize_round_sources_v1.sh",
+        *(["stage5_materialize_round_sources_v1.sh"] * len(expected_groups)),
         "quantize-private",
         "stage5_build_performance_plan_v2.py",
         "measure-ap-private",
         "stage5_finalize_feedback_v2.py",
+    ]
+    source_records = [
+        record
+        for record in stage_records
+        if record["stage"] == "stage5_materialize_round_sources_v1.sh"
+    ]
+    policy_indices = binding["gpu_policy"]["indices"]
+    assert [record["argv"] for record in source_records] == [
+        [
+            "--request",
+            str(history_round / "measurement-request.json"),
+            "--model",
+            "pyramid",
+            "--group-id",
+            group_id,
+            "--gpu",
+            str(policy_indices[index % len(policy_indices)]),
+        ]
+        for index, group_id in enumerate(expected_groups)
     ]
     assert all(Path(record["cwd"]) == history_round for record in stage_records)
     assert all(record["round_output_root"] == str(history_round) for record in stage_records)

@@ -1,20 +1,21 @@
-"""Pure projection of shared P6 source bundles into historical flat requests."""
+"""Project shared P6 source bundles and invoke the private materializer safely."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 import copy
 from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from framework.stage5.genome_contract_v1 import (
     canonical_group_id,
     validate_structure_identity,
 )
 from framework.stage5.production_search_v1 import validate_source_contract
+from framework.stage6.p6_history_binding_v1 import MAX_GPU_OCCUPANCY
 from framework.stage6.p6_history_recipe_profiles_v1 import SHARED_SOURCE_PATH_KEYS
 
 
@@ -84,10 +85,29 @@ class P6HistorySourceMaterializationError(ValueError):
 
 @dataclass(frozen=True)
 class ProjectedSourceRequest:
-    """A detached canonical request and its first-seen group order."""
+    """A detached canonical request and its canonical group order."""
 
     request: Mapping[str, Any]
     ordered_group_ids: tuple[str, ...]
+
+
+class RunnerResult(Protocol):
+    """Minimal completed-process surface consumed by source invocation."""
+
+    returncode: int
+
+
+class Runner(Protocol):
+    """Injected direct-argv process boundary."""
+
+    def run(
+        self,
+        argv: Sequence[str],
+        *,
+        cwd: Path,
+        env: Mapping[str, str],
+        shell: bool,
+    ) -> RunnerResult: ...
 
 
 def project_source_materialization_request(
@@ -97,7 +117,7 @@ def project_source_materialization_request(
     try:
         projected = _validated_request_copy(request)
         rows = projected["rows"]
-        ordered_group_ids = tuple(dict.fromkeys(row["group_id"] for row in rows))
+        ordered_group_ids = tuple(sorted({row["group_id"] for row in rows}))
         shared_presence = [
             "shared_source_paths" in row["source_contract"] for row in rows
         ]
@@ -151,6 +171,210 @@ def project_source_materialization_request(
         raise
     except (KeyError, OverflowError, TypeError, ValueError):
         raise P6HistorySourceMaterializationError() from None
+
+
+def build_source_invocations(
+    projected_request_path: Path,
+    ordered_group_ids: Sequence[str],
+    *,
+    source_materializer: Path,
+    validated_gpu_policy: Mapping[str, Any],
+) -> tuple[tuple[str, ...], ...]:
+    """Build one canonical direct argv per distinct source group."""
+    try:
+        request_path = _absolute_path(projected_request_path)
+        materializer = _validated_materializer(source_materializer)
+        groups = tuple(
+            sorted({_validated_group_id(group_id) for group_id in ordered_group_ids})
+        )
+        if not groups:
+            _invalid()
+        gpu_indices = _validated_gpu_indices(validated_gpu_policy)
+        return tuple(
+            (
+                str(materializer),
+                "--request",
+                str(request_path),
+                "--model",
+                "pyramid",
+                "--group-id",
+                group_id,
+                "--gpu",
+                str(gpu_indices[index % len(gpu_indices)]),
+            )
+            for index, group_id in enumerate(groups)
+        )
+    except P6HistorySourceMaterializationError:
+        raise
+    except (KeyError, OSError, OverflowError, TypeError, ValueError):
+        raise P6HistorySourceMaterializationError() from None
+
+
+def run_source_invocations(
+    invocations: Sequence[Sequence[str]],
+    *,
+    runner: Runner,
+    cwd: Path,
+    env: Mapping[str, str],
+) -> None:
+    """Validate a complete plan, then execute it using direct argv only."""
+    try:
+        canonical_invocations = _validated_invocations(invocations)
+        canonical_cwd = _validated_cwd(cwd)
+        canonical_env = _validated_environment(env)
+        for argv in canonical_invocations:
+            completed = runner.run(
+                argv,
+                cwd=canonical_cwd,
+                env=dict(canonical_env),
+                shell=False,
+            )
+            returncode = completed.returncode
+            if (
+                isinstance(returncode, bool)
+                or not isinstance(returncode, int)
+                or returncode != 0
+            ):
+                _invalid()
+    except P6HistorySourceMaterializationError:
+        raise
+    except Exception:
+        raise P6HistorySourceMaterializationError() from None
+
+
+def _absolute_path(raw_path: Path) -> Path:
+    path = Path(raw_path)
+    serialized = str(path)
+    if (
+        not path.is_absolute()
+        or not serialized
+        or any(character in serialized for character in ("\x00", "\r", "\n"))
+    ):
+        _invalid()
+    return path
+
+
+def _validated_materializer(raw_path: Path) -> Path:
+    return _absolute_path(raw_path)
+
+
+def _validated_group_id(raw_group_id: object) -> str:
+    if not isinstance(raw_group_id, str) or not raw_group_id.startswith("pyramid|"):
+        _invalid()
+    raw_width = raw_group_id.removeprefix("pyramid|").split("x")
+    if len(raw_width) != len(STAGE_WIDTH_FIELDS):
+        _invalid()
+    width = tuple(int(value) for value in raw_width)
+    if canonical_group_id("pyramid", width) != raw_group_id:
+        _invalid()
+    return raw_group_id
+
+
+def _validated_gpu_indices(policy: Mapping[str, Any]) -> tuple[int, int, int]:
+    if not isinstance(policy, Mapping) or set(policy) != {
+        "indices",
+        "uuid_by_index",
+        "model",
+        "maximum_occupancy",
+    }:
+        _invalid()
+    raw_indices = policy.get("indices")
+    if (
+        not isinstance(raw_indices, Sequence)
+        or isinstance(raw_indices, (str, bytes))
+        or len(raw_indices) != 3
+        or any(
+            isinstance(index, bool) or not isinstance(index, int)
+            for index in raw_indices
+        )
+    ):
+        _invalid()
+    indices = tuple(raw_indices)
+    if (
+        len(set(indices)) != len(indices)
+        or any(index < 0 for index in indices)
+        or policy.get("model") != "h800"
+        or policy.get("maximum_occupancy") != MAX_GPU_OCCUPANCY
+    ):
+        _invalid()
+    uuid_by_index = policy.get("uuid_by_index")
+    if (
+        not isinstance(uuid_by_index, Mapping)
+        or set(uuid_by_index) != {str(index) for index in indices}
+    ):
+        _invalid()
+    raw_uuids = [uuid_by_index[str(index)] for index in indices]
+    if any(not isinstance(uuid, str) for uuid in raw_uuids):
+        _invalid()
+    uuids = tuple(uuid.strip() for uuid in raw_uuids)
+    if any(not uuid for uuid in uuids) or len(set(uuids)) != len(uuids):
+        _invalid()
+    return (indices[0], indices[1], indices[2])
+
+
+def _validated_invocations(
+    invocations: Sequence[Sequence[str]],
+) -> tuple[tuple[str, ...], ...]:
+    if not isinstance(invocations, Sequence) or isinstance(invocations, (str, bytes)):
+        _invalid()
+    canonical: list[tuple[str, ...]] = []
+    groups: set[str] = set()
+    ordered_groups: list[str] = []
+    executable: str | None = None
+    request_path: str | None = None
+    for raw_argv in invocations:
+        if (
+            not isinstance(raw_argv, Sequence)
+            or isinstance(raw_argv, (str, bytes))
+            or len(raw_argv) != 9
+            or any(not isinstance(token, str) or not token for token in raw_argv)
+        ):
+            _invalid()
+        argv = tuple(raw_argv)
+        if (
+            argv[1::2] != ("--request", "--model", "--group-id", "--gpu")
+            or argv[4] != "pyramid"
+            or str(_absolute_path(Path(argv[0]))) != argv[0]
+            or str(_absolute_path(Path(argv[2]))) != argv[2]
+            or _validated_group_id(argv[6]) != argv[6]
+            or not argv[8].isdigit()
+            or str(int(argv[8])) != argv[8]
+        ):
+            _invalid()
+        if argv[6] in groups:
+            _invalid()
+        groups.add(argv[6])
+        ordered_groups.append(argv[6])
+        executable = executable or argv[0]
+        request_path = request_path or argv[2]
+        if argv[0] != executable or argv[2] != request_path:
+            _invalid()
+        canonical.append(argv)
+    if not canonical:
+        _invalid()
+    if ordered_groups != sorted(ordered_groups):
+        _invalid()
+    return tuple(canonical)
+
+
+def _validated_cwd(cwd: Path) -> Path:
+    path = _absolute_path(cwd)
+    if path.is_symlink() or not path.is_dir():
+        _invalid()
+    return path.resolve(strict=True)
+
+
+def _validated_environment(env: Mapping[str, str]) -> dict[str, str]:
+    if not isinstance(env, Mapping) or any(
+        not isinstance(key, str)
+        or not key
+        or not isinstance(value, str)
+        or any(character in key for character in ("\x00", "=", "\r", "\n"))
+        or any(character in value for character in ("\x00", "\r", "\n"))
+        for key, value in env.items()
+    ):
+        _invalid()
+    return dict(env)
 
 
 def _validated_request_copy(request: Mapping[str, Any]) -> dict[str, Any]:

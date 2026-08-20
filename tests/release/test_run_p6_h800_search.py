@@ -551,13 +551,34 @@ def test_cli_runs_full_framework_lifecycle_through_provisioned_history_binding(
             .read_text(encoding="utf-8")
             .splitlines()
         ]
+        expected_groups = sorted({row["group_id"] for row in request["rows"]})
         assert [record["stage"] for record in stage_records] == [
             "activate-private",
-            "stage5_materialize_round_sources_v1.sh",
+            *(["stage5_materialize_round_sources_v1.sh"] * len(expected_groups)),
             "quantize-private",
             "stage5_build_performance_plan_v2.py",
             "measure-ap-private",
             "stage5_finalize_feedback_v2.py",
+        ]
+        source_records = [
+            record
+            for record in stage_records
+            if record["stage"] == "stage5_materialize_round_sources_v1.sh"
+        ]
+        expected_request_path = str(history_root / "measurement-request.json")
+        policy_indices = binding["gpu_policy"]["indices"]
+        assert [record["argv"] for record in source_records] == [
+            [
+                "--request",
+                expected_request_path,
+                "--model",
+                "pyramid",
+                "--group-id",
+                group_id,
+                "--gpu",
+                str(policy_indices[index % len(policy_indices)]),
+            ]
+            for index, group_id in enumerate(expected_groups)
         ]
     assert not any(
         artifact.name == "private-runs"
