@@ -21,6 +21,7 @@ from tools.release import measure_p6_history_batch as measurement_cli
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 REGISTRY_CLI = REPOSITORY_ROOT / "tools/release/build_p6_history_registry.py"
 MEASUREMENT_CLI = REPOSITORY_ROOT / "tools/release/measure_p6_history_batch.py"
+SYNTHETIC_GPU_INDICES = (101, 103, 107)
 
 
 def _plan() -> dict[str, Any]:
@@ -238,7 +239,10 @@ def _execution_binding_fields(private_root: Path) -> dict[str, Any]:
         ],
         "environment": {
             "values": {
-                "CUDA_VISIBLE_DEVICES": {"kind": "literal", "value": "5,6,7"},
+                "CUDA_VISIBLE_DEVICES": {
+                    "kind": "literal",
+                    "value": ",".join(str(index) for index in SYNTHETIC_GPU_INDICES),
+                },
                 "P6_HISTORY_RUN_MODE": {"kind": "literal", "value": "bound"},
                 "P6_HISTORY_PRIVATE_ROOT": {
                     "kind": "private_path",
@@ -316,8 +320,10 @@ def _synthetic_history_binding(tmp_path: Path) -> dict[str, Any]:
         "private_root": str(private_root),
         **_execution_binding_fields(private_root),
         "gpu_policy": {
-            "indices": [5, 6, 7],
-            "uuid_by_index": {str(index): f"GPU-fixture-{index}" for index in (5, 6, 7)},
+            "indices": list(SYNTHETIC_GPU_INDICES),
+            "uuid_by_index": {
+                str(index): f"GPU-fixture-{index}" for index in SYNTHETIC_GPU_INDICES
+            },
             "model": "h800",
             "maximum_occupancy": 0.05,
         },
@@ -608,12 +614,12 @@ def _measurement_request() -> dict[str, Any]:
 
 def _write_synthetic_nvidia_smi(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    records = " ".join(
+        f"'{index}, GPU-fixture-{index}, NVIDIA H800 80GB HBM3, 0, 100'"
+        for index in SYNTHETIC_GPU_INDICES
+    )
     path.write_text(
-        "#!/bin/sh\n"
-        "printf '%s\\n' "
-        "'5, GPU-fixture-5, NVIDIA H800 80GB HBM3, 0, 100' "
-        "'6, GPU-fixture-6, NVIDIA H800 80GB HBM3, 0, 100' "
-        "'7, GPU-fixture-7, NVIDIA H800 80GB HBM3, 0, 100'\n",
+        f"#!/bin/sh\nprintf '%s\\n' {records}\n",
         encoding="utf-8",
     )
     path.chmod(0o700)

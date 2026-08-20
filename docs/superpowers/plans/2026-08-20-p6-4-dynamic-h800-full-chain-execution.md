@@ -332,7 +332,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 ```
 
-Reuse the fixed `nvidia-smi --id=5,6,7` parser and `git check-ignore` destination policy of `provision_p6_history_local_config.py`. Do not echo supplied paths, argv, template text, UUIDs, or exception detail.
+Reuse the `nvidia-smi` parser parameterized by the private configuration's selected three H800 devices and the `git check-ignore` destination policy of `provision_p6_history_local_config.py`. Do not echo supplied paths, argv, template text, UUIDs, or exception detail.
 
 - [ ] **Step 4: Verify GREEN**
 

@@ -115,6 +115,7 @@ def run_history_measurement_batch(
     interface = _validated_interface(binding)
     verified_request = _validate_request(request)
     private_root, gpu_policy = _validate_binding_runtime(binding)
+    _validate_interface_gpu_policy(interface, gpu_policy)
     paths = _resolve_round_paths(
         interface, private_root, Path(round_output_root), verified_request["round_index"]
     )
@@ -297,6 +298,19 @@ def _validate_gpu(gpu_probe: GpuProbe, policy: Mapping[str, Any]) -> None:
                 raise ValueError
     except Exception:
         raise P6HistoryMeasurementError("history_gpu_admission_failed") from None
+
+
+def _validate_interface_gpu_policy(
+    interface: Mapping[str, Any], policy: Mapping[str, Any]
+) -> None:
+    try:
+        raw_value = interface["environment"]["values"]["CUDA_VISIBLE_DEVICES"]["value"]
+        interface_indices = tuple(int(part) for part in raw_value.split(","))
+        if interface_indices != policy["indices"]:
+            raise ValueError
+    except (KeyError, TypeError, ValueError):
+        raise P6HistoryMeasurementError("history_execution_invalid") from None
+
 
 def _resolve_round_paths(
     interface: Mapping[str, Any],

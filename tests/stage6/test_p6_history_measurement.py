@@ -561,6 +561,36 @@ def test_measurement_revalidates_the_binding_private_policy_before_and_after_exe
     assert probe.calls == [policy_indices, policy_indices]
 
 
+def test_runtime_rejects_policy_that_differs_from_execution_interface_before_probe(
+    tmp_path: Path,
+) -> None:
+    """Catches probe and runner dispatch under different private GPU selections."""
+    private_root = tmp_path / "private"
+    private_root.mkdir()
+    round_root = private_root / "controller-round"
+    round_root.mkdir()
+    request = _request()
+    runner = FakeRunner(request)
+    probe = FakeProbe()
+    binding = _binding(private_root)
+    mismatched_indices = (211, 223, 227)
+    binding["gpu_policy"] = {
+        "indices": list(mismatched_indices),
+        "uuid_by_index": {
+            str(index): f"GPU-synthetic-{index}" for index in mismatched_indices
+        },
+        "model": "h800",
+        "maximum_occupancy": 0.05,
+    }
+
+    with pytest.raises(P6HistoryMeasurementError) as raised:
+        run_history_measurement_batch(request, binding, round_root, runner, probe)
+
+    assert raised.value.category == "history_execution_invalid"
+    assert probe.calls == []
+    assert runner.calls == []
+
+
 def test_public_binding_projection_does_not_expose_private_gpu_policy(tmp_path: Path) -> None:
     """Catches a public binding surface copying private GPU selection or UUIDs."""
     private_binding = _binding(tmp_path)
