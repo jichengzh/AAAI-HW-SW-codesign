@@ -49,7 +49,7 @@ class SequenceProbe:
         self._index = 0
 
     def snapshot(self, indices: tuple[int, ...]) -> tuple[GpuRecord, ...]:
-        assert indices == (5, 6, 7)
+        assert indices == (17, 19, 23)
         snapshot = self._snapshots[min(self._index, len(self._snapshots) - 1)]
         self._index += 1
         return snapshot
@@ -63,7 +63,7 @@ def _gpu_probe() -> SequenceProbe:
             model_name="NVIDIA H800 80GB HBM3",
             occupancy=0.0,
         )
-        for index in (5, 6, 7)
+        for index in (17, 19, 23)
     )
     return SequenceProbe((records, records))
 
@@ -236,7 +236,7 @@ def _runner_template() -> dict[str, Any]:
             ],
             "environment": {
                 "values": {
-                    "CUDA_VISIBLE_DEVICES": {"kind": "literal", "value": "5,6,7"},
+                    "CUDA_VISIBLE_DEVICES": {"kind": "literal", "value": "17,19,23"},
                     "P6_HISTORY_RUN_MODE": {"kind": "literal", "value": "bound"},
                     "P6_HISTORY_PRIVATE_ROOT": {
                         "kind": "private_path",

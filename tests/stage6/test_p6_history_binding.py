@@ -38,9 +38,10 @@ class SequenceProbe:
     def __init__(self, *snapshots: Iterable[GpuRecord]) -> None:
         self._snapshots = tuple(tuple(snapshot) for snapshot in snapshots)
         self._calls = 0
+        self.calls: list[tuple[int, ...]] = []
 
     def snapshot(self, indices: tuple[int, ...]) -> tuple[GpuRecord, ...]:
-        del indices
+        self.calls.append(indices)
         position = min(self._calls, len(self._snapshots) - 1)
         self._calls += 1
         return self._snapshots[position]
@@ -48,7 +49,7 @@ class SequenceProbe:
 
 def _gpu_records(
     *,
-    indices: tuple[int, ...] = (5, 6, 7),
+    indices: tuple[int, ...] = (17, 19, 23),
     model_name: str = "NVIDIA H800 80GB HBM3",
     occupancy: float = 0.0,
 ) -> tuple[GpuRecord, ...]:
@@ -187,7 +188,7 @@ def _history_runner_manifest(root: Path) -> dict[str, Any]:
         ],
         "environment": {
             "values": {
-                "CUDA_VISIBLE_DEVICES": {"kind": "literal", "value": "5,6,7"},
+                "CUDA_VISIBLE_DEVICES": {"kind": "literal", "value": "17,19,23"},
                 "P6_HISTORY_RUN_MODE": {"kind": "literal", "value": "bound"},
                 "P6_HISTORY_PRIVATE_ROOT": {
                     "kind": "private_path",
@@ -322,8 +323,8 @@ def test_discovers_documented_history_and_returns_no_leak_projection(
         "hardware": "h800",
         "backend": "tvm_auto",
     }
-    assert binding["gpu_policy"]["indices"] == [5, 6, 7]
-    assert set(binding["gpu_policy"]["uuid_by_index"]) == {"5", "6", "7"}
+    assert binding["gpu_policy"]["indices"] == [17, 19, 23]
+    assert set(binding["gpu_policy"]["uuid_by_index"]) == {"17", "19", "23"}
     assert binding["source_contract_template"]["schema_version"] == (
         "stage5_source_contract_v1"
     )
@@ -368,6 +369,33 @@ def test_discovers_documented_history_and_returns_no_leak_projection(
         },
         "status": "validated",
     }
+
+
+def test_binding_derives_probe_indices_from_private_cuda_policy(
+    tmp_path: Path,
+) -> None:
+    history_root = _history_root(tmp_path)
+    probe = _probe(_gpu_records(indices=(17, 19, 23)))
+
+    binding = discover_history_binding(history_root, probe)
+
+    assert probe.calls == [(17, 19, 23), (17, 19, 23)]
+    assert binding["gpu_policy"]["indices"] == [17, 19, 23]
+
+
+@pytest.mark.parametrize("policy", ("17,17,23", "23,19,17", "17,19", "17,19,x"))
+def test_binding_rejects_noncanonical_private_cuda_policy(
+    tmp_path: Path,
+    policy: str,
+) -> None:
+    history_root = _history_root(tmp_path)
+    manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["environment"]["values"]["CUDA_VISIBLE_DEVICES"]["value"] = policy
+    _write_json(manifest_path, manifest)
+
+    with _expect_category("execution_interface"):
+        discover_history_binding(history_root, _probe())
 
 
 @pytest.mark.parametrize(
@@ -761,18 +789,18 @@ def test_rejects_discovered_path_resolving_outside_history_root(tmp_path: Path) 
 @pytest.mark.parametrize(
     "records",
     [
-        _gpu_records(indices=(5, 6)),
-        _gpu_records(indices=(4, 5, 6, 7)),
+        _gpu_records(indices=(17, 19)),
+        _gpu_records(indices=(13, 17, 19, 23)),
         _gpu_records(model_name="NVIDIA A100-SXM4-80GB"),
         (
-            GpuRecord(5, "duplicate", "NVIDIA H800 80GB HBM3", 0.0),
-            GpuRecord(6, "duplicate", "NVIDIA H800 80GB HBM3", 0.0),
-            GpuRecord(7, "unique", "NVIDIA H800 80GB HBM3", 0.0),
+            GpuRecord(17, "duplicate", "NVIDIA H800 80GB HBM3", 0.0),
+            GpuRecord(19, "duplicate", "NVIDIA H800 80GB HBM3", 0.0),
+            GpuRecord(23, "unique", "NVIDIA H800 80GB HBM3", 0.0),
         ),
         (
-            GpuRecord(5, "GPU-5", "NVIDIA H800 80GB HBM3", 0.0),
-            GpuRecord(6, "", "NVIDIA H800 80GB HBM3", 0.0),
-            GpuRecord(7, "GPU-7", "NVIDIA H800 80GB HBM3", 0.0),
+            GpuRecord(17, "GPU-fixture-17", "NVIDIA H800 80GB HBM3", 0.0),
+            GpuRecord(19, "", "NVIDIA H800 80GB HBM3", 0.0),
+            GpuRecord(23, "GPU-fixture-23", "NVIDIA H800 80GB HBM3", 0.0),
         ),
         _gpu_records(occupancy=0.25),
     ],
@@ -787,8 +815,8 @@ def test_gpu_admission_fails_closed(records: tuple[GpuRecord, ...], tmp_path: Pa
     [
         (None, 0.0),
         (12345, 0.0),
-        ("GPU-5", "0"),
-        ("GPU-5", "idle"),
+        ("GPU-fixture-17", "0"),
+        ("GPU-fixture-17", "idle"),
     ],
 )
 def test_malformed_gpu_record_fields_fail_with_stable_admission_category(
@@ -797,7 +825,7 @@ def test_malformed_gpu_record_fields_fail_with_stable_admission_category(
     occupancy: Any,
 ) -> None:
     records = list(_gpu_records())
-    records[0] = GpuRecord(5, uuid, "NVIDIA H800 80GB HBM3", occupancy)
+    records[0] = GpuRecord(17, uuid, "NVIDIA H800 80GB HBM3", occupancy)
 
     with _expect_category("gpu_admission"):
         discover_history_binding(_history_root(tmp_path), _probe(records))
@@ -812,7 +840,7 @@ def test_deceptive_h800_substring_model_fails_admission(tmp_path: Path) -> None:
 
 def test_gpu_second_snapshot_uuid_drift_fails_closed(tmp_path: Path) -> None:
     drifted = list(_gpu_records())
-    drifted[2] = GpuRecord(7, "GPU-drifted", "NVIDIA H800 80GB HBM3", 0.0)
+    drifted[2] = GpuRecord(23, "GPU-drifted", "NVIDIA H800 80GB HBM3", 0.0)
 
     with _expect_category("gpu_drift"):
         discover_history_binding(

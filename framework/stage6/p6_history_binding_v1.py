@@ -21,7 +21,6 @@ BINDING_SCHEMA_VERSION = "p6_history_binding_v1"
 PUBLIC_SCHEMA_VERSION = "p6_history_binding_public_v1"
 SOURCE_REGISTRY_SCHEMA_VERSION = "stage5_candidate_source_registry_v1"
 EXECUTION_INTERFACE_SCHEMA_VERSION = "p6_history_runner_interface_v1"
-EXPECTED_GPU_INDICES = (5, 6, 7)
 MAX_GPU_OCCUPANCY = 0.05
 ALLOWED_NORMALIZED_H800_MODELS = frozenset(
     {
@@ -96,7 +95,7 @@ ALLOWED_TERMINAL_STATUSES = (
 )
 METRIC_KEYS = ("latency_ms", "energy_j", "ap30", "ap50", "ap70")
 WRAPPER_ENVIRONMENT_SPEC = {
-    "CUDA_VISIBLE_DEVICES": ("literal", "5,6,7"),
+    "CUDA_VISIBLE_DEVICES": ("literal", None),
     "P6_HISTORY_RUN_MODE": ("literal", "bound"),
     "P6_HISTORY_PRIVATE_ROOT": ("private_path", None),
     "P6_HISTORY_TASK_STATE": ("placeholder", "{task_state}"),
@@ -199,11 +198,12 @@ def build_history_binding(
             _json_compatible(execution_interface), root, canonical_components
         )
     )
+    gpu_indices = _private_gpu_indices(canonical_interface)
     registry_path, source_contract = _discover_source_contract(root)
-    first_snapshot = _probe_snapshot(gpu_probe)
-    second_snapshot = _probe_snapshot(gpu_probe)
-    first_uuid_map = _validate_gpu_snapshot(first_snapshot)
-    second_uuid_map = _validate_gpu_snapshot(second_snapshot)
+    first_snapshot = _probe_snapshot(gpu_probe, gpu_indices)
+    second_snapshot = _probe_snapshot(gpu_probe, gpu_indices)
+    first_uuid_map = _validate_gpu_snapshot(first_snapshot, gpu_indices)
+    second_uuid_map = _validate_gpu_snapshot(second_snapshot, gpu_indices)
     if first_uuid_map != second_uuid_map:
         raise P6HistoryBindingError("gpu_drift", "GPU UUIDs changed between snapshots")
 
@@ -220,7 +220,7 @@ def build_history_binding(
         "source_contract_template": copy.deepcopy(source_contract),
         "local_input_paths": canonical_inputs,
         "gpu_policy": {
-            "indices": list(EXPECTED_GPU_INDICES),
+            "indices": list(gpu_indices),
             "uuid_by_index": first_uuid_map,
             "model": "h800",
             "maximum_occupancy": MAX_GPU_OCCUPANCY,
@@ -261,9 +261,11 @@ def validate_history_execution_binding(binding: Mapping[str, Any]) -> Mapping[st
     interface = binding.get("execution_interface")
     if not isinstance(interface, Mapping):
         raise _execution_interface_error()
-    return _freeze_mapping(
-        _validate_execution_interface(_json_compatible(interface), root, component_paths)
+    canonical_interface = _validate_execution_interface(
+        _json_compatible(interface), root, component_paths
     )
+    _private_gpu_indices(canonical_interface)
+    return _freeze_mapping(canonical_interface)
 
 
 def write_private_binding_pair(
@@ -680,7 +682,11 @@ def _validate_environment_value(
         if not Path(value).is_absolute() or not _is_relative_to(resolved, root):
             raise _execution_interface_error()
         return {"kind": kind, "value": str(resolved)}
-    if value != expected_value or "/" in value or "\\" in value:
+    if (
+        (expected_value is not None and value != expected_value)
+        or "/" in value
+        or "\\" in value
+    ):
         raise _execution_interface_error()
     return {"kind": kind, "value": value}
 
@@ -862,9 +868,30 @@ def _freeze_mapping(payload: Mapping[str, Any]) -> Mapping[str, Any]:
     return MappingProxyType(frozen)
 
 
-def _probe_snapshot(gpu_probe: GpuProbe) -> tuple[GpuRecord, ...]:
+def _private_gpu_indices(interface: Mapping[str, Any]) -> tuple[int, int, int]:
     try:
-        snapshot = gpu_probe.snapshot(EXPECTED_GPU_INDICES)
+        value = interface["environment"]["values"]["CUDA_VISIBLE_DEVICES"][
+            "value"
+        ]
+        parts = tuple(value.split(","))
+        indices = tuple(int(part) for part in parts)
+    except (KeyError, TypeError, ValueError):
+        raise _execution_interface_error() from None
+    if (
+        len(indices) != 3
+        or tuple(sorted(indices)) != indices
+        or len(set(indices)) != 3
+        or any(index < 0 for index in indices)
+    ):
+        raise _execution_interface_error()
+    return (indices[0], indices[1], indices[2])
+
+
+def _probe_snapshot(
+    gpu_probe: GpuProbe, indices: tuple[int, int, int]
+) -> tuple[GpuRecord, ...]:
+    try:
+        snapshot = gpu_probe.snapshot(indices)
     except Exception as error:
         raise P6HistoryBindingError("gpu_admission", "GPU probe failed closed") from error
     if not isinstance(snapshot, tuple):
@@ -872,17 +899,17 @@ def _probe_snapshot(gpu_probe: GpuProbe) -> tuple[GpuRecord, ...]:
     return snapshot
 
 
-def _validate_gpu_snapshot(snapshot: tuple[GpuRecord, ...]) -> dict[str, str]:
-    if len(snapshot) != len(EXPECTED_GPU_INDICES) or any(
+def _validate_gpu_snapshot(
+    snapshot: tuple[GpuRecord, ...], indices: tuple[int, int, int]
+) -> dict[str, str]:
+    if len(snapshot) != len(indices) or any(
         not isinstance(record, GpuRecord) for record in snapshot
     ):
         raise P6HistoryBindingError("gpu_admission", "GPU snapshot is incomplete")
     by_index = {record.index: record for record in snapshot}
-    if set(by_index) != set(EXPECTED_GPU_INDICES) or len(by_index) != len(snapshot):
-        raise P6HistoryBindingError(
-            "gpu_admission", "GPU index set must be exactly [5, 6, 7]"
-        )
-    ordered = [by_index[index] for index in EXPECTED_GPU_INDICES]
+    if set(by_index) != set(indices) or len(by_index) != len(snapshot):
+        raise P6HistoryBindingError("gpu_admission", "GPU index set does not match policy")
+    ordered = [by_index[index] for index in indices]
     if any(not isinstance(record.uuid, str) for record in ordered):
         raise P6HistoryBindingError("gpu_admission", "GPU UUIDs must be strings")
     uuids = [record.uuid.strip() for record in ordered]
