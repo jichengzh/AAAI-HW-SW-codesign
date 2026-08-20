@@ -8,12 +8,14 @@ import subprocess
 import sys
 from typing import Any
 
+import pytest
 import yaml
 
 from framework.stage6.coptv2x_h800_search_v2 import (
     load_local_config,
     load_public_contract,
 )
+from tools.release import provision_p6_history_local_config as provision_cli
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -344,6 +346,47 @@ def _fake_nvidia_smi(tmp_path: Path, rows: tuple[str, ...] | None = None) -> Pat
     )
     binary.chmod(0o755)
     return fake_bin
+
+
+def test_gpu_probe_builds_direct_argv_from_supplied_private_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches a provision probe that ignores its validated private GPU policy."""
+    observed_argv: tuple[str, ...] | None = None
+
+    def fake_run(argv: tuple[str, ...], **_: Any) -> subprocess.CompletedProcess[str]:
+        nonlocal observed_argv
+        observed_argv = argv
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            "17, GPU-synthetic-17, NVIDIA H800 80GB HBM3, 0, 100\n"
+            "19, GPU-synthetic-19, NVIDIA H800 80GB HBM3, 0, 100\n"
+            "23, GPU-synthetic-23, NVIDIA H800 80GB HBM3, 0, 100\n",
+            "",
+        )
+
+    monkeypatch.setattr(provision_cli.subprocess, "run", fake_run)
+
+    records = provision_cli.NvidiaSmiGpuProbe().snapshot((17, 19, 23))
+
+    assert observed_argv is not None
+    assert observed_argv[:2] == ("nvidia-smi", "--id=17,19,23")
+    assert [record.index for record in records] == [17, 19, 23]
+
+
+def test_gpu_probe_rejects_noncanonical_policy_before_subprocess(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches a provision probe that launches before rejecting an unsafe policy."""
+    monkeypatch.setattr(
+        provision_cli.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("subprocess must not run"),
+    )
+
+    with pytest.raises(ValueError):
+        provision_cli.NvidiaSmiGpuProbe().snapshot((19, 17, 23))
 
 
 def _run_cli(tmp_path: Path, *args: str, rows: tuple[str, ...] | None = None) -> subprocess.CompletedProcess[str]:

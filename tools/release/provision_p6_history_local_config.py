@@ -42,14 +42,6 @@ EXPECTED_LOCAL_INPUTS = (
     "capability_profiles",
     "closure",
 )
-NVIDIA_SMI_ARGV = (
-    "nvidia-smi",
-    "--id=5,6,7",
-    "--query-gpu=index,uuid,name,memory.used,memory.total",
-    "--format=csv,noheader,nounits",
-)
-
-
 class _ArgumentParser(argparse.ArgumentParser):
     def error(self, message: str) -> None:
         del message
@@ -57,13 +49,12 @@ class _ArgumentParser(argparse.ArgumentParser):
 
 
 class NvidiaSmiGpuProbe:
-    """Read the fixed P6 GPU admission fields through one direct command."""
+    """Read supplied private GPU admission fields through one direct command."""
 
     def snapshot(self, indices: tuple[int, ...]) -> tuple[GpuRecord, ...]:
-        if indices != (5, 6, 7):
-            raise ValueError("fixed GPU indices required")
+        argv = _gpu_query_argv(indices)
         completed = subprocess.run(
-            NVIDIA_SMI_ARGV,
+            argv,
             shell=False,
             text=True,
             capture_output=True,
@@ -75,6 +66,28 @@ class NvidiaSmiGpuProbe:
         records = _parse_gpu_records(completed.stdout)
         by_index = {record.index: record for record in records}
         return tuple(by_index[index] for index in indices if index in by_index)
+
+
+def _gpu_query_argv(indices: tuple[int, ...]) -> tuple[str, ...]:
+    _validate_indices(indices)
+    return (
+        "nvidia-smi",
+        "--id=" + ",".join(str(index) for index in indices),
+        "--query-gpu=index,uuid,name,memory.used,memory.total",
+        "--format=csv,noheader,nounits",
+    )
+
+
+def _validate_indices(indices: tuple[int, ...]) -> None:
+    if (
+        not isinstance(indices, tuple)
+        or len(indices) != 3
+        or any(isinstance(index, bool) or not isinstance(index, int) for index in indices)
+        or tuple(sorted(indices)) != indices
+        or len(set(indices)) != 3
+        or any(index < 0 for index in indices)
+    ):
+        raise ValueError("canonical GPU indices required")
 
 
 def _parse_gpu_records(output: str) -> tuple[GpuRecord, ...]:

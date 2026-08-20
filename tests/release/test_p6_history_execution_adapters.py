@@ -8,6 +8,8 @@ import subprocess
 import sys
 from typing import Any, Mapping
 
+import pytest
+
 from framework.stage2.canonical_search_v3 import build_capability_profile
 from framework.stage5.single_target_search_v2 import (
     SearchTask,
@@ -615,6 +617,47 @@ def _write_synthetic_nvidia_smi(path: Path) -> None:
         encoding="utf-8",
     )
     path.chmod(0o700)
+
+
+def test_gpu_probe_builds_direct_argv_from_supplied_private_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches a measurement probe that ignores its validated private GPU policy."""
+    observed_argv: tuple[str, ...] | None = None
+
+    def fake_run(argv: tuple[str, ...], **_: Any) -> subprocess.CompletedProcess[str]:
+        nonlocal observed_argv
+        observed_argv = argv
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            "17, GPU-synthetic-17, NVIDIA H800 80GB HBM3, 0, 100\n"
+            "19, GPU-synthetic-19, NVIDIA H800 80GB HBM3, 0, 100\n"
+            "23, GPU-synthetic-23, NVIDIA H800 80GB HBM3, 0, 100\n",
+            "",
+        )
+
+    monkeypatch.setattr(measurement_cli.subprocess, "run", fake_run)
+
+    records = measurement_cli.NvidiaSmiGpuProbe().snapshot((17, 19, 23))
+
+    assert observed_argv is not None
+    assert observed_argv[:2] == ("nvidia-smi", "--id=17,19,23")
+    assert [record.index for record in records] == [17, 19, 23]
+
+
+def test_gpu_probe_rejects_noncanonical_policy_before_subprocess(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches a measurement probe that launches before rejecting an unsafe policy."""
+    monkeypatch.setattr(
+        measurement_cli.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("subprocess must not run"),
+    )
+
+    with pytest.raises(ValueError):
+        measurement_cli.NvidiaSmiGpuProbe().snapshot((19, 17, 23))
 
 
 def _run_measurement_cli(
