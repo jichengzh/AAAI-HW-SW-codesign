@@ -9,12 +9,7 @@ import subprocess
 import sys
 from typing import Any, Mapping
 
-import yaml
-
-from framework.stage6.coptv2x_h800_search_v2 import (
-    load_local_config,
-    load_public_contract,
-)
+from tools.release import provision_p6_history_local_config as legacy_provisioner
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -32,19 +27,6 @@ LOCAL_INPUT_NAMES = (
     "capability_profiles",
     "closure",
 )
-LOCAL_CONFIG_KEYS = {
-    "schema_version",
-    "target",
-    "asset_paths",
-    "local_input_paths",
-    "candidate_source_mode",
-    "stage2_search_space_path",
-    "source_registry_step",
-    "measurement_step",
-    "local_output_root",
-}
-
-
 def _canonical_json_sha(payload: Mapping[str, Any]) -> str:
     encoded = json.dumps(
         payload,
@@ -372,7 +354,7 @@ def _run_cli(
     )
 
 
-def test_cli_provisions_loader_compatible_framework_config_without_tracked_leak(
+def test_cli_rejects_obsolete_framework_provisioning_without_output_or_tracked_leak(
     tmp_path: Path,
 ) -> None:
     history_root = _history_root(tmp_path)
@@ -390,102 +372,59 @@ def test_cli_provisions_loader_compatible_framework_config_without_tracked_leak(
         _fake_nvidia_smi(tmp_path),
     )
 
-    assert result.returncode == 0, result.stderr
-    assert result.stdout == "provisioned history-binding.json p6.local.yaml\n"
-    assert result.stderr == ""
-    binding = json.loads(binding_path.read_text(encoding="utf-8"))
-    execution_interface = binding["execution_interface"]
-    assert execution_interface["schema_version"] == "p6_history_runner_interface_v1"
-    assert [step["stage"] for step in execution_interface["execution_chain"]] == [
-        "source_materialization",
-        "quantization",
-        "performance",
-        "ap",
-        "finalization",
-    ]
-    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    contract = load_public_contract(PUBLIC_CONTRACT)
-    loaded = load_local_config(config_path, contract)
-    assert set(payload) == LOCAL_CONFIG_KEYS
-    assert payload["schema_version"] == "p6_h800_coptv2x_local_v2"
-    assert payload["target"] == "h800"
-    assert set(payload["asset_paths"]) == {
-        "training-data",
-        "model-init",
-        "toolchain",
-    }
-    assert payload["asset_paths"] == {
-        "training-data": str(history_root / "inputs"),
-        "model-init": str(
-            history_root / "registry" / "candidate_source_registry.json"
-        ),
-        "toolchain": str(
-            history_root
-            / "documented-stage5-chain"
-            / "stage5_build_performance_plan_v2.py"
-        ),
-    }
-    assert set(payload["local_input_paths"]) == set(LOCAL_INPUT_NAMES)
-    assert payload["candidate_source_mode"] == "framework_stage2_search_space"
-    assert Path(payload["stage2_search_space_path"]).name == "pyramid_partition.json"
-    assert loaded.source_registry_step.name == "build_source_registry"
-    assert loaded.measurement_step.name == "measure_batch"
-    source_argv = payload["source_registry_step"]["argv"]
-    measurement_argv = payload["measurement_step"]["argv"]
-    assert source_argv[0] == str(Path(sys.executable).resolve())
-    assert source_argv[1] == str(
-        REPOSITORY_ROOT / "tools/release/build_p6_history_registry.py"
-    )
-    assert set(source_argv) >= {
-        "{local_output_root}",
-        "{source_registry_json}",
-        "{pyramid_candidate_plan}",
-    }
-    assert measurement_argv[0] == str(Path(sys.executable).resolve())
-    assert measurement_argv[1] == str(
-        REPOSITORY_ROOT / "tools/release/measure_p6_history_batch.py"
-    )
-    assert set(measurement_argv) >= {
-        "{measurement_request}",
-        "{feedback_json}",
-        "{round_output_root}",
-    }
-    assert all("{" not in token and "}" not in token for token in source_argv if token not in {
-        "{local_output_root}", "{source_registry_json}", "{pyramid_candidate_plan}"
-    })
-    assert all("{" not in token and "}" not in token for token in measurement_argv if token not in {
-        "{measurement_request}", "{feedback_json}", "{round_output_root}"
-    })
-    generated_text = config_path.read_text(encoding="utf-8")
-    assert "stage5_task_round_controller_v3.sh" not in generated_text
-    assert "stage5_materialize_round_sources_v1.sh" not in generated_text
-    assert "stage5_finalize_feedback_v2.py" not in generated_text
-    for private_detail in (
-        "execution_interface",
-        "execution_chain",
-        "environment",
-        "output_layout",
-        "actual_feedback",
-        "task_state",
-        "task-state",
-        "actual_receipt",
-        "receipt",
-        "finalization_barrier",
-        "barrier",
-        "CUDA_VISIBLE_DEVICES",
-        "P6_HISTORY_",
-        "private_path",
-        "GPU-fixture",
-        "private-runner",
-        "private-runs/",
-        "private-bound",
-        "p6-history-runner-interface.json",
-        "quantize-private",
-        "measure-ap-private",
-        "activate-private",
-    ):
-        assert private_detail not in generated_text
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "stage1_scan_unavailable\n"
+    assert not binding_path.exists()
+    assert not config_path.exists()
     assert _tracked_snapshot() == tracked_before
+
+
+def test_obsolete_framework_route_does_not_reach_loader_without_stage1_step(
+    tmp_path: Path,
+    monkeypatch: Any,
+    capsys: Any,
+) -> None:
+    history_root = _history_root(tmp_path)
+    private_root = tmp_path / "private-output"
+    private_root.mkdir()
+    binding_path = private_root / "history-binding.json"
+    config_path = private_root / "p6.local.yaml"
+
+    def unreachable_loader(*args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+        raise AssertionError("obsolete route reached load_local_config")
+
+    monkeypatch.setattr(legacy_provisioner, "load_local_config", unreachable_loader)
+    monkeypatch.setattr(
+        legacy_provisioner.NvidiaSmiGpuProbe,
+        "snapshot",
+        lambda self, indices: (
+            legacy_provisioner.GpuRecord(5, "fixture-5", "NVIDIA H800", 0.0),
+            legacy_provisioner.GpuRecord(6, "fixture-6", "NVIDIA H800", 0.0),
+            legacy_provisioner.GpuRecord(7, "fixture-7", "NVIDIA H800", 0.0),
+        ),
+    )
+
+    exit_code = legacy_provisioner.main(
+        [
+            "--history-root",
+            str(history_root),
+            "--local-output-root",
+            str(private_root),
+            "--binding-output",
+            str(binding_path),
+            "--config-output",
+            str(config_path),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.out == ""
+    assert captured.err == "stage1_scan_unavailable\n"
+    assert not binding_path.exists()
+    assert not config_path.exists()
 
 
 def test_cli_rejects_history_without_execution_interface_and_writes_nothing(
@@ -537,7 +476,9 @@ def test_cli_rejects_ambiguous_history_without_writing(tmp_path: Path) -> None:
     assert not config_path.exists()
 
 
-def test_cli_requires_one_valid_stage2_json_without_writing(tmp_path: Path) -> None:
+def test_cli_rejects_obsolete_route_before_legacy_stage2_discovery(
+    tmp_path: Path,
+) -> None:
     history_root = _history_root(tmp_path)
     _write_json(history_root / "stage2" / "duplicate.json", _stage1_manifest())
     private_root = tmp_path / "private-output"
@@ -555,12 +496,12 @@ def test_cli_requires_one_valid_stage2_json_without_writing(tmp_path: Path) -> N
 
     assert result.returncode != 0
     assert result.stdout == ""
-    assert result.stderr == "stage2_search_space_unavailable\n"
+    assert result.stderr == "stage1_scan_unavailable\n"
     assert not binding_path.exists()
     assert not config_path.exists()
 
 
-def test_cli_normalizes_non_value_stage2_loader_failure_without_writing(
+def test_cli_rejects_obsolete_route_before_legacy_stage2_loader_failure(
     tmp_path: Path,
 ) -> None:
     history_root = _history_root(tmp_path)
@@ -585,7 +526,7 @@ def test_cli_normalizes_non_value_stage2_loader_failure_without_writing(
 
     assert result.returncode != 0
     assert result.stdout == ""
-    assert result.stderr == "stage2_search_space_unavailable\n"
+    assert result.stderr == "stage1_scan_unavailable\n"
     assert not binding_path.exists()
     assert not config_path.exists()
 

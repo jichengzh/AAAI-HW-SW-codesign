@@ -28,7 +28,7 @@ from framework.stage6.p6_history_binding_v1 import (  # noqa: E402
     GpuRecord,
     P6HistoryBindingError,
     discover_history_binding,
-    write_private_binding_pair,
+    prevalidate_private_binding_pair_destinations,
 )
 
 
@@ -344,22 +344,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         return int(error.code)
 
     try:
-        local_output_root = _resolve_private_output_root(args.local_output_root)
-        contract = load_public_contract(PUBLIC_CONTRACT_PATH)
-        binding = discover_history_binding(args.history_root, NvidiaSmiGpuProbe())
-        config = _render_local_config(
-            binding,
-            contract,
-            local_output_root,
-            args.binding_output,
-        )
-        _validate_local_config(config, contract, local_output_root)
-        write_private_binding_pair(
-            binding,
-            config,
+        _resolve_private_output_root(args.local_output_root)
+        prevalidate_private_binding_pair_destinations(
             args.binding_output,
             args.config_output,
             REPOSITORY_ROOT,
+        )
+        load_public_contract(PUBLIC_CONTRACT_PATH)
+        discover_history_binding(args.history_root, NvidiaSmiGpuProbe())
+        raise P6HistoryBindingError(
+            "stage1_scan_unavailable",
+            "legacy provisioning cannot supply the required Stage1 scan step",
         )
     except P6HistoryBindingError as error:
         sys.stderr.write(f"{error.category}\n")
