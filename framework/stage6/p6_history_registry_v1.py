@@ -25,13 +25,17 @@ from framework.stage6.p6_history_binding_v1 import (
     P6HistoryBindingError,
     validate_history_execution_binding,
 )
+from framework.stage6.p6_history_recipe_profiles_v1 import (
+    RECIPE_V2,
+    SHARED_SOURCE_PATH_KEYS,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 PLAN_SCHEMA_VERSION = "p6_pyramid_candidate_plan_v2"
 BINDING_SCHEMA_VERSION = "p6_history_binding_v1"
 REGISTRY_SCHEMA_VERSION = "stage5_candidate_source_registry_v2"
-RECIPE_SCHEMA_VERSION = "p6_history_dynamic_materialization_recipe_v1"
+RECIPE_V1 = "p6_history_dynamic_materialization_recipe_v1"
 ALLOWED_Q_MODES = frozenset({"fp16", "int8"})
 STAGE_WIDTH_FIELDS = ("stage1_width", "stage2_width", "stage3_width")
 OUTPUT_TEMPLATE_KEYS = (
@@ -40,12 +44,19 @@ OUTPUT_TEMPLATE_KEYS = (
     "onnx_path_template",
     "calibration_path_template",
 )
-RECIPE_KEYS = {
+RECIPE_V1_KEYS = {
     "schema_version",
     "stage_width_fields",
     "group_id_template",
     "artifact_id_template",
     "output_path_templates_by_q_mode",
+}
+RECIPE_V2_KEYS = {
+    "schema_version",
+    "stage_width_fields",
+    "group_id_template",
+    "artifact_id_template",
+    "shared_source_path_templates",
 }
 EXPECTED_BINDING_TARGET = {
     "model": "pyramid",
@@ -385,16 +396,29 @@ def _validate_legacy_paths(
 
 
 def _validate_recipe(raw_recipe: object) -> dict[str, Any]:
-    if not isinstance(raw_recipe, Mapping) or set(raw_recipe) != RECIPE_KEYS:
+    if not isinstance(raw_recipe, Mapping):
         _invalid("dynamic materialization recipe is missing or invalid")
     recipe = copy.deepcopy(dict(raw_recipe))
+    schema_version = recipe.get("schema_version")
+    expected_keys = RECIPE_V2_KEYS if schema_version == RECIPE_V2 else RECIPE_V1_KEYS
     if (
-        recipe.get("schema_version") != RECIPE_SCHEMA_VERSION
+        set(recipe) != expected_keys
+        or schema_version not in {RECIPE_V1, RECIPE_V2}
         or recipe.get("stage_width_fields") != list(STAGE_WIDTH_FIELDS)
     ):
         _invalid("dynamic materialization recipe is incompatible")
     for name in ("group_id_template", "artifact_id_template"):
         _validate_format_template(recipe.get(name), set(STAGE_WIDTH_FIELDS))
+    if schema_version == RECIPE_V2:
+        raw_shared = recipe.get("shared_source_path_templates")
+        if not isinstance(raw_shared, Mapping) or set(raw_shared) != set(
+            SHARED_SOURCE_PATH_KEYS
+        ):
+            _invalid("dynamic materialization shared paths are incomplete")
+        allowed_shared_fields = {*STAGE_WIDTH_FIELDS, "group_id", "artifact_id"}
+        for key in SHARED_SOURCE_PATH_KEYS:
+            _validate_format_template(raw_shared.get(key), allowed_shared_fields)
+        return recipe
     raw_outputs = recipe.get("output_path_templates_by_q_mode")
     if (
         not isinstance(raw_outputs, Mapping)
@@ -497,7 +521,7 @@ def _materialize_groups(
     observed_artifacts: set[str] = set()
     observed_outputs = {registry_output_path}
     groups: list[dict[str, Any]] = []
-    output_templates_by_q_mode = recipe["output_path_templates_by_q_mode"]
+    recipe_version = recipe["schema_version"]
     for width, provenance_by_q_mode in sorted(by_width.items()):
         width_values = dict(zip(STAGE_WIDTH_FIELDS, width, strict=True))
         expected_group_id = canonical_group_id("pyramid", width)
@@ -509,34 +533,50 @@ def _materialize_groups(
 
         available_q_modes = sorted(provenance_by_q_mode)
         outputs_by_q_mode: dict[str, dict[str, str]] = {}
-        for q_mode in available_q_modes:
-            raw_output_templates = output_templates_by_q_mode.get(q_mode)
-            if not isinstance(raw_output_templates, Mapping):
-                _invalid("dynamic materialization output mapping is incomplete")
-            render_values = {
-                **width_values,
-                "group_id": group_id,
-                "artifact_id": artifact_id,
-                "q_mode": q_mode,
-            }
-            rendered_outputs: dict[str, str] = {}
-            for template_key in OUTPUT_TEMPLATE_KEYS:
-                raw_path_template = raw_output_templates.get(template_key)
-                if not isinstance(raw_path_template, str):
+        render_values = {
+            **width_values,
+            "group_id": group_id,
+            "artifact_id": artifact_id,
+        }
+        if recipe_version == RECIPE_V1:
+            output_templates_by_q_mode = recipe["output_path_templates_by_q_mode"]
+            for q_mode in available_q_modes:
+                raw_output_templates = output_templates_by_q_mode.get(q_mode)
+                if not isinstance(raw_output_templates, Mapping):
                     _invalid("dynamic materialization output mapping is incomplete")
+                rendered_outputs: dict[str, str] = {}
+                for template_key in OUTPUT_TEMPLATE_KEYS:
+                    resolved_output = _render_output_path(
+                        raw_output_templates[template_key],
+                        {**render_values, "q_mode": q_mode},
+                        local_output_root,
+                    )
+                    if resolved_output in observed_outputs:
+                        _invalid("dynamic materialization output path collides")
+                    observed_outputs.add(resolved_output)
+                    rendered_outputs[template_key.removesuffix("_template")] = str(
+                        resolved_output
+                    )
+                outputs_by_q_mode[q_mode] = rendered_outputs
+        else:
+            shared_paths = {}
+            for key in SHARED_SOURCE_PATH_KEYS:
                 resolved_output = _render_output_path(
-                    raw_path_template, render_values, local_output_root
+                    recipe["shared_source_path_templates"][key],
+                    render_values,
+                    local_output_root,
                 )
                 if resolved_output in observed_outputs:
                     _invalid("dynamic materialization output path collides")
                 observed_outputs.add(resolved_output)
-                rendered_outputs[template_key.removesuffix("_template")] = str(
-                    resolved_output
-                )
-            outputs_by_q_mode[q_mode] = rendered_outputs
+                shared_paths[key] = str(resolved_output)
 
         contract = copy.deepcopy(dict(template))
         contract.pop("dynamic_materialization_recipe", None)
+        if recipe_version == RECIPE_V2:
+            contract.pop("materialization_outputs_by_q_mode", None)
+            for key in SHARED_SOURCE_PATH_KEYS:
+                contract.pop(key, None)
         contract.update(
             {
                 "group_id": group_id,
@@ -544,7 +584,11 @@ def _materialize_groups(
                 "width": list(width),
                 "artifact_id": artifact_id,
                 "stage_widths": width_values,
-                "materialization_outputs_by_q_mode": outputs_by_q_mode,
+                **(
+                    {"materialization_outputs_by_q_mode": outputs_by_q_mode}
+                    if recipe_version == RECIPE_V1
+                    else {"shared_source_paths": shared_paths}
+                ),
             }
         )
         evidence_sha = contract["source_evidence_sha256"]

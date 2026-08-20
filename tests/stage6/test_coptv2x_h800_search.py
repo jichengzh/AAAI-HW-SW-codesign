@@ -26,6 +26,9 @@ from framework.stage6.coptv2x_h800_search_v2 import (
 from framework.stage6.p6_full_chain_bootstrap_v1 import materialize_full_chain_binding
 from framework.stage6.p6_history_binding_v1 import COMPONENT_MARKERS, GpuRecord
 from framework.stage6.p6_history_normalization_v1 import normalize_history_inputs
+from framework.stage6.p6_history_source_materialization_v1 import (
+    P6HistorySourceMaterializationError,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -2227,6 +2230,47 @@ def test_run_p6_rejects_symlinked_round_output_without_touching_victim(
     assert measurement_started is False
     assert victim_feedback.read_text(encoding="utf-8") == "retain"
     assert not (victim / "measurement_request.json").exists()
+
+
+def test_run_p6_projection_failure_is_atomic_before_measurement_request_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Catches writing or measuring the original request after projection fails."""
+    contract = load_public_contract(
+        _write_yaml(tmp_path / "contract.yaml", _public_contract())
+    )
+    local = _loaded_local_config(tmp_path)
+    measurement_started = False
+
+    def fail_projection(request: Mapping[str, Any]) -> None:
+        del request
+        raise P6HistorySourceMaterializationError()
+
+    monkeypatch.setattr(
+        execution,
+        "project_source_materialization_request",
+        fail_projection,
+        raising=False,
+    )
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        nonlocal measurement_started
+        del cwd
+        if argv[1] == "local_build_registry.py":
+            _write_source_registry(Path(argv[3]), count=343)
+        else:
+            measurement_started = True
+            _write_feedback_from_request(Path(argv[2]), Path(argv[3]))
+        return 0
+
+    state = run_p6_coptv2x_search(contract, local, "abc123", runner)
+
+    assert state.status == "failed"
+    assert state.failure_code == "history_execution_invalid"
+    assert measurement_started is False
+    assert not (
+        local.local_output_root / "round-00" / "measurement_request.json"
+    ).exists()
 
 
 def test_run_p6_rejects_symlinked_source_registry_before_adapter(

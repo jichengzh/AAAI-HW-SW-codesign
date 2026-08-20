@@ -28,6 +28,10 @@ from framework.stage5.single_target_search_v2 import (
     validate_task_feedback_history,
 )
 from framework.stage6.pyramid_search_space_adapter_v1 import build_pyramid_candidate_plan
+from framework.stage6.p6_history_source_materialization_v1 import (
+    P6HistorySourceMaterializationError,
+    project_source_materialization_request,
+)
 
 
 PUBLIC_SCHEMA_VERSION = "p6_h800_coptv2x_search_contract_v2"
@@ -177,6 +181,7 @@ _RECOVERABLE_ROUND_FAILURE_CODES = frozenset(
         "feedback_candidate_mismatch",
         "feedback_metrics_invalid",
         "feedback_terminal_status_invalid",
+        "history_execution_invalid",
     }
 )
 
@@ -688,6 +693,12 @@ def _run_search_round(
     round_root, request_path, feedback_path = _prepare_round_output(
         local.local_output_root, round_index
     )
+    try:
+        request = dict(project_source_materialization_request(request).request)
+    except P6HistorySourceMaterializationError:
+        raise P6CoptV2XExecutionError(
+            "history_execution_invalid", "history execution invalid"
+        ) from None
     _write_json(request_path, request)
     try:
         feedback_path.unlink(missing_ok=True)

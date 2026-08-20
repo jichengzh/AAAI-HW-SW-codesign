@@ -95,6 +95,32 @@ def _recipe() -> dict[str, Any]:
     }
 
 
+def _recipe_v2() -> dict[str, Any]:
+    return {
+        "schema_version": "p6_history_dynamic_materialization_recipe_v2",
+        "stage_width_fields": ["stage1_width", "stage2_width", "stage3_width"],
+        "group_id_template": (
+            "pyramid|{stage1_width}x{stage2_width}x{stage3_width}"
+        ),
+        "artifact_id_template": (
+            "pyramid-{stage1_width}-{stage2_width}-{stage3_width}"
+        ),
+        "shared_source_path_templates": {
+            "checkpoint_path": "materialized/{artifact_id}/checkpoint/model.ckpt",
+            "checkpoint_dir": "materialized/{artifact_id}/checkpoint",
+            "config_path": "materialized/{artifact_id}/config/source-config.json",
+            "training_done_marker": "materialized/{artifact_id}/markers/training.done",
+            "onnx_path": "materialized/{artifact_id}/onnx/model.onnx",
+            "onnx_report_path": "materialized/{artifact_id}/onnx/report.json",
+            "calibration_root": "materialized/{artifact_id}/calibration",
+            "calibration_npz": "materialized/{artifact_id}/calibration/cache.npz",
+            "calibration_summary": "materialized/{artifact_id}/calibration/summary.json",
+            "trt_calibration_dir": "materialized/{artifact_id}/trt-calibration",
+            "source_done_marker": "materialized/{artifact_id}/markers/source.done",
+        },
+    }
+
+
 def _write_executable(path: Path) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("synthetic private executable\n", encoding="utf-8")
@@ -383,6 +409,70 @@ def test_registry_binds_all_authoritative_output_paths_beneath_local_root(
                 assert resolved.is_relative_to(local_output_root.resolve())
                 assert value not in rendered_paths
                 rendered_paths.add(value)
+
+
+@pytest.mark.parametrize("q_modes", [("fp16",), ("int8",), ("fp16", "int8")])
+def test_registry_v2_materializes_one_shared_bundle_per_group(
+    tmp_path: Path, q_modes: tuple[str, ...]
+) -> None:
+    """Catches q-mode-specific source bundles or dropped private static fields."""
+    binding = _binding(tmp_path)
+    private_root = Path(binding["private_root"])
+    binding["source_contract_template"]["dynamic_materialization_recipe"] = (
+        _recipe_v2()
+    )
+    binding["source_contract_template"].update(
+        {
+            "base_checkpoint_path": str(private_root / "base" / "model.ckpt"),
+            "dataset_root": str(private_root / "datasets"),
+            "training_parameters": {"epochs": 7, "optimizer": "synthetic"},
+            "materialization_outputs_by_q_mode": {
+                "fp16": {
+                    "checkpoint_path": str(
+                        private_root / "untrusted-self-report" / "fp16.ckpt"
+                    )
+                }
+            },
+            "shared_source_paths": {
+                key: str(private_root / "untrusted-self-report" / key)
+                for key in _recipe_v2()["shared_source_path_templates"]
+            },
+        }
+    )
+    original_binding = copy.deepcopy(binding)
+    local_output_root = tmp_path / "private-output"
+    local_output_root.mkdir()
+
+    registry = materialize_history_registry(
+        _plan(q_modes), binding, local_output_root
+    )
+
+    observed_paths: set[str] = set()
+    for group in registry["groups"]:
+        contract = group["source_contract"]
+        shared_paths = contract["shared_source_paths"]
+        assert set(shared_paths) == set(
+            _recipe_v2()["shared_source_path_templates"]
+        )
+        assert all("q_mode" not in value for value in shared_paths.values())
+        assert all(
+            Path(value).is_relative_to(local_output_root.resolve())
+            for value in shared_paths.values()
+        )
+        assert not observed_paths.intersection(shared_paths.values())
+        observed_paths.update(shared_paths.values())
+        assert contract["base_checkpoint_path"].endswith("/base/model.ckpt")
+        assert contract["dataset_root"].endswith("/datasets")
+        assert contract["training_parameters"] == {
+            "epochs": 7,
+            "optimizer": "synthetic",
+        }
+        assert "untrusted-self-report" not in json.dumps(shared_paths)
+        assert "materialization_outputs_by_q_mode" not in contract
+        assert "dynamic_materialization_recipe" not in contract
+        assert group["available_q_modes"] == sorted(q_modes)
+
+    assert binding == original_binding
 
 
 def test_registry_output_contains_no_search_result_or_terminal_leakage(
