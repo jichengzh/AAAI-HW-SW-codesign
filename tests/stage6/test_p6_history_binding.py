@@ -15,6 +15,7 @@ from framework.stage6.p6_history_binding_v1 import (
     P6HistoryBindingError,
     discover_history_binding,
     public_binding_projection,
+    validate_binding_recipe_consistency,
     validate_history_execution_binding,
     write_private_binding_pair,
 )
@@ -307,6 +308,48 @@ def _expect_category(category: str):
         P6HistoryBindingError,
         match=rf"^{category}:",
     )
+
+
+def test_binding_recipe_consistency_uses_canonical_json_equality() -> None:
+    expected = {
+        "schema_version": "p6_history_dynamic_materialization_recipe_v2",
+        "stage_width_fields": ["stage1_width", "stage2_width", "stage3_width"],
+    }
+    binding = {
+        "source_contract_template": {
+            "dynamic_materialization_recipe": {
+                "stage_width_fields": [
+                    "stage1_width",
+                    "stage2_width",
+                    "stage3_width",
+                ],
+                "schema_version": "p6_history_dynamic_materialization_recipe_v2",
+            }
+        }
+    }
+
+    validate_binding_recipe_consistency(binding, expected)
+    validate_binding_recipe_consistency({}, None)
+
+
+def test_binding_recipe_consistency_rejects_canonical_drift() -> None:
+    expected = {
+        "schema_version": "p6_history_dynamic_materialization_recipe_v2",
+        "stage_width_fields": ["stage1_width", "stage2_width", "stage3_width"],
+    }
+    binding = copy.deepcopy(
+        {
+            "source_contract_template": {
+                "dynamic_materialization_recipe": expected,
+            }
+        }
+    )
+    binding["source_contract_template"]["dynamic_materialization_recipe"][
+        "stage_width_fields"
+    ].reverse()
+
+    with _expect_category("history_recipe_derivation_invalid"):
+        validate_binding_recipe_consistency(binding, expected)
 
 
 def test_discovers_documented_history_and_returns_no_leak_projection(

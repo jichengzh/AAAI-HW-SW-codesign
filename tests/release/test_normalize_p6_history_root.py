@@ -8,7 +8,10 @@ import sys
 
 import yaml
 
-from tests.stage6.test_p6_history_normalization import valid_private_source_map
+from tests.stage6.test_p6_history_normalization import (
+    _as_v2_procedural,
+    valid_private_source_map,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -180,3 +183,53 @@ def test_cli_allows_ignored_repository_source_map_without_private_echo(
     assert result.stdout == "p6_history_root_normalized\n"
     assert result.stderr == ""
     assert (private_dir / "legacy.local.yaml").exists()
+
+
+def test_cli_normalizes_v2_procedural_source_with_explicit_runner_template(
+    tmp_path: Path,
+) -> None:
+    source_map, runner = _as_v2_procedural(
+        valid_private_source_map(tmp_path), tmp_path
+    )
+    map_path = _write_source_map(tmp_path / "private-source-map.json", source_map)
+    private_dir = tmp_path / "normalized-private"
+
+    result = _run_cli(
+        "--source-map",
+        str(map_path),
+        "--history-root",
+        source_map["history_root"],
+        "--private-dir",
+        str(private_dir),
+        "--runner-template",
+        str(runner),
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == "p6_history_root_normalized\n"
+    assert result.stderr == ""
+    assert (private_dir / "derivation" / "recipe.json").exists()
+
+
+def test_cli_reports_missing_procedural_runner_without_partial_root(
+    tmp_path: Path,
+) -> None:
+    source_map, _runner = _as_v2_procedural(
+        valid_private_source_map(tmp_path), tmp_path
+    )
+    map_path = _write_source_map(tmp_path / "private-source-map.json", source_map)
+    private_dir = tmp_path / "normalized-private"
+
+    result = _run_cli(
+        "--source-map",
+        str(map_path),
+        "--history-root",
+        source_map["history_root"],
+        "--private-dir",
+        str(private_dir),
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "history_recipe_derivation_invalid\n"
+    assert not private_dir.exists()

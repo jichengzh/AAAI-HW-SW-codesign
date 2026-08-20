@@ -26,6 +26,7 @@ from framework.stage6.p6_history_binding_v1 import (
     P6HistoryBindingError,
     build_history_binding,
     prevalidate_private_binding_pair_destinations,
+    validate_binding_recipe_consistency,
     validate_history_execution_binding,
     write_private_binding_pair,
 )
@@ -53,6 +54,7 @@ LEGACY_LOCAL_KEYS = frozenset(
         "source_registry_step",
         "measurement_step",
         "local_output_root",
+        "history_recipe_derivation_path",
     }
 )
 LEGACY_REQUIRED_KEYS = frozenset(
@@ -86,6 +88,7 @@ class FullChainBootstrapError(ValueError):
 class _LegacyLocator:
     asset_paths: Mapping[str, Path]
     local_input_paths: Mapping[str, Path]
+    expected_recipe_path: Path | None
 
 
 class _UniqueKeyLoader(yaml.SafeLoader):
@@ -136,6 +139,8 @@ def materialize_full_chain_binding(
         ) from error
     locator = _load_legacy_local_locator(legacy_local_config)
     root = _unique_common_history_root(locator)
+    expected_recipe_path = _validate_expected_recipe_location(locator, root)
+    expected_recipe = _load_expected_recipe(expected_recipe_path)
     try:
         validated_template = validate_pre_provision_runner_template(
             runner_template, root
@@ -176,6 +181,12 @@ def materialize_full_chain_binding(
     )
     _validate_rendered_pair(binding, config, output_root)
     try:
+        validate_binding_recipe_consistency(binding, expected_recipe)
+    except P6HistoryBindingError as error:
+        raise FullChainBootstrapError(
+            error.category, "history binding recipe is inconsistent"
+        ) from error
+    try:
         write_private_binding_pair(
             binding,
             config,
@@ -211,7 +222,68 @@ def _load_legacy_local_locator(path: Path) -> _LegacyLocator:
         raise FullChainBootstrapError(
             "legacy_locator_invalid", "legacy local inputs are unavailable"
         )
-    return _LegacyLocator(asset_paths=assets, local_input_paths=inputs)
+    expected_recipe_path = _parse_expected_recipe_path(
+        payload.get("history_recipe_derivation_path")
+    )
+    return _LegacyLocator(
+        asset_paths=assets,
+        local_input_paths=inputs,
+        expected_recipe_path=expected_recipe_path,
+    )
+
+
+def _parse_expected_recipe_path(raw_path: object) -> Path | None:
+    if raw_path is None:
+        return None
+    path = Path(raw_path) if isinstance(raw_path, str) else None
+    if (
+        path is None
+        or not path.is_absolute()
+        or _contains_symlink_component(path)
+    ):
+        raise FullChainBootstrapError(
+            "history_recipe_derivation_invalid", "recipe path is invalid"
+        )
+    return path
+
+
+def _load_expected_recipe(path: Path | None) -> Mapping[str, Any] | None:
+    if path is None:
+        return None
+    try:
+        if not path.is_file() or path.stat().st_size > MAX_PRIVATE_INPUT_SIZE:
+            raise OSError
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise FullChainBootstrapError(
+            "history_recipe_derivation_invalid", "recipe is unavailable"
+        ) from error
+    if not isinstance(payload, Mapping) or any(
+        not isinstance(key, str) for key in payload
+    ):
+        raise FullChainBootstrapError(
+            "history_recipe_derivation_invalid", "recipe is invalid"
+        )
+    return copy.deepcopy(dict(payload))
+
+
+def _validate_expected_recipe_location(
+    locator: _LegacyLocator, root: Path
+) -> Path | None:
+    path = locator.expected_recipe_path
+    if path is None:
+        return None
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError as error:
+        raise FullChainBootstrapError(
+            "history_recipe_derivation_invalid", "recipe is unavailable"
+        ) from error
+    if not _is_relative_to(resolved, root) or _git_root_for(resolved) != root:
+        raise FullChainBootstrapError(
+            "history_recipe_derivation_invalid", "recipe escapes history root"
+        )
+    return resolved
 
 
 def _load_validated_stage1_scan(path: Path) -> Mapping[str, Any]:

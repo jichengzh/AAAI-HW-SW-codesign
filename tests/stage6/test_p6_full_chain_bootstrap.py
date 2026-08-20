@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -21,6 +22,7 @@ from framework.stage6.p6_full_chain_bootstrap_v1 import (
     materialize_full_chain_binding,
 )
 from framework.stage6.p6_history_binding_v1 import GpuRecord
+from tests.stage6.test_p6_history_normalization import _recipe_v2
 
 
 MARKERS = {
@@ -400,6 +402,29 @@ def _write_valid_private_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
     return legacy_config, template, output_root
 
 
+def _attach_expected_recipe(
+    tmp_path: Path,
+    legacy_config: Path,
+    *,
+    actual_recipe: Mapping[str, Any],
+    expected_recipe: Mapping[str, Any],
+) -> Path:
+    root = tmp_path / "source"
+    registry_path = root / "registry" / "candidate_source_registry.json"
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    contract = registry["groups"][0]["source_contract"]
+    contract["dynamic_materialization_recipe"] = copy.deepcopy(dict(actual_recipe))
+    registry["groups"][0]["source_contract_sha256"] = _canonical_json_sha(contract)
+    _write_json(registry_path, registry)
+    expected_path = _write_json(
+        root / "derivation" / "recipe.json", expected_recipe
+    )
+    legacy = yaml.safe_load(legacy_config.read_text(encoding="utf-8"))
+    legacy["history_recipe_derivation_path"] = str(expected_path)
+    _write_yaml(legacy_config, legacy)
+    return expected_path
+
+
 def _write_invalid_private_inputs(
     tmp_path: Path, mutation: str
 ) -> tuple[Path, Path, Path]:
@@ -484,6 +509,108 @@ def test_materialize_full_chain_binding_renders_dynamic_config(
         "{feedback_json}",
         "{round_output_root}",
     }
+
+
+def test_materialize_accepts_matching_normalized_recipe_before_pair_write(
+    tmp_path: Path,
+) -> None:
+    legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
+    recipe = _recipe_v2()
+    _attach_expected_recipe(
+        tmp_path,
+        legacy_config,
+        actual_recipe=recipe,
+        expected_recipe=recipe,
+    )
+
+    binding = materialize_full_chain_binding(
+        legacy_config,
+        template,
+        output_root,
+        output_root / "binding.json",
+        output_root / "local.yaml",
+        _gpu_probe(),
+    )
+
+    assert binding["source_contract_template"]["dynamic_materialization_recipe"] == recipe
+    assert (output_root / "binding.json").exists()
+    assert (output_root / "local.yaml").exists()
+
+
+def test_materialize_rejects_recipe_drift_before_pair_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
+    actual = _recipe_v2()
+    expected = copy.deepcopy(actual)
+    expected["artifact_id_template"] = (
+        "pyramid-drift-{stage1_width}-{stage2_width}-{stage3_width}"
+    )
+    _attach_expected_recipe(
+        tmp_path,
+        legacy_config,
+        actual_recipe=actual,
+        expected_recipe=expected,
+    )
+    monkeypatch.setattr(
+        bootstrap,
+        "write_private_binding_pair",
+        lambda *_args, **_kwargs: pytest.fail("pair writer must not be called"),
+    )
+
+    with pytest.raises(
+        FullChainBootstrapError,
+        match=r"^history_recipe_derivation_invalid:",
+    ):
+        materialize_full_chain_binding(
+            legacy_config,
+            template,
+            output_root,
+            output_root / "binding.json",
+            output_root / "local.yaml",
+            _gpu_probe(),
+        )
+
+    assert not (output_root / "binding.json").exists()
+    assert not (output_root / "local.yaml").exists()
+
+
+def test_materialize_rejects_out_of_root_recipe_before_read_or_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
+    outside_recipe = _write_json(tmp_path / "outside" / "recipe.json", _recipe_v2())
+    legacy = yaml.safe_load(legacy_config.read_text(encoding="utf-8"))
+    legacy["history_recipe_derivation_path"] = str(outside_recipe)
+    _write_yaml(legacy_config, legacy)
+    probe = _gpu_probe()
+    original_read_text = Path.read_text
+
+    def guarded_read_text(path: Path, *args: Any, **kwargs: Any) -> str:
+        if path == outside_recipe:
+            pytest.fail("out-of-root recipe must not be read")
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", guarded_read_text)
+
+    with pytest.raises(
+        FullChainBootstrapError,
+        match=r"^history_recipe_derivation_invalid:",
+    ):
+        materialize_full_chain_binding(
+            legacy_config,
+            template,
+            output_root,
+            output_root / "binding.json",
+            output_root / "local.yaml",
+            probe,
+        )
+
+    assert probe.calls == []
+    assert not (output_root / "binding.json").exists()
+    assert not (output_root / "local.yaml").exists()
 
 
 def test_materialize_uses_template_component_paths_when_history_has_archived_duplicates(

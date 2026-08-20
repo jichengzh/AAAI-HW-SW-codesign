@@ -7,7 +7,7 @@ import copy
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import shutil
 import string
 import subprocess
@@ -18,9 +18,21 @@ from typing import Any
 import yaml
 
 from framework.stage5.production_search_v1 import validate_source_contract
+from framework.stage6.p6_history_recipe_bridge_v1 import (
+    P6HistoryRecipeDerivationError,
+    derive_dynamic_recipe_from_procedural_source,
+)
+from framework.stage6.p6_history_recipe_profiles_v1 import (
+    CANONICAL_ARTIFACT_ID_TEMPLATE,
+    CANONICAL_GROUP_ID_TEMPLATE,
+    PROFILE_V1,
+    RECIPE_V2,
+    SHARED_SOURCE_PATH_KEYS,
+)
 
 
 SOURCE_MAP_SCHEMA_VERSION = "p6_history_normalization_source_v1"
+SOURCE_MAP_V2_SCHEMA_VERSION = "p6_history_normalization_source_v2"
 REGISTRY_SCHEMA_VERSION = "stage5_candidate_source_registry_v1"
 LEGACY_SCHEMA_VERSION = "p6_h800_coptv2x_local_v2"
 RECIPE_SCHEMA_VERSION = "p6_history_dynamic_materialization_recipe_v1"
@@ -48,6 +60,23 @@ SOURCE_MAP_KEYS = frozenset(
         "history_root",
     }
 )
+SOURCE_MAP_COMMON_KEYS = frozenset(
+    {
+        "schema_version",
+        "asset_paths",
+        "input_sources",
+        "source_contract",
+        "history_root",
+        "recipe_mode",
+    }
+)
+SOURCE_MAP_V2_EXPLICIT_KEYS = SOURCE_MAP_COMMON_KEYS | {
+    "dynamic_materialization_recipe"
+}
+SOURCE_MAP_V2_PROCEDURAL_KEYS = SOURCE_MAP_COMMON_KEYS | {
+    "procedural_recipe_profile",
+    "procedural_recipe_source",
+}
 RECIPE_KEYS = frozenset(
     {
         "schema_version",
@@ -57,6 +86,22 @@ RECIPE_KEYS = frozenset(
         "output_path_templates_by_q_mode",
     }
 )
+RECIPE_V2_KEYS = frozenset(
+    {
+        "schema_version",
+        "stage_width_fields",
+        "group_id_template",
+        "artifact_id_template",
+        "shared_source_path_templates",
+    }
+)
+PROCEDURAL_ROLES = (
+    "controller",
+    "source_materializer",
+    "performance_plan",
+    "finalizer",
+)
+RECIPE_V2_SAMPLE_WIDTHS = ((16, 32, 64), (16, 33, 65), (17, 33, 65))
 FORBIDDEN_CONTEXT_TOKENS = (
     "metric",
     "objective",
@@ -83,6 +128,10 @@ class P6HistoryNormalizationError(ValueError):
 
 def _invalid(detail: str) -> None:
     raise P6HistoryNormalizationError("history_normalization_invalid", detail)
+
+
+def _derivation_invalid(detail: str) -> None:
+    raise P6HistoryNormalizationError("history_recipe_derivation_invalid", detail)
 
 
 def _is_relative_to(path: Path, root: Path) -> bool:
@@ -205,7 +254,9 @@ def _validate_no_forbidden_context(value: object) -> None:
             _validate_no_forbidden_context(child)
 
 
-def _validate_format_template(raw_template: object, allowed_fields: set[str]) -> None:
+def _validate_format_template(
+    raw_template: object, allowed_fields: set[str]
+) -> set[str]:
     if not isinstance(raw_template, str) or not raw_template.strip():
         _invalid("dynamic materialization template is invalid")
     observed_fields: set[str] = set()
@@ -224,6 +275,7 @@ def _validate_format_template(raw_template: object, allowed_fields: set[str]) ->
         observed_fields.add(field_name)
     if not observed_fields:
         _invalid("dynamic materialization template has no authoritative fields")
+    return observed_fields
 
 
 def _render_template(template: str, values: Mapping[str, object]) -> str:
@@ -240,6 +292,8 @@ def _render_template(template: str, values: Mapping[str, object]) -> str:
 
 
 def _validate_recipe(raw_recipe: object) -> dict[str, Any]:
+    if isinstance(raw_recipe, Mapping) and raw_recipe.get("schema_version") == RECIPE_V2:
+        return _validate_recipe_v2(raw_recipe)
     if not isinstance(raw_recipe, Mapping) or set(raw_recipe) != set(RECIPE_KEYS):
         _invalid("dynamic materialization recipe is missing or invalid")
     recipe = copy.deepcopy(dict(raw_recipe))
@@ -263,6 +317,65 @@ def _validate_recipe(raw_recipe: object) -> dict[str, Any]:
             _validate_format_template(raw_templates.get(key), allowed_output_fields)
     _validate_recipe_outputs_do_not_collide(recipe)
     return recipe
+
+
+def _validate_recipe_v2(raw_recipe: Mapping[str, Any]) -> dict[str, Any]:
+    if set(raw_recipe) != set(RECIPE_V2_KEYS):
+        _invalid("dynamic materialization recipe is missing or invalid")
+    recipe = copy.deepcopy(dict(raw_recipe))
+    if (
+        recipe.get("schema_version") != RECIPE_V2
+        or recipe.get("stage_width_fields") != list(STAGE_WIDTH_FIELDS)
+        or recipe.get("group_id_template") != CANONICAL_GROUP_ID_TEMPLATE
+        or recipe.get("artifact_id_template") != CANONICAL_ARTIFACT_ID_TEMPLATE
+    ):
+        _invalid("dynamic materialization recipe is incompatible")
+    for name in ("group_id_template", "artifact_id_template"):
+        _validate_format_template(recipe.get(name), set(STAGE_WIDTH_FIELDS))
+    raw_templates = recipe.get("shared_source_path_templates")
+    if not isinstance(raw_templates, Mapping) or set(raw_templates) != set(
+        SHARED_SOURCE_PATH_KEYS
+    ):
+        _invalid("shared source path mapping is incomplete")
+    allowed_fields = {*STAGE_WIDTH_FIELDS, "group_id", "artifact_id"}
+    for key in SHARED_SOURCE_PATH_KEYS:
+        template = raw_templates.get(key)
+        fields = _validate_format_template(template, allowed_fields)
+        assert isinstance(template, str)
+        path = Path(template)
+        if (
+            path.is_absolute()
+            or PureWindowsPath(template).is_absolute()
+            or "\\" in template
+            or ".." in path.parts
+        ):
+            _invalid("shared source path escapes the allowed root")
+        if not {"group_id", "artifact_id"}.intersection(fields) and not set(
+            STAGE_WIDTH_FIELDS
+        ).issubset(fields):
+            _invalid("shared source path lacks canonical group identity")
+    _validate_recipe_v2_outputs_do_not_collide(recipe, raw_templates)
+    return recipe
+
+
+def _validate_recipe_v2_outputs_do_not_collide(
+    recipe: Mapping[str, Any], templates: Mapping[str, Any]
+) -> None:
+    seen_across_groups: set[Path] = set()
+    for widths in RECIPE_V2_SAMPLE_WIDTHS:
+        values = dict(zip(STAGE_WIDTH_FIELDS, widths, strict=True))
+        group_id = _render_template(recipe["group_id_template"], values)
+        artifact_id = _render_template(recipe["artifact_id_template"], values)
+        render_values = {**values, "group_id": group_id, "artifact_id": artifact_id}
+        rendered = {
+            Path(_render_template(templates[key], render_values))
+            for key in SHARED_SOURCE_PATH_KEYS
+        }
+        if len(rendered) != len(SHARED_SOURCE_PATH_KEYS):
+            _invalid("shared source paths collide in a group")
+        if seen_across_groups.intersection(rendered):
+            _invalid("shared source paths collide across groups")
+        seen_across_groups.update(rendered)
 
 
 def _validate_recipe_outputs_do_not_collide(recipe: Mapping[str, Any]) -> None:
@@ -320,15 +433,89 @@ def _validate_source_group(raw_group: object, recipe: Mapping[str, Any]) -> dict
     return group
 
 
+def _validate_procedural_recipe_source(raw: object) -> dict[str, Any]:
+    if not isinstance(raw, Mapping) or set(raw) not in (
+        {"role_refs"},
+        {"role_selection"},
+    ):
+        _derivation_invalid("procedural recipe source is invalid")
+    source = copy.deepcopy(dict(raw))
+    refs = source.get("role_refs", source.get("role_selection"))
+    if isinstance(refs, Sequence) and not isinstance(refs, (str, bytes)):
+        if tuple(refs) != PROCEDURAL_ROLES:
+            _derivation_invalid("procedural recipe roles are invalid")
+    elif isinstance(refs, Mapping):
+        if set(refs) != set(PROCEDURAL_ROLES) or any(
+            not isinstance(value, (str, Mapping)) for value in refs.values()
+        ):
+            _derivation_invalid("procedural recipe roles are invalid")
+    else:
+        _derivation_invalid("procedural recipe roles are invalid")
+    return source
+
+
+def _recipe_from_v2_source_map(
+    source_map: Mapping[str, Any],
+    history_root: Path,
+    runner_template_path: Path | None,
+) -> tuple[dict[str, Any], bool]:
+    mode = source_map.get("recipe_mode")
+    if mode == "explicit_dynamic_recipe":
+        if set(source_map) != set(SOURCE_MAP_V2_EXPLICIT_KEYS):
+            _derivation_invalid("explicit recipe fields are inconsistent")
+        try:
+            return _validate_recipe(source_map.get("dynamic_materialization_recipe")), False
+        except P6HistoryNormalizationError as error:
+            raise P6HistoryNormalizationError(
+                "history_recipe_derivation_invalid", "explicit recipe is invalid"
+            ) from error
+    if mode != "procedural_profile" or set(source_map) != set(
+        SOURCE_MAP_V2_PROCEDURAL_KEYS
+    ):
+        _derivation_invalid("procedural recipe fields are inconsistent")
+    if runner_template_path is None:
+        _derivation_invalid("runner template is required")
+    if source_map.get("procedural_recipe_profile") != PROFILE_V1:
+        _derivation_invalid("procedural recipe profile is unknown")
+    procedural_source = _validate_procedural_recipe_source(
+        source_map.get("procedural_recipe_source")
+    )
+    bridge_source_map = {
+        "procedural_recipe_profile": source_map.get("procedural_recipe_profile"),
+        "procedural_recipe_source": procedural_source,
+    }
+    try:
+        recipe = derive_dynamic_recipe_from_procedural_source(
+            source_map=bridge_source_map,
+            runner_template_path=runner_template_path,
+            history_root=history_root,
+        )
+    except P6HistoryRecipeDerivationError as error:
+        raise P6HistoryNormalizationError(
+            "history_recipe_derivation_invalid", "procedural recipe derivation failed"
+        ) from error
+    return recipe, True
+
+
 def _validate_private_source_map(
     source_map: Mapping[str, Any],
     history_root: Path,
+    *,
+    runner_template_path: Path | None = None,
 ) -> dict[str, Any]:
-    if (
-        not isinstance(source_map, Mapping)
-        or set(source_map) != set(SOURCE_MAP_KEYS)
-        or source_map.get("schema_version") != SOURCE_MAP_SCHEMA_VERSION
-    ):
+    if not isinstance(source_map, Mapping):
+        _invalid("source map contract is invalid")
+    schema_version = source_map.get("schema_version")
+    if schema_version == SOURCE_MAP_SCHEMA_VERSION:
+        if set(source_map) != set(SOURCE_MAP_KEYS):
+            _invalid("source map contract is invalid")
+    elif schema_version == SOURCE_MAP_V2_SCHEMA_VERSION:
+        if source_map.get("recipe_mode") not in {
+            "explicit_dynamic_recipe",
+            "procedural_profile",
+        }:
+            _derivation_invalid("source map recipe mode is invalid")
+    else:
         _invalid("source map contract is invalid")
     if (
         not isinstance(history_root, Path)
@@ -374,15 +561,47 @@ def _validate_private_source_map(
     }
     if len(set(canonical_inputs.values())) != len(INPUT_NAMES):
         _invalid("input source paths must be unique")
-    recipe = _validate_recipe(source_map.get("dynamic_materialization_recipe"))
-    source_group = _validate_source_group(source_map.get("source_contract"), recipe)
-    return {
+    if schema_version == SOURCE_MAP_SCHEMA_VERSION:
+        recipe = _validate_recipe(source_map.get("dynamic_materialization_recipe"))
+        derived = False
+    else:
+        recipe, derived = _recipe_from_v2_source_map(
+            source_map, resolved_history_root, runner_template_path
+        )
+    raw_source_group = copy.deepcopy(source_map.get("source_contract"))
+    if derived:
+        if not isinstance(raw_source_group, Mapping):
+            _derivation_invalid("source contract is invalid")
+        raw_contract = raw_source_group.get("source_contract")
+        if not isinstance(raw_contract, Mapping):
+            _derivation_invalid("source contract is invalid")
+        existing_recipe = raw_contract.get("dynamic_materialization_recipe")
+        if existing_recipe is not None and existing_recipe != recipe:
+            _derivation_invalid("source contract recipe is inconsistent")
+        raw_source_group = copy.deepcopy(dict(raw_source_group))
+        raw_source_group["source_contract"] = copy.deepcopy(dict(raw_contract))
+        raw_source_group["source_contract"][
+            "dynamic_materialization_recipe"
+        ] = copy.deepcopy(recipe)
+    try:
+        source_group = _validate_source_group(raw_source_group, recipe)
+    except P6HistoryNormalizationError as error:
+        if schema_version == SOURCE_MAP_V2_SCHEMA_VERSION:
+            raise P6HistoryNormalizationError(
+                "history_recipe_derivation_invalid",
+                "source contract recipe is inconsistent",
+            ) from error
+        raise
+    canonical = {
         "history_root": resolved_history_root,
         "asset_paths": canonical_assets,
         "input_sources": canonical_inputs,
         "source_contract": source_group,
         "dynamic_materialization_recipe": recipe,
     }
+    if derived:
+        canonical["derived_recipe"] = copy.deepcopy(recipe)
+    return canonical
 
 
 def _git_check_ignored(repository: Path, path: Path) -> bool:
@@ -529,9 +748,14 @@ def _atomic_write_text(path: Path, text: str) -> None:
             temporary_path.unlink(missing_ok=True)
 
 
-def _legacy_locator(paths: Mapping[str, Path], private_root: Path) -> dict[str, Any]:
+def _legacy_locator(
+    paths: Mapping[str, Path],
+    private_root: Path,
+    *,
+    expected_recipe_path: Path | None = None,
+) -> dict[str, Any]:
     python_executable = str(Path(sys.executable).resolve(strict=True))
-    return {
+    locator = {
         "schema_version": LEGACY_SCHEMA_VERSION,
         "target": "h800",
         "asset_paths": {
@@ -574,18 +798,27 @@ def _legacy_locator(paths: Mapping[str, Path], private_root: Path) -> dict[str, 
         },
         "local_output_root": str(private_root / "runs"),
     }
+    if expected_recipe_path is not None:
+        locator["history_recipe_derivation_path"] = str(expected_recipe_path)
+    return locator
 
 
 def normalize_history_inputs(
     source_map: Mapping[str, Any],
     history_root: Path,
     private_dir: Path,
+    *,
+    runner_template_path: Path | None = None,
 ) -> dict[str, Path]:
     """Fail-closed normalization from a private source map to a private root."""
     staged: Path | None = None
     destination = _validate_private_destination(private_dir)
     try:
-        canonical = _validate_private_source_map(source_map, history_root)
+        canonical = _validate_private_source_map(
+            source_map,
+            history_root,
+            runner_template_path=runner_template_path,
+        )
         staged = Path(
             tempfile.mkdtemp(
                 dir=destination.parent,
@@ -599,12 +832,23 @@ def normalize_history_inputs(
         _atomic_write_json(registry_path, _build_registry_v1(canonical["source_contract"]))
         paths["registry"] = registry_path
         _copy_private_tree(canonical["asset_paths"]["toolchain"], staged / "toolchain")
+        if "derived_recipe" in canonical:
+            derivation_path = staged / "derivation" / "recipe.json"
+            _atomic_write_json(derivation_path, canonical["derived_recipe"])
+            paths["derivation_recipe"] = derivation_path
         public_paths = {
             name: destination / path.relative_to(staged)
             for name, path in paths.items()
         }
         legacy_path = staged / "legacy.local.yaml"
-        _atomic_write_yaml(legacy_path, _legacy_locator(public_paths, destination))
+        _atomic_write_yaml(
+            legacy_path,
+            _legacy_locator(
+                public_paths,
+                destination,
+                expected_recipe_path=public_paths.get("derivation_recipe"),
+            ),
+        )
         paths["legacy"] = legacy_path
         relative_paths = {
             name: path.relative_to(staged)

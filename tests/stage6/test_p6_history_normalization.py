@@ -14,6 +14,11 @@ from framework.stage6.p6_history_normalization_v1 import (
     P6HistoryNormalizationError,
     normalize_history_inputs,
 )
+from framework.stage6.p6_history_recipe_profiles_v1 import PROFILE_V1
+from tests.stage6.test_p6_history_recipe_bridge import (
+    MARKERS,
+    _runner_template,
+)
 
 
 INPUT_NAMES = (
@@ -63,6 +68,84 @@ def _recipe() -> dict[str, Any]:
         "artifact_id_template": "pyramid-{stage1_width}-{stage2_width}-{stage3_width}",
         "output_path_templates_by_q_mode": templates,
     }
+
+
+def _recipe_v2() -> dict[str, Any]:
+    return {
+        "schema_version": "p6_history_dynamic_materialization_recipe_v2",
+        "stage_width_fields": ["stage1_width", "stage2_width", "stage3_width"],
+        "group_id_template": "pyramid|{stage1_width}x{stage2_width}x{stage3_width}",
+        "artifact_id_template": "pyramid-{stage1_width}-{stage2_width}-{stage3_width}",
+        "shared_source_path_templates": {
+            "checkpoint_path": "materialized/{artifact_id}/checkpoint/model.ckpt",
+            "checkpoint_dir": "materialized/{artifact_id}/checkpoint",
+            "config_path": "materialized/{artifact_id}/config/source-config.json",
+            "training_done_marker": "materialized/{artifact_id}/markers/training.done",
+            "onnx_path": "materialized/{artifact_id}/onnx/model.onnx",
+            "onnx_report_path": "materialized/{artifact_id}/onnx/report.json",
+            "calibration_root": "materialized/{artifact_id}/calibration",
+            "calibration_npz": "materialized/{artifact_id}/calibration/cache.npz",
+            "calibration_summary": "materialized/{artifact_id}/calibration/summary.json",
+            "trt_calibration_dir": "materialized/{artifact_id}/trt-calibration",
+            "source_done_marker": "materialized/{artifact_id}/markers/source.done",
+        },
+    }
+
+
+def _as_v2_explicit(
+    source_map: dict[str, Any], recipe: Mapping[str, Any]
+) -> dict[str, Any]:
+    payload = copy.deepcopy(source_map)
+    payload["schema_version"] = "p6_history_normalization_source_v2"
+    payload["recipe_mode"] = "explicit_dynamic_recipe"
+    payload["dynamic_materialization_recipe"] = copy.deepcopy(dict(recipe))
+    payload["source_contract"]["source_contract"][
+        "dynamic_materialization_recipe"
+    ] = copy.deepcopy(dict(recipe))
+    return payload
+
+
+def _write_executable(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("synthetic executable\n", encoding="utf-8")
+    path.chmod(0o700)
+
+
+def _as_v2_procedural(
+    source_map: dict[str, Any], tmp_path: Path
+) -> tuple[dict[str, Any], Path]:
+    payload = copy.deepcopy(source_map)
+    payload["schema_version"] = "p6_history_normalization_source_v2"
+    payload["recipe_mode"] = "procedural_profile"
+    payload["procedural_recipe_profile"] = PROFILE_V1
+    payload["procedural_recipe_source"] = {
+        "role_refs": [
+            "controller",
+            "source_materializer",
+            "performance_plan",
+            "finalizer",
+        ]
+    }
+    payload.pop("dynamic_materialization_recipe")
+    payload["source_contract"]["source_contract"].pop(
+        "dynamic_materialization_recipe"
+    )
+    root = Path(payload["history_root"])
+    for marker in MARKERS.values():
+        _write_executable(root / "documented-stage5-chain" / marker)
+    for name in (
+        "scan-private",
+        "quantize-private",
+        "measure-ap-private",
+        "activate-private",
+    ):
+        _write_executable(root / "private-runner" / "bin" / name)
+    runner = tmp_path / "private-inputs" / "runner-template.yaml"
+    runner.parent.mkdir(parents=True, exist_ok=True)
+    runner.write_text(
+        yaml.safe_dump(_runner_template(), sort_keys=False), encoding="utf-8"
+    )
+    return payload, runner
 
 
 def _source_group() -> dict[str, Any]:
@@ -354,5 +437,119 @@ def test_normalizer_rejects_history_root_below_git_top_level_without_partial_roo
         P6HistoryNormalizationError, match=r"^history_normalization_invalid:"
     ):
         normalize_history_inputs(source_map, history_root, private_dir)
+
+    assert not private_dir.exists()
+
+
+def test_v1_explicit_recipe_preserves_return_shape_without_runner_template(
+    tmp_path: Path,
+) -> None:
+    source_map = valid_private_source_map(tmp_path)
+    private_dir = tmp_path / "private-normalized"
+
+    paths = normalize_history_inputs(
+        source_map, _history_root(source_map), private_dir
+    )
+
+    assert set(paths) == {
+        "gold176_rows",
+        "gold176_graph_features",
+        "capability_profiles",
+        "closure",
+        "registry",
+        "legacy",
+    }
+    assert "derivation_recipe" not in paths
+
+
+@pytest.mark.parametrize("recipe", [_recipe(), _recipe_v2()])
+def test_v2_explicit_mode_accepts_supported_recipe_versions(
+    tmp_path: Path, recipe: Mapping[str, Any]
+) -> None:
+    source_map = _as_v2_explicit(valid_private_source_map(tmp_path), recipe)
+    private_dir = tmp_path / "private-normalized"
+
+    paths = normalize_history_inputs(
+        source_map, _history_root(source_map), private_dir
+    )
+
+    registry = json.loads(paths["registry"].read_text(encoding="utf-8"))
+    assert (
+        registry["groups"][0]["source_contract"][
+            "dynamic_materialization_recipe"
+        ]
+        == recipe
+    )
+    assert "derivation_recipe" not in paths
+
+
+def test_v2_procedural_mode_derives_recipe_and_records_canonical_value(
+    tmp_path: Path,
+) -> None:
+    source_map, runner = _as_v2_procedural(
+        valid_private_source_map(tmp_path), tmp_path
+    )
+    private_dir = tmp_path / "private-normalized"
+
+    paths = normalize_history_inputs(
+        source_map,
+        _history_root(source_map),
+        private_dir,
+        runner_template_path=runner,
+    )
+
+    derived = json.loads(paths["derivation_recipe"].read_text(encoding="utf-8"))
+    registry = json.loads(paths["registry"].read_text(encoding="utf-8"))
+    assert derived == _recipe_v2()
+    assert (
+        registry["groups"][0]["source_contract"][
+            "dynamic_materialization_recipe"
+        ]
+        == derived
+    )
+    legacy = yaml.safe_load(paths["legacy"].read_text(encoding="utf-8"))
+    assert legacy["history_recipe_derivation_path"] == str(
+        paths["derivation_recipe"]
+    )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "explicit_with_procedural",
+        "procedural_with_explicit",
+        "procedural_missing_runner",
+        "procedural_self_report",
+    ],
+)
+def test_v2_recipe_modes_fail_closed_without_partial_root(
+    tmp_path: Path, mutation: str
+) -> None:
+    source_map = valid_private_source_map(tmp_path)
+    runner: Path | None = None
+    if mutation == "explicit_with_procedural":
+        source_map = _as_v2_explicit(source_map, _recipe())
+        source_map["procedural_recipe_profile"] = PROFILE_V1
+        source_map["procedural_recipe_source"] = {"role_refs": []}
+    else:
+        source_map, runner = _as_v2_procedural(source_map, tmp_path)
+        if mutation == "procedural_with_explicit":
+            source_map["dynamic_materialization_recipe"] = _recipe_v2()
+        elif mutation == "procedural_missing_runner":
+            runner = None
+        elif mutation == "procedural_self_report":
+            source_map["procedural_recipe_source"]["capability"] = "training"
+    private_dir = tmp_path / "private-normalized"
+
+    with pytest.raises(
+        P6HistoryNormalizationError,
+        match=r"^history_recipe_derivation_invalid:",
+    ):
+        normalize_history_inputs(
+            source_map,
+            _history_root(source_map),
+            private_dir,
+            runner_template_path=runner,
+        )
 
     assert not private_dir.exists()

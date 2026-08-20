@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -16,6 +17,7 @@ from framework.stage6.coptv2x_h800_search_v2 import (
     load_public_contract,
 )
 from tools.release import provision_p6_history_local_config as provision_cli
+from tests.stage6.test_p6_history_normalization import _recipe_v2
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -345,6 +347,34 @@ def _private_pair_paths(tmp_path: Path) -> tuple[Path, Path]:
     return root / "binding.json", root / "p6.local.yaml"
 
 
+def _attach_expected_recipe(
+    tmp_path: Path,
+    args: tuple[str, ...],
+    *,
+    actual_recipe: dict[str, Any],
+    expected_recipe: dict[str, Any],
+) -> None:
+    root = tmp_path / "private-history"
+    registry_path = root / "registry" / "candidate_source_registry.json"
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    contract = registry["groups"][0]["source_contract"]
+    contract["dynamic_materialization_recipe"] = copy.deepcopy(actual_recipe)
+    encoded = json.dumps(
+        contract, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    registry["groups"][0]["source_contract_sha256"] = hashlib.sha256(
+        encoded
+    ).hexdigest()
+    _write_json(registry_path, registry)
+    expected_path = _write_json(
+        root / "derivation" / "recipe.json", expected_recipe
+    )
+    legacy_path = Path(args[1])
+    legacy = yaml.safe_load(legacy_path.read_text(encoding="utf-8"))
+    legacy["history_recipe_derivation_path"] = str(expected_path)
+    _write_yaml(legacy_path, legacy)
+
+
 def _fake_nvidia_smi(tmp_path: Path, rows: tuple[str, ...] | None = None) -> Path:
     fake_bin = tmp_path / "fake-bin"
     fake_bin.mkdir()
@@ -435,6 +465,48 @@ def test_cli_writes_only_ignored_private_pair(tmp_path: Path) -> None:
     assert result.stdout == "p6_full_chain_config_written\n"
     assert result.stderr == ""
     assert _load_local_config_without_echoing_private_values(tmp_path).stage1_scan_step is not None
+
+
+def test_cli_enforces_matching_normalized_recipe_before_writing_pair(
+    tmp_path: Path,
+) -> None:
+    args = _valid_args(tmp_path)
+    recipe = _recipe_v2()
+    _attach_expected_recipe(
+        tmp_path,
+        args,
+        actual_recipe=recipe,
+        expected_recipe=recipe,
+    )
+
+    result = _run_cli(tmp_path, *args)
+
+    assert result.returncode == 0
+    assert result.stdout == "p6_full_chain_config_written\n"
+    assert result.stderr == ""
+
+
+def test_cli_rejects_normalized_recipe_drift_without_pair(tmp_path: Path) -> None:
+    args = _valid_args(tmp_path)
+    actual = _recipe_v2()
+    expected = copy.deepcopy(actual)
+    expected["group_id_template"] = (
+        "pyramid-drift|{stage1_width}x{stage2_width}x{stage3_width}"
+    )
+    _attach_expected_recipe(
+        tmp_path,
+        args,
+        actual_recipe=actual,
+        expected_recipe=expected,
+    )
+
+    result = _run_cli(tmp_path, *args)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "history_recipe_derivation_invalid\n"
+    assert not _private_pair_paths(tmp_path)[0].exists()
+    assert not _private_pair_paths(tmp_path)[1].exists()
 
 
 def test_cli_uses_template_component_paths_when_history_has_archived_duplicates(

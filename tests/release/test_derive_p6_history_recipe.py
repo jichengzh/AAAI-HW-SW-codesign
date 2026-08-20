@@ -1,0 +1,223 @@
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+from typing import Any
+
+import yaml
+
+from framework.stage6.p6_history_recipe_profiles_v1 import PROFILE_V1, RECIPE_V2
+from tests.stage6.test_p6_history_recipe_bridge import MARKERS, _runner_template
+from tests.stage6.test_p6_history_normalization import valid_private_source_map
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+DERIVER = REPOSITORY_ROOT / "tools/release/derive_p6_history_recipe.py"
+
+
+def _write_json(path: Path, payload: Any) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def _write_executable(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("synthetic executable\n", encoding="utf-8")
+    path.chmod(0o700)
+
+
+def _private_derivation_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
+    source_map = valid_private_source_map(tmp_path)
+    source_map["schema_version"] = "p6_history_normalization_source_v2"
+    source_map["recipe_mode"] = "procedural_profile"
+    source_map["procedural_recipe_profile"] = PROFILE_V1
+    source_map["procedural_recipe_source"] = {
+        "role_refs": [
+            "controller",
+            "source_materializer",
+            "performance_plan",
+            "finalizer",
+        ]
+    }
+    source_map.pop("dynamic_materialization_recipe")
+    source_map["source_contract"]["source_contract"].pop(
+        "dynamic_materialization_recipe"
+    )
+    history_root = Path(source_map["history_root"])
+    for marker in MARKERS.values():
+        _write_executable(history_root / "documented-stage5-chain" / marker)
+    for name in (
+        "scan-private",
+        "quantize-private",
+        "measure-ap-private",
+        "activate-private",
+    ):
+        _write_executable(history_root / "private-runner" / "bin" / name)
+    runner_template = tmp_path / "private-inputs" / "runner-template.yaml"
+    runner_template.parent.mkdir(parents=True, exist_ok=True)
+    runner_template.write_text(
+        yaml.safe_dump(_runner_template(), sort_keys=False), encoding="utf-8"
+    )
+    source_map_path = _write_json(
+        tmp_path / "private-inputs" / "source-map.json", source_map
+    )
+    return source_map_path, runner_template, history_root
+
+
+def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(DERIVER), *args],
+        cwd=REPOSITORY_ROOT,
+        env={**os.environ, "PYTHONPATH": str(REPOSITORY_ROOT)},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def test_cli_derives_recipe_to_absolute_private_output_without_private_echo(
+    tmp_path: Path,
+) -> None:
+    source_map, runner_template, _ = _private_derivation_inputs(tmp_path)
+    recipe_json = tmp_path / "private-output" / "derived-recipe.json"
+    recipe_json.parent.mkdir()
+
+    result = _run_cli(
+        "--source-map",
+        str(source_map),
+        "--runner-template",
+        str(runner_template),
+        "--recipe-json",
+        str(recipe_json),
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == "p6_history_recipe_derived\n"
+    assert result.stderr == ""
+    recipe = json.loads(recipe_json.read_text(encoding="utf-8"))
+    assert recipe["schema_version"] == RECIPE_V2
+    assert str(tmp_path) not in recipe_json.read_text(encoding="utf-8")
+
+
+def test_cli_redacts_derivation_failure_and_preserves_existing_output(
+    tmp_path: Path,
+) -> None:
+    source_map, runner_template, _ = _private_derivation_inputs(tmp_path)
+    payload = json.loads(source_map.read_text(encoding="utf-8"))
+    payload["procedural_recipe_profile"] = "private-invalid-profile"
+    source_map.write_text(json.dumps(payload), encoding="utf-8")
+    recipe_json = tmp_path / "private-output" / "derived-recipe.json"
+    recipe_json.parent.mkdir()
+    recipe_json.write_text("preserve-existing\n", encoding="utf-8")
+
+    result = _run_cli(
+        "--source-map",
+        str(source_map),
+        "--runner-template",
+        str(runner_template),
+        "--recipe-json",
+        str(recipe_json),
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "history_recipe_derivation_invalid\n"
+    assert "private-invalid-profile" not in result.stderr
+    assert recipe_json.read_text(encoding="utf-8") == "preserve-existing\n"
+    assert not tuple(recipe_json.parent.glob(f".{recipe_json.name}.*.tmp"))
+
+
+def test_cli_rejects_missing_procedural_role_refs_without_recipe(
+    tmp_path: Path,
+) -> None:
+    source_map, runner_template, _ = _private_derivation_inputs(tmp_path)
+    payload = json.loads(source_map.read_text(encoding="utf-8"))
+    payload["procedural_recipe_source"] = {}
+    source_map.write_text(json.dumps(payload), encoding="utf-8")
+    recipe_json = tmp_path / "private-output" / "derived-recipe.json"
+    recipe_json.parent.mkdir()
+
+    result = _run_cli(
+        "--source-map",
+        str(source_map),
+        "--runner-template",
+        str(runner_template),
+        "--recipe-json",
+        str(recipe_json),
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "history_recipe_derivation_invalid\n"
+    assert not recipe_json.exists()
+
+
+def test_cli_requires_absolute_paths_without_creating_output(tmp_path: Path) -> None:
+    source_map, runner_template, _ = _private_derivation_inputs(tmp_path)
+
+    result = _run_cli(
+        "--source-map",
+        str(source_map),
+        "--runner-template",
+        str(runner_template),
+        "--recipe-json",
+        "relative-recipe.json",
+    )
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert result.stderr == "argument_error\n"
+
+
+def test_cli_rejects_unignored_repository_output_without_modifying_it(
+    tmp_path: Path,
+) -> None:
+    source_map, runner_template, _ = _private_derivation_inputs(tmp_path)
+    recipe_json = REPOSITORY_ROOT / f".p6-unignored-recipe-{tmp_path.name}.json"
+    recipe_json.write_text("preserve-unignored\n", encoding="utf-8")
+    try:
+        result = _run_cli(
+            "--source-map",
+            str(source_map),
+            "--runner-template",
+            str(runner_template),
+            "--recipe-json",
+            str(recipe_json),
+        )
+        preserved = recipe_json.read_text(encoding="utf-8")
+    finally:
+        recipe_json.unlink(missing_ok=True)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "history_recipe_derivation_invalid\n"
+    assert preserved == "preserve-unignored\n"
+
+
+def test_cli_rejects_symlinked_output_parent_without_partial_recipe(
+    tmp_path: Path,
+) -> None:
+    source_map, runner_template, _ = _private_derivation_inputs(tmp_path)
+    real_parent = tmp_path / "real-private-output"
+    real_parent.mkdir()
+    linked_parent = tmp_path / "linked-private-output"
+    linked_parent.symlink_to(real_parent, target_is_directory=True)
+    recipe_json = linked_parent / "derived-recipe.json"
+
+    result = _run_cli(
+        "--source-map",
+        str(source_map),
+        "--runner-template",
+        str(runner_template),
+        "--recipe-json",
+        str(recipe_json),
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "history_recipe_derivation_invalid\n"
+    assert not (real_parent / recipe_json.name).exists()

@@ -268,6 +268,46 @@ def validate_history_execution_binding(binding: Mapping[str, Any]) -> Mapping[st
     return _freeze_mapping(canonical_interface)
 
 
+def validate_binding_recipe_consistency(
+    binding: Mapping[str, Any],
+    expected_recipe: Mapping[str, Any] | None,
+) -> None:
+    """Reject a provisioned binding whose recipe differs from pre-provision input."""
+    if expected_recipe is None:
+        return
+    source_contract = binding.get("source_contract_template")
+    actual_recipe = (
+        source_contract.get("dynamic_materialization_recipe")
+        if isinstance(source_contract, Mapping)
+        else None
+    )
+    try:
+        actual = json.dumps(
+            actual_recipe,
+            ensure_ascii=True,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        expected = json.dumps(
+            expected_recipe,
+            ensure_ascii=True,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    except (TypeError, ValueError) as error:
+        raise P6HistoryBindingError(
+            "history_recipe_derivation_invalid",
+            "binding recipe is not canonical JSON",
+        ) from error
+    if actual != expected:
+        raise P6HistoryBindingError(
+            "history_recipe_derivation_invalid",
+            "binding recipe differs from the pre-provision recipe",
+        )
+
+
 def write_private_binding_pair(
     binding: Mapping[str, Any],
     local_config: Mapping[str, Any],

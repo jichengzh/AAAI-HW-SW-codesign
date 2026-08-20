@@ -38,6 +38,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--source-map", required=True, type=_absolute_path)
     parser.add_argument("--history-root", required=True, type=_absolute_path)
     parser.add_argument("--private-dir", required=True, type=_absolute_path)
+    parser.add_argument("--runner-template", required=False, type=_absolute_path)
     return parser.parse_args(argv)
 
 
@@ -130,9 +131,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             _load_source_map(args.source_map),
             args.history_root,
             args.private_dir,
+            runner_template_path=args.runner_template,
         )
-    except P6HistoryNormalizationError:
-        sys.stderr.write("history_normalization_invalid\n")
+    except P6HistoryNormalizationError as error:
+        sys.stderr.write(f"{error.category}\n")
         return 1
     except Exception:
         sys.stderr.write("history_normalization_invalid\n")
