@@ -591,6 +591,30 @@ def test_runtime_rejects_policy_that_differs_from_execution_interface_before_pro
     assert runner.calls == []
 
 
+def test_runtime_rejects_binding_uuid_collision_after_whitespace_normalization(
+    tmp_path: Path,
+) -> None:
+    """Catches UUID uniqueness checks performed before canonical whitespace stripping."""
+    private_root = tmp_path / "private"
+    private_root.mkdir()
+    round_root = private_root / "controller-round"
+    round_root.mkdir()
+    request = _request()
+    runner = FakeRunner(request)
+    probe = FakeProbe()
+    binding = _binding(private_root)
+    first, second, _ = SYNTHETIC_GPU_INDICES
+    binding["gpu_policy"]["uuid_by_index"][str(first)] = " GPU-collision "
+    binding["gpu_policy"]["uuid_by_index"][str(second)] = "GPU-collision"
+
+    with pytest.raises(P6HistoryMeasurementError) as raised:
+        run_history_measurement_batch(request, binding, round_root, runner, probe)
+
+    assert raised.value.category == "history_execution_invalid"
+    assert probe.calls == []
+    assert runner.calls == []
+
+
 def test_public_binding_projection_does_not_expose_private_gpu_policy(tmp_path: Path) -> None:
     """Catches a public binding surface copying private GPU selection or UUIDs."""
     private_binding = _binding(tmp_path)

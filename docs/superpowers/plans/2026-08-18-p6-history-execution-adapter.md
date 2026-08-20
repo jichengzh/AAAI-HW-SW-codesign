@@ -17,7 +17,7 @@
 - 候选只有一个全局 `q_mode`，不能产生 stage-wise mixed precision。FP16-only、INT8-only 或两者并存均由 Stage2 输出决定。
 - 任一动态候选无法获得完整且可验证的历史 source contract 时，整个 framework preflight 必须失败；不得删除候选、回退 P6.1 static mode 或选择其他后端。
 - P6.1 static mode 的 343 structures / 686 candidates 门禁、执行语义与测试必须不变。
-- 真实执行只允许 GPU 5、6、7；每次必须验证 H800 型号、index-to-UUID 锁、占用语义与漂移。不可自动使用其他 GPU，也不可继承 Stage7 的 GPU7 排除策略。
+- 真实执行只允许 Git 忽略的私有 runner interface 选择的三张 GPU；每次必须验证 H800 型号、index-to-UUID 锁、占用语义与漂移。不可自动使用其他 GPU，也不可继承 Stage7 的设备排除策略。
 - 不下载资产；不得执行 Orin、TensorRT、CPU、RTX 4090 或其他后端。
 - 真实路径、资产、命令、GPU UUID、候选 ID、原始请求/反馈、日志、checkpoint、ONNX 和结果只能存在于 Git 忽略的本地边界。不得写入公开文档、测试 fixture、tracked config 或匿名归档。
 - 所有外部进程使用 `subprocess.run(..., shell=False)` 与显式 argv。无 `shell=True`、无字符串命令解释、无环境或 GPU 的静默回退。
@@ -49,15 +49,17 @@
 
 - [ ] **Step 1: Write RED tests for unambiguous discovery and no-leak projection**
 
-  Create a synthetic historical root containing one each of the documented Stage5 controller marker, source materializer marker, performance/AP/finalizer markers, one valid Pyramid source-registry template, the four required local inputs, and an H800 probe result for GPU indices `5`, `6`, `7`.
+  Create a synthetic historical root containing one each of the documented Stage5 controller marker, source materializer marker, performance/AP/finalizer markers, one valid Pyramid source-registry template, the four required local inputs, and an H800 probe result for three explicitly synthetic GPU indices.
 
   Add tests for a public `discover_history_binding()` API with an injected `GpuProbe` protocol. Assert that the returned mapping has:
 
   ```python
   assert binding["schema_version"] == "p6_history_binding_v1"
   assert binding["target"] == {"model": "pyramid", "hardware": "h800", "backend": "tvm_auto"}
-  assert binding["gpu_policy"]["indices"] == [5, 6, 7]
-  assert set(binding["gpu_policy"]["uuid_by_index"]) == {"5", "6", "7"}
+  assert binding["gpu_policy"]["indices"] == list(synthetic_gpu_indices)
+  assert set(binding["gpu_policy"]["uuid_by_index"]) == {
+      str(index) for index in synthetic_gpu_indices
+  }
   assert binding["source_contract_template"]["schema_version"] == "stage5_source_contract_v1"
   assert {"gold176_rows", "gold176_graph_features", "capability_profiles", "closure"} <= set(binding["local_input_paths"])
   assert "private_root" not in public_binding_projection(binding)
@@ -73,7 +75,7 @@
   1. zero or multiple matching component markers;
   2. required inputs absent, incompatible target/backend/version, or a template that is not a complete Pyramid source contract;
   3. any discovered path resolving outside `history_root`;
-  4. GPU set other than exactly `[5, 6, 7]`, non-H800 model, duplicate/missing UUID, incompatible occupancy, or a second probe with UUID drift;
+  4. GPU policy other than exactly three distinct non-negative indices in canonical ascending order, non-H800 model, duplicate/missing UUID, incompatible occupancy, or a second probe with UUID drift;
   5. an attempted output write where the destination is inside the repository but not `git check-ignore`d, or where an existing target is a symlink.
 
   Pre-populate both output destinations, trigger an error on the second file, and assert neither prior target was overwritten. Then assert a success writes both JSON files through temp siblings and `os.replace`, without a half-written pair.
@@ -96,7 +98,7 @@
   2. Define explicit marker names/relative discovery rules for only the documented historical Stage5 component chain. Resolve every candidate with `Path.resolve(strict=True)` and reject paths outside the resolved history root; require exactly one matching component per role.
   3. Load the historical source registry only to validate/select one complete Pyramid/H800/TVM source-contract template. Never copy metrics, candidate IDs, paths, or raw source contract into public output.
   4. Locate exactly one compatible Gold176, graph, capability, and closure input under the allowed root. Record their real paths only in binding/config output.
-  5. Require the fixed GPU index set `[5, 6, 7]`; require unique UUIDs, a normalized H800 model name, and compatible occupancy. Preserve the discovered UUID map for the measurement-time drift check.
+  5. Derive exactly three distinct non-negative indices in canonical ascending order from the private runner interface; require unique UUIDs, a normalized H800 model name, and compatible occupancy. Preserve the discovered UUID map for the measurement-time drift check.
   6. Implement `write_private_binding_pair(binding, local_config, binding_path, config_path, repo_root)` using sibling temporary files, fsync where available, and `os.replace` only after both serializations validate. Require every destination to be either outside the resolved repository root or `git check-ignore`d inside it, and require non-symlink files beneath their intended private parent.
   7. Keep `public_binding_projection()` data-only and explicitly deny keys containing path, command, argv, uuid, identifier, request, feedback, output, checkpoint, or metric semantics.
 
@@ -317,7 +319,7 @@
 
 - [ ] **Step 2: Write RED fail-closed and GPU-drift tests**
 
-  Add parameterized failure cases for request schema/sha mismatch, not exactly four unique rows, wrong target/backend/q mode, altered row SHA/source evidence, Stage5 runner nonzero exit, missing/duplicate/extra actual-feedback row, incomplete/non-finite five metrics, invalid failure status, receipt/barrier mismatch, result request SHA mismatch, and GPU 5/6/7 UUID/model/occupancy drift before or after the runner.
+  Add parameterized failure cases for request schema/sha mismatch, not exactly four unique rows, wrong target/backend/q mode, altered row SHA/source evidence, Stage5 runner nonzero exit, missing/duplicate/extra actual-feedback row, incomplete/non-finite five metrics, invalid failure status, receipt/barrier mismatch, result request SHA mismatch, and private-policy GPU UUID/model/occupancy drift before or after the runner.
 
   Assert none write P6 feedback and all return a stable P6 execution category without exposing private command/path/receipt content.
 
@@ -336,7 +338,7 @@
   In `framework/stage6/p6_history_measurement_v1.py`:
 
   1. Reuse/validate the current Stage5 request schema; require four unique rows and exact H800/Pyramid/TVM/global-q/budget fields before issuing any process.
-  2. Re-probe the fixed `[5, 6, 7]` binding, requiring H800 model, UUID equality, and compatible occupancy both before and after historical execution.
+  2. Re-probe the binding's private three-device policy, requiring H800 model, UUID equality, and compatible occupancy both before and after historical execution.
   3. Construct only the documented Stage5 chain argv from binding-controlled component paths and per-round private files. Use an injected `Runner` protocol in unit tests and `subprocess.run(shell=False, check=False, ...)` in production. A component failure is not success.
   4. Validate Stage5 actual receipt, source evidence, canonical request SHA, exact row set, and atomic finalization barrier. Translate only valid actual results into the existing P6 feedback schema; preserve no raw receipt or path in P6/public output.
   5. Write P6 feedback atomically only after full validation. Map all expected errors to stable categories and leave detailed material only beneath the ignored round output root.
@@ -451,11 +453,11 @@
 
 - [ ] **Step 1: Perform an independent code review before any real execution**
 
-  Review only the completed diff for: silent candidate removal, static-mode fallback, accidental mixed precision, non-argv subprocess calls, unbound input/assets, path traversal/symlink writes, GPU 5/6/7 bypass or UUID drift, success on incomplete feedback, and public disclosure leaks. Address every critical/high finding with a dedicated RED → GREEN test and commit before moving on.
+  Review only the completed diff for: silent candidate removal, static-mode fallback, accidental mixed precision, non-argv subprocess calls, unbound input/assets, path traversal/symlink writes, private three-device policy bypass or UUID drift, success on incomplete feedback, and public disclosure leaks. Address every critical/high finding with a dedicated RED → GREEN test and commit before moving on.
 
 - [ ] **Step 2: Obtain a separate, explicit real-H800 execution authorization**
 
-  Before connecting to H800 or running the generator, request confirmation that this specific revision may: use the existing SSH control connection, inspect the selected private historical root, generate the ignored local config at `configs/local/p6_h800_search.local.yaml`, generate the binding and outputs under the ignored/private local output root, reserve only GPUs 5/6/7, and execute the full four-round H800/TVM search. Do not infer that permission from approval of this plan.
+  Before connecting to H800 or running the generator, request confirmation that this specific revision may: use the existing SSH control connection, inspect the selected private historical root, generate the ignored local config at `configs/local/p6_h800_search.local.yaml`, generate the binding and outputs under the ignored/private local output root, reserve only the private runner interface's selected three GPUs, and execute the full four-round H800/TVM search. Do not infer that permission from approval of this plan.
 
 - [ ] **Step 3: Run discovery and dynamic preflight only after authorization**
 

@@ -17,6 +17,9 @@ from framework.stage6.p6_history_registry_v1 import (
 import framework.stage6.p6_history_registry_v1 as registry_module
 
 
+SYNTHETIC_GPU_INDICES = (101, 103, 107)
+
+
 def _canonical_sha(payload: Mapping[str, Any]) -> str:
     encoded = json.dumps(
         payload,
@@ -191,7 +194,10 @@ def _execution_binding_fields(private_root: Path) -> dict[str, Any]:
         ],
         "environment": {
             "values": {
-                "CUDA_VISIBLE_DEVICES": {"kind": "literal", "value": "5,6,7"},
+                "CUDA_VISIBLE_DEVICES": {
+                    "kind": "literal",
+                    "value": ",".join(str(index) for index in SYNTHETIC_GPU_INDICES),
+                },
                 "P6_HISTORY_RUN_MODE": {"kind": "literal", "value": "bound"},
                 "P6_HISTORY_PRIVATE_ROOT": {
                     "kind": "private_path",

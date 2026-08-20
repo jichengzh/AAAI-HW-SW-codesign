@@ -5,12 +5,34 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+import subprocess
 
 import pytest
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 HANDOFF = REPOSITORY_ROOT / "docs/AAAI27_RELEASE_AUDIT.md"
+
+
+_TRACKED_GPU_POLICY_DISCLOSURES = (
+    re.compile(
+        r"CUDA_VISIBLE_DEVICES[^\n]{0,120}[\"']\d\s*,\s*\d\s*,\s*\d[\"']"
+    ),
+    re.compile(r"nvidia-smi[^\n]{0,120}--id(?:=|\s+)\d(?:\s*,\s*\d){2}"),
+    re.compile(
+        r"(?:GPU|显卡)[^\n]{0,80}(?:"
+        r"\[\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\]|"
+        r"\d+\s*[/、]\s*\d+\s*[/、]\s*\d+)"
+    ),
+    re.compile(
+        r"(?:DEFAULT|FIXED)[A-Z0-9_]*GPU[A-Z0-9_]*\s*=\s*"
+        r"[\[(]\s*\d+\s*,\s*\d+\s*,\s*\d+\s*[\])]"
+    ),
+    re.compile(
+        r"gpu_policy[^\n]{0,160}[\"']\d[\"']\s*,\s*"
+        r"[\"']\d[\"']\s*,\s*[\"']\d[\"']"
+    ),
+)
 
 
 _P6_PUBLIC_DISCLOSURE_PATTERNS = (
@@ -66,6 +88,30 @@ def _p6_boundary_sections(content: str) -> str:
         for index, paragraph in enumerate(paragraphs)
         if index in selected_indices
     )
+
+
+def _tracked_gpu_policy_disclosures() -> list[str]:
+    """Return only explicit tracked fixed-policy disclosures, not unrelated numbers."""
+    completed = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=REPOSITORY_ROOT,
+        check=True,
+        capture_output=True,
+    )
+    tracked_paths = tuple(
+        Path(name)
+        for name in completed.stdout.decode("utf-8").split("\0")
+        if name
+    )
+    disclosures: list[str] = []
+    for relative_path in tracked_paths:
+        if relative_path.suffix not in {".md", ".py", ".yaml", ".yml"}:
+            continue
+        content = (REPOSITORY_ROOT / relative_path).read_text(encoding="utf-8")
+        for pattern in _TRACKED_GPU_POLICY_DISCLOSURES:
+            if pattern.search(content):
+                disclosures.append(f"{relative_path}: {pattern.pattern}")
+    return disclosures
 
 
 def _is_anonymous_reviewer_archive() -> bool:
@@ -360,6 +406,11 @@ def test_p6_public_disclosure_guard_allows_policy_prohibitions() -> None:
             )
         }
     )
+
+
+def test_tracked_surface_has_no_fixed_private_gpu_policy_disclosure() -> None:
+    """Catches fixed P6 device policies leaking into tracked source or prose."""
+    assert _tracked_gpu_policy_disclosures() == []
 
 
 def test_p6_boundary_scope_includes_adjacent_non_p6_paragraphs() -> None:

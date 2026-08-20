@@ -216,6 +216,7 @@ def _load_legacy_local_locator(path: Path) -> _LegacyLocator:
 
 
 def _load_runner_template(path: Path) -> dict[str, Any]:
+    _validate_runner_template_privacy(path)
     payload = _load_private_yaml(path, "execution_interface_unavailable")
     if (
         set(payload) != set(RUNNER_TEMPLATE_KEYS)
@@ -236,6 +237,40 @@ def _load_runner_template(path: Path) -> dict[str, Any]:
             "execution_interface_unavailable", "runner template contract is invalid"
         )
     return copy.deepcopy(payload)
+
+
+def _validate_runner_template_privacy(path: Path) -> None:
+    if not isinstance(path, Path) or not path.is_absolute() or path.is_symlink():
+        raise FullChainBootstrapError(
+            "execution_interface_unavailable", "runner template path is invalid"
+        )
+    try:
+        resolved = path.resolve(strict=True)
+        repository = REPOSITORY_ROOT.resolve(strict=True)
+    except OSError as error:
+        raise FullChainBootstrapError(
+            "execution_interface_unavailable", "runner template is unavailable"
+        ) from error
+    if not _is_relative_to(resolved, repository):
+        return
+    relative = resolved.relative_to(repository)
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(repository), "check-ignore", "-q", "--", str(relative)],
+            shell=False,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise FullChainBootstrapError(
+            "execution_interface_unavailable", "runner template privacy check failed"
+        ) from error
+    if completed.returncode != 0:
+        raise FullChainBootstrapError(
+            "execution_interface_unavailable", "runner template is not private"
+        )
 
 
 def _load_private_yaml(path: Path, category: str) -> dict[str, Any]:

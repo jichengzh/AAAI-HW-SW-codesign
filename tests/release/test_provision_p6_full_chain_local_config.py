@@ -40,6 +40,7 @@ STAGES = (
     "ap",
     "finalization",
 )
+SYNTHETIC_GPU_INDICES = (17, 19, 23)
 
 
 def _write_yaml(path: Path, payload: Any) -> Path:
@@ -168,7 +169,10 @@ def _runner_template() -> dict[str, Any]:
             ],
             "environment": {
                 "values": {
-                    "CUDA_VISIBLE_DEVICES": {"kind": "literal", "value": "5,6,7"},
+                    "CUDA_VISIBLE_DEVICES": {
+                        "kind": "literal",
+                        "value": ",".join(str(index) for index in SYNTHETIC_GPU_INDICES),
+                    },
                     "P6_HISTORY_RUN_MODE": {"kind": "literal", "value": "bound"},
                     "P6_HISTORY_PRIVATE_ROOT": {
                         "kind": "private_path",
@@ -336,7 +340,7 @@ def _fake_nvidia_smi(tmp_path: Path, rows: tuple[str, ...] | None = None) -> Pat
     binary = fake_bin / "nvidia-smi"
     records = rows or tuple(
         f"{index}, GPU-private-{index}, NVIDIA H800 80GB HBM3, 0, 100"
-        for index in (5, 6, 7)
+        for index in SYNTHETIC_GPU_INDICES
     )
     binary.write_text(
         f"#!{sys.executable}\n"
@@ -353,10 +357,12 @@ def test_gpu_probe_builds_direct_argv_from_supplied_private_policy(
 ) -> None:
     """Catches a provision probe that ignores its validated private GPU policy."""
     observed_argv: tuple[str, ...] | None = None
+    observed_shell: object = None
 
-    def fake_run(argv: tuple[str, ...], **_: Any) -> subprocess.CompletedProcess[str]:
-        nonlocal observed_argv
+    def fake_run(argv: tuple[str, ...], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        nonlocal observed_argv, observed_shell
         observed_argv = argv
+        observed_shell = kwargs.get("shell")
         return subprocess.CompletedProcess(
             argv,
             0,
@@ -370,8 +376,13 @@ def test_gpu_probe_builds_direct_argv_from_supplied_private_policy(
 
     records = provision_cli.NvidiaSmiGpuProbe().snapshot((17, 19, 23))
 
-    assert observed_argv is not None
-    assert observed_argv[:2] == ("nvidia-smi", "--id=17,19,23")
+    assert observed_argv == (
+        "nvidia-smi",
+        "--id=17,19,23",
+        "--query-gpu=index,uuid,name,memory.used,memory.total",
+        "--format=csv,noheader,nounits",
+    )
+    assert observed_shell is False
     assert [record.index for record in records] == [17, 19, 23]
 
 
@@ -458,11 +469,9 @@ def test_cli_rejects_invalid_gpu_probe_without_pair(tmp_path: Path) -> None:
     result = _run_cli(
         tmp_path,
         *_valid_args(tmp_path),
-        rows=(
-            "5, GPU-private-5, NVIDIA H800 80GB HBM3, 0, 100",
-            "6, GPU-private-6, NVIDIA H800 80GB HBM3, 0, 100",
-            "7, GPU-private-7, NVIDIA H800 80GB HBM3, 0, 100",
-            "7, GPU-private-duplicate, NVIDIA H800 80GB HBM3, 0, 100",
+        rows=tuple(
+            f"{index}, GPU-synthetic-{index}, NVIDIA H800 80GB HBM3, 0, 100"
+            for index in (*SYNTHETIC_GPU_INDICES, SYNTHETIC_GPU_INDICES[-1])
         ),
     )
 

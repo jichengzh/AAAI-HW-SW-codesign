@@ -11,7 +11,7 @@
 1. P6 选择阶段产出的测量请求已经是 `stage5_measurement_request_v2`；不需要再实现 P6 request 到 Stage5 request 的转换器。
 2. 历史 Stage5 source materializer 只消费带完整 `source_contract` 的已认证请求行，不会根据 `(width, q_mode, source_point_ids)` 自行创建训练、导出或校准契约。
 3. 因此缺失的是动态计划到 `stage5_candidate_source_registry_v2` 的契约扩展，以及历史实际反馈到 `p6_h800_coptv2x_feedback_v2` 的原子回写。
-4. Stage5 是真实测量的执行权威。Stage7 仅可复用 GPU UUID、H800 型号、占用和漂移校验语义；不得把 Stage7 的 GPU7 默认排除策略带入 P6。
+4. Stage5 是真实测量的执行权威。Stage7 仅可复用 GPU UUID、H800 型号、占用和漂移校验语义；不得把 Stage7 的设备排除策略带入 P6。
 
 ## 不变量
 
@@ -45,16 +45,16 @@ P6 controller remains generic: it still invokes only its local `source_registry_
 
 ### 输入与输出
 
-新增一个本地-only discovery/provision command。它接受一个允许的历史实验根、一个 local output root 和固定 GPU index policy `[5, 6, 7]`，静态检查历史组件、资源锚点和环境语义，并原子写出两份 Git 忽略文件：
+新增一个本地-only discovery/provision command。它接受一个允许的历史实验根、一个 local output root，并从 Git 忽略的私有 runner interface 派生恰好三张有序且唯一的 GPU index policy，静态检查历史组件、资源锚点和环境语义，并原子写出两份 Git 忽略文件：
 
 1. `p6_history_binding_v1`：历史组件、输入资产、模型物化模板、环境激活、输出布局与 GPU UUID 锁的私有绑定。
 2. `p6_h800_coptv2x_local_v2`：当前 controller 已接受的 local config；完整填写 `asset_paths`、四个 `local_input_paths`、`candidate_source_mode: framework_stage2_search_space`、`stage2_search_space_path`、两个 adapter step 与 `local_output_root`。
 
-绑定发现只能选择唯一、版本兼容且结构完整的历史组件组合。发现多个候选、组件版本不匹配、缺少输入、路径越出许可根、资产验证失败、GPU 5/6/7 非 H800 或 UUID 漂移时，稳定失败并且不写可执行 config。
+绑定发现只能选择唯一、版本兼容且结构完整的历史组件组合。发现多个候选、组件版本不匹配、缺少输入、路径越出许可根、资产验证失败、私有策略选择的任一 GPU 非 H800 或 UUID 漂移时，稳定失败并且不写可执行 config。
 
 ### GPU 准入
 
-generator 和 measurement adapter 都重新读取 GPU 5、6、7 的 index-to-UUID 映射，确认其型号满足 H800、未被不兼容进程占用且 UUID 与 binding 一致。调度只能在这三张卡内等待或分配；不得改用别的 GPU。GPU7 不可因 Stage7 的其他实验策略被自动排除。
+generator 和 measurement adapter 都重新读取私有策略选择的三张 GPU 的 index-to-UUID 映射，确认其型号满足 H800、未被不兼容进程占用且 UUID 与 binding 一致。调度只能在这三张卡内等待或分配；不得改用别的 GPU，也不得继承 Stage7 的其他设备排除策略。
 
 ## 动态计划到 registry-v2
 
@@ -100,7 +100,7 @@ measurement adapter 读取 P6 已生成的 `stage5_measurement_request_v2`，先
 
 ## 离线测试与验收
 
-1. discovery tests 使用临时历史根，覆盖唯一发现、歧义、缺少组件、允许根逃逸、资产验证、GPU 5/6/7 UUID/H800/占用/漂移与原子写入；测试不得访问真实 GPU。
+1. discovery tests 使用临时历史根和合成设备标识，覆盖唯一发现、歧义、缺少组件、允许根逃逸、资产验证、私有三卡策略的 UUID/H800/占用/漂移与原子写入；测试不得访问真实 GPU。
 2. generator tests 验证产出能被 `load_local_config()` 接受，处于 Git 忽略目录，并且 public projection 不含路径、命令、GPU UUID 或秘密字段。
 3. registry adapter tests 用合成 Stage2 candidate plan 与历史 binding，验证纯 FP16、纯 INT8 和混合候选池的 exact identity；缺一 source contract 就整体拒绝，不发生候选裁剪。
 4. measurement adapter tests 用 fake Stage5 runner 和合成 receipt/feedback，验证四行 request、成功 feedback 转换、每个 hash/row/metric/barrier 不一致均 fail closed。

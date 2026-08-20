@@ -257,15 +257,16 @@ def _validate_binding_runtime(
         indices: tuple[int, int, int] = (
             raw_indices[0], raw_indices[1], raw_indices[2]
         )
-        uuids = [uuid_by_index[str(index)] for index in indices]
-        if any(not isinstance(uuid, str) or not uuid.strip() for uuid in uuids) or len(
-            set(uuids)
-        ) != len(uuids):
+        raw_uuids = [uuid_by_index[str(index)] for index in indices]
+        if any(not isinstance(uuid, str) for uuid in raw_uuids):
+            raise ValueError
+        uuids = [uuid.strip() for uuid in raw_uuids]
+        if any(not uuid for uuid in uuids) or len(set(uuids)) != len(uuids):
             raise ValueError
         policy = {
             "indices": indices,
             "uuid_by_index": {
-                str(index): str(uuid_by_index[str(index)]).strip() for index in indices
+                str(index): uuid for index, uuid in zip(indices, uuids, strict=True)
             },
             "maximum_occupancy": MAX_GPU_OCCUPANCY,
         }
@@ -284,10 +285,18 @@ def _validate_gpu(gpu_probe: GpuProbe, policy: Mapping[str, Any]) -> None:
         by_index = {record.index: record for record in snapshot}
         if set(by_index) != set(indices) or len(by_index) != len(snapshot):
             raise ValueError
-        for index in indices:
+        ordered = [by_index[index] for index in indices]
+        if any(not isinstance(record.uuid, str) for record in ordered):
+            raise ValueError
+        observed_uuids = [record.uuid.strip() for record in ordered]
+        if any(not uuid for uuid in observed_uuids) or len(set(observed_uuids)) != len(
+            observed_uuids
+        ):
+            raise ValueError
+        for index, observed_uuid in zip(indices, observed_uuids, strict=True):
             record = by_index[index]
             if (
-                record.uuid != policy["uuid_by_index"][str(index)]
+                observed_uuid != policy["uuid_by_index"][str(index)]
                 or _normalized_model(record.model_name) not in ALLOWED_NORMALIZED_H800_MODELS
                 or isinstance(record.occupancy, bool)
                 or not isinstance(record.occupancy, (int, float))

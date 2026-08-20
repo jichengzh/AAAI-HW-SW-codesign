@@ -630,10 +630,12 @@ def test_gpu_probe_builds_direct_argv_from_supplied_private_policy(
 ) -> None:
     """Catches a measurement probe that ignores its validated private GPU policy."""
     observed_argv: tuple[str, ...] | None = None
+    observed_shell: object = None
 
-    def fake_run(argv: tuple[str, ...], **_: Any) -> subprocess.CompletedProcess[str]:
-        nonlocal observed_argv
+    def fake_run(argv: tuple[str, ...], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        nonlocal observed_argv, observed_shell
         observed_argv = argv
+        observed_shell = kwargs.get("shell")
         return subprocess.CompletedProcess(
             argv,
             0,
@@ -647,8 +649,13 @@ def test_gpu_probe_builds_direct_argv_from_supplied_private_policy(
 
     records = measurement_cli.NvidiaSmiGpuProbe().snapshot((17, 19, 23))
 
-    assert observed_argv is not None
-    assert observed_argv[:2] == ("nvidia-smi", "--id=17,19,23")
+    assert observed_argv == (
+        "nvidia-smi",
+        "--id=17,19,23",
+        "--query-gpu=index,uuid,name,memory.used,memory.total",
+        "--format=csv,noheader,nounits",
+    )
+    assert observed_shell is False
     assert [record.index for record in records] == [17, 19, 23]
 
 

@@ -27,6 +27,9 @@ LOCAL_INPUT_NAMES = (
     "capability_profiles",
     "closure",
 )
+SYNTHETIC_GPU_INDICES = (101, 103, 107)
+
+
 def _canonical_json_sha(payload: Mapping[str, Any]) -> str:
     encoded = json.dumps(
         payload,
@@ -173,7 +176,10 @@ def _history_runner_manifest(root: Path) -> dict[str, Any]:
         ],
         "environment": {
             "values": {
-                "CUDA_VISIBLE_DEVICES": {"kind": "literal", "value": "5,6,7"},
+                "CUDA_VISIBLE_DEVICES": {
+                    "kind": "literal",
+                    "value": ",".join(str(index) for index in SYNTHETIC_GPU_INDICES),
+                },
                 "P6_HISTORY_RUN_MODE": {"kind": "literal", "value": "bound"},
                 "P6_HISTORY_PRIVATE_ROOT": {
                     "kind": "private_path",
@@ -285,7 +291,7 @@ def _fake_nvidia_smi(
     tmp_path: Path,
     *,
     drift: bool = False,
-    indices: tuple[int, ...] = (5, 6, 7),
+    indices: tuple[int, ...] = SYNTHETIC_GPU_INDICES,
 ) -> Path:
     binary = tmp_path / "fake-bin" / "nvidia-smi"
     binary.parent.mkdir()
@@ -300,7 +306,7 @@ drift = calls > 0
         "from pathlib import Path\n"
         f"{drift_source}"
         f"for index in {indices!r}:\n"
-        "    suffix = '-drifted' if drift and index == 7 else ''\n"
+        f"    suffix = '-drifted' if drift and index == {SYNTHETIC_GPU_INDICES[-1]} else ''\n"
         "    print(f'{index}, GPU-fixture-{index}{suffix}, NVIDIA H800 80GB HBM3, 0, 100')\n",
         encoding="utf-8",
     )
@@ -399,10 +405,11 @@ def test_obsolete_framework_route_does_not_reach_loader_without_stage1_step(
     monkeypatch.setattr(
         legacy_provisioner.NvidiaSmiGpuProbe,
         "snapshot",
-        lambda self, indices: (
-            legacy_provisioner.GpuRecord(5, "fixture-5", "NVIDIA H800", 0.0),
-            legacy_provisioner.GpuRecord(6, "fixture-6", "NVIDIA H800", 0.0),
-            legacy_provisioner.GpuRecord(7, "fixture-7", "NVIDIA H800", 0.0),
+        lambda self, indices: tuple(
+            legacy_provisioner.GpuRecord(
+                index, f"fixture-{index}", "NVIDIA H800", 0.0
+            )
+            for index in SYNTHETIC_GPU_INDICES
         ),
     )
 
@@ -567,7 +574,10 @@ def test_cli_rejects_duplicate_gpu_indices_without_writing(tmp_path: Path) -> No
         private_root,
         binding_path,
         config_path,
-        _fake_nvidia_smi(tmp_path, indices=(5, 6, 7, 7)),
+        _fake_nvidia_smi(
+            tmp_path,
+            indices=(*SYNTHETIC_GPU_INDICES, SYNTHETIC_GPU_INDICES[-1]),
+        ),
     )
 
     assert result.returncode != 0

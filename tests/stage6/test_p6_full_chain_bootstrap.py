@@ -47,9 +47,11 @@ class SequenceProbe:
     def __init__(self, snapshots: tuple[tuple[GpuRecord, ...], ...]) -> None:
         self._snapshots = snapshots
         self._index = 0
+        self.calls: list[tuple[int, ...]] = []
 
     def snapshot(self, indices: tuple[int, ...]) -> tuple[GpuRecord, ...]:
         assert indices == (17, 19, 23)
+        self.calls.append(indices)
         snapshot = self._snapshots[min(self._index, len(self._snapshots) - 1)]
         self._index += 1
         return snapshot
@@ -470,6 +472,73 @@ def test_materialize_full_chain_binding_renders_dynamic_config(
         "{feedback_json}",
         "{round_output_root}",
     }
+
+
+def test_bootstrap_rejects_nonignored_repository_runner_template_before_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches parsing or probing from a trackable in-repository runner template."""
+    legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
+    repository = tmp_path / "template-repository"
+    repository.mkdir()
+    subprocess.run(["git", "init", "-q", str(repository)], check=True)
+    repository_template = _write_yaml(
+        repository / "local" / "runner-template.yaml",
+        yaml.safe_load(template.read_text(encoding="utf-8")),
+    )
+    probe = _gpu_probe()
+    monkeypatch.setattr(bootstrap, "REPOSITORY_ROOT", repository)
+
+    with pytest.raises(FullChainBootstrapError) as captured:
+        materialize_full_chain_binding(
+            legacy_config,
+            repository_template,
+            output_root,
+            output_root / "binding.json",
+            output_root / "local.yaml",
+            probe,
+        )
+
+    assert captured.value.category == "execution_interface_unavailable"
+    assert probe.calls == []
+    assert not (output_root / "binding.json").exists()
+    assert not (output_root / "local.yaml").exists()
+
+
+@pytest.mark.parametrize("template_location", ["ignored_repository", "repository_external"])
+def test_bootstrap_accepts_private_runner_template_locations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    template_location: str,
+) -> None:
+    """Locks the accepted ignored-repository and repository-external boundaries."""
+    legacy_config, external_template, output_root = _write_valid_private_inputs(tmp_path)
+    repository = tmp_path / "template-repository"
+    repository.mkdir()
+    subprocess.run(["git", "init", "-q", str(repository)], check=True)
+    (repository / ".gitignore").write_text("private-runner/\n", encoding="utf-8")
+    if template_location == "ignored_repository":
+        template = _write_yaml(
+            repository / "private-runner" / "runner-template.yaml",
+            yaml.safe_load(external_template.read_text(encoding="utf-8")),
+        )
+    else:
+        template = external_template
+    probe = _gpu_probe()
+    monkeypatch.setattr(bootstrap, "REPOSITORY_ROOT", repository)
+
+    binding = materialize_full_chain_binding(
+        legacy_config,
+        template,
+        output_root,
+        output_root / "binding.json",
+        output_root / "local.yaml",
+        probe,
+    )
+
+    assert binding["status"] == "validated"
+    assert probe.calls == [(17, 19, 23), (17, 19, 23)]
 
 
 @pytest.mark.parametrize(
