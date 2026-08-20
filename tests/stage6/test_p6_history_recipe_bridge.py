@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import subprocess
+import traceback
 from typing import Any, Callable, Mapping
 
 import pytest
@@ -214,6 +215,9 @@ def test_unknown_profile_is_a_stable_derivation_failure(tmp_path: Path) -> None:
         lambda payload: payload["shared_source_path_templates"].update({"onnx_path": "x/{q_mode}/model.onnx"}),
         lambda payload: payload["shared_source_path_templates"].update({"onnx_path": payload["shared_source_path_templates"]["checkpoint_path"]}),
         lambda payload: payload["shared_source_path_templates"].update({"onnx_path": "constant/onnx.onnx"}),
+        lambda payload: payload["shared_source_path_templates"].update({"onnx_path": "same/{stage1_width}/model.onnx"}),
+        lambda payload: payload.update({"q_modes": ["int8", "fp16"]}),
+        lambda payload: payload.update({"source_materializer_invocation_flags": ["--model", "--request", "--group-id", "--gpu"]}),
     ],
 )
 def test_profile_recipe_drift_is_a_stable_derivation_failure(
@@ -228,6 +232,32 @@ def test_profile_recipe_drift_is_a_stable_derivation_failure(
         _derive(tmp_path)
 
     assert captured.value.category == "history_recipe_derivation_invalid"
+
+
+def test_runner_validation_error_does_not_expose_private_traceback_cause(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Catches preserving a private validator error as an exception cause."""
+    sentinel = "/synthetic-private-root/secret-runner-template.yaml"
+
+    def fail_validation(_template: Path, _root: Path) -> None:
+        raise bridge.RunnerTemplateValidationError(
+            "execution_interface_unavailable", sentinel
+        )
+
+    monkeypatch.setattr(bridge, "validate_pre_provision_runner_template", fail_validation)
+
+    with pytest.raises(bridge.P6HistoryRecipeDerivationError) as captured:
+        _derive(tmp_path)
+
+    rendered = "".join(
+        traceback.format_exception(
+            captured.type, captured.value, captured.tb, chain=True
+        )
+    )
+    assert captured.value.category == "history_recipe_derivation_invalid"
+    assert captured.value.detail == "runner template validation failed"
+    assert sentinel not in rendered
 
 
 @pytest.mark.parametrize("role", tuple(MARKERS))

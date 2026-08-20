@@ -69,7 +69,14 @@ _RECIPE_KEYS = frozenset(
     }
 )
 _TEMPLATE_FIELDS = frozenset({*STAGE_WIDTH_FIELDS, "group_id", "artifact_id"})
-_SAMPLE_WIDTHS = ((16, 32, 64), (17, 33, 65))
+_SAMPLE_WIDTHS = ((16, 32, 64), (16, 33, 65), (17, 33, 65))
+_EXPECTED_Q_MODES = ("fp16", "int8")
+_EXPECTED_SOURCE_MATERIALIZER_FLAGS = (
+    "--request",
+    "--model",
+    "--group-id",
+    "--gpu",
+)
 
 
 def derive_dynamic_recipe_from_procedural_source(
@@ -81,6 +88,7 @@ def derive_dynamic_recipe_from_procedural_source(
     """Render a recipe-v2 without inspecting or invoking any historical program."""
     try:
         profile = _profile_from_source_map(source_map)
+        _validate_profile_semantics(profile)
         validated = validate_pre_provision_runner_template(
             runner_template_path, history_root
         )
@@ -90,12 +98,12 @@ def derive_dynamic_recipe_from_procedural_source(
         return recipe
     except P6HistoryRecipeDerivationError:
         raise
-    except RunnerTemplateValidationError as error:
+    except RunnerTemplateValidationError:
         raise P6HistoryRecipeDerivationError(
             "runner template validation failed"
-        ) from error
-    except (TypeError, ValueError, KeyError) as error:
-        raise P6HistoryRecipeDerivationError("procedural profile is invalid") from error
+        ) from None
+    except (TypeError, ValueError, KeyError):
+        raise P6HistoryRecipeDerivationError("procedural profile is invalid") from None
 
 
 def _profile_from_source_map(source_map: Mapping[str, Any]) -> RecipeProfile:
@@ -106,6 +114,15 @@ def _profile_from_source_map(source_map: Mapping[str, Any]) -> RecipeProfile:
     if profile is None:
         raise P6HistoryRecipeDerivationError("procedural profile is unknown")
     return profile
+
+
+def _validate_profile_semantics(profile: RecipeProfile) -> None:
+    if (
+        profile.q_modes != _EXPECTED_Q_MODES
+        or profile.source_materializer_invocation_flags
+        != _EXPECTED_SOURCE_MATERIALIZER_FLAGS
+    ):
+        raise P6HistoryRecipeDerivationError("procedural profile is incompatible")
 
 
 def _reject_source_map_semantic_claims(value: object) -> None:
@@ -178,7 +195,7 @@ def _validate_recipe(recipe: Mapping[str, Any]) -> None:
     _validate_rendered_paths_do_not_collide(recipe, templates)
 
 
-def _validate_template(template: object, allowed_fields: set[str]) -> None:
+def _validate_template(template: object, allowed_fields: set[str]) -> set[str]:
     if not isinstance(template, str) or not template:
         raise P6HistoryRecipeDerivationError("recipe template is invalid")
     try:
@@ -194,10 +211,11 @@ def _validate_template(template: object, allowed_fields: set[str]) -> None:
         fields.add(field_name)
     if not fields:
         raise P6HistoryRecipeDerivationError("recipe template has no identity fields")
+    return fields
 
 
 def _validate_relative_path_template(template: object) -> None:
-    _validate_template(template, set(_TEMPLATE_FIELDS))
+    fields = _validate_template(template, set(_TEMPLATE_FIELDS))
     assert isinstance(template, str)
     path = Path(template)
     if (
@@ -207,6 +225,12 @@ def _validate_relative_path_template(template: object) -> None:
         or ".." in path.parts
     ):
         raise P6HistoryRecipeDerivationError("shared source path is not relative")
+    if not {"group_id", "artifact_id"}.intersection(fields) and not set(
+        STAGE_WIDTH_FIELDS
+    ).issubset(fields):
+        raise P6HistoryRecipeDerivationError(
+            "shared source path lacks canonical group identity"
+        )
 
 
 def _validate_rendered_paths_do_not_collide(
