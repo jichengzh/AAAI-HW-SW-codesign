@@ -18,8 +18,27 @@ def _valid_stage1_manifest() -> dict[str, Any]:
         "model": "pyramid_lidar",
         "scan_status": "ok",
         "hw_capability": {"name": "h800"},
-        "view_b1_search_groups": [{"search_group_id": "pyramid_group.s0", "widths": [224]}],
-        "view_b2_quant_units": [{"unit": "pyramid_backbone"}],
+        "view_b1_search_groups": [
+            {
+                "search_group_id": "pyramid_group.s0",
+                "bucket": "pyramid_backbone",
+                "widths": [224],
+                "round_to": 32,
+                "int8_buildable_align": 128,
+                "max_rate": 0.875,
+                "grouped_conv": True,
+                "criterion_pool": ["L1"],
+                "member_b1_groups": ["pyramid_group.s0"],
+            }
+        ],
+        "view_b2_quant_units": [
+            {
+                "unit": "pyramid_backbone",
+                "quantizable": True,
+                "legal_bits": ["FP16", "INT8"],
+                "member_groups": ["pyramid_group.s0"],
+            }
+        ],
         "view_d_routing_segments": {"segments": [{"device": "gpu", "n_nodes": 1}]},
     }
 
@@ -33,6 +52,8 @@ def _write_fake_stage1_repo(path: Path, *, manifest: dict[str, Any]) -> Path:
         """
 from __future__ import annotations
 
+ADAPTERS_MARKER = "supplied-stage1-adapters"
+
 
 class Adapter:
     name = "pyramid_lidar"
@@ -45,6 +66,26 @@ def get_adapter(name: str) -> Adapter:
 """,
         encoding="utf-8",
     )
+    (stage1 / "hardware_scan.py").write_text(
+        """
+from __future__ import annotations
+
+HARDWARE_MARKER = "supplied-stage1-hardware"
+
+
+class HwCapability:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    @classmethod
+    def from_yaml(cls, path):
+        text = path.read_text(encoding="utf-8")
+        if "h800" not in text:
+            return cls("a100")
+        return cls("h800")
+""",
+        encoding="utf-8",
+    )
     (stage1 / "graph_scan.py").write_text(
         f"""
 from __future__ import annotations
@@ -53,11 +94,22 @@ import json
 import os
 from pathlib import Path
 
+from framework.stage1.adapters import ADAPTERS_MARKER
+from framework.stage1.hardware_scan import HARDWARE_MARKER
+
 
 def scan(adapter, hw, device: str = "cpu") -> dict:
     call_log = Path(os.environ["P6_STAGE1_TEST_CALL_LOG"])
     call_log.write_text(
-        "|".join([adapter.name, hw.name, device, os.environ["HEAL_ROOT"], os.environ["HEAL_CKPT_ROOT"]]),
+        "|".join([
+            adapter.name,
+            hw.name,
+            device,
+            ADAPTERS_MARKER,
+            HARDWARE_MARKER,
+            os.environ["HEAL_ROOT"],
+            os.environ["HEAL_CKPT_ROOT"],
+        ]),
         encoding="utf-8",
     )
     return json.loads({json.dumps(manifest)!r})
@@ -125,7 +177,9 @@ def test_cli_builds_stage1_manifest_with_private_paths_hidden(tmp_path: Path) ->
     output_path = tmp_path / "manifest.json"
     assert json.loads(output_path.read_text(encoding="utf-8")) == _valid_stage1_manifest()
     assert (tmp_path / "call.log").read_text(encoding="utf-8") == (
-        f"pyramid_lidar|h800|cuda:0|{tmp_path / 'heal'}|{tmp_path / 'heal-checkpoints'}"
+        "pyramid_lidar|h800|cuda:0|supplied-stage1-adapters|"
+        f"supplied-stage1-hardware|{tmp_path / 'heal'}|"
+        f"{tmp_path / 'heal-checkpoints'}"
     )
     assert str(tmp_path) not in result.stdout + result.stderr
 
