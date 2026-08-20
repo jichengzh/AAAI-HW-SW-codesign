@@ -17,7 +17,6 @@ from framework.stage5.genome_contract_v1 import validate_structure_identity
 from framework.stage5.production_search_v1 import validate_source_contract
 from framework.stage6.p6_history_binding_v1 import (
     ALLOWED_NORMALIZED_H800_MODELS,
-    EXPECTED_GPU_INDICES,
     MAX_GPU_OCCUPANCY,
     GpuProbe,
     GpuRecord,
@@ -239,23 +238,33 @@ def _validate_binding_runtime(
             "maximum_occupancy",
         }:
             raise ValueError
+        raw_indices = raw_policy.get("indices")
         uuid_by_index = raw_policy.get("uuid_by_index")
         if (
-            raw_policy.get("indices") != list(EXPECTED_GPU_INDICES)
+            not isinstance(raw_indices, list)
+            or len(raw_indices) != 3
+            or any(isinstance(index, bool) or not isinstance(index, int) for index in raw_indices)
+            or tuple(sorted(raw_indices)) != tuple(raw_indices)
+            or len(set(raw_indices)) != 3
+            or any(index < 0 for index in raw_indices)
             or raw_policy.get("model") != "h800"
             or raw_policy.get("maximum_occupancy") != MAX_GPU_OCCUPANCY
             or not isinstance(uuid_by_index, Mapping)
-            or set(uuid_by_index) != {str(index) for index in EXPECTED_GPU_INDICES}
+            or set(uuid_by_index) != {str(index) for index in raw_indices}
         ):
             raise ValueError
-        uuids = [uuid_by_index[str(index)] for index in EXPECTED_GPU_INDICES]
+        indices: tuple[int, int, int] = (
+            raw_indices[0], raw_indices[1], raw_indices[2]
+        )
+        uuids = [uuid_by_index[str(index)] for index in indices]
         if any(not isinstance(uuid, str) or not uuid.strip() for uuid in uuids) or len(
             set(uuids)
         ) != len(uuids):
             raise ValueError
         policy = {
+            "indices": indices,
             "uuid_by_index": {
-                str(index): str(uuid_by_index[str(index)]).strip() for index in EXPECTED_GPU_INDICES
+                str(index): str(uuid_by_index[str(index)]).strip() for index in indices
             },
             "maximum_occupancy": MAX_GPU_OCCUPANCY,
         }
@@ -265,15 +274,16 @@ def _validate_binding_runtime(
 
 def _validate_gpu(gpu_probe: GpuProbe, policy: Mapping[str, Any]) -> None:
     try:
-        snapshot = gpu_probe.snapshot(EXPECTED_GPU_INDICES)
-        if not isinstance(snapshot, tuple) or len(snapshot) != len(EXPECTED_GPU_INDICES):
+        indices = policy["indices"]
+        snapshot = gpu_probe.snapshot(indices)
+        if not isinstance(snapshot, tuple) or len(snapshot) != len(indices):
             raise ValueError
         if any(not isinstance(record, GpuRecord) for record in snapshot):
             raise ValueError
         by_index = {record.index: record for record in snapshot}
-        if set(by_index) != set(EXPECTED_GPU_INDICES) or len(by_index) != len(snapshot):
+        if set(by_index) != set(indices) or len(by_index) != len(snapshot):
             raise ValueError
-        for index in EXPECTED_GPU_INDICES:
+        for index in indices:
             record = by_index[index]
             if (
                 record.uuid != policy["uuid_by_index"][str(index)]

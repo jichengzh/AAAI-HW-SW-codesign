@@ -130,7 +130,7 @@ def _binding(private_root: Path) -> dict[str, Any]:
         ],
         "environment": {
             "values": {
-                "CUDA_VISIBLE_DEVICES": {"kind": "literal", "value": "5,6,7"},
+                "CUDA_VISIBLE_DEVICES": {"kind": "literal", "value": "17,19,23"},
                 "P6_HISTORY_RUN_MODE": {"kind": "literal", "value": "bound"},
                 "P6_HISTORY_PRIVATE_ROOT": {
                     "kind": "private_path",
@@ -185,8 +185,10 @@ def _binding(private_root: Path) -> dict[str, Any]:
         "component_paths": components,
         "execution_interface": interface,
         "gpu_policy": {
-            "indices": [5, 6, 7],
-            "uuid_by_index": {str(index): f"GPU-{index}" for index in (5, 6, 7)},
+            "indices": [17, 19, 23],
+            "uuid_by_index": {
+                str(index): f"GPU-{index}" for index in (17, 19, 23)
+            },
             "model": "h800",
             "maximum_occupancy": 0.05,
         },
@@ -278,7 +280,7 @@ def _records(
             model_name=model,
             occupancy=occupancy,
         )
-        for index in (5, 6, 7)
+        for index in (17, 19, 23)
     )
 
 
@@ -516,10 +518,43 @@ def test_valid_route_executes_activation_and_five_stages_then_returns_four_rows(
         }
         for call in runner.calls
     )
-    assert probe.calls == [(5, 6, 7), (5, 6, 7)]
+    assert probe.calls == [(17, 19, 23), (17, 19, 23)]
     assert runner.initial_state is not None
     assert runner.initial_state["stage"] == "initialized"
     assert len(runner.initial_state["rows"]) == 4
+
+
+def test_runtime_gpu_admission_uses_canonical_binding_policy_indices(
+    tmp_path: Path,
+) -> None:
+    """Catches a runtime probe reverting to a fixed device policy."""
+    _, _, probe, _ = _run(tmp_path)
+
+    assert probe.calls == [(17, 19, 23), (17, 19, 23)]
+
+
+@pytest.mark.parametrize("indices", ([17, 17, 23], [23, 19, 17], [17, 19]))
+def test_runtime_rejects_noncanonical_binding_gpu_policy_indices(
+    tmp_path: Path,
+    indices: list[int],
+) -> None:
+    """Catches malformed binding policy indices before probing or execution."""
+    private_root = tmp_path / "private"
+    private_root.mkdir()
+    round_root = private_root / "controller-round"
+    round_root.mkdir()
+    request = _request()
+    binding = _binding(private_root)
+    binding["gpu_policy"]["indices"] = indices
+    runner = FakeRunner(request)
+    probe = FakeProbe()
+
+    with pytest.raises(P6HistoryMeasurementError) as raised:
+        run_history_measurement_batch(request, binding, round_root, runner, probe)
+
+    assert raised.value.category == "history_execution_invalid"
+    assert runner.calls == []
+    assert probe.calls == []
 
 
 def test_allowed_failure_is_returned_with_public_safe_reason(tmp_path: Path) -> None:
@@ -655,10 +690,10 @@ def test_malformed_request_stops_before_gpu_or_process(tmp_path: Path, case: str
     [
         FakeProbe(_records(model="NVIDIA H100"), _records()),
         FakeProbe(_records(occupancy=0.2), _records()),
-        FakeProbe(_records(drift_index=7), _records()),
+        FakeProbe(_records(drift_index=23), _records()),
         FakeProbe(_records(), _records(model="NVIDIA H100")),
         FakeProbe(_records(), _records(occupancy=0.2)),
-        FakeProbe(_records(), _records(drift_index=7)),
+        FakeProbe(_records(), _records(drift_index=23)),
     ],
 )
 def test_gpu_admission_and_pre_post_drift_fail_closed(tmp_path: Path, probe: FakeProbe) -> None:
