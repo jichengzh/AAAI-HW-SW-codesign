@@ -10,6 +10,7 @@ import pytest
 import yaml
 
 import framework.stage6.p6_full_chain_bootstrap_v1 as bootstrap
+import framework.stage6.p6_runner_template_validator_v1 as runner_template_validator
 from framework.stage6.coptv2x_h800_search_v2 import (
     PublicP6CoptV2XContract,
     load_local_config,
@@ -631,7 +632,7 @@ def test_bootstrap_rejects_nonignored_repository_runner_template_before_probe(
         yaml.safe_load(template.read_text(encoding="utf-8")),
     )
     probe = _gpu_probe()
-    monkeypatch.setattr(bootstrap, "REPOSITORY_ROOT", repository)
+    monkeypatch.setattr(runner_template_validator, "REPOSITORY_ROOT", repository)
 
     with pytest.raises(FullChainBootstrapError) as captured:
         materialize_full_chain_binding(
@@ -669,7 +670,7 @@ def test_bootstrap_accepts_private_runner_template_locations(
     else:
         template = external_template
     probe = _gpu_probe()
-    monkeypatch.setattr(bootstrap, "REPOSITORY_ROOT", repository)
+    monkeypatch.setattr(runner_template_validator, "REPOSITORY_ROOT", repository)
 
     binding = materialize_full_chain_binding(
         legacy_config,

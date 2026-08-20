@@ -21,7 +21,6 @@ from framework.stage6.coptv2x_h800_search_v2 import (
     load_public_contract,
 )
 from framework.stage6.p6_history_binding_v1 import (
-    COMPONENT_MARKERS,
     GpuProbe,
     LOCAL_INPUT_NAMES,
     P6HistoryBindingError,
@@ -30,27 +29,18 @@ from framework.stage6.p6_history_binding_v1 import (
     validate_history_execution_binding,
     write_private_binding_pair,
 )
+from framework.stage6.p6_runner_template_validator_v1 import (
+    EXECUTION_INTERFACE_KEYS,
+    RunnerTemplateValidationError,
+    validate_pre_provision_runner_template,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 PUBLIC_CONTRACT_PATH = REPOSITORY_ROOT / "configs/execution/p6_h800_search.example.yaml"
 SOURCE_ADAPTER_PATH = REPOSITORY_ROOT / "tools/release/build_p6_history_registry.py"
 MEASUREMENT_ADAPTER_PATH = REPOSITORY_ROOT / "tools/release/measure_p6_history_batch.py"
-RUNNER_TEMPLATE_SCHEMA_VERSION = "p6_history_runner_template_v1"
 EXPECTED_ASSET_LABELS = ("training-data", "model-init", "toolchain")
-RUNNER_TEMPLATE_KEYS = frozenset(
-    {"schema_version", "stage1_scan", "execution_interface"}
-)
-EXECUTION_INTERFACE_KEYS = frozenset(
-    {
-        "schema_version",
-        "controller",
-        "execution_chain",
-        "environment",
-        "output_layout",
-        "actual_feedback",
-    }
-)
 LEGACY_LOCAL_KEYS = frozenset(
     {
         "schema_version",
@@ -146,18 +136,23 @@ def materialize_full_chain_binding(
         ) from error
     locator = _load_legacy_local_locator(legacy_local_config)
     root = _unique_common_history_root(locator)
-    template = _load_runner_template(runner_template)
-    component_paths = _template_component_paths(
-        root, template["execution_interface"]
-    )
+    try:
+        validated_template = validate_pre_provision_runner_template(
+            runner_template, root
+        )
+    except RunnerTemplateValidationError as error:
+        raise FullChainBootstrapError(error.category, error.detail) from error
+    stage1_scan = _load_validated_stage1_scan(runner_template)
     interface = _render_runner_interface(
-        root, template["execution_interface"]
+        root, validated_template.execution_interface
     )
-    _validate_template_component_argv_alignment(component_paths, interface)
     try:
         binding = build_history_binding(
             root,
-            component_paths=component_paths,
+            component_paths={
+                role: str(path)
+                for role, path in validated_template.component_paths.items()
+            },
             execution_interface=interface,
             local_input_paths={
                 name: str(locator.local_input_paths[name])
@@ -174,7 +169,7 @@ def materialize_full_chain_binding(
         raise FullChainBootstrapError(category, "history binding is invalid") from error
     config = _render_full_chain_local_config(
         locator,
-        template["stage1_scan"],
+        stage1_scan,
         root,
         output_root,
         binding_path,
@@ -219,62 +214,14 @@ def _load_legacy_local_locator(path: Path) -> _LegacyLocator:
     return _LegacyLocator(asset_paths=assets, local_input_paths=inputs)
 
 
-def _load_runner_template(path: Path) -> dict[str, Any]:
-    _validate_runner_template_privacy(path)
+def _load_validated_stage1_scan(path: Path) -> Mapping[str, Any]:
     payload = _load_private_yaml(path, "execution_interface_unavailable")
-    if (
-        set(payload) != set(RUNNER_TEMPLATE_KEYS)
-        or payload.get("schema_version") != RUNNER_TEMPLATE_SCHEMA_VERSION
-    ):
-        raise FullChainBootstrapError(
-            "execution_interface_unavailable", "runner template contract is invalid"
-        )
     stage1_scan = payload.get("stage1_scan")
-    interface = payload.get("execution_interface")
-    if (
-        not isinstance(stage1_scan, Mapping)
-        or set(stage1_scan) != {"name", "argv"}
-        or not isinstance(interface, Mapping)
-        or set(interface) != set(EXECUTION_INTERFACE_KEYS)
-    ):
+    if not isinstance(stage1_scan, Mapping):
         raise FullChainBootstrapError(
             "execution_interface_unavailable", "runner template contract is invalid"
         )
-    return copy.deepcopy(payload)
-
-
-def _validate_runner_template_privacy(path: Path) -> None:
-    if not isinstance(path, Path) or not path.is_absolute() or path.is_symlink():
-        raise FullChainBootstrapError(
-            "execution_interface_unavailable", "runner template path is invalid"
-        )
-    try:
-        resolved = path.resolve(strict=True)
-        repository = REPOSITORY_ROOT.resolve(strict=True)
-    except OSError as error:
-        raise FullChainBootstrapError(
-            "execution_interface_unavailable", "runner template is unavailable"
-        ) from error
-    if not _is_relative_to(resolved, repository):
-        return
-    relative = resolved.relative_to(repository)
-    try:
-        completed = subprocess.run(
-            ["git", "-C", str(repository), "check-ignore", "-q", "--", str(relative)],
-            shell=False,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError) as error:
-        raise FullChainBootstrapError(
-            "execution_interface_unavailable", "runner template privacy check failed"
-        ) from error
-    if completed.returncode != 0:
-        raise FullChainBootstrapError(
-            "execution_interface_unavailable", "runner template is not private"
-        )
+    return copy.deepcopy(dict(stage1_scan))
 
 
 def _load_private_yaml(path: Path, category: str) -> dict[str, Any]:
@@ -353,132 +300,6 @@ def _unique_common_history_root(
             "history_root_ambiguous", "legacy locator escapes the common Git root"
         )
     return root
-
-
-def _template_component_paths(
-    root: Path,
-    raw_interface: object,
-) -> dict[str, str]:
-    if not isinstance(raw_interface, Mapping) or set(raw_interface) != set(
-        EXECUTION_INTERFACE_KEYS
-    ):
-        raise FullChainBootstrapError(
-            "execution_interface_unavailable", "execution interface is invalid"
-        )
-    component_argv0 = _template_component_argv0_by_role(raw_interface)
-    return {
-        role: str(_resolve_template_component_path(root, component_argv0[role], marker))
-        for role, (marker, _) in COMPONENT_MARKERS.items()
-    }
-
-
-def _template_component_argv0_by_role(
-    raw_interface: Mapping[str, Any],
-) -> dict[str, str]:
-    controller = raw_interface.get("controller")
-    chain = raw_interface.get("execution_chain")
-    if not isinstance(chain, list):
-        raise FullChainBootstrapError(
-            "execution_interface_unavailable", "execution interface is invalid"
-        )
-    stage_entries: dict[str, Mapping[str, Any]] = {}
-    for entry in chain:
-        if not isinstance(entry, Mapping):
-            raise FullChainBootstrapError(
-                "execution_interface_unavailable", "execution interface is invalid"
-            )
-        stage = entry.get("stage")
-        if not isinstance(stage, str) or stage in stage_entries:
-            raise FullChainBootstrapError(
-                "execution_interface_unavailable", "execution interface is invalid"
-            )
-        stage_entries[stage] = entry
-    try:
-        return {
-            "controller": _template_argv0(controller),
-            "source_materializer": _template_argv0(
-                stage_entries["source_materialization"]
-            ),
-            "performance_plan": _template_argv0(stage_entries["performance"]),
-            "finalizer": _template_argv0(stage_entries["finalization"]),
-        }
-    except KeyError as error:
-        raise FullChainBootstrapError(
-            "execution_interface_unavailable", "execution interface is invalid"
-        ) from error
-
-
-def _template_argv0(raw: object) -> str:
-    if not isinstance(raw, Mapping):
-        raise FullChainBootstrapError(
-            "execution_interface_unavailable", "execution interface is invalid"
-        )
-    argv = raw.get("argv")
-    if (
-        not isinstance(argv, list)
-        or not argv
-        or not isinstance(argv[0], str)
-        or not argv[0]
-        or any(shell_token in argv[0] for shell_token in SHELL_TOKENS)
-    ):
-        raise FullChainBootstrapError(
-            "execution_interface_unavailable", "execution interface is invalid"
-        )
-    return argv[0]
-
-
-def _resolve_template_component_path(root: Path, raw: str, marker: str) -> Path:
-    path = Path(raw)
-    if path.name != marker:
-        raise FullChainBootstrapError(
-            "history_root_ambiguous", "template component marker does not match role"
-        )
-    candidate = path if path.is_absolute() else root / path
-    if _contains_symlink_component(candidate):
-        raise FullChainBootstrapError(
-            "history_root_ambiguous", "template component marker is unsafe"
-        )
-    try:
-        resolved = candidate.resolve(strict=True)
-    except OSError as error:
-        raise FullChainBootstrapError(
-            "history_root_ambiguous", "template component marker is unavailable"
-        ) from error
-    if (
-        not resolved.is_absolute()
-        or not _is_relative_to(resolved, root)
-        or not resolved.is_file()
-        or not os.access(resolved, os.X_OK)
-        or _git_root_for(resolved) != root
-    ):
-        raise FullChainBootstrapError(
-            "history_root_ambiguous", "template component marker is invalid"
-        )
-    return resolved
-
-
-def _validate_template_component_argv_alignment(
-    component_paths: Mapping[str, str],
-    interface: Mapping[str, Any],
-) -> None:
-    try:
-        if interface["controller"]["argv"] != [component_paths["controller"]]:
-            raise KeyError
-        stage_paths = {
-            entry["stage"]: entry["argv"][0]
-            for entry in interface["execution_chain"]
-        }
-        expected = {
-            "source_materialization": component_paths["source_materializer"],
-            "performance": component_paths["performance_plan"],
-            "finalization": component_paths["finalizer"],
-        }
-        if any(stage_paths[stage] != path for stage, path in expected.items()):
-            raise KeyError
-    except (KeyError, TypeError) as error:
-        raise FullChainBootstrapError(
-            "history_root_ambiguous", "template component paths do not match argv"
-        ) from error
 
 
 def _git_root_for(path: Path) -> Path:
