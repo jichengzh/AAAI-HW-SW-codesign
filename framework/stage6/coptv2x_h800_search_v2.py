@@ -335,6 +335,7 @@ def _run_framework_stage1_scan(
         if local.stage1_scan_step is None or local.stage2_search_space_path is None:
             raise P6CoptV2XContractError("framework Stage1 scan configuration is missing")
         _validate_local_output_leaf(local.stage2_search_space_path)
+        local.stage2_search_space_path.unlink(missing_ok=True)
         _run_step(
             local.stage1_scan_step,
             {

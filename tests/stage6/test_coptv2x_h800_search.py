@@ -659,6 +659,31 @@ def test_framework_run_executes_scan_before_registry_or_measurement(tmp_path: Pa
     assert events.count("fake-measure") == 4
 
 
+def test_framework_scan_rejects_a_stale_manifest_when_the_command_noops(
+    tmp_path: Path,
+) -> None:
+    """A current Stage1 run cannot silently consume the prior run's manifest."""
+    local = _framework_local_config_with_stage1_step(tmp_path)
+    _write_real_stage1_manifest(local.stage2_search_space_path)
+    events: list[str] = []
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        del cwd
+        events.append(argv[0])
+        return 0
+
+    with pytest.raises(P6CoptV2XExecutionError) as captured:
+        run_p6_coptv2x_search(
+            load_public_contract(_write_yaml(tmp_path / "public.yaml", _public_contract())),
+            local,
+            "test-revision",
+            runner,
+        )
+
+    assert captured.value.failure_code == "stage1_scan_invalid"
+    assert events == ["fake-stage1"]
+
+
 @pytest.mark.parametrize(
     ("payload", "message"),
     [
@@ -759,6 +784,7 @@ def test_run_p6_framework_mode_builds_dynamic_candidate_plan_and_runs_four_round
         nonlocal observed_plan, observed_manifest_candidate_identities
         calls.append((argv[0], argv))
         if argv[0] == "fake-stage1":
+            _write_real_stage1_manifest(Path(argv[1]))
             return 0
         del cwd
         if argv[1] == "local_build_registry.py":
@@ -835,6 +861,7 @@ def test_run_p6_framework_mode_rejects_registry_plan_identity_mismatches_before_
         nonlocal measurement_calls
         del cwd
         if argv[0] == "fake-stage1":
+            _write_real_stage1_manifest(Path(argv[1]))
             return 0
         if argv[1] != "local_build_registry.py":
             measurement_calls += 1
@@ -888,6 +915,7 @@ def test_run_p6_framework_mode_rejects_v1_registry_before_measurement(
         nonlocal measurement_calls
         del cwd
         if argv[0] == "fake-stage1":
+            _write_real_stage1_manifest(Path(argv[1]))
             return 0
         if argv[1] != "local_build_registry.py":
             measurement_calls += 1
@@ -947,6 +975,7 @@ def test_run_p6_framework_source_space_rejects_fewer_than_16_eligible_rows(
         nonlocal measurement_calls
         del cwd
         if argv[0] == "fake-stage1":
+            _write_real_stage1_manifest(Path(argv[1]))
             return 0
         if argv[1] != "local_build_registry.py":
             measurement_calls += 1
@@ -995,8 +1024,10 @@ def test_run_p6_framework_mode_rejects_invalid_stage2_points_before_measurement(
 
     def runner(argv: tuple[str, ...], cwd: Path) -> int:
         nonlocal command_calls
-        del argv, cwd
+        del cwd
         command_calls += 1
+        if argv[0] == "fake-stage1":
+            _write_real_stage1_manifest(Path(argv[1]))
         return 0
 
     monkeypatch.setattr(execution, "load_stage2_search_space", invalid_loader)
