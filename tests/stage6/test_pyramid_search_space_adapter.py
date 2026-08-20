@@ -9,6 +9,7 @@ import pytest
 from framework.stage6.pyramid_search_space_adapter_v1 import (
     PyramidSearchSpaceAdapterError,
     build_pyramid_candidate_plan,
+    parse_pyramid_stage_provenance_token,
 )
 
 
@@ -17,13 +18,16 @@ def _candidate(
     widths: list[int],
     q_modes: list[str],
     widths_by_q_mode: dict[str, list[int]] | None = None,
+    *,
+    group_id: str | None = None,
 ) -> dict[str, Any]:
+    source_group_id = group_id or stage
     return {
-        "id": stage,
+        "id": source_group_id,
         "dense_stage": stage,
         "software_points": [
             {
-                "id": f"{stage}-{q_mode}-{width}",
+                "id": f"{source_group_id}-{q_mode}-{width}",
                 "width": width,
                 "quant_policy": q_mode,
                 "buildable": True,
@@ -86,6 +90,67 @@ def test_build_pyramid_candidate_plan_allows_missing_int8_counterparts() -> None
     plan = build_pyramid_candidate_plan(space)
     assert plan["candidate_count"] == 8
     assert all(row["q_mode"] == "fp16" for row in plan["candidates"])
+
+
+def test_build_pyramid_candidate_plan_merges_real_same_stage_group_provenance() -> None:
+    payload = _space(
+        software_candidates=[
+            _candidate(
+                "stage1", [32], ["fp16"], group_id="stage1/group,A"
+            ),
+            _candidate(
+                "stage1", [32], ["fp16"], group_id="stage1 group+B%"
+            ),
+            _candidate("stage2", [64], ["fp16"]),
+            _candidate("stage3", [96], ["fp16"]),
+        ]
+    )
+
+    plan = build_pyramid_candidate_plan(payload)
+
+    assert plan["candidate_count"] == 1
+    candidate = plan["candidates"][0]
+    assert candidate["width"] == [32, 64, 96]
+    assert len(candidate["source_point_ids"]) == 3
+    assert parse_pyramid_stage_provenance_token(candidate["source_point_ids"][0]) == (
+        "stage1 group+B%-fp16-32",
+        "stage1/group,A-fp16-32",
+    )
+    assert candidate["source_point_ids"][1:] == [
+        "stage2-fp16-64",
+        "stage3-fp16-96",
+    ]
+
+
+def test_build_pyramid_candidate_plan_intersects_widths_across_stage_groups() -> None:
+    payload = _space(
+        software_candidates=[
+            _candidate("stage1", [16, 32], ["fp16"], group_id="stage1-a"),
+            _candidate("stage1", [32, 64], ["fp16"], group_id="stage1-b"),
+            _candidate("stage2", [32, 64], ["fp16"]),
+            _candidate("stage3", [64, 96], ["fp16"]),
+        ]
+    )
+
+    plan = build_pyramid_candidate_plan(payload)
+
+    assert plan["candidate_count"] == 4
+    assert {row["width"][0] for row in plan["candidates"]} == {32}
+
+
+def test_build_pyramid_candidate_plan_preserves_single_group_source_ids() -> None:
+    plan = build_pyramid_candidate_plan(_space())
+
+    candidate = next(
+        row
+        for row in plan["candidates"]
+        if row["width"] == [16, 32, 64] and row["q_mode"] == "fp16"
+    )
+    assert candidate["source_point_ids"] == [
+        "stage1-fp16-16",
+        "stage2-fp16-32",
+        "stage3-fp16-64",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -172,6 +237,24 @@ def test_build_pyramid_candidate_plan_rejects_duplicate_point_identity() -> None
         build_pyramid_candidate_plan(payload)
 
 
+def test_build_pyramid_candidate_plan_rejects_source_id_across_shapes() -> None:
+    payload = _space()
+    payload["software_candidates"][0]["software_points"][1]["id"] = (
+        payload["software_candidates"][0]["software_points"][0]["id"]
+    )
+    with pytest.raises(PyramidSearchSpaceAdapterError, match="different shapes"):
+        build_pyramid_candidate_plan(payload)
+
+
+def test_build_pyramid_candidate_plan_rejects_reserved_token_prefix_collision() -> None:
+    payload = _space()
+    payload["software_candidates"][0]["software_points"][0]["id"] = (
+        "p6-stage-provenance-v1:raw-source-id"
+    )
+    with pytest.raises(PyramidSearchSpaceAdapterError, match="reserved provenance"):
+        build_pyramid_candidate_plan(payload)
+
+
 def test_build_pyramid_candidate_plan_rejects_no_complete_q_mode_product() -> None:
     payload = _space()
     payload["software_candidates"][1]["software_points"] = [{
@@ -185,9 +268,40 @@ def test_build_pyramid_candidate_plan_rejects_no_complete_q_mode_product() -> No
         build_pyramid_candidate_plan(payload)
 
 
+def test_build_pyramid_candidate_plan_rejects_stage_groups_without_common_q_mode() -> None:
+    payload = _space(
+        software_candidates=[
+            _candidate("stage1", [16], ["fp16", "int8"], group_id="stage1-a"),
+            _candidate("stage1", [32], ["fp16", "int8"], group_id="stage1-b"),
+            _candidate("stage2", [64], ["fp16", "int8"]),
+            _candidate("stage3", [96], ["fp16", "int8"]),
+        ]
+    )
+    with pytest.raises(PyramidSearchSpaceAdapterError, match="q-mode"):
+        build_pyramid_candidate_plan(payload)
+
+
 def test_build_pyramid_candidate_plan_is_canonical_when_inputs_reverse() -> None:
     first = _space()
     second = _space()
+    first["software_candidates"].append(
+        _candidate(
+            "stage1",
+            [16, 32],
+            ["fp16", "int8"],
+            {"int8": [16]},
+            group_id="stage1-b",
+        )
+    )
+    second["software_candidates"].append(
+        _candidate(
+            "stage1",
+            [16, 32],
+            ["fp16", "int8"],
+            {"int8": [16]},
+            group_id="stage1-b",
+        )
+    )
     second["software_candidates"] = list(reversed(second["software_candidates"]))
     for candidate in second["software_candidates"]:
         candidate["software_points"] = list(reversed(candidate["software_points"]))
@@ -195,3 +309,22 @@ def test_build_pyramid_candidate_plan_is_canonical_when_inputs_reverse() -> None
     assert json.dumps(build_pyramid_candidate_plan(first), sort_keys=True) == json.dumps(
         build_pyramid_candidate_plan(second), sort_keys=True
     )
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "raw-source-id",
+        "p6-stage-provenance-v1:only-one",
+        "p6-stage-provenance-v1:b,a",
+        "p6-stage-provenance-v1:a,a",
+        "p6-stage-provenance-v1:a,%61",
+        "p6-stage-provenance-v1:a,%ZZ",
+        "p6-stage-provenance-v1:a,",
+    ],
+)
+def test_parse_pyramid_stage_provenance_token_rejects_noncanonical_tokens(
+    token: str,
+) -> None:
+    with pytest.raises(PyramidSearchSpaceAdapterError, match="provenance token"):
+        parse_pyramid_stage_provenance_token(token)

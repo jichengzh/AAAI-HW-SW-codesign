@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from itertools import product
 from typing import Any
+from urllib.parse import quote, unquote_to_bytes
 
 
 class PyramidSearchSpaceAdapterError(ValueError):
@@ -11,10 +12,105 @@ class PyramidSearchSpaceAdapterError(ValueError):
 
 _Q_MODES = ("fp16", "int8")
 _STAGES = ("stage1", "stage2", "stage3")
+_STAGE_PROVENANCE_TOKEN_PREFIX = "p6-stage-provenance-v1:"
 
 
 def _fail(message: str) -> None:
     raise PyramidSearchSpaceAdapterError(message)
+
+
+def parse_pyramid_stage_provenance_token(token: str) -> tuple[str, ...]:
+    """Parse one canonical multi-group stage provenance token."""
+    if not isinstance(token, str) or not token.startswith(
+        _STAGE_PROVENANCE_TOKEN_PREFIX
+    ):
+        _fail("invalid Pyramid stage provenance token")
+    encoded_components = token.removeprefix(_STAGE_PROVENANCE_TOKEN_PREFIX).split(",")
+    if len(encoded_components) < 2 or any(not item for item in encoded_components):
+        _fail("invalid Pyramid stage provenance token")
+
+    components: list[str] = []
+    for encoded in encoded_components:
+        try:
+            component = unquote_to_bytes(encoded).decode("utf-8", errors="strict")
+        except UnicodeDecodeError:
+            _fail("invalid Pyramid stage provenance token")
+        if (
+            not component
+            or component.startswith(_STAGE_PROVENANCE_TOKEN_PREFIX)
+            or quote(component, safe="") != encoded
+        ):
+            _fail("invalid Pyramid stage provenance token")
+        components.append(component)
+    if components != sorted(set(components)):
+        _fail("invalid Pyramid stage provenance token")
+    return tuple(components)
+
+
+def _stage_provenance(source_point_ids: list[str]) -> str:
+    canonical_ids = sorted(set(source_point_ids))
+    if len(canonical_ids) == 1:
+        return canonical_ids[0]
+    token = _STAGE_PROVENANCE_TOKEN_PREFIX + ",".join(
+        quote(point_id, safe="") for point_id in canonical_ids
+    )
+    parse_pyramid_stage_provenance_token(token)
+    return token
+
+
+def _active_group_shapes(
+    stage: str, group: Mapping[str, Any]
+) -> dict[tuple[str, int], str]:
+    points = group.get("software_points")
+    if not isinstance(points, list) or not points:
+        _fail(f"{stage} software points are required")
+    shapes: dict[tuple[str, int], str] = {}
+    for point in points:
+        if not isinstance(point, Mapping):
+            _fail(f"{stage} software point must be a mapping")
+        q_mode = point.get("quant_policy")
+        point_id = point.get("id")
+        if q_mode not in _Q_MODES:
+            _fail("unsupported quantization policy")
+        status = point.get("status")
+        buildable = point.get("buildable")
+        if status == "active" and buildable is not True:
+            _fail("active software point must be buildable")
+        if status == "diagnostic" and buildable is False:
+            continue
+        if status != "active" or buildable is not True:
+            _fail("unsupported status/buildable combination")
+        width = point.get("width")
+        if not isinstance(point_id, str) or not point_id:
+            _fail("software point id is required")
+        if point_id.startswith(_STAGE_PROVENANCE_TOKEN_PREFIX):
+            _fail("software point id uses reserved provenance token prefix")
+        if isinstance(width, bool) or not isinstance(width, int):
+            _fail("software point width is required")
+        shape = (q_mode, width)
+        if shape in shapes:
+            _fail("duplicate group q_mode and width")
+        shapes[shape] = point_id
+    return shapes
+
+
+def _common_stage_points(
+    group_shapes: list[dict[tuple[str, int], str]],
+) -> dict[str, list[dict[str, Any]]]:
+    by_q_mode = {q_mode: [] for q_mode in _Q_MODES}
+    for q_mode in _Q_MODES:
+        common_widths = set.intersection(
+            *(
+                {width for mode, width in shapes if mode == q_mode}
+                for shapes in group_shapes
+            )
+        )
+        for width in sorted(common_widths):
+            source_point_ids = [shapes[(q_mode, width)] for shapes in group_shapes]
+            by_q_mode[q_mode].append(
+                {"id": _stage_provenance(source_point_ids), "width": width}
+            )
+    return by_q_mode
 
 
 def build_pyramid_candidate_plan(search_space: Mapping[str, Any]) -> dict[str, Any]:
@@ -54,50 +150,31 @@ def build_pyramid_candidate_plan(search_space: Mapping[str, Any]) -> dict[str, A
     software_candidates = search_space.get("software_candidates")
     if not isinstance(software_candidates, list):
         _fail("stage candidates are required")
-    by_stage: dict[str, Mapping[str, Any]] = {}
+    groups_by_stage: dict[str, list[Mapping[str, Any]]] = {
+        stage: [] for stage in _STAGES
+    }
     for candidate in software_candidates:
         if not isinstance(candidate, Mapping):
             _fail("stage candidate must be a mapping")
         stage = candidate.get("dense_stage")
-        if stage not in _STAGES or stage in by_stage:
-            _fail("exactly one candidate for each stage1/stage2/stage3 is required")
-        by_stage[stage] = candidate
-    if set(by_stage) != set(_STAGES):
+        if stage not in _STAGES:
+            _fail("stage candidates for stage1, stage2, and stage3 are required")
+        groups_by_stage[stage].append(candidate)
+    if any(not groups_by_stage[stage] for stage in _STAGES):
         _fail("stage candidates for stage1, stage2, and stage3 are required")
 
     points_by_stage: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    shape_by_source_id: dict[str, tuple[str, int]] = {}
     for stage in _STAGES:
-        points = by_stage[stage].get("software_points")
-        if not isinstance(points, list) or not points:
-            _fail(f"{stage} software points are required")
-        by_q_mode = {q_mode: [] for q_mode in _Q_MODES}
-        seen_stage_shapes: set[tuple[str, int]] = set()
-        for point in points:
-            if not isinstance(point, Mapping):
-                _fail(f"{stage} software point must be a mapping")
-            q_mode = point.get("quant_policy")
-            point_id = point.get("id")
-            if q_mode not in _Q_MODES:
-                _fail("unsupported quantization policy")
-            status = point.get("status")
-            buildable = point.get("buildable")
-            if status == "active" and buildable is not True:
-                _fail("active software point must be buildable")
-            if status == "diagnostic" and buildable is False:
-                continue
-            if status != "active" or buildable is not True:
-                _fail("unsupported status/buildable combination")
-            width = point.get("width")
-            if not isinstance(point_id, str) or not point_id:
-                _fail("software point id is required")
-            if isinstance(width, bool) or not isinstance(width, int):
-                _fail("software point width is required")
-            shape = (q_mode, width)
-            if shape in seen_stage_shapes:
-                _fail("duplicate stage q_mode and width")
-            seen_stage_shapes.add(shape)
-            by_q_mode[q_mode].append({"id": point_id, "width": width})
-        points_by_stage[stage] = by_q_mode
+        group_shapes = [
+            _active_group_shapes(stage, group) for group in groups_by_stage[stage]
+        ]
+        for shapes in group_shapes:
+            for shape, point_id in shapes.items():
+                previous_shape = shape_by_source_id.setdefault(point_id, shape)
+                if previous_shape != shape:
+                    _fail("software point id maps to different shapes")
+        points_by_stage[stage] = _common_stage_points(group_shapes)
 
     candidates: list[dict[str, Any]] = []
     for q_mode in _Q_MODES:
