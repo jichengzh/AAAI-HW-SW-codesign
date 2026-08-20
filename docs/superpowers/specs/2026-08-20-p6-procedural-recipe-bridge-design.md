@@ -47,7 +47,7 @@ P6.4 已经要求真实闭环从 Stage1 Pyramid scan 出发，经 Stage2 动态�
 桥接器拆分为六个部分：
 
 1. profile registry：公开、版本化、无私有值；记录一个 profile 对应的 Stage5 程序式接口面。
-2. interface verifier：在私有 source-map v2 中读取已选择程序式组件，验证角色、marker basename、semantic argv、placeholder surface、precision 能力和输出能力。
+2. interface verifier：从已经通过现有契约校验的 private binding/template 中读取实际组件角色、argv 和 placeholder surface，再按 source-map v2 选择的 profile 验证 precision 与四类输出能力。source-map 中的自报 capability 不作为证据。
 3. recipe renderer：从已验证的 profile 与组件接口渲染 `p6_history_dynamic_materialization_recipe_v1`，只生成 canonical identity 和 per-q-mode 相对输出模板。
 4. normalizer integration：source-map v2 入口在显式 recipe 与程序式来源二者之间选择一路，向现有 normalizer 传入同一份 recipe 结构。
 5. CLI：提供 private-only 的 recipe 派生命令，稳定输出成功类别或 `history_recipe_derivation_invalid`。
@@ -124,21 +124,19 @@ procedural_recipe_profile: present only when recipe_mode is procedural_profile
 - 同时出现两种来源、两者都缺失、`recipe_mode` 与字段不一致，均以 `history_recipe_derivation_invalid` 失败；
 - v2 中派生出的 recipe 只传入 private normalizer/runtime，不写入公开 tracked recipe 文件。
 
-`procedural_recipe_profile` 只包含 profile 名称和 profile schema version。`procedural_recipe_source` 只包含已验证 binding/template 中对程序式组件的私有引用、组件角色、marker basename、semantic argv projection、capability projection 和相对输出 surface。该 projection 可以含私有路径，因为 source-map v2 是 ignored private input；但桥接器不得把这些私有路径复制进公开 profile、公开 recipe 或公开日志。
+`procedural_recipe_profile` 只包含 profile 名称和 profile schema version。`procedural_recipe_source` 只包含已验证 binding/template 的私有引用，以及把 profile role 绑定到 binding/template 中哪个结构化接口节点的 role selection。它不得自报 semantic argv、capability 或输出模板；桥接器必须从被引用的已验证 binding/template 读取实际 argv、placeholder 和组件 basename，并与公开 profile 精确比较。
 
 ### 程序式组件 projection
 
-每个 selected procedural component 必须以结构化字段描述：
+每个 selected procedural component 只允许以最小结构化引用描述：
 
 - `role`: 必须精确命中 profile role；
-- `marker_basename`: 只比较 basename；
-- `argv_semantics`: 由 profile 定义的 required semantic argv surface 的实例化投影；
-- `placeholders`: 组件承认的 placeholder 名称集合，必须覆盖 profile 所需 surface；
-- `capabilities`: 组件声明支持的 q mode 与 training/checkpoint/onnx/calibration 能力；
-- `output_surface`: 输出 root 必须是 private output root 下的相对模板 source，不能是绝对产物路径；
-- `binding_ref`: 指向已验证 private binding/template 的本地引用，不进入公开 recipe。
+- `binding_interface_ref`: 指向已验证 private binding/template 中一个唯一的 controller、execution-chain 或 output-layout 节点，不进入公开 recipe；
+- `expected_marker_basename`: 可作为定位辅助，但最终 basename 必须从被引用节点的实际 argv 解析并与 profile 比较。
 
-projection 不是代码扫描结果。它是 private bootstrap 在已批准历史组件上产生或复制的结构化接口说明；桥接器只验证它与 profile 是否精确一致。
+role selection 不是代码扫描结果，也不是 capability 声明。bridge 必须拒绝不存在、重复或指向多个节点的引用；然后从 binding/template 的实际节点取得 argv、placeholder、component path basename 和 output-layout 字段。training/checkpoint/ONNX/calibration 能力只有在这些实际字段满足 profile 的 required observable surface 时才成立。
+
+profile 内的 per-q-mode 相对输出模板描述的是本次 P6 private output root 的新布局，不声称它是历史绝对路径。模板可以包含通用的 `training`、`checkpoint`、`onnx`、`calibration` 目录或文件角色名，但不能包含任何历史产物实例、资产 ID、候选 ID 或私有位置。
 
 ## Recipe renderer
 
@@ -227,9 +225,10 @@ private source-map v2、派生 recipe、normalized root、local YAML 和 registr
 derive_p6_history_recipe
   --source-map: absolute ignored private source-map v2 path
   --binding: absolute ignored p6_history_binding_v1 path
-  --profile: registered adapter profile name
   --recipe-json: absolute ignored output recipe path
 ```
+
+profile 名称与版本只来自 source-map v2 的 `procedural_recipe_profile`，避免 CLI 与 source-map 形成两个真值来源。CLI 不允许用额外参数覆盖 profile。
 
 实现可以把 recipe derivation 内联到 normalizer CLI，也可以作为 normalizer 前置命令；无论采用哪种集成，生命周期必须保持：
 
