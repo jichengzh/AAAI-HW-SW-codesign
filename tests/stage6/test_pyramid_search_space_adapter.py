@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 from itertools import product
+from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 
+from framework.stage1_bridge import load_stage2_search_space
 from framework.stage6.pyramid_search_space_adapter_v1 import (
     PyramidSearchSpaceAdapterError,
     build_pyramid_candidate_plan,
@@ -61,6 +64,40 @@ def _space(**overrides: Any) -> dict[str, Any]:
     return {**payload, **overrides}
 
 
+def _canonical_loader_manifest() -> dict[str, Any]:
+    search_groups = [
+        {
+            "search_group_id": f"pyramid_group.{suffix}",
+            "bucket": f"pyramid_{suffix}",
+            "widths": [16, 32, 48, 64],
+            "round_to": 16,
+            "int8_buildable_align": 64,
+            "max_rate": 0.75,
+            "grouped_conv": True,
+            "criterion_pool": ["L1"],
+            "member_b1_groups": [f"pyramid_group.{suffix}"],
+        }
+        for suffix in ("s0", "s1", "s2")
+    ]
+    return {
+        "schema": "stage1_partition_manifest_demo_v1",
+        "model": "pyramid_lidar",
+        "scan_status": "ok",
+        "hw_capability": {"name": "h800_tvm_demo"},
+        "view_b1_search_groups": search_groups,
+        "view_b2_quant_units": [
+            {
+                "unit": group["bucket"],
+                "quantizable": True,
+                "legal_bits": ["FP16", "INT8"],
+                "member_groups": group["member_b1_groups"],
+            }
+            for group in search_groups
+        ],
+        "view_d_routing_segments": {"segments": [{"device": "gpu", "n_nodes": 1}]},
+    }
+
+
 def test_build_pyramid_candidate_plan_uses_independent_q_mode_products() -> None:
     plan = build_pyramid_candidate_plan(_space())
 
@@ -90,6 +127,33 @@ def test_build_pyramid_candidate_plan_allows_missing_int8_counterparts() -> None
     plan = build_pyramid_candidate_plan(space)
     assert plan["candidate_count"] == 8
     assert all(row["q_mode"] == "fp16" for row in plan["candidates"])
+
+
+def test_build_pyramid_candidate_plan_accepts_canonical_loader_diagnostics(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "pyramid.yaml"
+    manifest_path.write_text(
+        yaml.safe_dump(_canonical_loader_manifest(), sort_keys=False), encoding="utf-8"
+    )
+    search_space = load_stage2_search_space(manifest_path)
+
+    diagnostic_points = [
+        point
+        for group in search_space["software_candidates"]
+        for point in group["software_points"]
+        if point["status"] == "diagnostic_only"
+    ]
+    assert diagnostic_points
+    assert all(point["buildable"] is False for point in diagnostic_points)
+
+    plan = build_pyramid_candidate_plan(search_space)
+
+    assert plan["candidate_count"] == 65
+    assert {(tuple(row["width"]), row["q_mode"]) for row in plan["candidates"]} == {
+        *((widths, "fp16") for widths in product((16, 32, 48, 64), repeat=3)),
+        ((64, 64, 64), "int8"),
+    }
 
 
 def test_build_pyramid_candidate_plan_merges_real_same_stage_group_provenance() -> None:
@@ -190,16 +254,22 @@ def test_build_pyramid_candidate_plan_rejects_active_non_buildable_point() -> No
         build_pyramid_candidate_plan(payload)
 
 
-def test_build_pyramid_candidate_plan_rejects_non_active_buildable_point() -> None:
+@pytest.mark.parametrize("status", ["diagnostic", "diagnostic_only"])
+def test_build_pyramid_candidate_plan_rejects_buildable_diagnostic_point(
+    status: str,
+) -> None:
     payload = _space()
     payload["software_candidates"][0]["software_points"][0].update(
-        {"status": "diagnostic", "buildable": True}
+        {"status": status, "buildable": True}
     )
     with pytest.raises(PyramidSearchSpaceAdapterError, match="unsupported"):
         build_pyramid_candidate_plan(payload)
 
 
-def test_build_pyramid_candidate_plan_ignores_non_active_non_buildable_diagnostics() -> None:
+@pytest.mark.parametrize("status", ["diagnostic", "diagnostic_only"])
+def test_build_pyramid_candidate_plan_ignores_nonbuildable_diagnostics(
+    status: str,
+) -> None:
     payload = _space()
     payload["software_candidates"][0]["software_points"].append(
         {
@@ -207,7 +277,7 @@ def test_build_pyramid_candidate_plan_ignores_non_active_non_buildable_diagnosti
             "width": 128,
             "quant_policy": "int8",
             "buildable": False,
-            "status": "diagnostic",
+            "status": status,
         }
     )
     assert build_pyramid_candidate_plan(payload)["candidate_count"] == 9

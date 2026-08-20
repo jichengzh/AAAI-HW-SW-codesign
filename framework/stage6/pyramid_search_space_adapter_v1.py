@@ -76,7 +76,7 @@ def _active_group_shapes(
         buildable = point.get("buildable")
         if status == "active" and buildable is not True:
             _fail("active software point must be buildable")
-        if status == "diagnostic" and buildable is False:
+        if status in {"diagnostic", "diagnostic_only"} and buildable is False:
             continue
         if status != "active" or buildable is not True:
             _fail("unsupported status/buildable combination")
