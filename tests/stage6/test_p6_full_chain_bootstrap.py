@@ -560,6 +560,63 @@ def test_materialize_rejects_template_component_role_mismatch_without_pair(
     assert not (output_root / "local.yaml").exists()
 
 
+def test_materialize_rejects_absolute_symlink_leaf_stage1_template_path_without_pair(
+    tmp_path: Path,
+) -> None:
+    """Catches accepting a non-component template executable through a symlink leaf."""
+    legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
+    root = tmp_path / "source"
+    payload = _template_payload(template)
+    link = root / "private-runner" / "bin" / "scan-private-link"
+    link.symlink_to(root / "private-runner" / "bin" / "scan-private")
+    payload["stage1_scan"]["argv"][0] = str(link)
+    _write_yaml(template, payload)
+
+    with pytest.raises(FullChainBootstrapError) as captured:
+        materialize_full_chain_binding(
+            legacy_config,
+            template,
+            output_root,
+            output_root / "binding.json",
+            output_root / "local.yaml",
+            _gpu_probe(),
+        )
+
+    assert captured.value.category == "execution_interface_unavailable"
+    assert not (output_root / "binding.json").exists()
+    assert not (output_root / "local.yaml").exists()
+
+
+def test_materialize_rejects_relative_symlink_parent_quantization_path_without_pair(
+    tmp_path: Path,
+) -> None:
+    """Catches accepting a non-component template executable through a symlink parent."""
+    legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
+    root = tmp_path / "source"
+    payload = _template_payload(template)
+    (root / "linked-runner").symlink_to(
+        root / "private-runner", target_is_directory=True
+    )
+    payload["execution_interface"]["execution_chain"][1]["argv"][0] = (
+        "linked-runner/bin/quantize-private"
+    )
+    _write_yaml(template, payload)
+
+    with pytest.raises(FullChainBootstrapError) as captured:
+        materialize_full_chain_binding(
+            legacy_config,
+            template,
+            output_root,
+            output_root / "binding.json",
+            output_root / "local.yaml",
+            _gpu_probe(),
+        )
+
+    assert captured.value.category == "execution_interface_unavailable"
+    assert not (output_root / "binding.json").exists()
+    assert not (output_root / "local.yaml").exists()
+
+
 def test_bootstrap_rejects_nonignored_repository_runner_template_before_probe(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -574,8 +574,10 @@ def _resolve_relative_private_path(raw: object, root: Path) -> Path:
     path = Path(raw)
     if ".." in path.parts:
         raise ValueError("private path is invalid")
+    candidate = path if path.is_absolute() else root / path
+    if _contains_symlink_component(candidate):
+        raise ValueError("private path is unsafe")
     try:
-        candidate = path if path.is_absolute() else root / path
         resolved = candidate.resolve(strict=True)
     except OSError as error:
         raise ValueError("private path is unavailable") from error
