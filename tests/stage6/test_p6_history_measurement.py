@@ -681,6 +681,38 @@ def test_measurement_revalidates_the_binding_private_policy_before_and_after_exe
     assert probe.calls == [policy_indices, policy_indices]
 
 
+def test_measurement_preserves_private_gpu_policy_existing_order(
+    tmp_path: Path,
+) -> None:
+    """Catches sorting or rejection before policy probes and source rotation."""
+    policy_indices = (107, 103, 101)
+    private_root = tmp_path / "private"
+    private_root.mkdir()
+    round_root = private_root / "controller-round"
+    round_root.mkdir()
+    request = _request()
+    runner = FakeRunner(request)
+    probe = FakeProbe(
+        _records(indices=policy_indices), _records(indices=policy_indices)
+    )
+
+    run_history_measurement_batch(
+        request,
+        _binding(private_root, gpu_indices=policy_indices),
+        round_root,
+        runner,
+        probe,
+    )
+
+    source_calls = [
+        call
+        for call in runner.calls
+        if Path(call.argv[0]).name == "stage5_materialize_round_sources_v1.sh"
+    ]
+    assert probe.calls == [policy_indices, policy_indices]
+    assert [call.argv[8] for call in source_calls] == ["107", "103", "101", "107"]
+
+
 def test_runtime_rejects_policy_that_differs_from_execution_interface_before_probe(
     tmp_path: Path,
 ) -> None:
@@ -698,6 +730,36 @@ def test_runtime_rejects_policy_that_differs_from_execution_interface_before_pro
         "indices": list(mismatched_indices),
         "uuid_by_index": {
             str(index): f"GPU-synthetic-{index}" for index in mismatched_indices
+        },
+        "model": "h800",
+        "maximum_occupancy": 0.05,
+    }
+
+    with pytest.raises(P6HistoryMeasurementError) as raised:
+        run_history_measurement_batch(request, binding, round_root, runner, probe)
+
+    assert raised.value.category == "history_execution_invalid"
+    assert probe.calls == []
+    assert runner.calls == []
+
+
+def test_runtime_rejects_reordered_policy_that_differs_from_execution_interface(
+    tmp_path: Path,
+) -> None:
+    """Catches weakening the interface-to-policy binding from exact order to a set."""
+    private_root = tmp_path / "private"
+    private_root.mkdir()
+    round_root = private_root / "controller-round"
+    round_root.mkdir()
+    request = _request()
+    runner = FakeRunner(request)
+    probe = FakeProbe()
+    binding = _binding(private_root)
+    reordered_indices = tuple(reversed(SYNTHETIC_GPU_INDICES))
+    binding["gpu_policy"] = {
+        "indices": list(reordered_indices),
+        "uuid_by_index": {
+            str(index): f"GPU-synthetic-{index}" for index in reordered_indices
         },
         "model": "h800",
         "maximum_occupancy": 0.05,
@@ -747,10 +809,19 @@ def test_public_binding_projection_does_not_expose_private_gpu_policy(tmp_path: 
     assert "101" not in serialized_projection
 
 
-@pytest.mark.parametrize("indices", ([101, 101, 107], [107, 103, 101], [101, 103]))
+@pytest.mark.parametrize(
+    "indices",
+    (
+        [101, 101, 107],
+        [101, 103],
+        [101, True, 107],
+        [101, "103", 107],
+        [-1, 103, 107],
+    ),
+)
 def test_runtime_rejects_noncanonical_binding_gpu_policy_indices(
     tmp_path: Path,
-    indices: list[int],
+    indices: list[object],
 ) -> None:
     """Catches malformed binding policy indices before probing or execution."""
     private_root = tmp_path / "private"

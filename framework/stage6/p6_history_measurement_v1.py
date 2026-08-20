@@ -275,7 +275,6 @@ def _validate_binding_runtime(
             not isinstance(raw_indices, list)
             or len(raw_indices) != 3
             or any(isinstance(index, bool) or not isinstance(index, int) for index in raw_indices)
-            or tuple(sorted(raw_indices)) != tuple(raw_indices)
             or len(set(raw_indices)) != 3
             or any(index < 0 for index in raw_indices)
             or raw_policy.get("model") != "h800"

@@ -426,7 +426,29 @@ def test_binding_derives_probe_indices_from_private_cuda_policy(
     assert binding["gpu_policy"]["indices"] == [17, 19, 23]
 
 
-@pytest.mark.parametrize("policy", ("17,17,23", "23,19,17", "17,19", "17,19,x"))
+def test_binding_preserves_private_cuda_policy_existing_order(
+    tmp_path: Path,
+) -> None:
+    """Catches sorting or rejection of the runner-template GPU order."""
+    policy_indices = (23, 19, 17)
+    history_root = _history_root(tmp_path)
+    manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["environment"]["values"]["CUDA_VISIBLE_DEVICES"]["value"] = (
+        ",".join(str(index) for index in policy_indices)
+    )
+    _write_json(manifest_path, manifest)
+    probe = _probe(_gpu_records(indices=policy_indices))
+
+    binding = discover_history_binding(history_root, probe)
+
+    assert probe.calls == [policy_indices, policy_indices]
+    assert binding["gpu_policy"]["indices"] == list(policy_indices)
+
+
+@pytest.mark.parametrize(
+    "policy", ("17,17,23", "17,19", "17,19,x", "-1,19,23")
+)
 def test_binding_rejects_noncanonical_private_cuda_policy(
     tmp_path: Path,
     policy: str,

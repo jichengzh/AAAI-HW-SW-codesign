@@ -919,7 +919,6 @@ def _private_gpu_indices(interface: Mapping[str, Any]) -> tuple[int, int, int]:
         raise _execution_interface_error() from None
     if (
         len(indices) != 3
-        or tuple(sorted(indices)) != indices
         or len(set(indices)) != 3
         or any(index < 0 for index in indices)
     ):
