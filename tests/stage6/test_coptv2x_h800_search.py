@@ -342,8 +342,14 @@ def _complete_framework_stage2_search_space() -> dict[str, Any]:
 
 
 def _write_framework_stage1_partition_manifest(tmp_path: Path) -> Path:
-    payload = {
-        "schema": "stage1_partition_manifest_demo_v1",
+    return _write_real_stage1_manifest(tmp_path / "framework-stage1.yaml")
+
+
+def _real_stage1_partition_manifest() -> dict[str, Any]:
+    """Return the minimum real Stage1 artifact accepted by the P6 scan gate."""
+    return {
+        "schema": "stage1_partition_manifest_v1",
+        "stage": "stage1_partition",
         "model": "pyramid_lidar",
         "scan_status": "ok",
         "hw_capability": {"name": "h800"},
@@ -375,7 +381,73 @@ def _write_framework_stage1_partition_manifest(tmp_path: Path) -> Path:
         ],
         "view_d_routing_segments": {"segments": [{"device": "gpu", "n_nodes": 1}]},
     }
-    return _write_yaml(tmp_path / "framework-stage1.yaml", payload)
+
+
+def _write_real_stage1_manifest(path: Path) -> Path:
+    return _write_yaml(path, _real_stage1_partition_manifest())
+
+
+def _write_framework_registry(path: Path) -> None:
+    plan = json.loads((path.parent / "pyramid_candidate_plan.json").read_text(encoding="utf-8"))
+    _write_source_registry_from_plan(path, plan)
+
+
+def _framework_stage1_scan_step() -> dict[str, Any]:
+    return {
+        "name": "build_stage1_partition",
+        "argv": [
+            "fake-stage1",
+            "{stage1_partition_manifest}",
+            "{local_output_root}",
+        ],
+    }
+
+
+def _framework_local_payload(tmp_path: Path) -> dict[str, Any]:
+    return _local_config(
+        tmp_path,
+        candidate_source_mode="framework_stage2_search_space",
+        stage2_search_space_path=str(tmp_path / "stage1-partition.yaml"),
+        stage1_scan_step=_framework_stage1_scan_step(),
+        source_registry_step={
+            "name": "build_source_registry",
+            "argv": [
+                "fake-registry",
+                "{local_output_root}",
+                "{source_registry_json}",
+                "{pyramid_candidate_plan}",
+            ],
+        },
+        measurement_step={
+            "name": "measure_batch",
+            "argv": [
+                "fake-measure",
+                "{measurement_request}",
+                "{feedback_json}",
+                "{round_output_root}",
+            ],
+        },
+    )
+
+
+def _framework_local_config_with_stage1_step(tmp_path: Path) -> LocalP6CoptV2XConfig:
+    gold_rows, gold_graphs = _gold176(include_non_target_backend=True)
+    for name, payload in {
+        "gold176_rows": gold_rows,
+        "gold176_graph_features": gold_graphs,
+        "capability_profiles": [_profile(), _non_target_profile()],
+        "closure": _closure(),
+    }.items():
+        (tmp_path / f"{name}.json").write_text(json.dumps(payload), encoding="utf-8")
+    for label in ("training-data", "model-init", "toolchain"):
+        (tmp_path / label).mkdir()
+    contract = load_public_contract(
+        _write_yaml(tmp_path / "contract.yaml", _public_contract())
+    )
+    return load_local_config(
+        _write_yaml(tmp_path / "local.yaml", _framework_local_payload(tmp_path)),
+        contract,
+    )
 
 
 def _write_feedback_from_request(request_path: Path, feedback_path: Path) -> None:
@@ -467,6 +539,7 @@ def _loaded_local_config(
             tmp_path,
             candidate_source_mode="framework_stage2_search_space",
             stage2_search_space_path=str(_write_framework_stage1_partition_manifest(tmp_path)),
+            stage1_scan_step=_framework_stage1_scan_step(),
             source_registry_step={
                 "name": "build_source_registry",
                 "argv": [
@@ -500,6 +573,7 @@ def test_local_contract_accepts_only_known_candidate_source_modes(tmp_path: Path
                 tmp_path,
                 candidate_source_mode="framework_stage2_search_space",
                 stage2_search_space_path=str(tmp_path / "space.yaml"),
+                stage1_scan_step=_framework_stage1_scan_step(),
                 source_registry_step={
                     "name": "build_source_registry",
                     "argv": [
@@ -543,6 +617,46 @@ def test_local_contract_defaults_legacy_local_configuration_to_static_mode(
 
     assert loaded.candidate_source_mode == "coptv2x_static_registry"
     assert loaded.stage2_search_space_path is None
+    assert loaded.stage1_scan_step is None
+
+
+def test_framework_mode_requires_a_stage1_scan_step(tmp_path: Path) -> None:
+    """Dynamic P6 must not build candidates from a pre-existing stale manifest."""
+    payload = _framework_local_payload(tmp_path)
+    payload.pop("stage1_scan_step")
+
+    with pytest.raises(P6CoptV2XContractError, match="stage1_scan_step"):
+        load_local_config(
+            _write_yaml(tmp_path / "local.yaml", payload),
+            load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract())),
+        )
+
+
+def test_framework_run_executes_scan_before_registry_or_measurement(tmp_path: Path) -> None:
+    """Stage1 writes the only manifest used to construct dynamic P6 candidates."""
+    local = _framework_local_config_with_stage1_step(tmp_path)
+    events: list[str] = []
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        events.append(argv[0])
+        if argv[0] == "fake-stage1":
+            _write_real_stage1_manifest(Path(argv[1]))
+        elif argv[0] == "fake-registry":
+            _write_framework_registry(cwd / "source_registry.json")
+        else:
+            _write_feedback_from_request(Path(argv[1]), Path(argv[2]))
+        return 0
+
+    state = run_p6_coptv2x_search(
+        load_public_contract(_write_yaml(tmp_path / "public.yaml", _public_contract())),
+        local,
+        "test-revision",
+        runner,
+    )
+
+    assert state.status == "completed"
+    assert events[0] == "fake-stage1"
+    assert events.count("fake-measure") == 4
 
 
 @pytest.mark.parametrize(
@@ -642,9 +756,11 @@ def test_run_p6_framework_mode_builds_dynamic_candidate_plan_and_runs_four_round
     monkeypatch.setattr(execution, "fit_online_bundle", recording_online_fit)
 
     def runner(argv: tuple[str, ...], cwd: Path) -> int:
-        del cwd
         nonlocal observed_plan, observed_manifest_candidate_identities
         calls.append((argv[0], argv))
+        if argv[0] == "fake-stage1":
+            return 0
+        del cwd
         if argv[1] == "local_build_registry.py":
             candidate_plan_path = Path(argv[4])
             plan = json.loads(candidate_plan_path.read_text(encoding="utf-8"))
@@ -694,7 +810,7 @@ def test_run_p6_framework_mode_builds_dynamic_candidate_plan_and_runs_four_round
     assert len(selected) == len(set(selected)) == 16
     assert initial_fit_input_counts == [176]
     assert online_fit_input_counts == [180, 184, 188]
-    assert calls[0][0] == "python"
+    assert calls[0][0] == "fake-stage1"
 
 
 @pytest.mark.parametrize("mutation", ["changed", "omitted", "added", "duplicate"])
@@ -718,6 +834,8 @@ def test_run_p6_framework_mode_rejects_registry_plan_identity_mismatches_before_
     def runner(argv: tuple[str, ...], cwd: Path) -> int:
         nonlocal measurement_calls
         del cwd
+        if argv[0] == "fake-stage1":
+            return 0
         if argv[1] != "local_build_registry.py":
             measurement_calls += 1
             raise AssertionError("measurement must not start after a registry-plan mismatch")
@@ -769,6 +887,8 @@ def test_run_p6_framework_mode_rejects_v1_registry_before_measurement(
     def runner(argv: tuple[str, ...], cwd: Path) -> int:
         nonlocal measurement_calls
         del cwd
+        if argv[0] == "fake-stage1":
+            return 0
         if argv[1] != "local_build_registry.py":
             measurement_calls += 1
             raise AssertionError("measurement must not start for a framework v1 registry")
@@ -826,6 +946,8 @@ def test_run_p6_framework_source_space_rejects_fewer_than_16_eligible_rows(
     def runner(argv: tuple[str, ...], cwd: Path) -> int:
         nonlocal measurement_calls
         del cwd
+        if argv[0] == "fake-stage1":
+            return 0
         if argv[1] != "local_build_registry.py":
             measurement_calls += 1
             raise AssertionError("measurement must not start below the sample budget")
@@ -883,7 +1005,7 @@ def test_run_p6_framework_mode_rejects_invalid_stage2_points_before_measurement(
         run_p6_coptv2x_search(contract, local, "abc123", runner)
 
     assert captured.value.failure_code == "source_registry_invalid"
-    assert command_calls == 0
+    assert command_calls == 1
 
 
 def test_run_p6_static_p61_rejects_343_groups_below_686_genomes(

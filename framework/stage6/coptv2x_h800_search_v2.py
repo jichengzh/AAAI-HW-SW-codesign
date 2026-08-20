@@ -86,6 +86,7 @@ LOCAL_INPUT_NAMES = frozenset(
 ALLOWED_TEMPLATE_TOKENS = frozenset(
     {
         "{local_output_root}",
+        "{stage1_partition_manifest}",
         "{source_registry_json}",
         "{pyramid_candidate_plan}",
         "{measurement_request}",
@@ -118,13 +119,14 @@ LOCAL_KEYS = frozenset(
         "local_input_paths",
         "candidate_source_mode",
         "stage2_search_space_path",
+        "stage1_scan_step",
         "source_registry_step",
         "measurement_step",
         "local_output_root",
     }
 )
 _OPTIONAL_LEGACY_LOCAL_KEYS = frozenset(
-    {"candidate_source_mode", "stage2_search_space_path"}
+    {"candidate_source_mode", "stage2_search_space_path", "stage1_scan_step"}
 )
 
 _ASSET_KEYS = frozenset({"label", "version", "license_status"})
@@ -233,6 +235,7 @@ class LocalP6CoptV2XConfig:
         "coptv2x_static_registry", "framework_stage2_search_space"
     ]
     stage2_search_space_path: Path | None
+    stage1_scan_step: LocalExecutionStep | None
     source_registry_step: LocalExecutionStep
     measurement_step: LocalExecutionStep
     local_output_root: Path
@@ -259,6 +262,7 @@ def run_p6_coptv2x_search(
 ) -> P6CoptV2XRunState:
     """Run the fixed four-round local Pyramid/H800/TVM search state machine."""
     _prepare_local_output_root(local.local_output_root)
+    _run_framework_stage1_scan(local, command_runner)
     frozen_gold, gold_graphs, capability_profiles, profile = _load_search_inputs(local)
     task = _build_search_task(contract, profile)
     try:
@@ -319,6 +323,50 @@ def run_p6_coptv2x_search(
         completed_rounds=contract.round_count,
         measured_candidate_count=len(measured_row_ids),
     )
+
+
+def _run_framework_stage1_scan(
+    local: LocalP6CoptV2XConfig, command_runner: CommandRunner
+) -> None:
+    """Generate and validate the Stage1 manifest that feeds framework candidates."""
+    if local.candidate_source_mode != "framework_stage2_search_space":
+        return
+    try:
+        if local.stage1_scan_step is None or local.stage2_search_space_path is None:
+            raise P6CoptV2XContractError("framework Stage1 scan configuration is missing")
+        _validate_local_output_leaf(local.stage2_search_space_path)
+        _run_step(
+            local.stage1_scan_step,
+            {
+                "{stage1_partition_manifest}": local.stage2_search_space_path,
+                "{local_output_root}": local.local_output_root,
+            },
+            cwd=local.local_output_root,
+            runner=command_runner,
+        )
+        _validate_stage1_partition_manifest(local.stage2_search_space_path)
+    except Exception:
+        raise P6CoptV2XExecutionError(
+            "stage1_scan_invalid", "stage1 scan invalid"
+        ) from None
+
+
+def _validate_stage1_partition_manifest(path: Path) -> None:
+    manifest = _load_mapping(path, "stage1 partition manifest")
+    if (
+        manifest.get("schema") != "stage1_partition_manifest_v1"
+        or manifest.get("stage") != "stage1_partition"
+        or manifest.get("model") != "pyramid_lidar"
+        or manifest.get("scan_status") != "ok"
+    ):
+        raise P6CoptV2XContractError("Stage1 partition manifest is invalid")
+    hardware = manifest.get("hw_capability")
+    hardware_name = hardware.get("name") if isinstance(hardware, Mapping) else None
+    if not isinstance(hardware_name, str) or not (
+        hardware_name == FIXED_TARGET or hardware_name.startswith(f"{FIXED_TARGET}_")
+    ):
+        raise P6CoptV2XContractError("Stage1 H800 capability is invalid")
+    load_stage2_search_space(path)
 
 
 def _load_search_inputs(
@@ -1072,9 +1120,19 @@ def load_local_config(path: Path, contract: PublicP6CoptV2XContract) -> LocalP6C
     }:
         raise P6CoptV2XContractError("candidate_source_mode is invalid")
     stage2_search_space_path: Path | None
+    stage1_scan_step: LocalExecutionStep | None
     if candidate_source_mode == "framework_stage2_search_space":
         stage2_search_space_path = _parse_absolute_path(
             payload.get("stage2_search_space_path"), "stage2_search_space_path"
+        )
+        if "stage1_scan_step" not in payload:
+            raise P6CoptV2XContractError(
+                "stage1_scan_step is required in framework mode"
+            )
+        stage1_scan_step = _load_step(
+            payload["stage1_scan_step"],
+            expected_name="build_stage1_partition",
+            required_tokens={"{stage1_partition_manifest}", "{local_output_root}"},
         )
         source_required_tokens = {
             "{local_output_root}",
@@ -1086,13 +1144,19 @@ def load_local_config(path: Path, contract: PublicP6CoptV2XContract) -> LocalP6C
             raise P6CoptV2XContractError(
                 "stage2_search_space_path is only valid in framework mode"
             )
+        if payload.get("stage1_scan_step") is not None:
+            raise P6CoptV2XContractError(
+                "stage1_scan_step is only valid in framework mode"
+            )
         stage2_search_space_path = None
+        stage1_scan_step = None
         source_required_tokens = {"{local_output_root}", "{source_registry_json}"}
     return LocalP6CoptV2XConfig(
         asset_paths=MappingProxyType(asset_paths),
         local_input_paths=MappingProxyType(local_input_paths),
         candidate_source_mode=candidate_source_mode,
         stage2_search_space_path=stage2_search_space_path,
+        stage1_scan_step=stage1_scan_step,
         source_registry_step=_load_step(
             payload["source_registry_step"],
             expected_name="build_source_registry",
