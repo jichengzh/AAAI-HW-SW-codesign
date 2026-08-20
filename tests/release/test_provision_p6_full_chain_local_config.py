@@ -1,0 +1,461 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+from typing import Any
+
+import yaml
+
+from framework.stage6.coptv2x_h800_search_v2 import (
+    load_local_config,
+    load_public_contract,
+)
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+PROVISIONER = REPOSITORY_ROOT / "tools/release/provision_p6_full_chain_local_config.py"
+PUBLIC_CONTRACT = REPOSITORY_ROOT / "configs/execution/p6_h800_search.example.yaml"
+MARKERS = {
+    "controller": "stage5_task_round_controller_v3.sh",
+    "source_materializer": "stage5_materialize_round_sources_v1.sh",
+    "performance_plan": "stage5_build_performance_plan_v2.py",
+    "finalizer": "stage5_finalize_feedback_v2.py",
+}
+LOCAL_INPUT_NAMES = (
+    "gold176_rows",
+    "gold176_graph_features",
+    "capability_profiles",
+    "closure",
+)
+STAGES = (
+    "source_materialization",
+    "quantization",
+    "performance",
+    "ap",
+    "finalization",
+)
+
+
+def _write_yaml(path: Path, payload: Any) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    return path
+
+
+def _write_json(path: Path, payload: Any) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def _write_executable(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("synthetic executable\n", encoding="utf-8")
+    path.chmod(0o700)
+    return path
+
+
+def _source_group() -> dict[str, Any]:
+    evidence_sha = hashlib.sha256(b"synthetic-pyramid-source").hexdigest()
+    contract = {
+        "schema_version": "stage5_source_contract_v1",
+        "group_id": "pyramid|16x32x64",
+        "model": "pyramid",
+        "width": [16, 32, 64],
+        "artifact_id": "synthetic-pyramid-template",
+        "source_status": "ready",
+        "source_evidence_sha256": evidence_sha,
+        "materialization_scope": "synthetic_fixture",
+    }
+    encoded = json.dumps(
+        contract, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return {
+        "group_id": contract["group_id"],
+        "model": contract["model"],
+        "width": contract["width"],
+        "source_status": contract["source_status"],
+        "source_evidence_sha256": evidence_sha,
+        "source_contract": contract,
+        "source_contract_sha256": hashlib.sha256(encoded).hexdigest(),
+        "materialization_kind": "local_pyramid_tvm",
+        "source_evidence_kind": "local_synthetic",
+    }
+
+
+def _runner_template() -> dict[str, Any]:
+    return {
+        "schema_version": "p6_history_runner_template_v1",
+        "stage1_scan": {
+            "name": "build_stage1_partition",
+            "argv": [
+                "private-runner/bin/scan-private",
+                "{stage1_partition_manifest}",
+                "{local_output_root}",
+            ],
+        },
+        "execution_interface": {
+            "schema_version": "p6_history_runner_interface_v1",
+            "controller": {
+                "argv": [f"documented-stage5-chain/{MARKERS['controller']}"]
+            },
+            "execution_chain": [
+                {
+                    "stage": "source_materialization",
+                    "argv": [
+                        f"documented-stage5-chain/{MARKERS['source_materializer']}",
+                        "{measurement_request}",
+                        "{round_output_root}",
+                    ],
+                    "required_placeholders": [
+                        "{measurement_request}",
+                        "{round_output_root}",
+                    ],
+                },
+                {
+                    "stage": "quantization",
+                    "argv": [
+                        "private-runner/bin/quantize-private",
+                        "{task_state}",
+                        "{round_output_root}",
+                    ],
+                    "required_placeholders": ["{task_state}", "{round_output_root}"],
+                },
+                {
+                    "stage": "performance",
+                    "argv": [
+                        f"documented-stage5-chain/{MARKERS['performance_plan']}",
+                        "{task_state}",
+                        "{round_output_root}",
+                    ],
+                    "required_placeholders": ["{task_state}", "{round_output_root}"],
+                },
+                {
+                    "stage": "ap",
+                    "argv": [
+                        "private-runner/bin/measure-ap-private",
+                        "{task_state}",
+                        "{round_output_root}",
+                    ],
+                    "required_placeholders": ["{task_state}", "{round_output_root}"],
+                },
+                {
+                    "stage": "finalization",
+                    "argv": [
+                        f"documented-stage5-chain/{MARKERS['finalizer']}",
+                        "{measurement_request}",
+                        "{task_state}",
+                        "{actual_feedback}",
+                        "{actual_receipt}",
+                        "{finalization_barrier}",
+                        "{round_output_root}",
+                    ],
+                    "required_placeholders": [
+                        "{measurement_request}",
+                        "{task_state}",
+                        "{actual_feedback}",
+                        "{actual_receipt}",
+                        "{finalization_barrier}",
+                        "{round_output_root}",
+                    ],
+                },
+            ],
+            "environment": {
+                "values": {
+                    "CUDA_VISIBLE_DEVICES": {"kind": "literal", "value": "5,6,7"},
+                    "P6_HISTORY_RUN_MODE": {"kind": "literal", "value": "bound"},
+                    "P6_HISTORY_PRIVATE_ROOT": {
+                        "kind": "private_path",
+                        "value": ".",
+                    },
+                    "P6_HISTORY_TASK_STATE": {
+                        "kind": "placeholder",
+                        "value": "{task_state}",
+                    },
+                    "P6_HISTORY_ROUND_OUTPUT_ROOT": {
+                        "kind": "placeholder",
+                        "value": "{round_output_root}",
+                    },
+                },
+                "activation_argv": [
+                    "private-runner/bin/activate-private",
+                    "private-bound",
+                ],
+            },
+            "output_layout": {
+                "round_root_template": "private-runs/{round_id}",
+                "task_state": {
+                    "path_template": "private-runs/{round_id}/state/task-state.json",
+                    "format": "json",
+                    "rows_key": "rows",
+                    "row_id_key": "row_id",
+                    "row_hash_key": "row_sha256",
+                    "source_evidence_key": "source_evidence_sha256",
+                    "stage_key": "stage",
+                    "status_key": "terminal_status",
+                    "row_count": 4,
+                    "allowed_terminal_statuses": [
+                        "measured_success_gold",
+                        "feasibility_failure",
+                        "numerical_feasibility_failure",
+                    ],
+                    "stage_order": list(STAGES),
+                },
+            },
+            "actual_feedback": {
+                "result": {
+                    "path_template": "private-runs/{round_id}/actual-feedback.json",
+                    "format": "json",
+                    "rows_key": "rows",
+                    "row_count": 4,
+                    "row_id_key": "row_id",
+                    "row_hash_key": "row_sha256",
+                    "source_evidence_key": "source_evidence_sha256",
+                    "status_key": "terminal_status",
+                    "allowed_terminal_statuses": [
+                        "measured_success_gold",
+                        "feasibility_failure",
+                        "numerical_feasibility_failure",
+                    ],
+                    "metric_keys": [
+                        "latency_ms",
+                        "energy_j",
+                        "ap30",
+                        "ap50",
+                        "ap70",
+                    ],
+                },
+                "receipt": {
+                    "path_template": "private-runs/{round_id}/receipt.json",
+                    "format": "json",
+                    "request_sha256_key": "measurement_request_sha256",
+                    "row_hashes_key": "row_sha256",
+                    "source_evidence_key": "source_evidence_sha256",
+                },
+                "finalization_barrier": {
+                    "path_template": "private-runs/{round_id}/barrier.json",
+                    "format": "json",
+                    "request_sha256_key": "measurement_request_sha256",
+                    "row_hashes_key": "row_sha256",
+                    "source_evidence_key": "source_evidence_sha256",
+                },
+            },
+        },
+    }
+
+
+def _valid_args(tmp_path: Path, *, bad_template: bool = False) -> tuple[str, ...]:
+    root = tmp_path / "private-history"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    for marker in MARKERS.values():
+        _write_executable(root / "documented-stage5-chain" / marker)
+    for executable in (
+        "scan-private",
+        "quantize-private",
+        "measure-ap-private",
+        "activate-private",
+    ):
+        _write_executable(root / "private-runner" / "bin" / executable)
+    registry = _write_json(
+        root / "registry" / "candidate_source_registry.json",
+        {
+            "schema_version": "stage5_candidate_source_registry_v1",
+            "groups": [_source_group()],
+        },
+    )
+    inputs = {
+        name: _write_json(root / "inputs" / f"{name}.json", {"fixture": name})
+        for name in LOCAL_INPUT_NAMES
+    }
+    legacy = _write_yaml(
+        tmp_path / "private-inputs" / "legacy.local.yaml",
+        {
+            "schema_version": "p6_h800_coptv2x_local_v2",
+            "target": "h800",
+            "asset_paths": {
+                "training-data": str(root / "inputs"),
+                "model-init": str(registry),
+                "toolchain": str(
+                    root / "documented-stage5-chain" / MARKERS["performance_plan"]
+                ),
+            },
+            "local_input_paths": {name: str(inputs[name]) for name in LOCAL_INPUT_NAMES},
+            "source_registry_step": {
+                "name": "build_source_registry",
+                "argv": ["legacy-registry", "{local_output_root}", "{source_registry_json}"],
+            },
+            "measurement_step": {
+                "name": "measure_batch",
+                "argv": [
+                    "legacy-measure",
+                    "{measurement_request}",
+                    "{feedback_json}",
+                    "{round_output_root}",
+                ],
+            },
+            "local_output_root": str(root / "legacy-output"),
+        },
+    )
+    template_payload = _runner_template()
+    if bad_template:
+        template_payload["schema_version"] = "invalid-private-template"
+    template = _write_yaml(
+        tmp_path / "private-inputs" / "runner-template.yaml", template_payload
+    )
+    output_root = tmp_path / "private-output"
+    output_root.mkdir()
+    return (
+        "--legacy-local-config",
+        str(legacy),
+        "--runner-template",
+        str(template),
+        "--local-output-root",
+        str(output_root),
+        "--binding-output",
+        str(output_root / "binding.json"),
+        "--config-output",
+        str(output_root / "p6.local.yaml"),
+    )
+
+
+def _private_pair_paths(tmp_path: Path) -> tuple[Path, Path]:
+    root = tmp_path / "private-output"
+    return root / "binding.json", root / "p6.local.yaml"
+
+
+def _fake_nvidia_smi(tmp_path: Path, rows: tuple[str, ...] | None = None) -> Path:
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    binary = fake_bin / "nvidia-smi"
+    records = rows or tuple(
+        f"{index}, GPU-private-{index}, NVIDIA H800 80GB HBM3, 0, 100"
+        for index in (5, 6, 7)
+    )
+    binary.write_text(
+        f"#!{sys.executable}\n"
+        f"for row in {records!r}:\n"
+        "    print(row)\n",
+        encoding="utf-8",
+    )
+    binary.chmod(0o755)
+    return fake_bin
+
+
+def _run_cli(tmp_path: Path, *args: str, rows: tuple[str, ...] | None = None) -> subprocess.CompletedProcess[str]:
+    fake_bin = _fake_nvidia_smi(tmp_path, rows)
+    return subprocess.run(
+        [sys.executable, str(PROVISIONER), *args],
+        cwd=REPOSITORY_ROOT,
+        env={**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def _load_local_config_without_echoing_private_values(tmp_path: Path) -> Any:
+    _, config_path = _private_pair_paths(tmp_path)
+    return load_local_config(config_path, load_public_contract(PUBLIC_CONTRACT))
+
+
+def test_cli_writes_only_ignored_private_pair(tmp_path: Path) -> None:
+    result = _run_cli(tmp_path, *_valid_args(tmp_path))
+
+    assert result.returncode == 0
+    assert result.stdout == "p6_full_chain_config_written\n"
+    assert result.stderr == ""
+    assert _load_local_config_without_echoing_private_values(tmp_path).stage1_scan_step is not None
+
+
+def test_cli_redacts_private_template_failure_and_writes_nothing(tmp_path: Path) -> None:
+    result = _run_cli(tmp_path, *_valid_args(tmp_path, bad_template=True))
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "execution_interface_unavailable\n"
+    assert not _private_pair_paths(tmp_path)[0].exists()
+    assert not _private_pair_paths(tmp_path)[1].exists()
+
+
+def test_cli_rejects_relative_paths_without_echoing_them(tmp_path: Path) -> None:
+    result = _run_cli(
+        tmp_path,
+        "--legacy-local-config",
+        "relative-private.yaml",
+        "--runner-template",
+        "/private/template.yaml",
+        "--local-output-root",
+        "/private/output",
+        "--binding-output",
+        "/private/output/binding.json",
+        "--config-output",
+        "/private/output/config.yaml",
+    )
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert result.stderr == "argument_error\n"
+    assert "relative-private.yaml" not in result.stderr
+
+
+def test_cli_rejects_invalid_gpu_probe_without_pair(tmp_path: Path) -> None:
+    result = _run_cli(
+        tmp_path,
+        *_valid_args(tmp_path),
+        rows=(
+            "5, GPU-private-5, NVIDIA H800 80GB HBM3, 0, 100",
+            "6, GPU-private-6, NVIDIA H800 80GB HBM3, 0, 100",
+            "7, GPU-private-7, NVIDIA H800 80GB HBM3, 0, 100",
+            "7, GPU-private-duplicate, NVIDIA H800 80GB HBM3, 0, 100",
+        ),
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "gpu_admission\n"
+    assert "GPU-private" not in result.stderr
+    assert not _private_pair_paths(tmp_path)[0].exists()
+    assert not _private_pair_paths(tmp_path)[1].exists()
+
+
+def test_cli_rejects_nonunique_history_root_without_pair(tmp_path: Path) -> None:
+    args = _valid_args(tmp_path)
+    legacy_path = Path(args[1])
+    payload = yaml.safe_load(legacy_path.read_text(encoding="utf-8"))
+    second_root = tmp_path / "second-private-history"
+    second_root.mkdir()
+    subprocess.run(["git", "init", "-q", str(second_root)], check=True)
+    closure = _write_json(second_root / "inputs" / "closure.json", {"fixture": "two"})
+    payload["local_input_paths"]["closure"] = str(closure)
+    _write_yaml(legacy_path, payload)
+
+    result = _run_cli(tmp_path, *args)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "history_root_ambiguous\n"
+    assert not _private_pair_paths(tmp_path)[0].exists()
+    assert not _private_pair_paths(tmp_path)[1].exists()
+
+
+def test_cli_rejects_nonignored_repository_pair_before_writing(tmp_path: Path) -> None:
+    args = list(_valid_args(tmp_path))
+    repository_output = REPOSITORY_ROOT / "tests"
+    binding_path = repository_output / f".p6-full-chain-{tmp_path.name}.json"
+    config_path = repository_output / f".p6-full-chain-{tmp_path.name}.yaml"
+    args[5] = str(repository_output)
+    args[7] = str(binding_path)
+    args[9] = str(config_path)
+
+    result = _run_cli(tmp_path, *args)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "unsafe_destination\n"
+    assert not binding_path.exists()
+    assert not config_path.exists()
