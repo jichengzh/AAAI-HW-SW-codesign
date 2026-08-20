@@ -1,0 +1,521 @@
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+from typing import Any, Mapping
+
+import pytest
+import yaml
+
+from framework.stage6.coptv2x_h800_search_v2 import (
+    PublicP6CoptV2XContract,
+    load_local_config,
+    load_public_contract,
+)
+from framework.stage6.p6_full_chain_bootstrap_v1 import (
+    FullChainBootstrapError,
+    materialize_full_chain_binding,
+)
+from framework.stage6.p6_history_binding_v1 import GpuRecord
+
+
+MARKERS = {
+    "controller": "stage5_task_round_controller_v3.sh",
+    "source_materializer": "stage5_materialize_round_sources_v1.sh",
+    "performance_plan": "stage5_build_performance_plan_v2.py",
+    "finalizer": "stage5_finalize_feedback_v2.py",
+}
+LOCAL_INPUT_NAMES = (
+    "gold176_rows",
+    "gold176_graph_features",
+    "capability_profiles",
+    "closure",
+)
+STAGES = (
+    "source_materialization",
+    "quantization",
+    "performance",
+    "ap",
+    "finalization",
+)
+
+
+class SequenceProbe:
+    def __init__(self, snapshots: tuple[tuple[GpuRecord, ...], ...]) -> None:
+        self._snapshots = snapshots
+        self._index = 0
+
+    def snapshot(self, indices: tuple[int, ...]) -> tuple[GpuRecord, ...]:
+        assert indices == (5, 6, 7)
+        snapshot = self._snapshots[min(self._index, len(self._snapshots) - 1)]
+        self._index += 1
+        return snapshot
+
+
+def _gpu_probe() -> SequenceProbe:
+    records = tuple(
+        GpuRecord(
+            index=index,
+            uuid=f"GPU-synthetic-{index}",
+            model_name="NVIDIA H800 80GB HBM3",
+            occupancy=0.0,
+        )
+        for index in (5, 6, 7)
+    )
+    return SequenceProbe((records, records))
+
+
+def _write_yaml(path: Path, payload: Any) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    return path
+
+
+def _write_json(path: Path, payload: Any) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def _write_executable(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("synthetic executable\n", encoding="utf-8")
+    path.chmod(0o700)
+    return path
+
+
+def _canonical_json_sha(payload: Mapping[str, Any]) -> str:
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _source_group() -> dict[str, Any]:
+    evidence_sha = hashlib.sha256(b"synthetic-pyramid-source").hexdigest()
+    contract = {
+        "schema_version": "stage5_source_contract_v1",
+        "group_id": "pyramid|16x32x64",
+        "model": "pyramid",
+        "width": [16, 32, 64],
+        "artifact_id": "synthetic-pyramid-template",
+        "source_status": "ready",
+        "source_evidence_sha256": evidence_sha,
+        "materialization_scope": "synthetic_fixture",
+    }
+    return {
+        "group_id": contract["group_id"],
+        "model": contract["model"],
+        "width": contract["width"],
+        "source_status": contract["source_status"],
+        "source_evidence_sha256": evidence_sha,
+        "source_contract": contract,
+        "source_contract_sha256": _canonical_json_sha(contract),
+        "materialization_kind": "local_pyramid_tvm",
+        "source_evidence_kind": "local_synthetic",
+    }
+
+
+def _public_contract(tmp_path: Path) -> PublicP6CoptV2XContract:
+    payload = {
+        "schema_version": "p6_h800_coptv2x_search_contract_v2",
+        "search_id": "p6-pyramid-h800-tvm",
+        "target": "h800",
+        "target_model": "pyramid",
+        "execution_backend": "tvm_auto",
+        "seed": 73,
+        "sample_budget": 16,
+        "batch_size": 4,
+        "round_count": 4,
+        "configuration_label": "p6-pyramid-h800-tvm",
+        "candidate_space_label": "coptv2x-pyramid-width-grid-v1",
+        "metric_names": ["latency_ms", "energy_j", "ap30", "ap50", "ap70"],
+        "assets": [
+            {
+                "label": "training-data",
+                "version": "v1",
+                "license_status": "cleared",
+            },
+            {
+                "label": "model-init",
+                "version": "v2",
+                "license_status": "cleared",
+            },
+            {
+                "label": "toolchain",
+                "version": "v3",
+                "license_status": "cleared",
+            },
+        ],
+    }
+    return load_public_contract(_write_yaml(tmp_path / "public.yaml", payload))
+
+
+def _runner_template() -> dict[str, Any]:
+    return {
+        "schema_version": "p6_history_runner_template_v1",
+        "stage1_scan": {
+            "name": "build_stage1_partition",
+            "argv": [
+                "private-runner/bin/scan-private",
+                "{stage1_partition_manifest}",
+                "{local_output_root}",
+            ],
+        },
+        "execution_interface": {
+            "schema_version": "p6_history_runner_interface_v1",
+            "controller": {
+                "argv": [f"documented-stage5-chain/{MARKERS['controller']}"]
+            },
+            "execution_chain": [
+                {
+                    "stage": "source_materialization",
+                    "argv": [
+                        f"documented-stage5-chain/{MARKERS['source_materializer']}",
+                        "{measurement_request}",
+                        "{round_output_root}",
+                    ],
+                    "required_placeholders": [
+                        "{measurement_request}",
+                        "{round_output_root}",
+                    ],
+                },
+                {
+                    "stage": "quantization",
+                    "argv": [
+                        "private-runner/bin/quantize-private",
+                        "{task_state}",
+                        "{round_output_root}",
+                    ],
+                    "required_placeholders": ["{task_state}", "{round_output_root}"],
+                },
+                {
+                    "stage": "performance",
+                    "argv": [
+                        f"documented-stage5-chain/{MARKERS['performance_plan']}",
+                        "{task_state}",
+                        "{round_output_root}",
+                    ],
+                    "required_placeholders": ["{task_state}", "{round_output_root}"],
+                },
+                {
+                    "stage": "ap",
+                    "argv": [
+                        "private-runner/bin/measure-ap-private",
+                        "{task_state}",
+                        "{round_output_root}",
+                    ],
+                    "required_placeholders": ["{task_state}", "{round_output_root}"],
+                },
+                {
+                    "stage": "finalization",
+                    "argv": [
+                        f"documented-stage5-chain/{MARKERS['finalizer']}",
+                        "{measurement_request}",
+                        "{task_state}",
+                        "{actual_feedback}",
+                        "{actual_receipt}",
+                        "{finalization_barrier}",
+                        "{round_output_root}",
+                    ],
+                    "required_placeholders": [
+                        "{measurement_request}",
+                        "{task_state}",
+                        "{actual_feedback}",
+                        "{actual_receipt}",
+                        "{finalization_barrier}",
+                        "{round_output_root}",
+                    ],
+                },
+            ],
+            "environment": {
+                "values": {
+                    "CUDA_VISIBLE_DEVICES": {"kind": "literal", "value": "5,6,7"},
+                    "P6_HISTORY_RUN_MODE": {"kind": "literal", "value": "bound"},
+                    "P6_HISTORY_PRIVATE_ROOT": {
+                        "kind": "private_path",
+                        "value": ".",
+                    },
+                    "P6_HISTORY_TASK_STATE": {
+                        "kind": "placeholder",
+                        "value": "{task_state}",
+                    },
+                    "P6_HISTORY_ROUND_OUTPUT_ROOT": {
+                        "kind": "placeholder",
+                        "value": "{round_output_root}",
+                    },
+                },
+                "activation_argv": [
+                    "private-runner/bin/activate-private",
+                    "private-bound",
+                ],
+            },
+            "output_layout": {
+                "round_root_template": "private-runs/{round_id}",
+                "task_state": {
+                    "path_template": "private-runs/{round_id}/state/task-state.json",
+                    "format": "json",
+                    "rows_key": "rows",
+                    "row_id_key": "row_id",
+                    "row_hash_key": "row_sha256",
+                    "source_evidence_key": "source_evidence_sha256",
+                    "stage_key": "stage",
+                    "status_key": "terminal_status",
+                    "row_count": 4,
+                    "allowed_terminal_statuses": [
+                        "measured_success_gold",
+                        "feasibility_failure",
+                        "numerical_feasibility_failure",
+                    ],
+                    "stage_order": list(STAGES),
+                },
+            },
+            "actual_feedback": {
+                "result": {
+                    "path_template": "private-runs/{round_id}/actual-feedback.json",
+                    "format": "json",
+                    "rows_key": "rows",
+                    "row_count": 4,
+                    "row_id_key": "row_id",
+                    "row_hash_key": "row_sha256",
+                    "source_evidence_key": "source_evidence_sha256",
+                    "status_key": "terminal_status",
+                    "allowed_terminal_statuses": [
+                        "measured_success_gold",
+                        "feasibility_failure",
+                        "numerical_feasibility_failure",
+                    ],
+                    "metric_keys": [
+                        "latency_ms",
+                        "energy_j",
+                        "ap30",
+                        "ap50",
+                        "ap70",
+                    ],
+                },
+                "receipt": {
+                    "path_template": "private-runs/{round_id}/receipt.json",
+                    "format": "json",
+                    "request_sha256_key": "measurement_request_sha256",
+                    "row_hashes_key": "row_sha256",
+                    "source_evidence_key": "source_evidence_sha256",
+                },
+                "finalization_barrier": {
+                    "path_template": "private-runs/{round_id}/barrier.json",
+                    "format": "json",
+                    "request_sha256_key": "measurement_request_sha256",
+                    "row_hashes_key": "row_sha256",
+                    "source_evidence_key": "source_evidence_sha256",
+                },
+            },
+        },
+    }
+
+
+def _initialize_source_root(root: Path) -> dict[str, Path]:
+    root.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    for marker in MARKERS.values():
+        _write_executable(root / "documented-stage5-chain" / marker)
+    for executable in (
+        "scan-private",
+        "quantize-private",
+        "measure-ap-private",
+        "activate-private",
+    ):
+        _write_executable(root / "private-runner" / "bin" / executable)
+    registry = _write_json(
+        root / "registry" / "candidate_source_registry.json",
+        {
+            "schema_version": "stage5_candidate_source_registry_v1",
+            "groups": [_source_group()],
+        },
+    )
+    inputs = {
+        name: _write_json(root / "inputs" / f"{name}.json", {"fixture": name})
+        for name in LOCAL_INPUT_NAMES
+    }
+    return {**inputs, "registry": registry}
+
+
+def _legacy_locator(root: Path, inputs: Mapping[str, Path]) -> dict[str, Any]:
+    return {
+        "schema_version": "p6_h800_coptv2x_local_v2",
+        "target": "h800",
+        "asset_paths": {
+            "training-data": str(root / "inputs"),
+            "model-init": str(inputs["registry"]),
+            "toolchain": str(
+                root
+                / "documented-stage5-chain"
+                / MARKERS["performance_plan"]
+            ),
+        },
+        "local_input_paths": {
+            name: str(inputs[name]) for name in LOCAL_INPUT_NAMES
+        },
+        "source_registry_step": {
+            "name": "build_source_registry",
+            "argv": [
+                "legacy-registry",
+                "{local_output_root}",
+                "{source_registry_json}",
+            ],
+        },
+        "measurement_step": {
+            "name": "measure_batch",
+            "argv": [
+                "legacy-measure",
+                "{measurement_request}",
+                "{feedback_json}",
+                "{round_output_root}",
+            ],
+        },
+        "local_output_root": str(root / "legacy-output"),
+    }
+
+
+def _write_valid_private_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
+    root = tmp_path / "source"
+    inputs = _initialize_source_root(root)
+    legacy_config = _write_yaml(
+        tmp_path / "private-inputs" / "legacy.local.yaml",
+        _legacy_locator(root, inputs),
+    )
+    template = _write_yaml(
+        tmp_path / "private-inputs" / "runner-template.yaml",
+        _runner_template(),
+    )
+    output_root = tmp_path / "private-output"
+    output_root.mkdir()
+    return legacy_config, template, output_root
+
+
+def _write_invalid_private_inputs(
+    tmp_path: Path, mutation: str
+) -> tuple[Path, Path, Path]:
+    legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
+    legacy_payload = yaml.safe_load(legacy_config.read_text(encoding="utf-8"))
+    template_payload = yaml.safe_load(template.read_text(encoding="utf-8"))
+    if mutation == "two_common_roots":
+        second_root = tmp_path / "second-source"
+        second_inputs = _initialize_source_root(second_root)
+        legacy_payload["local_input_paths"]["closure"] = str(
+            second_inputs["closure"]
+        )
+        _write_yaml(legacy_config, legacy_payload)
+    elif mutation == "missing_stage":
+        template_payload["execution_interface"]["execution_chain"].pop(2)
+        _write_yaml(template, template_payload)
+    elif mutation == "escape":
+        _write_executable(tmp_path / "escape-bin")
+        template_payload["execution_interface"]["execution_chain"][1]["argv"][
+            0
+        ] = "../escape-bin"
+        _write_yaml(template, template_payload)
+    elif mutation == "bad_template":
+        template_payload["schema_version"] = "p6_history_runner_template_v0"
+        _write_yaml(template, template_payload)
+    elif mutation == "stage1_shell_token":
+        template_payload["stage1_scan"]["argv"].insert(1, "unsafe;token")
+        _write_yaml(template, template_payload)
+    else:
+        raise AssertionError(f"unsupported mutation: {mutation}")
+    return legacy_config, template, output_root
+
+
+def test_materialize_full_chain_binding_renders_dynamic_config(
+    tmp_path: Path,
+) -> None:
+    legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
+
+    binding = materialize_full_chain_binding(
+        legacy_config,
+        template,
+        output_root,
+        output_root / "binding.json",
+        output_root / "local.yaml",
+        _gpu_probe(),
+    )
+
+    local = load_local_config(output_root / "local.yaml", _public_contract(tmp_path))
+    config = yaml.safe_load((output_root / "local.yaml").read_text(encoding="utf-8"))
+    assert binding["schema_version"] == "p6_history_binding_v1"
+    assert tuple(
+        step["stage"] for step in binding["execution_interface"]["execution_chain"]
+    ) == STAGES
+    assert local.candidate_source_mode == "framework_stage2_search_space"
+    assert local.stage1_scan_step is not None
+    assert local.stage1_scan_step.name == "build_stage1_partition"
+    assert config["stage2_search_space_path"] == str(
+        output_root / "stage1_partition_manifest.json"
+    )
+    assert set(config["stage1_scan_step"]["argv"]) >= {
+        "{stage1_partition_manifest}",
+        "{local_output_root}",
+    }
+    assert set(config["source_registry_step"]["argv"]) >= {
+        "{local_output_root}",
+        "{source_registry_json}",
+        "{pyramid_candidate_plan}",
+    }
+    assert set(config["measurement_step"]["argv"]) >= {
+        "{measurement_request}",
+        "{feedback_json}",
+        "{round_output_root}",
+    }
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "two_common_roots",
+        "missing_stage",
+        "escape",
+        "bad_template",
+        "stage1_shell_token",
+    ],
+)
+def test_bootstrap_rejects_untrusted_or_ambiguous_private_inputs(
+    tmp_path: Path, mutation: str
+) -> None:
+    legacy_config, template, output_root = _write_invalid_private_inputs(
+        tmp_path, mutation
+    )
+
+    with pytest.raises(FullChainBootstrapError):
+        materialize_full_chain_binding(
+            legacy_config,
+            template,
+            output_root,
+            output_root / "binding.json",
+            output_root / "local.yaml",
+            _gpu_probe(),
+        )
+
+    assert not (output_root / "binding.json").exists()
+    assert not (output_root / "local.yaml").exists()
+
+
+def test_bootstrap_rejects_binding_path_reserved_for_fresh_stage1_manifest(
+    tmp_path: Path,
+) -> None:
+    legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
+
+    with pytest.raises(FullChainBootstrapError):
+        materialize_full_chain_binding(
+            legacy_config,
+            template,
+            output_root,
+            output_root / "stage1_partition_manifest.json",
+            output_root / "local.yaml",
+            _gpu_probe(),
+        )
+
+    assert not (output_root / "stage1_partition_manifest.json").exists()
+    assert not (output_root / "local.yaml").exists()

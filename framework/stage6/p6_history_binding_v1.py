@@ -169,11 +169,37 @@ def discover_history_binding(
         for role, (marker, _) in COMPONENT_MARKERS.items()
     }
     execution_interface = _discover_execution_interface(root, component_paths)
-    registry_path, source_contract = _discover_source_contract(root)
     local_input_paths = {
         name: str(_discover_one_named_path(root, f"{name}.json", category="local_inputs"))
         for name in LOCAL_INPUT_NAMES
     }
+    return build_history_binding(
+        root,
+        component_paths=component_paths,
+        execution_interface=execution_interface,
+        local_input_paths=local_input_paths,
+        gpu_probe=gpu_probe,
+    )
+
+
+def build_history_binding(
+    history_root: str | Path,
+    *,
+    component_paths: Mapping[str, str],
+    execution_interface: Mapping[str, Any],
+    local_input_paths: Mapping[str, str],
+    gpu_probe: GpuProbe,
+) -> dict[str, Any]:
+    """Build one binding from explicit paths and an already selected interface."""
+    root = _resolve_history_root(history_root)
+    canonical_components = _binding_component_paths(component_paths, root)
+    canonical_inputs = _binding_local_input_paths(local_input_paths, root)
+    canonical_interface = _freeze_mapping(
+        _validate_execution_interface(
+            _json_compatible(execution_interface), root, canonical_components
+        )
+    )
+    registry_path, source_contract = _discover_source_contract(root)
     first_snapshot = _probe_snapshot(gpu_probe)
     second_snapshot = _probe_snapshot(gpu_probe)
     first_uuid_map = _validate_gpu_snapshot(first_snapshot)
@@ -185,14 +211,14 @@ def discover_history_binding(
         "schema_version": BINDING_SCHEMA_VERSION,
         "target": copy.deepcopy(TARGET),
         "private_root": str(root),
-        "component_paths": component_paths,
+        "component_paths": canonical_components,
         "component_versions": {
             role: version for role, (_, version) in COMPONENT_MARKERS.items()
         },
-        "execution_interface": execution_interface,
+        "execution_interface": canonical_interface,
         "source_registry_path": str(registry_path),
         "source_contract_template": copy.deepcopy(source_contract),
-        "local_input_paths": local_input_paths,
+        "local_input_paths": canonical_inputs,
         "gpu_policy": {
             "indices": list(EXPECTED_GPU_INDICES),
             "uuid_by_index": first_uuid_map,
@@ -336,6 +362,18 @@ def _binding_component_paths(raw: object, root: Path) -> dict[str, str]:
             raise _execution_interface_error()
         component_paths[role] = str(_resolve_interface_executable(value, root))
     return component_paths
+
+
+def _binding_local_input_paths(raw: object, root: Path) -> dict[str, str]:
+    if not isinstance(raw, Mapping) or set(raw) != set(LOCAL_INPUT_NAMES):
+        raise P6HistoryBindingError("local_inputs", "local input mapping is invalid")
+    local_input_paths: dict[str, str] = {}
+    for name in LOCAL_INPUT_NAMES:
+        value = raw.get(name)
+        if not isinstance(value, str) or Path(value).name != f"{name}.json":
+            raise P6HistoryBindingError("local_inputs", "local input mapping is invalid")
+        local_input_paths[name] = str(_resolve_beneath_root(Path(value), root))
+    return local_input_paths
 
 
 def _discover_one_named_path(
