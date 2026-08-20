@@ -432,6 +432,17 @@ def _write_invalid_private_inputs(
     return legacy_config, template, output_root
 
 
+def _template_payload(template: Path) -> dict[str, Any]:
+    payload = yaml.safe_load(template.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    return payload
+
+
+def _add_archived_duplicate_markers(root: Path) -> None:
+    for marker in MARKERS.values():
+        _write_executable(root / "archived-stage5-copy" / marker)
+
+
 def test_materialize_full_chain_binding_renders_dynamic_config(
     tmp_path: Path,
 ) -> None:
@@ -472,6 +483,81 @@ def test_materialize_full_chain_binding_renders_dynamic_config(
         "{feedback_json}",
         "{round_output_root}",
     }
+
+
+def test_materialize_uses_template_component_paths_when_history_has_archived_duplicates(
+    tmp_path: Path,
+) -> None:
+    """Catches falling back to recursive marker discovery instead of the template."""
+    legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
+    root = tmp_path / "source"
+    _add_archived_duplicate_markers(root)
+
+    binding = materialize_full_chain_binding(
+        legacy_config,
+        template,
+        output_root,
+        output_root / "binding.json",
+        output_root / "local.yaml",
+        _gpu_probe(),
+    )
+
+    assert binding["status"] == "validated"
+    assert binding["component_paths"] == {
+        role: str(root / "documented-stage5-chain" / marker)
+        for role, marker in MARKERS.items()
+    }
+
+
+def test_materialize_rejects_template_component_outside_history_root_without_pair(
+    tmp_path: Path,
+) -> None:
+    """Catches accepting a template-selected Stage5 component outside the Git root."""
+    legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
+    payload = _template_payload(template)
+    outside = _write_executable(tmp_path / "outside" / MARKERS["controller"])
+    payload["execution_interface"]["controller"]["argv"] = [str(outside)]
+    _write_yaml(template, payload)
+
+    with pytest.raises(FullChainBootstrapError) as captured:
+        materialize_full_chain_binding(
+            legacy_config,
+            template,
+            output_root,
+            output_root / "binding.json",
+            output_root / "local.yaml",
+            _gpu_probe(),
+        )
+
+    assert captured.value.category == "history_root_ambiguous"
+    assert not (output_root / "binding.json").exists()
+    assert not (output_root / "local.yaml").exists()
+
+
+def test_materialize_rejects_template_component_role_mismatch_without_pair(
+    tmp_path: Path,
+) -> None:
+    """Catches binding one Stage5 role to a different rendered component argv."""
+    legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
+    payload = _template_payload(template)
+    payload["execution_interface"]["execution_chain"][2]["argv"][0] = (
+        f"documented-stage5-chain/{MARKERS['finalizer']}"
+    )
+    _write_yaml(template, payload)
+
+    with pytest.raises(FullChainBootstrapError) as captured:
+        materialize_full_chain_binding(
+            legacy_config,
+            template,
+            output_root,
+            output_root / "binding.json",
+            output_root / "local.yaml",
+            _gpu_probe(),
+        )
+
+    assert captured.value.category == "history_root_ambiguous"
+    assert not (output_root / "binding.json").exists()
+    assert not (output_root / "local.yaml").exists()
 
 
 def test_bootstrap_rejects_nonignored_repository_runner_template_before_probe(

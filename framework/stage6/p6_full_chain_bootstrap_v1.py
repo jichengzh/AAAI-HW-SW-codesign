@@ -145,11 +145,15 @@ def materialize_full_chain_binding(
             error.category, "private pair destination is unsafe"
         ) from error
     locator = _load_legacy_local_locator(legacy_local_config)
-    root, component_paths = _unique_common_history_root(locator)
+    root = _unique_common_history_root(locator)
     template = _load_runner_template(runner_template)
+    component_paths = _template_component_paths(
+        root, template["execution_interface"]
+    )
     interface = _render_runner_interface(
         root, template["execution_interface"]
     )
+    _validate_template_component_argv_alignment(component_paths, interface)
     try:
         binding = build_history_binding(
             root,
@@ -334,7 +338,7 @@ def _contains_symlink_component(path: Path) -> bool:
 
 def _unique_common_history_root(
     locator: _LegacyLocator,
-) -> tuple[Path, dict[str, str]]:
+) -> Path:
     roots = {_git_root_for(path) for path in locator.local_input_paths.values()}
     if len(roots) != 1:
         raise FullChainBootstrapError(
@@ -348,35 +352,133 @@ def _unique_common_history_root(
         raise FullChainBootstrapError(
             "history_root_ambiguous", "legacy locator escapes the common Git root"
         )
-    component_paths: dict[str, str] = {}
-    for role, (marker, _) in COMPONENT_MARKERS.items():
-        candidates = tuple(root.rglob(marker))
-        if len(candidates) != 1:
+    return root
+
+
+def _template_component_paths(
+    root: Path,
+    raw_interface: object,
+) -> dict[str, str]:
+    if not isinstance(raw_interface, Mapping) or set(raw_interface) != set(
+        EXECUTION_INTERFACE_KEYS
+    ):
+        raise FullChainBootstrapError(
+            "execution_interface_unavailable", "execution interface is invalid"
+        )
+    component_argv0 = _template_component_argv0_by_role(raw_interface)
+    return {
+        role: str(_resolve_template_component_path(root, component_argv0[role], marker))
+        for role, (marker, _) in COMPONENT_MARKERS.items()
+    }
+
+
+def _template_component_argv0_by_role(
+    raw_interface: Mapping[str, Any],
+) -> dict[str, str]:
+    controller = raw_interface.get("controller")
+    chain = raw_interface.get("execution_chain")
+    if not isinstance(chain, list):
+        raise FullChainBootstrapError(
+            "execution_interface_unavailable", "execution interface is invalid"
+        )
+    stage_entries: dict[str, Mapping[str, Any]] = {}
+    for entry in chain:
+        if not isinstance(entry, Mapping):
             raise FullChainBootstrapError(
-                "history_root_ambiguous", "component marker selection is ambiguous"
+                "execution_interface_unavailable", "execution interface is invalid"
             )
-        candidate = candidates[0]
-        if candidate.is_symlink():
+        stage = entry.get("stage")
+        if not isinstance(stage, str) or stage in stage_entries:
             raise FullChainBootstrapError(
-                "history_root_ambiguous", "component marker is unsafe"
+                "execution_interface_unavailable", "execution interface is invalid"
             )
-        try:
-            resolved = candidate.resolve(strict=True)
-        except OSError as error:
-            raise FullChainBootstrapError(
-                "history_root_ambiguous", "component marker is unavailable"
-            ) from error
-        if (
-            not resolved.is_file()
-            or not os.access(resolved, os.X_OK)
-            or not _is_relative_to(resolved, root)
-            or _git_root_for(resolved) != root
-        ):
-            raise FullChainBootstrapError(
-                "history_root_ambiguous", "component marker is invalid"
-            )
-        component_paths[role] = str(resolved)
-    return root, component_paths
+        stage_entries[stage] = entry
+    try:
+        return {
+            "controller": _template_argv0(controller),
+            "source_materializer": _template_argv0(
+                stage_entries["source_materialization"]
+            ),
+            "performance_plan": _template_argv0(stage_entries["performance"]),
+            "finalizer": _template_argv0(stage_entries["finalization"]),
+        }
+    except KeyError as error:
+        raise FullChainBootstrapError(
+            "execution_interface_unavailable", "execution interface is invalid"
+        ) from error
+
+
+def _template_argv0(raw: object) -> str:
+    if not isinstance(raw, Mapping):
+        raise FullChainBootstrapError(
+            "execution_interface_unavailable", "execution interface is invalid"
+        )
+    argv = raw.get("argv")
+    if (
+        not isinstance(argv, list)
+        or not argv
+        or not isinstance(argv[0], str)
+        or not argv[0]
+        or any(shell_token in argv[0] for shell_token in SHELL_TOKENS)
+    ):
+        raise FullChainBootstrapError(
+            "execution_interface_unavailable", "execution interface is invalid"
+        )
+    return argv[0]
+
+
+def _resolve_template_component_path(root: Path, raw: str, marker: str) -> Path:
+    path = Path(raw)
+    if path.name != marker:
+        raise FullChainBootstrapError(
+            "history_root_ambiguous", "template component marker does not match role"
+        )
+    candidate = path if path.is_absolute() else root / path
+    if _contains_symlink_component(candidate):
+        raise FullChainBootstrapError(
+            "history_root_ambiguous", "template component marker is unsafe"
+        )
+    try:
+        resolved = candidate.resolve(strict=True)
+    except OSError as error:
+        raise FullChainBootstrapError(
+            "history_root_ambiguous", "template component marker is unavailable"
+        ) from error
+    if (
+        not resolved.is_absolute()
+        or not _is_relative_to(resolved, root)
+        or not resolved.is_file()
+        or not os.access(resolved, os.X_OK)
+        or _git_root_for(resolved) != root
+    ):
+        raise FullChainBootstrapError(
+            "history_root_ambiguous", "template component marker is invalid"
+        )
+    return resolved
+
+
+def _validate_template_component_argv_alignment(
+    component_paths: Mapping[str, str],
+    interface: Mapping[str, Any],
+) -> None:
+    try:
+        if interface["controller"]["argv"] != [component_paths["controller"]]:
+            raise KeyError
+        stage_paths = {
+            entry["stage"]: entry["argv"][0]
+            for entry in interface["execution_chain"]
+        }
+        expected = {
+            "source_materialization": component_paths["source_materializer"],
+            "performance": component_paths["performance_plan"],
+            "finalization": component_paths["finalizer"],
+        }
+        if any(stage_paths[stage] != path for stage, path in expected.items()):
+            raise KeyError
+    except (KeyError, TypeError) as error:
+        raise FullChainBootstrapError(
+            "history_root_ambiguous", "template component paths do not match argv"
+        ) from error
 
 
 def _git_root_for(path: Path) -> Path:
@@ -470,10 +572,11 @@ def _resolve_relative_private_path(raw: object, root: Path) -> Path:
     ):
         raise ValueError("private path is invalid")
     path = Path(raw)
-    if path.is_absolute() or ".." in path.parts:
+    if ".." in path.parts:
         raise ValueError("private path is invalid")
     try:
-        resolved = (root / path).resolve(strict=True)
+        candidate = path if path.is_absolute() else root / path
+        resolved = candidate.resolve(strict=True)
     except OSError as error:
         raise ValueError("private path is unavailable") from error
     if not _is_relative_to(resolved, root):

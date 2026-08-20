@@ -62,6 +62,17 @@ def _write_executable(path: Path) -> Path:
     return path
 
 
+def _template_payload(template: Path) -> dict[str, Any]:
+    payload = yaml.safe_load(template.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    return payload
+
+
+def _add_archived_duplicate_markers(root: Path) -> None:
+    for marker in MARKERS.values():
+        _write_executable(root / "archived-stage5-copy" / marker)
+
+
 def _source_group() -> dict[str, Any]:
     evidence_sha = hashlib.sha256(b"synthetic-pyramid-source").hexdigest()
     contract = {
@@ -424,6 +435,59 @@ def test_cli_writes_only_ignored_private_pair(tmp_path: Path) -> None:
     assert result.stdout == "p6_full_chain_config_written\n"
     assert result.stderr == ""
     assert _load_local_config_without_echoing_private_values(tmp_path).stage1_scan_step is not None
+
+
+def test_cli_uses_template_component_paths_when_history_has_archived_duplicates(
+    tmp_path: Path,
+) -> None:
+    args = _valid_args(tmp_path)
+    _add_archived_duplicate_markers(tmp_path / "private-history")
+
+    result = _run_cli(tmp_path, *args)
+
+    assert result.returncode == 0
+    assert result.stdout == "p6_full_chain_config_written\n"
+    assert result.stderr == ""
+
+
+def test_cli_rejects_template_component_outside_history_root_without_pair(
+    tmp_path: Path,
+) -> None:
+    args = _valid_args(tmp_path)
+    template = Path(args[3])
+    payload = _template_payload(template)
+    payload["execution_interface"]["controller"]["argv"] = [
+        str(_write_executable(tmp_path / "outside" / MARKERS["controller"]))
+    ]
+    _write_yaml(template, payload)
+
+    result = _run_cli(tmp_path, *args)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "history_root_ambiguous\n"
+    assert not _private_pair_paths(tmp_path)[0].exists()
+    assert not _private_pair_paths(tmp_path)[1].exists()
+
+
+def test_cli_rejects_template_component_role_mismatch_without_pair(
+    tmp_path: Path,
+) -> None:
+    args = _valid_args(tmp_path)
+    template = Path(args[3])
+    payload = _template_payload(template)
+    payload["execution_interface"]["execution_chain"][2]["argv"][0] = (
+        f"documented-stage5-chain/{MARKERS['finalizer']}"
+    )
+    _write_yaml(template, payload)
+
+    result = _run_cli(tmp_path, *args)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "history_root_ambiguous\n"
+    assert not _private_pair_paths(tmp_path)[0].exists()
+    assert not _private_pair_paths(tmp_path)[1].exists()
 
 
 def test_cli_redacts_private_template_failure_and_writes_nothing(tmp_path: Path) -> None:
