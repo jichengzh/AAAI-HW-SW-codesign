@@ -12,7 +12,7 @@ P6.4 已经要求真实闭环从 Stage1 Pyramid scan 出发，经 Stage2 动态�
 2. P6 registry-v2 需要纯声明式、可静态验证的 recipe，以便在 zero-measurement 预检中为 Stage2 动态计划里的每个 `(width, q_mode)` 生成 source contract；
 3. 公开仓库不能记录私有路径、真实 GPU、资产 ID、候选 ID、checkpoint、ONNX、calibration 实例、指标或结果，因此转换必须发生在 Git 忽略的私有输入边界内，公开代码只持有版本化 profile 和验证逻辑。
 
-本设计新增一个窄桥接器：它把已验证 private binding/template、已选择程序式组件和一个版本化 adapter profile 转换成 `p6_history_dynamic_materialization_recipe_v1`。桥接器只做接口验证与声明式 recipe 渲染，不做通用代码推断，不运行历史脚本，不训练、不导出、不测量。
+本设计新增一个窄桥接器：它在 provision 之前把已验证 private runner template、fresh private Git root 内已选择的程序式组件和一个版本化 adapter profile 转换成 `p6_history_dynamic_materialization_recipe_v1`。桥接器只做接口验证与声明式 recipe 渲染，不做通用代码推断，不运行历史脚本，不训练、不导出、不测量。provision 随后生成 binding，并再次验证同一 template、组件和派生 recipe，避免 recipe→registry→binding 形成循环依赖。
 
 ## 目标
 
@@ -47,7 +47,7 @@ P6.4 已经要求真实闭环从 Stage1 Pyramid scan 出发，经 Stage2 动态�
 桥接器拆分为六个部分：
 
 1. profile registry：公开、版本化、无私有值；记录一个 profile 对应的 Stage5 程序式接口面。
-2. interface verifier：从已经通过现有契约校验的 private binding/template 中读取实际组件角色、argv 和 placeholder surface，再按 source-map v2 选择的 profile 验证 precision 与四类输出能力。source-map 中的自报 capability 不作为证据。
+2. interface verifier：从通过 pre-provision 校验的 private runner template 中读取实际组件角色、argv 和 placeholder surface，再按 source-map v2 选择的 profile 验证 precision 与四类输出能力。source-map 中的自报 capability 不作为证据。
 3. recipe renderer：从已验证的 profile 与组件接口渲染 `p6_history_dynamic_materialization_recipe_v1`，只生成 canonical identity 和 per-q-mode 相对输出模板。
 4. normalizer integration：source-map v2 入口在显式 recipe 与程序式来源二者之间选择一路，向现有 normalizer 传入同一份 recipe 结构。
 5. CLI：提供 private-only 的 recipe 派生命令，稳定输出成功类别或 `history_recipe_derivation_invalid`。
@@ -57,7 +57,8 @@ P6.4 已经要求真实闭环从 Stage1 Pyramid scan 出发，经 Stage2 动态�
 
 ```text
 ignored private source-map v2
-  + validated private p6_history_binding_v1/template
+  + validated pre-provision private runner template
+  + fresh private Git root and selected procedural components
   + selected procedural Stage5 components
   + public adapter profile name
   -> interface verifier
@@ -124,17 +125,19 @@ procedural_recipe_profile: present only when recipe_mode is procedural_profile
 - 同时出现两种来源、两者都缺失、`recipe_mode` 与字段不一致，均以 `history_recipe_derivation_invalid` 失败；
 - v2 中派生出的 recipe 只传入 private normalizer/runtime，不写入公开 tracked recipe 文件。
 
-`procedural_recipe_profile` 只包含 profile 名称和 profile schema version。`procedural_recipe_source` 只包含已验证 binding/template 的私有引用，以及把 profile role 绑定到 binding/template 中哪个结构化接口节点的 role selection。它不得自报 semantic argv、capability 或输出模板；桥接器必须从被引用的已验证 binding/template 读取实际 argv、placeholder 和组件 basename，并与公开 profile 精确比较。
+`procedural_recipe_profile` 只包含 profile 名称和 profile schema version。`procedural_recipe_source` 只包含 private runner template 的引用，以及把 profile role 绑定到 template 中哪个结构化接口节点的 role selection。它不得自报 semantic argv、capability 或输出模板；桥接器必须用与 bootstrap 相同的 template schema、隐私、路径和 role 规则读取实际 argv、placeholder 和组件 basename，并与公开 profile 精确比较。
 
 ### 程序式组件 projection
 
 每个 selected procedural component 只允许以最小结构化引用描述：
 
 - `role`: 必须精确命中 profile role；
-- `binding_interface_ref`: 指向已验证 private binding/template 中一个唯一的 controller、execution-chain 或 output-layout 节点，不进入公开 recipe；
+- `template_interface_ref`: 指向已验证 private runner template 中一个唯一的 controller、execution-chain 或 output-layout 节点，不进入公开 recipe；
 - `expected_marker_basename`: 可作为定位辅助，但最终 basename 必须从被引用节点的实际 argv 解析并与 profile 比较。
 
-role selection 不是代码扫描结果，也不是 capability 声明。bridge 必须拒绝不存在、重复或指向多个节点的引用；然后从 binding/template 的实际节点取得 argv、placeholder、component path basename 和 output-layout 字段。training/checkpoint/ONNX/calibration 能力只有在这些实际字段满足 profile 的 required observable surface 时才成立。
+role selection 不是代码扫描结果，也不是 capability 声明。bridge 必须拒绝不存在、重复或指向多个节点的引用；然后从 runner template 的实际节点取得 argv、placeholder、component path basename 和 output-layout 字段。training/checkpoint/ONNX/calibration 能力只有在这些实际字段满足 profile 的 required observable surface 时才成立。template 中的所有组件路径必须解析到 source-map 声明的 fresh private Git root 内；桥接器不能使用 provision 后的 binding 作为前置输入。
+
+派生 recipe 写入 normalized registry-v1 后，provision 生成 `p6_history_binding_v1`。生命周期必须再次核对 binding 的 `source_contract_template.dynamic_materialization_recipe` 与派生 recipe canonical 相等；不相等时在 Stage1 之前 fail closed。
 
 profile 内的 per-q-mode 相对输出模板描述的是本次 P6 private output root 的新布局，不声称它是历史绝对路径。模板可以包含通用的 `training`、`checkpoint`、`onnx`、`calibration` 目录或文件角色名，但不能包含任何历史产物实例、资产 ID、候选 ID 或私有位置。
 
@@ -181,14 +184,15 @@ identity 规则：
 
 1. schema gate：只接受 v1 显式 recipe 或 v2 互斥 recipe source；v2 字段组合错误失败；
 2. privacy gate：source-map 路径、history root、private root、输出 root 必须是 absolute、无软链接、在允许 root 内，并满足 Git 忽略策略；
-3. binding/template gate：private binding/template 已通过现有 `p6_history_binding_v1` 验证，target 为 Pyramid/H800/TVM，status 为 validated；
+3. pre-provision template gate：private runner template 通过与 bootstrap 相同的 schema、Git-ignore、root containment、non-symlink、role 与 executable argv 验证；不得要求尚未生成的 binding；
 4. profile gate：profile 名称、schema 版本和 target 精确匹配；
 5. role/marker gate：selected components 的 roles 与 profile exact roles 完全一致，marker basename 精确匹配；
 6. argv/placeholder gate：required semantic argv 与 placeholders 完全覆盖 profile surface；未知 required placeholder、缺失 width/q_mode/output placeholder、ambient fallback 均失败；
 7. capability gate：三阶段 width、FP16、INT8、training、checkpoint、ONNX、calibration 能力全部满足；profile 声明 required 的 q mode 缺失时失败；
 8. render gate：recipe identity 与输出模板可渲染、相对、无碰撞、无 result context；
 9. normalizer gate：派生 recipe 与 source contract/template 一致，并继续通过既有 source contract validation；
-10. lifecycle gate：registry-v2 identity 必须与 Stage2 dynamic plan 完全相等，且 zero measurement。
+10. post-provision binding gate：生成的 binding 中 source-contract recipe 与派生 recipe canonical 相等；
+11. lifecycle gate：registry-v2 identity 必须与 Stage2 dynamic plan 完全相等，且 zero measurement。
 
 新的稳定失败类别为 `history_recipe_derivation_invalid`。它覆盖 v2 程序式 recipe 派生阶段的所有失败，包括 unknown profile、profile drift、component role drift、marker drift、argv drift、placeholder drift、precision/capability 缺失、模板碰撞、互斥字段错误、private path 越界、软链接和公开泄露风险。
 
@@ -224,7 +228,7 @@ private source-map v2、派生 recipe、normalized root、local YAML 和 registr
 ```text
 derive_p6_history_recipe
   --source-map: absolute ignored private source-map v2 path
-  --binding: absolute ignored p6_history_binding_v1 path
+  --runner-template: absolute ignored p6_history_runner_template_v1 path
   --recipe-json: absolute ignored output recipe path
 ```
 
@@ -248,7 +252,7 @@ H800 retry 只允许发生在上述离线 gates 全部通过之后。retry 的�
 
 | 覆盖面 | 必测场景 | 期望 |
 | --- | --- | --- |
-| known profile accepted | 合成 binding/template、selected components 与 `p6_stage5_pyramid_h800_tvm_profile_v1` 完全匹配 | 派生 `p6_history_dynamic_materialization_recipe_v1`，不运行历史程序 |
+| known profile accepted | 合成 fresh private Git root、runner template、selected components 与 `p6_stage5_pyramid_h800_tvm_profile_v1` 完全匹配 | 派生 `p6_history_dynamic_materialization_recipe_v1`，不运行历史程序 |
 | unknown profile | profile 名称不存在或 schema version 不支持 | `history_recipe_derivation_invalid`，无写入 |
 | profile drift | marker basename、required semantic argv 或 placeholder surface 与 profile 不一致 | `history_recipe_derivation_invalid` |
 | missing capability | training/checkpoint/ONNX/calibration 任一 required capability 缺失 | `history_recipe_derivation_invalid` |
@@ -292,7 +296,7 @@ H800 retry 只允许发生在上述离线 gates 全部通过之后。retry 的�
 本规格对应实现完成的条件为：
 
 1. `p6_history_normalization_source_v2` 支持 mutually exclusive explicit recipe 与 procedural profile 两路；v1 explicit recipe 兼容测试仍通过。
-2. 至少一个已批准 Stage5 profile 可接受已验证 private binding/template 和 selected procedural components，并派生 `p6_history_dynamic_materialization_recipe_v1`。
+2. 至少一个已批准 Stage5 profile 可接受已验证 pre-provision private runner template 和 fresh private Git root 内 selected procedural components，并派生 `p6_history_dynamic_materialization_recipe_v1`；派生不依赖尚未生成的 binding。
 3. unknown profile、profile drift、role drift、marker drift、semantic argv/placeholder drift、missing capability、precision drift、symlink/out-of-root、template collision、互斥字段错误均以 `history_recipe_derivation_invalid` fail closed。
 4. 派生 recipe 使用现有 Pyramid canonical group identity，artifact identity 只来自三阶段 width，per-q-mode 输出模板只为相对路径；不包含 private path、真实 GPU、资产/候选 ID、checkpoint、ONNX、calibration、metrics 或 result context。
 5. 不新增资产级内容 hash 体系；仅复用既有 source contract hash、Pyramid identity validation、Stage2 plan/registry identity gate 和现有契约校验。
