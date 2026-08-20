@@ -13,7 +13,10 @@ import pytest
 import yaml
 
 from framework.stage2.canonical_search_v3 import build_capability_profile
-from tests.stage6.test_p6_history_measurement import _binding as _measurement_binding
+from tests.release.test_p6_history_execution_adapters import (
+    _synthetic_history_binding,
+    _write_synthetic_nvidia_smi,
+)
 
 try:
     import resource
@@ -206,6 +209,61 @@ shutil.copyfile(template_path, output_path)
     return path
 
 
+def _real_stage1_partition_manifest() -> dict[str, Any]:
+    return {
+        "schema": "stage1_partition_manifest_v1",
+        "stage": "stage1_partition",
+        "model": "pyramid_lidar",
+        "scan_status": "ok",
+        "hw_capability": {"name": "h800"},
+        "view_b1_search_groups": [
+            {
+                "search_group_id": f"pyramid_group.{suffix}",
+                "bucket": "pyramid_backbone",
+                "widths": [224],
+                "round_to": 32,
+                "int8_buildable_align": 32,
+                "max_rate": 0.875,
+                "grouped_conv": True,
+                "criterion_pool": ["L1"],
+                "member_b1_groups": [f"pyramid_group.{suffix}"],
+            }
+            for suffix in ("s0", "s1", "s2")
+        ],
+        "view_b2_quant_units": [
+            {
+                "unit": "pyramid_backbone",
+                "quantizable": True,
+                "legal_bits": ["FP16", "INT8"],
+                "member_groups": [
+                    "pyramid_group.s0",
+                    "pyramid_group.s1",
+                    "pyramid_group.s2",
+                ],
+            }
+        ],
+        "view_d_routing_segments": {"segments": [{"device": "gpu", "n_nodes": 1}]},
+    }
+
+
+def _write_fake_stage1_adapter(path: Path) -> Path:
+    manifest = json.dumps(_real_stage1_partition_manifest(), sort_keys=True)
+    path.write_text(
+        f"""from __future__ import annotations
+from pathlib import Path
+import sys
+
+manifest_path, output_root, call_log = map(Path, sys.argv[1:])
+del output_root
+manifest_path.write_text({manifest!r}, encoding="utf-8")
+with call_log.open("a", encoding="utf-8") as handle:
+    handle.write("stage1\\n")
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
 def _write_noop_source_registry_adapter(path: Path) -> Path:
     path.write_text(
         """from __future__ import annotations
@@ -322,91 +380,6 @@ def _cli_fixture(tmp_path: Path, *, mode: str = "success") -> dict[str, Path]:
     }
 
 
-def _history_stage_executable(path: Path) -> str:
-    path.write_text(
-        f"""#!{sys.executable}
-import json
-from pathlib import Path
-import sys
-names = {{"stage5_materialize_round_sources_v1.sh": "source_materialization",
-    "quantize-private": "quantization", "quantize": "quantization",
-    "stage5_build_performance_plan_v2.py": "performance",
-    "measure-ap-private": "ap", "measure-ap": "ap",
-    "stage5_finalize_feedback_v2.py": "finalization"}}
-stage = names.get(Path(sys.argv[0]).name)
-if stage is None:
-    raise SystemExit(0)
-round_root = Path(sys.argv[-1])
-with (round_root / "fake-stage5-chain.txt").open("a", encoding="utf-8") as handle:
-    handle.write(stage + "\\n")
-if stage != "finalization":
-    raise SystemExit(0)
-request = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-identity = {{
-    "measurement_request_sha256": request["measurement_request_sha256"],
-    "row_sha256": request["row_sha256"],
-    "source_evidence_sha256": {{
-        row["row_id"]: row["source_evidence_sha256"] for row in request["rows"]
-    }},
-}}
-state_rows = [{{
-    "row_id": row["row_id"],
-    "row_sha256": request["row_sha256"][row["row_id"]],
-    "source_evidence_sha256": row["source_evidence_sha256"],
-    "terminal_status": "measured_success_gold",
-}} for row in request["rows"]]
-result_rows = [{{**row, "latency_ms": 2.0 + index / 10,
-    "energy_j": 0.5 + index / 100, "ap30": 0.9, "ap50": 0.8, "ap70": 0.7}}
-    for index, row in enumerate(state_rows)]
-payloads = ({{"stage": "finalization", "rows": state_rows}},
-    {{"measurement_request_sha256": request["measurement_request_sha256"],
-     "rows": result_rows}}, identity, identity)
-for target, payload in zip(map(Path, sys.argv[2:6]), payloads, strict=True):
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(payload), encoding="utf-8")
-""",
-        encoding="utf-8",
-    )
-    path.chmod(0o700)
-    return str(path)
-
-def _history_binding(private_root: Path) -> dict[str, Any]:
-    binding = _measurement_binding(private_root)
-    interface = binding["execution_interface"]
-    executables = {
-        *binding["component_paths"].values(),
-        interface["environment"]["activation_argv"][0],
-        *(stage["argv"][0] for stage in interface["execution_chain"]),
-    }
-    for executable in executables:
-        _history_stage_executable(Path(executable))
-    outputs = {
-        q_mode: {
-            f"{name}_path_template": f"materialized/{{group_id}}/{{q_mode}}/{name}.json"
-            for name in ("training", "checkpoint", "onnx", "calibration")
-        }
-        for q_mode in ("fp16", "int8")
-    }
-    evidence = hashlib.sha256(b"offline-history-evidence").hexdigest()
-    binding["source_contract_template"] = {
-        "schema_version": "stage5_source_contract_v1",
-        "group_id": "pyramid|32x32x32",
-        "model": "pyramid",
-        "width": [32, 32, 32],
-        "artifact_id": "offline-template",
-        "source_status": "ready",
-        "source_evidence_sha256": evidence,
-        "materialization_scope": "synthetic_fixture",
-        "dynamic_materialization_recipe": {
-            "schema_version": "p6_history_dynamic_materialization_recipe_v1",
-            "stage_width_fields": ["stage1_width", "stage2_width", "stage3_width"],
-            "group_id_template": "pyramid|{stage1_width}x{stage2_width}x{stage3_width}",
-            "artifact_id_template": "pyramid-{stage1_width}-{stage2_width}-{stage3_width}",
-            "output_path_templates_by_q_mode": outputs,
-        },
-    }
-    return binding
-
 def _history_cli_fixture(
     tmp_path: Path, *, materializable: bool = True
 ) -> dict[str, Any]:
@@ -414,19 +387,11 @@ def _history_cli_fixture(
     private_root = tmp_path / "private"
     private_root.mkdir()
     paths: dict[str, Any] = _cli_fixture(private_root)
-    stage1 = _write_yaml(private_root / "stage1.yaml", {
-        "schema": "stage1_partition_manifest_offline_v1", "model": "pyramid_lidar",
-        "scan_status": "ok", "hw_capability": {"name": "h800"},
-        "view_b1_search_groups": [{"search_group_id": f"pyramid_group.{suffix}",
-            "bucket": "pyramid_backbone", "widths": [96], "round_to": 32,
-            "int8_buildable_align": 32, "max_rate": 0.666667, "grouped_conv": True,
-            "member_b1_groups": [f"pyramid_group.{suffix}"]} for suffix in ("s0", "s1", "s2")],
-        "view_b2_quant_units": [{"unit": "pyramid_backbone", "quantizable": True,
-            "legal_bits": ["FP16", "INT8"],
-            "member_groups": [f"pyramid_group.{suffix}" for suffix in ("s0", "s1", "s2")]}],
-        "view_d_routing_segments": {"segments": [{"device": "gpu", "n_nodes": 1}]}})
+    stage1 = _write_yaml(private_root / "stage1.yaml", {"schema": "stale-stage1"})
+    stage1_call_log = private_root / "stage1-call.log"
+    stage1_adapter = _write_fake_stage1_adapter(private_root / "fake-stage1.py")
     binding_path = private_root / "p6-history-binding.json"
-    binding = _history_binding(private_root)
+    binding = _synthetic_history_binding(private_root)
     if not materializable:
         binding["source_contract_template"]["dynamic_materialization_recipe"][
             "output_path_templates_by_q_mode"
@@ -435,6 +400,9 @@ def _history_cli_fixture(
     local = yaml.safe_load(paths["local"].read_text(encoding="utf-8"))
     local.update({"candidate_source_mode": "framework_stage2_search_space",
                   "stage2_search_space_path": str(stage1),
+                  "stage1_scan_step": {"name": "build_stage1_partition", "argv": [
+                      sys.executable, str(stage1_adapter), "{stage1_partition_manifest}",
+                      "{local_output_root}", str(stage1_call_log)]},
                   "source_registry_step": {"name": "build_source_registry", "argv": [
                       sys.executable, str(REPOSITORY_ROOT / "tools/release/build_p6_history_registry.py"),
                       "--binding", str(binding_path), "--pyramid-candidate-plan",
@@ -449,12 +417,11 @@ def _history_cli_fixture(
     fake_bin = private_root / "fake-bin"
     fake_bin.mkdir()
     gpu_probe = fake_bin / "nvidia-smi"
-    gpu_probe.write_text(f"#!{sys.executable}\nprint('5, GPU-5, NVIDIA H800 80GB HBM3, 0, 100')\n"
-                         "print('6, GPU-6, NVIDIA H800 80GB HBM3, 0, 100')\n"
-                         "print('7, GPU-7, NVIDIA H800 80GB HBM3, 0, 100')\n", encoding="utf-8")
-    gpu_probe.chmod(0o700)
+    _write_synthetic_nvidia_smi(gpu_probe)
     paths.update({"private_root": private_root,
                   "binding": binding_path,
+                  "stage1": stage1,
+                  "stage1_call_log": stage1_call_log,
                   "env": {**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"}})
     return paths
 
@@ -500,6 +467,11 @@ def test_cli_runs_v2_loop_without_public_summary_and_keeps_outputs_local(tmp_pat
     assert state["measured_candidate_count"] == 16
     assert str(tmp_path) not in serialized_state
     assert "candidate-" not in serialized_state
+    static_registry = json.loads(
+        (paths["output_root"] / "source_registry.json").read_text(encoding="utf-8")
+    )
+    static_group_count = len(static_registry["groups"])
+    assert (static_group_count, static_group_count * 2) == (343, 686)
     assert paths["call_log"].read_text(encoding="utf-8").splitlines() == [
         "measure",
         "measure",
@@ -508,7 +480,7 @@ def test_cli_runs_v2_loop_without_public_summary_and_keeps_outputs_local(tmp_pat
     ]
 
 
-def test_cli_runs_provisioned_history_binding_through_tracked_adapters(
+def test_cli_runs_full_framework_lifecycle_through_provisioned_history_binding(
     tmp_path: Path,
 ) -> None:
     """A non-static Stage2 plan must traverse the complete fake history chain."""
@@ -525,6 +497,13 @@ def test_cli_runs_provisioned_history_binding_through_tracked_adapters(
 
     assert result.returncode == 0, result.stderr
     assert result.stdout == "completed\n"
+    assert result.stderr == ""
+    assert paths["stage1_call_log"].read_text(encoding="utf-8").splitlines() == [
+        "stage1"
+    ]
+    assert yaml.safe_load(paths["stage1"].read_text(encoding="utf-8")) == (
+        _real_stage1_partition_manifest()
+    )
     binding = json.loads(paths["binding"].read_text(encoding="utf-8"))
     binding_private_root = Path(binding["private_root"])
     plan = json.loads((paths["output_root"] / "pyramid_candidate_plan.json").read_text())
@@ -566,14 +545,19 @@ def test_cli_runs_provisioned_history_binding_through_tracked_adapters(
         assert json.loads(
             (history_root / "measurement-request.json").read_text(encoding="utf-8")
         ) == request
-        assert (history_root / "fake-stage5-chain.txt").read_text(
-            encoding="utf-8"
-        ).splitlines() == [
-            "source_materialization",
-            "quantization",
-            "performance",
-            "ap",
-            "finalization",
+        stage_records = [
+            json.loads(line)
+            for line in (history_root / "executed-stages.log")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+        assert [record["stage"] for record in stage_records] == [
+            "activate-private",
+            "stage5_materialize_round_sources_v1.sh",
+            "quantize-private",
+            "stage5_build_performance_plan_v2.py",
+            "measure-ap-private",
+            "stage5_finalize_feedback_v2.py",
         ]
     assert not any(
         artifact.name == "private-runs"
@@ -584,7 +568,9 @@ def test_cli_runs_provisioned_history_binding_through_tracked_adapters(
     assert state["status"] == "completed"
     assert state["completed_rounds"] == 4
     assert state["measured_candidate_count"] == 16
-    assert str(tmp_path) not in json.dumps(state, sort_keys=True)
+    public_surface = result.stdout + result.stderr + json.dumps(state, sort_keys=True)
+    assert str(tmp_path) not in public_surface
+    assert "synthetic-history" not in public_surface
     assert all(path.read_bytes() == content for path, content in public_documents.items())
     assert all(
         artifact.resolve().is_relative_to(paths["private_root"].resolve())
@@ -608,7 +594,7 @@ def test_cli_rejects_unmaterializable_history_candidate_before_measurement(
     assert plan["candidate_count"] not in {343, 686}
     assert not (paths["output_root"] / "source_registry.json").exists()
     assert not any(paths["output_root"].glob("round-*"))
-    assert not any(paths["private_root"].rglob("fake-stage5-chain.txt"))
+    assert not any(paths["private_root"].rglob("executed-stages.log"))
 
 
 def test_cli_rejects_legacy_public_summary_argument(tmp_path: Path) -> None:

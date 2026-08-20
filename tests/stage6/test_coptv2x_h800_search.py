@@ -471,6 +471,77 @@ def _write_feedback_from_request(request_path: Path, feedback_path: Path) -> Non
     feedback_path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+class _FullChainCalls:
+    """Record the public command boundary while producing only contract artifacts."""
+
+    def __init__(self, *, static_registry: bool = False) -> None:
+        self.static_registry = static_registry
+        self.names: list[str] = []
+        self.requests: list[dict[str, Any]] = []
+        self.measurement_count = 0
+        self.plan_identities: set[tuple[tuple[int, ...], str, tuple[str, ...]]] = set()
+        self.registry_identities: set[
+            tuple[tuple[int, ...], str, tuple[str, ...]]
+        ] = set()
+
+    def runner(self, argv: tuple[str, ...], cwd: Path) -> int:
+        command = argv[0]
+        self.names = [*self.names, command]
+        if command == "fake-stage1":
+            _write_real_stage1_manifest(Path(argv[1]))
+        elif command == "fake-registry":
+            plan_path = Path(argv[3])
+            registry_path = Path(argv[2])
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            self.plan_identities = {
+                (
+                    tuple(candidate["width"]),
+                    str(candidate["q_mode"]),
+                    tuple(candidate["source_point_ids"]),
+                )
+                for candidate in plan["candidates"]
+            }
+            if self.static_registry:
+                _write_source_registry(registry_path, count=343)
+            else:
+                _write_source_registry_from_plan(registry_path, plan)
+                registry = json.loads(registry_path.read_text(encoding="utf-8"))
+                self.registry_identities = {
+                    (
+                        tuple(group["width"]),
+                        str(q_mode),
+                        tuple(group["source_point_ids_by_q_mode"][q_mode]),
+                    )
+                    for group in registry["groups"]
+                    for q_mode in group["available_q_modes"]
+                }
+        elif command == "fake-measure":
+            request_path = Path(argv[1])
+            feedback_path = Path(argv[2])
+            request = json.loads(request_path.read_text(encoding="utf-8"))
+            self.requests = [*self.requests, request]
+            self.measurement_count += 1
+            _write_feedback_from_request(request_path, feedback_path)
+        else:
+            raise AssertionError(f"unexpected argv: {argv!r} from {cwd}")
+        return 0
+
+
+def _full_chain_local_config_and_fake_runner(
+    tmp_path: Path,
+) -> tuple[LocalP6CoptV2XConfig, _FullChainCalls]:
+    return _framework_local_config_with_stage1_step(tmp_path), _FullChainCalls()
+
+
+def _full_chain_local_config_and_static_registry_runner(
+    tmp_path: Path,
+) -> tuple[LocalP6CoptV2XConfig, _FullChainCalls]:
+    return (
+        _framework_local_config_with_stage1_step(tmp_path),
+        _FullChainCalls(static_registry=True),
+    )
+
+
 def _minimal_request() -> dict[str, Any]:
     return {
         "measurement_request_sha256": "request-identity",
@@ -657,6 +728,79 @@ def test_framework_run_executes_scan_before_registry_or_measurement(tmp_path: Pa
     assert state.status == "completed"
     assert events[0] == "fake-stage1"
     assert events.count("fake-measure") == 4
+
+
+def test_full_framework_lifecycle_uses_actual_scan_artifact_and_four_feedback_rounds(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The public controller must execute the complete dynamic offline lifecycle."""
+    local, calls = _full_chain_local_config_and_fake_runner(tmp_path)
+    contract = load_public_contract(tmp_path / "contract.yaml")
+    initial_fit_input_counts: list[int] = []
+    online_fit_input_counts: list[int] = []
+    real_initial_fit = execution.fit_initial_coldstart_bundle
+    real_online_fit = execution.fit_online_bundle
+
+    def recording_initial_fit(
+        rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any
+    ) -> Any:
+        initial_fit_input_counts.append(len(rows))
+        return real_initial_fit(rows, *args, **kwargs)
+
+    def recording_online_fit(
+        rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any
+    ) -> Any:
+        online_fit_input_counts.append(len(rows))
+        return real_online_fit(rows, *args, **kwargs)
+
+    monkeypatch.setattr(execution, "fit_initial_coldstart_bundle", recording_initial_fit)
+    monkeypatch.setattr(execution, "fit_online_bundle", recording_online_fit)
+
+    state = run_p6_coptv2x_search(contract, local, "test-revision", calls.runner)
+
+    assert state.status == "completed"
+    assert calls.names == ["fake-stage1", "fake-registry", *(["fake-measure"] * 4)]
+    assert state.completed_rounds == 4
+    assert state.measured_candidate_count == 16
+    assert initial_fit_input_counts == [176]
+    assert online_fit_input_counts == [180, 184, 188]
+    assert [request["round_index"] for request in calls.requests] == [0, 1, 2, 3]
+    assert all(len(request["rows"]) == 4 for request in calls.requests)
+    selected = [row["row_id"] for request in calls.requests for row in request["rows"]]
+    assert len(selected) == len(set(selected)) == 16
+    assert calls.registry_identities == calls.plan_identities
+    plan = json.loads(
+        (local.local_output_root / "pyramid_candidate_plan.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    registry = json.loads(
+        (local.local_output_root / "source_registry.json").read_text(encoding="utf-8")
+    )
+    assert plan["schema_version"] == "p6_pyramid_candidate_plan_v2"
+    assert plan["candidate_source_mode"] == "framework_stage2_search_space"
+    assert plan["candidate_count"] >= 16
+    assert plan["candidate_count"] not in {343, 686}
+    assert registry["schema_version"] == "stage5_candidate_source_registry_v2"
+    public_state = state.local_state_path.read_text(encoding="utf-8")
+    assert str(tmp_path) not in public_state
+    assert all(row_id not in public_state for row_id in selected)
+
+
+def test_framework_lifecycle_never_uses_static_registry_after_stage1(
+    tmp_path: Path,
+) -> None:
+    """A fresh Stage1 artifact cannot be rebound to the legacy static registry."""
+    local, calls = _full_chain_local_config_and_static_registry_runner(tmp_path)
+    contract = load_public_contract(tmp_path / "contract.yaml")
+
+    with pytest.raises(P6CoptV2XExecutionError) as captured:
+        run_p6_coptv2x_search(contract, local, "test-revision", calls.runner)
+
+    assert captured.value.failure_code == "source_registry_invalid"
+    assert calls.measurement_count == 0
+    assert calls.names == ["fake-stage1", "fake-registry"]
 
 
 def test_framework_scan_rejects_a_stale_manifest_when_the_command_noops(

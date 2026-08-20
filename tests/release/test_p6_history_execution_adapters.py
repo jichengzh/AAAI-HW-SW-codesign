@@ -293,7 +293,7 @@ def _execution_binding_fields(private_root: Path) -> dict[str, Any]:
     return {"component_paths": components, "execution_interface": interface}
 
 
-def _binding(tmp_path: Path) -> dict[str, Any]:
+def _synthetic_history_binding(tmp_path: Path) -> dict[str, Any]:
     private_root = tmp_path / "synthetic-history"
     private_root.mkdir(exist_ok=True)
     evidence_sha = hashlib.sha256(b"synthetic-history-evidence").hexdigest()
@@ -349,7 +349,7 @@ def test_registry_cli_rejects_tampered_execution_interface_without_leak(
 ) -> None:
     local_output_root = tmp_path / "private-output"
     local_output_root.mkdir()
-    binding = _binding(tmp_path)
+    binding = _synthetic_history_binding(tmp_path)
     private_marker = "PRIVATE-INTERFACE-MUST-NOT-LEAK"
     binding["execution_interface"]["execution_chain"][1]["argv"][0] = str(tmp_path / private_marker)
     binding_path = _write_json(local_output_root / "binding.json", binding)
@@ -408,7 +408,9 @@ def test_registry_cli_writes_stage5_compatible_exact_dynamic_manifest(
 ) -> None:
     local_output_root = tmp_path / "private-output"
     local_output_root.mkdir()
-    binding_path = _write_json(local_output_root / "binding.json", _binding(tmp_path))
+    binding_path = _write_json(
+        local_output_root / "binding.json", _synthetic_history_binding(tmp_path)
+    )
     plan = _plan()
     plan_path = _write_json(local_output_root / "plan.json", plan)
     registry_path = local_output_root / "registry.json"
@@ -442,7 +444,9 @@ def test_registry_cli_rejects_extra_command_surface_with_category_only_stderr(
 ) -> None:
     local_output_root = tmp_path / "private-output"
     local_output_root.mkdir()
-    binding_path = _write_json(local_output_root / "binding.json", _binding(tmp_path))
+    binding_path = _write_json(
+        local_output_root / "binding.json", _synthetic_history_binding(tmp_path)
+    )
     plan_path = _write_json(local_output_root / "plan.json", _plan())
     registry_path = local_output_root / "registry.json"
 
@@ -486,7 +490,9 @@ def test_registry_cli_rejects_output_path_outside_local_root_without_leak(
 ) -> None:
     local_output_root = tmp_path / "private-output"
     local_output_root.mkdir()
-    binding_path = _write_json(local_output_root / "binding.json", _binding(tmp_path))
+    binding_path = _write_json(
+        local_output_root / "binding.json", _synthetic_history_binding(tmp_path)
+    )
     plan_path = _write_json(local_output_root / "plan.json", _plan())
     registry_path = tmp_path / "outside-private-output.json"
 
@@ -505,7 +511,9 @@ def test_registry_cli_rejects_unignored_repository_destination_without_leak(
     """Catches the CLI exposing a source contract through a trackable repository path."""
     registry_path = REPOSITORY_ROOT / "p6-private-registry-must-not-exist.json"
     assert not registry_path.exists()
-    binding_path = _write_json(tmp_path / "binding.json", _binding(tmp_path))
+    binding_path = _write_json(
+        tmp_path / "binding.json", _synthetic_history_binding(tmp_path)
+    )
     plan_path = _write_json(tmp_path / "plan.json", _plan())
 
     try:
@@ -596,7 +604,7 @@ def _measurement_request() -> dict[str, Any]:
     return {**body, "measurement_request_sha256": _canonical_sha(body)}
 
 
-def _write_fake_nvidia_smi(path: Path) -> None:
+def _write_synthetic_nvidia_smi(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "#!/bin/sh\n"
@@ -647,7 +655,7 @@ def test_measurement_cli_executes_synthetic_chain_and_atomically_writes_feedback
     tmp_path: Path,
 ) -> None:
     """Catches a CLI that validates but never persists complete four-row feedback."""
-    binding = _binding(tmp_path)
+    binding = _synthetic_history_binding(tmp_path)
     private_root = Path(binding["private_root"])
     round_output_root = private_root / "controller-round"
     round_output_root.mkdir()
@@ -656,7 +664,7 @@ def test_measurement_cli_executes_synthetic_chain_and_atomically_writes_feedback
     request_path = _write_json(round_output_root / "request.json", request)
     feedback_path = round_output_root / "feedback.json"
     fake_bin = tmp_path / "fake-bin"
-    _write_fake_nvidia_smi(fake_bin / "nvidia-smi")
+    _write_synthetic_nvidia_smi(fake_bin / "nvidia-smi")
 
     result = _run_measurement_cli(
         binding_path,
@@ -678,7 +686,7 @@ def test_measurement_cli_keeps_history_artifacts_separate_from_external_feedback
     tmp_path: Path,
 ) -> None:
     """Catches coupling controller feedback storage to the historical artifact root."""
-    binding = _binding(tmp_path)
+    binding = _synthetic_history_binding(tmp_path)
     history_root = Path(binding["private_root"])
     controller_round_root = tmp_path / "external-controller-round"
     controller_round_root.mkdir()
@@ -687,7 +695,7 @@ def test_measurement_cli_keeps_history_artifacts_separate_from_external_feedback
     request_path = _write_json(controller_round_root / "request.json", request)
     feedback_path = controller_round_root / "feedback.json"
     fake_bin = tmp_path / "fake-bin"
-    _write_fake_nvidia_smi(fake_bin / "nvidia-smi")
+    _write_synthetic_nvidia_smi(fake_bin / "nvidia-smi")
 
     result = _run_measurement_cli(
         binding_path,
@@ -774,7 +782,7 @@ def test_measurement_cli_rejects_symlink_feedback_without_private_leak(
     tmp_path: Path,
 ) -> None:
     """Catches replacement through a pre-existing symlink destination."""
-    binding = _binding(tmp_path)
+    binding = _synthetic_history_binding(tmp_path)
     private_root = Path(binding["private_root"])
     round_output_root = private_root / "controller-round"
     round_output_root.mkdir()
@@ -802,7 +810,7 @@ def test_measurement_cli_rejects_symlink_feedback_without_private_leak(
 
 def test_measurement_cli_rejects_preexisting_feedback_leaf(tmp_path: Path) -> None:
     """Catches an adapter overwriting stale or attacker-prepared feedback."""
-    binding = _binding(tmp_path)
+    binding = _synthetic_history_binding(tmp_path)
     private_root = Path(binding["private_root"])
     round_output_root = private_root / "controller-round"
     round_output_root.mkdir()
@@ -876,7 +884,7 @@ def test_measurement_cli_rejects_symlinked_feedback_parent_within_private_root(
     tmp_path: Path,
 ) -> None:
     """Catches writing through an in-boundary symlinked destination parent."""
-    binding = _binding(tmp_path)
+    binding = _synthetic_history_binding(tmp_path)
     private_root = Path(binding["private_root"])
     round_output_root = private_root / "controller-round"
     round_output_root.mkdir()
@@ -888,7 +896,7 @@ def test_measurement_cli_rejects_symlinked_feedback_parent_within_private_root(
     link_parent.symlink_to(actual_parent, target_is_directory=True)
     feedback_path = link_parent / "feedback.json"
     fake_bin = tmp_path / "fake-bin"
-    _write_fake_nvidia_smi(fake_bin / "nvidia-smi")
+    _write_synthetic_nvidia_smi(fake_bin / "nvidia-smi")
 
     result = _run_measurement_cli(
         binding_path,
