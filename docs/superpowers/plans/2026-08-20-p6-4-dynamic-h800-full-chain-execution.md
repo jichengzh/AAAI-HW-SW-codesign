@@ -16,7 +16,7 @@
 - Build candidates only from the current real Stage1 manifest through Stage2; do not use demos, static 343/686 counts, pruning heuristics, proxy objectives, or static fallback.
 - A candidate has one global `fp16` or `int8` q-mode; never add candidate-level mixed precision.
 - Reuse Gold176 for cold-start fitting only; do not measure it again.
-- Use GPU 5, 6, and 7 only. Keep all private paths, argv, IDs, measurements, checkpoints, logs, and results Git-ignored.
+- Use only the private configuration's selected three H800 devices. Keep all private paths, argv, IDs, measurements, checkpoints, logs, and results Git-ignored.
 - Preserve existing request/row identity checks and P6.1 static 343/686 regression. Do not add a per-asset SHA256 inventory.
 - Each task is RED -> GREEN -> focused review -> commit. Do not push, merge, download, or start H800 jobs during Tasks 1-5.
 
@@ -445,9 +445,9 @@ Expected: tests pass, coverage is at least 80%, and tracked files contain no pri
 
 - [ ] **Step 2: Verify the approved H800 control connection and private prerequisites**
 
-Use the existing control socket. Run redacted probes only for H800 model, GPU 5/6/7 occupancy, output-root free space, Python/TVM availability, and presence of the private locator/template.
+Use the existing control socket. Run redacted probes only for the private configuration's selected three H800 devices' model and occupancy, output-root free space, Python/TVM availability, and presence of the private locator/template.
 
-Expected: connection is live; GPU 5/6/7 are H800 and below the configured occupancy threshold; no raw path, data, or checkpoint content reaches public output.
+Expected: connection is live; the private configuration's selected three H800 devices are below the configured occupancy threshold; no raw path, data, or checkpoint content reaches public output.
 
 - [ ] **Step 3: Materialize and preflight the private run bundle**
 

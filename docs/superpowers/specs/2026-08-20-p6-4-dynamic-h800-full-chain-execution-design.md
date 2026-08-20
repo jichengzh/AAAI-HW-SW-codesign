@@ -17,7 +17,7 @@
 
 ## 范围与非目标
 
-P6.4 只运行 H800/TVM，并使用 GPU 5、6、7。不会下载资产、调用 Orin/TensorRT/CPU/RTX 4090、重测 Gold176、回退 static registry、设置 343/686 固定规模或加入 FLOPs、代理时延、Pareto、宽度范围等预剪枝。
+P6.4 只运行 H800/TVM，并使用私有配置选择的三张 H800 设备。不会下载资产、调用 Orin/TensorRT/CPU/RTX 4090、重测 Gold176、回退 static registry、设置 343/686 固定规模或加入 FLOPs、代理时延、Pareto、宽度范围等预剪枝。
 
 P6.4 不重写已有 Stage5 的训练、导出、TVM 或 AP 逻辑。它不把单次成功运行表述为论文数值已复现；论文表格级对比仍是后续证据整理工作。
 
@@ -88,9 +88,9 @@ Gold176 只用于初始 cost-model 训练，绝不重新测量。每轮仅在上
 
 ### 5. GPU 调度
 
-仅使用 GPU 5、6、7。执行器在 Stage1 前、每轮前和每轮实际测量后检查三卡的 H800 型号、固定 index/UUID 映射以及占用阈值。未满足准入时自动等待并重检；准入后发生漂移或不兼容占用时本次运行失败，避免把受污染测量并入 feedback。
+仅使用私有配置选择的三张 H800 设备。执行器在 Stage1 前、每轮前和每轮实际测量后检查三卡的 H800 型号、绑定的 index/UUID 映射以及占用阈值。未满足准入时自动等待并重检；准入后发生漂移或不兼容占用时本次运行失败，避免把受污染测量并入 feedback。
 
-Stage1 scan 可以暂时使用 GPU 5；它结束后仍须重新通过三卡联合准入，才能进入真实四轮测量。
+Stage1 scan 可以暂时使用私有配置选择的三张 H800 中的一张；它结束后仍须重新通过三卡联合准入，才能进入真实四轮测量。
 
 ## 错误语义
 
@@ -108,7 +108,7 @@ Stage1 scan 可以暂时使用 GPU 5；它结束后仍须重新通过三卡联�
 2. bootstrap 的唯一来源选择、拒绝歧义、私有输出和无公开泄露；
 3. 动态 plan/registry/Stage5 manifest 的 exact identity、非固定候选数量、FP16/INT8 独立性与不少于 16 的门槛；
 4. controller 的 Gold176 cold start、四次 online feedback update、四轮四行批次和失败即停；
-5. GPU 5/6/7 准入、等待、漂移与 Git 忽略输出边界；
+5. 私有配置选择的三张 H800 的准入、等待、漂移与 Git 忽略输出边界；
 6. P6.1 static mode 的既有 343/686 回归不变。
 
 真实运行的 P6 执行闭环收口条件为：本次 Stage1 scan 成功、动态候选池通过 preflight、四轮全部完成、16 个唯一候选均有已验证的实际反馈，最终状态为 `completed`。之后可以将 P6 标记为执行闭环完成，但不得仅凭该次运行宣称论文表格已复现。
@@ -119,4 +119,4 @@ Stage1 scan 可以暂时使用 GPU 5；它结束后仍须重新通过三卡联�
 2. 实现私有 bootstrap/runner-interface materialization 与动态 local config 生成。
 3. 以 TDD 接入 Stage1 -> Stage2 -> registry -> historical measurement 的 controller 状态机，并保持 static mode 回归。
 4. 完成离线质量门禁和 disclosure 检查。
-5. 在 GPU 5/6/7 准入后执行真实四轮；只在满足收口条件时更新 P6 审计状态。
+5. 在私有配置选择的三张 H800 准入后执行真实四轮；只在满足收口条件时更新 P6 审计状态。

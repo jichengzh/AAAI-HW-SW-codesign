@@ -10,7 +10,7 @@ from typing import Any, Mapping, Sequence
 
 import pytest
 
-from framework.stage6.p6_history_binding_v1 import GpuRecord
+from framework.stage6.p6_history_binding_v1 import GpuRecord, public_binding_projection
 from framework.stage6.p6_history_measurement_v1 import (
     P6HistoryMeasurementError,
     run_history_measurement_batch,
@@ -18,6 +18,7 @@ from framework.stage6.p6_history_measurement_v1 import (
 
 
 METRICS = ("latency_ms", "energy_j", "ap30", "ap50", "ap70")
+SYNTHETIC_GPU_INDICES = (101, 103, 107)
 STAGES = (
     "source_materialization",
     "quantization",
@@ -41,7 +42,9 @@ def _executable(path: Path) -> str:
     return str(path)
 
 
-def _binding(private_root: Path) -> dict[str, Any]:
+def _binding(
+    private_root: Path, *, gpu_indices: tuple[int, int, int] = SYNTHETIC_GPU_INDICES
+) -> dict[str, Any]:
     component_root = private_root / "components"
     components = {
         "controller": _executable(component_root / "stage5_task_round_controller_v3.sh"),
@@ -130,7 +133,10 @@ def _binding(private_root: Path) -> dict[str, Any]:
         ],
         "environment": {
             "values": {
-                "CUDA_VISIBLE_DEVICES": {"kind": "literal", "value": "17,19,23"},
+                "CUDA_VISIBLE_DEVICES": {
+                    "kind": "literal",
+                    "value": ",".join(str(index) for index in gpu_indices),
+                },
                 "P6_HISTORY_RUN_MODE": {"kind": "literal", "value": "bound"},
                 "P6_HISTORY_PRIVATE_ROOT": {
                     "kind": "private_path",
@@ -185,9 +191,9 @@ def _binding(private_root: Path) -> dict[str, Any]:
         "component_paths": components,
         "execution_interface": interface,
         "gpu_policy": {
-            "indices": [17, 19, 23],
+            "indices": list(gpu_indices),
             "uuid_by_index": {
-                str(index): f"GPU-{index}" for index in (17, 19, 23)
+                str(index): f"GPU-synthetic-{index}" for index in gpu_indices
             },
             "model": "h800",
             "maximum_occupancy": 0.05,
@@ -269,6 +275,7 @@ def _request() -> dict[str, Any]:
 
 def _records(
     *,
+    indices: tuple[int, int, int] = SYNTHETIC_GPU_INDICES,
     model: str = "NVIDIA H800 80GB HBM3",
     occupancy: float = 0.0,
     drift_index: int | None = None,
@@ -276,11 +283,15 @@ def _records(
     return tuple(
         GpuRecord(
             index=index,
-            uuid=f"GPU-drift-{index}" if index == drift_index else f"GPU-{index}",
+            uuid=(
+                f"GPU-drift-{index}"
+                if index == drift_index
+                else f"GPU-synthetic-{index}"
+            ),
             model_name=model,
             occupancy=occupancy,
         )
-        for index in (17, 19, 23)
+        for index in indices
     )
 
 
@@ -518,22 +529,51 @@ def test_valid_route_executes_activation_and_five_stages_then_returns_four_rows(
         }
         for call in runner.calls
     )
-    assert probe.calls == [(17, 19, 23), (17, 19, 23)]
+    assert probe.calls == [SYNTHETIC_GPU_INDICES, SYNTHETIC_GPU_INDICES]
     assert runner.initial_state is not None
     assert runner.initial_state["stage"] == "initialized"
     assert len(runner.initial_state["rows"]) == 4
 
 
-def test_runtime_gpu_admission_uses_canonical_binding_policy_indices(
+def test_measurement_revalidates_the_binding_private_policy_before_and_after_execution(
     tmp_path: Path,
 ) -> None:
     """Catches a runtime probe reverting to a fixed device policy."""
-    _, _, probe, _ = _run(tmp_path)
+    policy_indices = (211, 223, 227)
+    private_root = tmp_path / "private"
+    private_root.mkdir()
+    round_root = private_root / "controller-round"
+    round_root.mkdir()
+    request = _request()
+    runner = FakeRunner(request)
+    probe = FakeProbe(
+        _records(indices=policy_indices), _records(indices=policy_indices)
+    )
 
-    assert probe.calls == [(17, 19, 23), (17, 19, 23)]
+    run_history_measurement_batch(
+        request,
+        _binding(private_root, gpu_indices=policy_indices),
+        round_root,
+        runner,
+        probe,
+    )
+
+    assert probe.calls == [policy_indices, policy_indices]
 
 
-@pytest.mark.parametrize("indices", ([17, 17, 23], [23, 19, 17], [17, 19]))
+def test_public_binding_projection_does_not_expose_private_gpu_policy(tmp_path: Path) -> None:
+    """Catches a public binding surface copying private GPU selection or UUIDs."""
+    private_binding = _binding(tmp_path)
+
+    projection = public_binding_projection(private_binding)
+    serialized_projection = json.dumps(projection, sort_keys=True)
+
+    assert "gpu_policy" not in projection
+    assert "GPU-synthetic-101" not in serialized_projection
+    assert "101" not in serialized_projection
+
+
+@pytest.mark.parametrize("indices", ([101, 101, 107], [107, 103, 101], [101, 103]))
 def test_runtime_rejects_noncanonical_binding_gpu_policy_indices(
     tmp_path: Path,
     indices: list[int],
@@ -690,10 +730,10 @@ def test_malformed_request_stops_before_gpu_or_process(tmp_path: Path, case: str
     [
         FakeProbe(_records(model="NVIDIA H100"), _records()),
         FakeProbe(_records(occupancy=0.2), _records()),
-        FakeProbe(_records(drift_index=23), _records()),
+        FakeProbe(_records(drift_index=107), _records()),
         FakeProbe(_records(), _records(model="NVIDIA H100")),
         FakeProbe(_records(), _records(occupancy=0.2)),
-        FakeProbe(_records(), _records(drift_index=23)),
+        FakeProbe(_records(), _records(drift_index=107)),
     ],
 )
 def test_gpu_admission_and_pre_post_drift_fail_closed(tmp_path: Path, probe: FakeProbe) -> None:

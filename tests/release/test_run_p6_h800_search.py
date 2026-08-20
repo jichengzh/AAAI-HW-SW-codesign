@@ -571,6 +571,11 @@ def test_cli_runs_full_framework_lifecycle_through_provisioned_history_binding(
     public_surface = result.stdout + result.stderr + json.dumps(state, sort_keys=True)
     assert str(tmp_path) not in public_surface
     assert "synthetic-history" not in public_surface
+    assert "gpu_policy" not in public_surface
+    assert all(
+        uuid not in public_surface
+        for uuid in binding["gpu_policy"]["uuid_by_index"].values()
+    )
     assert all(path.read_bytes() == content for path, content in public_documents.items())
     assert all(
         artifact.resolve().is_relative_to(paths["private_root"].resolve())
