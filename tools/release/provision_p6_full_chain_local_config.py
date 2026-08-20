@@ -35,7 +35,7 @@ def _absolute_path(value: str) -> Path:
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = _ArgumentParser(allow_abbrev=False)
+    parser = _ArgumentParser(add_help=False, allow_abbrev=False)
     parser.add_argument("--legacy-local-config", required=True, type=_absolute_path)
     parser.add_argument("--runner-template", required=True, type=_absolute_path)
     parser.add_argument("--local-output-root", required=True, type=_absolute_path)

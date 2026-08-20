@@ -403,6 +403,14 @@ def test_cli_rejects_relative_paths_without_echoing_them(tmp_path: Path) -> None
     assert "relative-private.yaml" not in result.stderr
 
 
+def test_cli_redacts_help_request_as_argument_error(tmp_path: Path) -> None:
+    result = _run_cli(tmp_path, "--help")
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert result.stderr == "argument_error\n"
+
+
 def test_cli_rejects_invalid_gpu_probe_without_pair(tmp_path: Path) -> None:
     result = _run_cli(
         tmp_path,
