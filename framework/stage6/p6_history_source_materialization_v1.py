@@ -124,31 +124,32 @@ def project_source_materialization_request(
         shared_presence = [
             "shared_source_paths" in row["source_contract"] for row in rows
         ]
-        if not any(shared_presence):
+        if any(shared_presence):
+            if not all(shared_presence):
+                _invalid()
+            for row in rows:
+                contract = row["source_contract"]
+                _validate_shared_identity(row, contract)
+                shared_paths = _validated_shared_paths(
+                    contract["shared_source_paths"]
+                )
+                row["source_contract"] = _sanitized_flat_contract(
+                    contract,
+                    shared_paths=shared_paths,
+                )
+        else:
             flat_presence = [
                 set(SHARED_SOURCE_PATH_KEYS).issubset(row["source_contract"])
                 for row in rows
             ]
-            if any(flat_presence):
-                if not all(flat_presence):
-                    _invalid()
-                _validate_flat_projected_contracts(rows)
-            return ProjectedSourceRequest(projected, ordered_group_ids)
-        if not all(shared_presence):
-            _invalid()
-
-        for row in rows:
-            contract = row["source_contract"]
-            _validate_shared_identity(row, contract)
-            shared_paths = _validated_shared_paths(contract["shared_source_paths"])
-            flat_contract = copy.deepcopy(contract)
-            flat_contract.pop("shared_source_paths")
-            flat_contract.pop("dynamic_materialization_recipe", None)
-            flat_contract.pop("materialization_outputs_by_q_mode", None)
-            for key in LEGACY_DYNAMIC_OUTPUT_KEYS:
-                flat_contract.pop(key, None)
-            flat_contract.update(shared_paths)
-            row["source_contract"] = flat_contract
+            if not any(flat_presence):
+                return ProjectedSourceRequest(projected, ordered_group_ids)
+            if not all(flat_presence):
+                _invalid()
+            for row in rows:
+                row["source_contract"] = _sanitized_flat_contract(
+                    row["source_contract"]
+                )
         _validate_flat_projected_contracts(rows)
         for row in rows:
             flat_contract = row["source_contract"]
@@ -288,12 +289,7 @@ def _validated_materializer(raw_path: Path) -> Path:
 
 
 def _validated_marker_path(raw_path: object) -> Path:
-    if not isinstance(raw_path, str):
-        _invalid()
-    path = _absolute_path(Path(raw_path))
-    if ".." in path.parts:
-        _invalid()
-    return path
+    return _validated_lexical_path(raw_path)
 
 
 def _validate_marker_pair(
@@ -537,14 +533,36 @@ def _validated_shared_paths(raw_paths: object) -> dict[str, str]:
         _invalid()
     paths = {key: raw_paths[key] for key in SHARED_SOURCE_PATH_KEYS}
     if any(
-        not isinstance(value, str)
-        or not value
-        or not Path(value).is_absolute()
-        or any(character in value for character in ("\x00", "\r", "\n"))
-        for value in paths.values()
+        str(_validated_lexical_path(value)) != value for value in paths.values()
     ) or len(set(paths.values())) != len(SHARED_SOURCE_PATH_KEYS):
         _invalid()
     return paths
+
+
+def _validated_lexical_path(raw_path: object) -> Path:
+    if not isinstance(raw_path, str):
+        _invalid()
+    path = _absolute_path(Path(raw_path))
+    if ".." in raw_path.split("/"):
+        _invalid()
+    return path
+
+
+def _sanitized_flat_contract(
+    contract: Mapping[str, Any],
+    *,
+    shared_paths: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    flat_contract = copy.deepcopy(dict(contract))
+    flat_contract.pop("shared_source_paths", None)
+    flat_contract.pop("dynamic_materialization_recipe", None)
+    flat_contract.pop("materialization_outputs_by_q_mode", None)
+    for key in LEGACY_DYNAMIC_OUTPUT_KEYS:
+        if shared_paths is not None or key not in SHARED_SOURCE_PATH_KEYS:
+            flat_contract.pop(key, None)
+    if shared_paths is not None:
+        flat_contract.update(shared_paths)
+    return flat_contract
 
 
 def _validate_flat_projected_contracts(rows: Sequence[Mapping[str, Any]]) -> None:

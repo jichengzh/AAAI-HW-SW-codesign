@@ -491,6 +491,118 @@ def test_projection_rejects_invalid_already_projected_request(mutation: str) -> 
     assert captured.value.category == "history_execution_invalid"
 
 
+def test_projection_sanitizes_and_rehashes_self_consistent_already_flat_request() -> None:
+    """Catches flat recipe-v2 requests retaining a second source truth."""
+    request = dict(project_source_materialization_request(_request()).request)
+    legacy_values = {
+        "training_path": "/private/untrusted/training",
+        "calibration_path": "/private/untrusted/calibration",
+        "dynamic_materialization_recipe": {"schema_version": "untrusted-recipe"},
+        "materialization_outputs_by_q_mode": {
+            "fp16": {"checkpoint_path": "/private/untrusted/checkpoint"}
+        },
+    }
+    for row in request["rows"]:
+        row["source_contract"].update(copy.deepcopy(legacy_values))
+        row["source_contract_sha256"] = _sha(row["source_contract"])
+    _rehash_request(request)
+    original = copy.deepcopy(request)
+
+    projected = project_source_materialization_request(request)
+
+    expected_contract_keys = {
+        "schema_version",
+        "group_id",
+        "model",
+        "width",
+        "artifact_id",
+        "source_status",
+        "source_evidence_sha256",
+        "materialization_scope",
+        "stage_widths",
+        "training_required",
+        "training_source_kind",
+        "base_checkpoint_path",
+        "dataset_root",
+        "pyramid_config_path",
+        "training_parameters",
+        "checkpoint_path",
+        "checkpoint_dir",
+        "config_path",
+        "training_done_marker",
+        "onnx_path",
+        "onnx_report_path",
+        "calibration_root",
+        "calibration_npz",
+        "calibration_summary",
+        "trt_calibration_dir",
+        "source_done_marker",
+    }
+    assert request == original
+    assert projected.request["measurement_request_sha256"] != request[
+        "measurement_request_sha256"
+    ]
+    for row in projected.request["rows"]:
+        assert set(row["source_contract"]) == expected_contract_keys
+        assert row["source_contract_sha256"] == _sha(row["source_contract"])
+        assert projected.request["row_sha256"][row["row_id"]] == _sha(row)
+    projected_body = {
+        key: value
+        for key, value in projected.request.items()
+        if key != "measurement_request_sha256"
+    }
+    assert projected.request["measurement_request_sha256"] == _sha(projected_body)
+    assert project_source_materialization_request(projected.request).request == (
+        projected.request
+    )
+
+
+def test_projection_rejects_lexical_alias_before_cross_group_path_ownership() -> None:
+    """Catches raw-string ownership accepting two spellings of one output path."""
+    request = _request()
+    alias = (
+        "/private/synthetic/materialized/17-31-63/../23-47-95/checkpoint_path"
+    )
+    for row_index in (0, 1):
+        contract = request["rows"][row_index]["source_contract"]
+        contract["shared_source_paths"]["checkpoint_path"] = alias
+        request["rows"][row_index]["source_contract_sha256"] = _sha(contract)
+    _rehash_request(request)
+
+    with pytest.raises(P6HistorySourceMaterializationError) as captured:
+        project_source_materialization_request(request)
+
+    assert captured.value.category == "history_execution_invalid"
+    assert str(captured.value) == "history_execution_invalid"
+    assert alias not in str(captured.value)
+
+
+@pytest.mark.parametrize(
+    "path_key",
+    [*SHARED_SOURCE_PATH_KEYS, "base_checkpoint_path", "dataset_root", "pyramid_config_path"],
+)
+def test_projection_rejects_parent_components_in_every_recipe_v2_path(
+    path_key: str,
+) -> None:
+    """Catches any static/shared path bypassing lexical component validation."""
+    request = _request()
+    contract = request["rows"][2]["source_contract"]
+    malformed = f"/private/synthetic/materialized/23-47-95/../escape/{path_key}"
+    if path_key in SHARED_SOURCE_PATH_KEYS:
+        contract["shared_source_paths"][path_key] = malformed
+    else:
+        contract[path_key] = malformed
+    request["rows"][2]["source_contract_sha256"] = _sha(contract)
+    _rehash_request(request)
+
+    with pytest.raises(P6HistorySourceMaterializationError) as captured:
+        project_source_materialization_request(request)
+
+    assert captured.value.category == "history_execution_invalid"
+    assert str(captured.value) == "history_execution_invalid"
+    assert malformed not in str(captured.value)
+
+
 def test_source_invocations_dedupe_canonical_group_order_and_round_robin_policy(
     tmp_path: Path,
 ) -> None:
