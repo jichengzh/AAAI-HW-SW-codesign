@@ -28,7 +28,7 @@
 - Bare markers never authorize reuse. Only an adapter-owned `p6_group_source_reuse_receipt_v1` bound to the immutable `p6_materializer_fresh_run_context_v1`, its producer request/row, and recomputed artifact/marker digests may authorize skipping a source call.
 - Run context and receipt locations are exact under `.p6-materializer-training-bridge-v1`; no `glob`, `rglob`, basename search, marker-parent inference, or filename guessing may locate them. Bounded traversal is allowed only inside an already-declared directory artifact to compute its digest.
 - Contexts and receipts are create-only, atomically published with no-replace semantics, mode `0600` beneath mode-`0700` parents, and never updated, repaired, overwritten, or accepted from a wrapper.
-- All root, metadata, receipt, and declared artifact paths must pass canonical lexical spelling, component-wise `lstat`, resolved containment, exact type, symlink rejection, path-escape rejection, and single-link regular-file checks. Directory digests reject symlinks, hard-linked regular files, sockets, devices, and FIFOs.
+- All root, metadata, receipt, and declared artifact paths must pass canonical lexical spelling, component-wise `lstat`, resolved containment, exact type, symlink rejection, path-escape rejection, and single-link regular-file checks. The evidence path object stores the exact `root.resolve(strict=True)` reached after those checks, and both context create/load hash `str()` of that same resolved object; raw or marker-derived roots are forbidden. Directory digests reject symlinks, hard-linked regular files, sockets, devices, and FIFOs.
 - The controller creates one fresh 32-byte nonce and run context only after validating the task, public-safe revision, local-root fingerprint, complete Stage2 plan, and registry identities, and before any measurement/GPU/activation boundary. No nonce/context/receipt/local-root environment key is added.
 - Measurement requires an existing valid context and never creates one. `UNSEEN` means receipt plus all 11 leaves are absent; `READY_CURRENT_RUN` means the receipt and all bound bytes validate; partial, stale, or mismatched states stop before downstream execution.
 - All four selected rows in every round continue through quantization, performance/TVM, AP, and finalization, including same-group mixed q-mode rows. Reuse skips only source materialization/training.
@@ -55,7 +55,7 @@
 - Modify `tools/release/provision_p6_full_chain_local_config.py`: surface stable categories for invalid wrapper/training contracts and add no-private-value stderr guarantees.
 - Modify `framework/stage6/p6_history_registry_v1.py`: use the new training contract validator for recipe-v2 group contracts and remove untrusted output aliases before hashing.
 - Create `framework/stage6/p6_source_reuse_evidence_v1.py`: immutable run-context/receipt schemas, canonical hashing and strict JSON loading, deterministic paths, filesystem safety, source-bundle digests, group classification, first-use filtering, producer validation, and exclusive adapter receipt publication.
-- Modify `framework/stage6/p6_history_measurement_v1.py`: expose planned/runtime exact round-path APIs, enforce the exact five-key environment, require the existing fresh context, invoke only unseen groups, publish receipts from the public adapter, revalidate all selected groups, then run every downstream stage.
+- Modify `framework/stage6/p6_history_measurement_v1.py`: in Task 4 add private routing glue that returns the validated resolved public-round parent as `local_output_root`; in Task 5 expose the same planned/runtime exact round-path contract without signature or return-key drift; enforce the exact five-key environment, require the existing fresh context, invoke only unseen groups, publish receipts from the public adapter, revalidate all selected groups, then run every downstream stage.
 - Modify `framework/stage6/p6_history_source_materialization_v1.py`: preserve Task 3 training/hash projection and canonical marker/invocation extraction, route reusable runtime path safety into the focused evidence module, and remove the contradictory blanket per-invocation marker-absence rule.
 - Modify `framework/stage6/coptv2x_h800_search_v2.py`: validate the public-safe revision, perform exact fresh-run/relaunch guards, and create the one context after plan/registry validation and before the round loop.
 - Create focused Task 4 tests: `tests/stage6/test_p6_source_reuse_evidence_paths.py`, `tests/stage6/test_p6_source_reuse_evidence_receipts.py`, and `tests/stage6/test_p6_source_reuse_measurement.py`.
@@ -1132,7 +1132,7 @@ git commit -m "fix: preserve P6 training fields through projection"
 **Files:**
 
 - Create: `framework/stage6/p6_source_reuse_evidence_v1.py`
-- Modify: `framework/stage6/p6_history_measurement_v1.py` (routing glue only)
+- Modify: `framework/stage6/p6_history_measurement_v1.py` (routing glue only, including the private resolver's validated resolved `local_output_root` result)
 - Modify: `framework/stage6/p6_history_source_materialization_v1.py` (projection/invocation routing only)
 - Create: `tests/stage6/test_p6_source_reuse_evidence_paths.py`
 - Create: `tests/stage6/test_p6_source_reuse_evidence_receipts.py`
@@ -1141,7 +1141,7 @@ git commit -m "fix: preserve P6 training fields through projection"
 - Modify: `tests/stage6/test_p6_history_source_materialization.py` (move paused blanket marker-gate coverage to the focused files)
 - Modify: `tests/release/test_p6_history_execution_adapters.py` (fixture routing only)
 
-**Paused-diff migration rule:** The five unstaged Task 4 files are existing user work, not disposable scaffolding. Preserve their exact five-key environment assertion, local-root containment checks, source failure redaction, regular-file marker checks, and first-use marker-order test logic where compatible. Move focused new cases out of the already-large mixed test modules. Replace `assert_source_markers_absent_before_invocation()` as a blanket per-measurement rule with `UNSEEN`/`READY_CURRENT_RUN` classification: absence and mtime ordering apply only to first-use groups; later reuse is authorized by current-run receipt and recomputed digests. Do not discard, stash, reset, or overwrite the paused work wholesale.
+**Paused-diff migration rule:** The five unstaged Task 4 files are existing user work, not disposable scaffolding. Preserve their exact five-key environment assertion, local-root containment checks, source failure redaction, regular-file marker checks, first-use marker-order test logic, and compatible private-resolver `local_output_root` routing. Move focused new cases out of the already-large mixed test modules. Replace `assert_source_markers_absent_before_invocation()` as a blanket per-measurement rule with `UNSEEN`/`READY_CURRENT_RUN` classification: absence and mtime ordering apply only to first-use groups; later reuse is authorized by current-run receipt and recomputed digests. Do not discard, stash, reset, or overwrite the paused work wholesale.
 
 **Interfaces:**
 
@@ -1165,6 +1165,18 @@ class P6SourceReuseEvidenceError(ValueError):
         "p6_source_reuse_mismatch",
     ] | None
     public_category: Literal["history_execution_invalid", "unsafe_destination"]
+    def __init__(
+        self,
+        *,
+        public_category: Literal[
+            "history_execution_invalid", "unsafe_destination"
+        ],
+        private_category: Literal[
+            "p6_source_reuse_partial",
+            "p6_source_reuse_stale",
+            "p6_source_reuse_mismatch",
+        ] | None = None,
+    ) -> None: ...
 
 RUN_METADATA_RELATIVE_ROOT = Path(".p6-materializer-training-bridge-v1")
 RUN_CONTEXT_RELATIVE_PATH = RUN_METADATA_RELATIVE_ROOT / "run-context.json"
@@ -1296,6 +1308,19 @@ def require_selected_groups_ready_current_run(
 ) -> tuple[P6GroupSourceReceipt, ...]: ...
 ```
 
+- Also owns this Task 4-private routing contract in `p6_history_measurement_v1.py`; Task 5 exports the same semantics without changing the positional arguments or mapping keys:
+
+```python
+def _resolve_round_paths(
+    interface: Mapping[str, Any],
+    private_root: Path,
+    supplied_public_round_root: Path,
+    round_index: int,
+) -> dict[str, Path]: ...
+```
+
+The returned mapping includes the existing `history_root` and binding-resolved private leaves plus `local_output_root`. That root is exactly the validated resolved parent of the already validated supplied public round directory. It is never inferred from a marker, shared-output leaf, private round path, or receipt path.
+
 `artifact_digests` serializes as an exact-key object with the nine `SOURCE_ARTIFACT_KEYS`; expected kinds are `regular_file` for checkpoint/config/ONNX/report/NPZ/summary and `directory_tree` for checkpoint/calibration/TRT directories. A declared file may also appear inside a declared directory-tree digest; this intentional duplicate coverage proves both leaf and tree identities. `marker_digests` serializes as an exact-key object with the two `SOURCE_MARKER_KEYS`. Tuple order in memory is the constant order above; JSON hashes use sorted keys.
 
 - [ ] **Step 1: Write RED canonical hashing, layout, and context tests**
@@ -1305,6 +1330,7 @@ Create `tests/stage6/test_p6_source_reuse_evidence_paths.py` with this canonical
 ```python
 def test_canonical_json_hash_and_group_receipt_path_are_exact(tmp_path: Path) -> None:
     root = _safe_local_root(tmp_path)
+    resolved_root = root.resolve(strict=True)
     paths = plan_source_reuse_paths(root)
     group_id = "pyramid|16x32x64"
     expected_key = hashlib.sha256(
@@ -1314,14 +1340,15 @@ def test_canonical_json_hash_and_group_receipt_path_are_exact(tmp_path: Path) ->
     assert canonical_json_sha256({"b": 2, "a": 1}) == hashlib.sha256(
         b'{"a":1,"b":2}'
     ).hexdigest()
-    assert paths.run_context == root / RUN_CONTEXT_RELATIVE_PATH
+    assert paths.local_output_root == resolved_root
+    assert paths.run_context == resolved_root / RUN_CONTEXT_RELATIVE_PATH
     assert receipt_path_for_group(paths, group_id) == (
-        root / GROUP_RECEIPT_RELATIVE_ROOT / f"{expected_key}.json"
+        resolved_root / GROUP_RECEIPT_RELATIVE_ROOT / f"{expected_key}.json"
     )
 ```
 
 Add `test_create_context_binds_exact_task_revision_root_plan_and_registry()` using `_validated_task_contract()`, `_candidate_plan()`, and `_source_registry()` fixtures. It must assert a 64-lowercase-hex nonce, `created_before_round_index == 0`, exact plan/registry hashes, root fingerprint
-`sha256(b"p6-local-output-root-v1\0" + str(root.resolve()).encode()).hexdigest()`, canonical context hash, mode `0600` context, and mode `0700` metadata/receipt directories. Patch `secrets.token_bytes` to a known 32-byte value only in this unit test and assert it is called once.
+`sha256(b"p6-local-output-root-v1\0" + str(root.resolve(strict=True)).encode()).hexdigest()`, canonical context hash, mode `0600` context, and mode `0700` metadata/receipt directories. Assert both create and load obtain the same `P6SourceReusePaths.local_output_root == root.resolve(strict=True)` and use that exact object for plan/registry leaves and root hashing; no raw caller-path string may enter the hash. Patch `secrets.token_bytes` to a known 32-byte value only in this unit test and assert it is called once.
 
 Add this exact path/context mutation table:
 
@@ -1330,6 +1357,7 @@ Add this exact path/context mutation table:
     "mutation",
     [
         "relative_root",
+        "noncanonical_root",
         "missing_root",
         "root_symlink_component",
         "root_not_directory",
@@ -1388,9 +1416,28 @@ def canonical_json_sha256(value: object) -> str:
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
-def _local_root_sha256(root: Path) -> str:
+def _validated_resolved_local_root(root: Path) -> Path:
+    if not root.is_absolute() or os.path.normpath(str(root)) != str(root):
+        raise P6SourceReuseEvidenceError(public_category="unsafe_destination")
+    _require_existing_nonsymlink_directory_components(root)
+    resolved_root = root.resolve(strict=True)
+    if not resolved_root.is_dir():
+        raise P6SourceReuseEvidenceError(public_category="unsafe_destination")
+    return resolved_root
+
+def plan_source_reuse_paths(local_output_root: Path) -> P6SourceReusePaths:
+    resolved_root = _validated_resolved_local_root(local_output_root)
+    return P6SourceReusePaths(
+        local_output_root=resolved_root,
+        metadata_root=resolved_root / RUN_METADATA_RELATIVE_ROOT,
+        run_context=resolved_root / RUN_CONTEXT_RELATIVE_PATH,
+        receipt_root=resolved_root / GROUP_RECEIPT_RELATIVE_ROOT,
+    )
+
+def _local_root_sha256(resolved_root: Path) -> str:
     return hashlib.sha256(
-        b"p6-local-output-root-v1\0" + str(root).encode("utf-8")
+        b"p6-local-output-root-v1\0"
+        + str(resolved_root).encode("utf-8")
     ).hexdigest()
 
 def _group_key_sha256(group_id: str) -> str:
@@ -1399,11 +1446,33 @@ def _group_key_sha256(group_id: str) -> str:
     ).hexdigest()
 ```
 
+Lexical absolute/canonical spelling, component `lstat`, symlink, and directory-type checks occur before the exact `resolved_root = root.resolve(strict=True)` assignment above. `P6SourceReusePaths.local_output_root` always stores that resolved object. `create_fresh_run_context()` begins with `paths = plan_source_reuse_paths(local_output_root)` and hashes `paths.local_output_root`; `load_fresh_run_context()` begins with `paths = resolve_existing_source_reuse_paths(local_output_root)` and recomputes the hash from the same `paths.local_output_root`. Both resolve plan/registry/context/receipt leaves only from `paths`; neither hashes or joins from the raw function argument, re-resolves a marker-derived path, or permits raw-root drift.
+
+Use these exact initial bindings in the two functions:
+
+```python
+# create_fresh_run_context(...)
+paths = plan_source_reuse_paths(local_output_root)
+resolved_root = paths.local_output_root
+root_sha256 = _local_root_sha256(resolved_root)
+plan_path = resolved_root / "pyramid_candidate_plan.json"
+registry_path = resolved_root / "source_registry.json"
+
+# load_fresh_run_context(...)
+paths = resolve_existing_source_reuse_paths(local_output_root)
+resolved_root = paths.local_output_root
+root_sha256 = _local_root_sha256(resolved_root)
+plan_path = resolved_root / "pyramid_candidate_plan.json"
+registry_path = resolved_root / "source_registry.json"
+```
+
+All subsequent context-path and receipt-path access uses `paths`; the two local `resolved_root` bindings are the sole source of plan/registry joins and local-root fingerprints.
+
 Strict JSON loading uses `object_pairs_hook` to reject duplicate keys and exact schema-key sets; reject booleans where integers are required, non-finite numbers, noncanonical path strings, invalid schema literals, uppercase/non-64-hex hashes, and unknown keys. `_publish_exclusive_json()` writes canonical bytes to a same-directory `O_CREAT|O_EXCL|O_NOFOLLOW` mode-`0600` temp file, flushes and `fsync`s it, publishes with `renameat2(RENAME_NOREPLACE)` or same-filesystem hard-link no-replace semantics, unlinks only its temp, and `fsync`s the parent. Ordinary `os.replace()` is forbidden. If the final appears at any point, fail without modifying it.
 
-`create_fresh_run_context()` must, before calling `secrets.token_bytes(32)`, validate the exact persisted plan/registry bytes against the supplied validated mappings and require the context, metadata/receipt namespace, deterministic receipt leaf for every registry group, `materialized` root, and every one of the 11 declared group leaves absent. It creates the metadata and empty receipt directories and publishes once. A crash after either directory create is intentionally not repairable in place.
+`create_fresh_run_context()` must, before calling `secrets.token_bytes(32)`, validate the exact persisted plan/registry bytes against the supplied validated mappings using the leaves beneath `paths.local_output_root`, hash that same resolved object, and require the context, metadata/receipt namespace, deterministic receipt leaf for every registry group, `materialized` root, and every one of the 11 declared group leaves absent. It creates the metadata and empty receipt directories and publishes once. A crash after either directory create is intentionally not repairable in place.
 
-`run_context_sha256` hashes the exact context object excluding only `run_context_sha256`; `receipt_sha256` hashes the exact receipt object excluding only `receipt_sha256`. `load_fresh_run_context()` must re-read the exact `pyramid_candidate_plan.json` and `source_registry.json` leaves, validate their schemas and canonical hashes, recompute the resolved-root fingerprint, and reject task/root/plan/registry/context drift without consulting environment state.
+`run_context_sha256` hashes the exact context object excluding only `run_context_sha256`; `receipt_sha256` hashes the exact receipt object excluding only `receipt_sha256`. `load_fresh_run_context()` must re-read the exact `pyramid_candidate_plan.json` and `source_registry.json` leaves beneath its resolved `paths.local_output_root`, validate their schemas and canonical hashes, recompute the root fingerprint from that same resolved object, and reject task/root/plan/registry/context drift without consulting environment state.
 
 - [ ] **Step 4: Write RED artifact, receipt, classification, and tamper tests**
 
@@ -1554,6 +1623,38 @@ def test_same_round_fp16_int8_share_one_source_call_but_both_run_downstream(
     }
 ```
 
+Add this focused routing regression in the same file; import `framework.stage6.p6_history_measurement_v1 as measurement` so the loader seam is the one used by the public adapter:
+
+```python
+def test_measurement_context_root_is_exact_resolved_public_round_parent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _measurement_fixture(
+        tmp_path,
+        rounds=(("shared", "fp16"), ("shared", "int8"),
+                ("other-a", "fp16"), ("other-b", "int8")),
+    )
+    expected_root = fixture.public_round_root.parent.resolve(strict=True)
+    decoy_marker_parent = tmp_path / "decoy-marker-parent"
+    decoy_marker_parent.mkdir()
+    (decoy_marker_parent / "training.done").write_text("done\n", encoding="utf-8")
+    observed_roots: list[Path] = []
+    real_loader = measurement.load_fresh_run_context
+
+    def recording_loader(**kwargs: Any) -> P6FreshRunContext:
+        observed_roots.append(kwargs["local_output_root"])
+        return real_loader(**kwargs)
+
+    monkeypatch.setattr(measurement, "load_fresh_run_context", recording_loader)
+    measurement.run_history_measurement_batch(**fixture.call_kwargs)
+
+    assert decoy_marker_parent.resolve(strict=True) != expected_root
+    assert observed_roots == [expected_root]
+```
+
+The fixture must make the supplied public round root and its parent existing, absolute, nonsymlink directories. The assertion proves context resolution uses only that exact validated resolved parent; add a decoy marker-shaped path elsewhere and assert it is never passed to the loader so no marker path can become a root oracle.
+
 Add `test_round0_fp16_first_use_then_round2_int8_reuses_source_bundle()` and the reverse INT8-producer/FP16-consumer case. Both create one context once, execute two exact round requests, assert first-use source count one for the repeated group, later source count zero for that group, producer round remains earlier, later q-specific downstream stages contain the later row, and receipt bytes are unchanged. Add a ready-only request with four groups and assert zero source calls plus all four downstream rows.
 
 Add failures for context absent, context invalid, partial/stale/mismatched group, wrapper-created receipt, source nonzero, missing artifact, missing marker, reversed first-use marker order, artifact tamper between classification and downstream revalidation, and private token redaction. Context and initial partial/stale/mismatch failures must assert `gpu_probe.calls == 0` and `runner.calls == []`; failures after valid GPU/activation/source admission must still assert zero downstream calls.
@@ -1587,11 +1688,37 @@ PYTHONPATH=. pytest \
   -q
 ```
 
-Expected: FAIL because measurement still applies blanket marker absence/builds every group invocation and does not load context or publish receipts.
+Expected: FAIL on the reviewed Task 3 base because measurement still applies blanket marker absence/builds every group invocation and does not load context or publish receipts. The exact-root routing regression is also RED on the clean Task 3 base; if the compatible paused work already makes only that assertion pass, retain it and continue the remaining RED failures.
 
 - [ ] **Step 9: Route measurement through current-run classification**
 
 Refactor `run_history_measurement_batch()` in this exact order:
+
+First, extend the existing private resolver in Task 4. Its first operations and returned routing keys are exact:
+
+```python
+validated_supplied_root = _validate_controller_round_root(
+    supplied_public_round_root
+)
+local_output_root = _validate_controller_round_root(
+    validated_supplied_root.parent
+)
+
+paths = {
+    "history_root": private_root,
+    "local_output_root": local_output_root,
+    "round_root": round_root,
+    "measurement_request": request_path,
+    "task_state": task_state,
+    "actual_feedback": result,
+    "actual_receipt": receipt,
+    "finalization_barrier": barrier,
+}
+```
+
+Here `round_root`, `request_path`, `task_state`, `result`, `receipt`, and `barrier` remain the existing binding-template-resolved private paths. `_validate_controller_round_root()` performs componentwise `lstat`, rejects symlinks and nondirectories, and returns `path.resolve(strict=True)`. It validates the supplied public round before deriving only `validated_supplied_root.parent`, then validates and resolves that parent separately. Do not derive `local_output_root` from a marker, source artifact, private round path, or receipt. Task 5 must promote these exact semantics, arguments, and keys rather than repair an unavailable root later.
+
+Then route the adapter in this order:
 
 ```python
 projected = project_source_materialization_request(verified_request)
@@ -1691,7 +1818,7 @@ Expected: focused coverage is at least 80%; every listed new/focused file and bo
 
 - [ ] **Step 12: Fresh implementer/reviewer boundary**
 
-Review only Task 4-owned evidence/runtime files and the migrated paused diff. Reject Critical/Important if any of these hold: global group uniqueness is introduced; a later q-mode retrains; bare markers authorize reuse; measurement creates context; wrapper can publish a receipt; receipt/context is searched or overwritten; directory/file digest safety is incomplete; a reused group's current request mtime is compared to old markers; source calls include ready groups; downstream omits a q-mode row; or private values reach a public error. Require a fresh reviewer to rerun the Task 4 focused commands before acceptance.
+Review only Task 4-owned evidence/runtime files and the migrated paused diff. Reject Critical/Important if any of these hold: global group uniqueness is introduced; a later q-mode retrains; bare markers authorize reuse; measurement creates context; wrapper can publish a receipt; receipt/context is searched or overwritten; directory/file digest safety is incomplete; the private resolver omits `local_output_root`, leaves it unresolved, or derives it from a marker/private leaf; create/load hash a raw root instead of their `P6SourceReusePaths.local_output_root`; a reused group's current request mtime is compared to old markers; source calls include ready groups; downstream omits a q-mode row; or private values reach a public error. Require a fresh reviewer to rerun the Task 4 focused commands before acceptance.
 
 - [ ] **Step 13: Commit**
 
@@ -1768,15 +1895,17 @@ def plan_validated_history_round_paths(
     interface: Mapping[str, Any],
     private_root: Path,
     round_index: int,
-) -> Mapping[str, Path]: ...
+) -> dict[str, Path]: ...
 
 def resolve_validated_history_round_paths(
     interface: Mapping[str, Any],
     private_root: Path,
     supplied_public_round_root: Path,
     round_index: int,
-) -> Mapping[str, Path]: ...
+) -> dict[str, Path]: ...
 ```
+
+`resolve_validated_history_round_paths()` is the exported Task 5 form of Task 4's private `_resolve_round_paths()`: the same four positional arguments, validation order, private path values, `history_root`, and `local_output_root` return key. Its `local_output_root` remains exactly the separately validated `validated_supplied_root.parent.resolve(strict=True)`. Exporting it must not add, remove, rename, or reinterpret a mapping key, and must never derive the root from markers, artifacts, receipts, or private paths.
 
 - The preflight CLI prints only the dataclass fields above. `historical_process_launch_count` counts prohibited activation/history/training/materialization/measurement runners; current-process validation, JSON/YAML parsing, and existing read-only `git check-ignore` checks are not launches.
 - Zero-process preflight is run before Stage1. It validates schemas, target, exact five-key environment, self-contained wrapper, static training inputs, and exact planned destinations. It requires absent: `.p6-materializer-training-bridge-v1`, context, receipt namespace/leafs, the fixed `materialized` root (therefore any of the 11 output leaves), Stage1 manifest, plan, registry, state, all four public round roots, and every binding-resolved private round root/request/task-state/result/completion-receipt/barrier destination. Binding/config inputs intentionally present in the local root are allowed.
@@ -1810,7 +1939,17 @@ def test_planner_allows_absent_private_round_but_runtime_requires_public_round(
     resolved = resolve_validated_history_round_paths(
         interface, private_root, public_round, 2
     )
-    assert resolved["local_output_root"] == public_round.parent.resolve()
+    assert set(resolved) == {
+        "history_root",
+        "local_output_root",
+        "round_root",
+        "measurement_request",
+        "task_state",
+        "actual_feedback",
+        "actual_receipt",
+        "finalization_barrier",
+    }
+    assert resolved["local_output_root"] == public_round.parent.resolve(strict=True)
     assert {
         key: value for key, value in resolved.items()
         if key not in {"local_output_root", "history_root"}
@@ -1818,6 +1957,8 @@ def test_planner_allows_absent_private_round_but_runtime_requires_public_round(
 ```
 
 Add exact rejections for round index `-1`, `4`, boolean index, template escape, duplicate private destinations, symlinked existing parent, non-directory parent, relative private root, and a runtime public-round symlink. Assert neither API creates directories or files.
+
+Add `test_exported_runtime_resolver_preserves_task4_local_root_contract()`: assert the exported result has exactly `history_root`, `local_output_root`, and the planner's private keys; assert its planner-key subset equals `plan_validated_history_round_paths(...)`; and assert `local_output_root` is the exact resolved public-round parent. Include a decoy marker path and assert the result does not depend on it. This locks Task 4's runtime contract without requiring two competing resolver implementations.
 
 - [ ] **Step 2: Run the path RED slice**
 
@@ -1827,13 +1968,13 @@ Run:
 PYTHONPATH=. pytest tests/stage6/test_p6_history_round_paths.py -q
 ```
 
-Expected: FAIL because only private `_resolve_round_paths()` exists and conflates planned absence with runtime existence.
+Expected: FAIL because the reviewed Task 4 state has the correct private runtime resolver but does not yet expose `plan_validated_history_round_paths()` or `resolve_validated_history_round_paths()`.
 
 - [ ] **Step 3: Split exact round planning from runtime resolution**
 
-Refactor the existing `_resolve_round_paths()` into the two exported functions. The planner validates templates, canonical lexical spelling, every existing component with `lstat`, resolved containment beneath `private_root`, destination uniqueness, and round `0..3`, while allowing the round root and leaves absent. The runtime function first validates the supplied public round as an existing absolute nonsymlink directory, derives its safe parent as `local_output_root`, calls the planner, and returns the planned mapping plus `history_root` and `local_output_root`. Do not weaken `_initialize_private_round()` create-only checks.
+Extract the planned portion of the existing `_resolve_round_paths()` into `plan_validated_history_round_paths()` and promote/rename its runtime portion to `resolve_validated_history_round_paths()`. The planner validates templates, canonical lexical spelling, every existing component with `lstat`, resolved containment beneath `private_root`, destination uniqueness, and round `0..3`, while allowing the round root and leaves absent. The runtime function first validates the supplied public round as an existing absolute nonsymlink directory, derives only its parent, separately validates that parent, stores the resulting `parent.resolve(strict=True)` as `local_output_root`, calls the planner, and returns the planned mapping plus unchanged `history_root` and `local_output_root` keys. Do not infer the local root from a marker or any binding-derived private path, and do not weaken `_initialize_private_round()` create-only checks.
 
-Update Task 4 measurement routing to call the exported runtime function; this is a rename/split of the same behavior, not a second resolver.
+Update Task 4 measurement routing to call the exported runtime function; this is a rename/split of the same behavior, not a second resolver. Preserve the four positional argument types and order and every runtime return key/value from Task 4 so the adapter call site and evidence APIs experience no signature or root-identity drift.
 
 - [ ] **Step 4: Write RED zero-process preflight tests**
 
@@ -2176,7 +2317,7 @@ Expected: suites pass, project coverage is at least 80%, Ruff/diff exit 0, and `
 
 - [ ] **Step 15: Fresh implementer/reviewer boundary**
 
-Review only Task 5-owned controller/path/CLI files and tests. Reject if context creation can occur twice or before task/plan/registry validation; preflight starts Stage1/process/GPU work; planned paths require existence; runtime accepts an absent public round; preexisting context/receipt/11-output/round leaves are ignored; a failed root can resume; completion requires 16 receipts instead of 16 rows; a producer may be later; a decoy file is searched; Gold176 enters measurement; or public output includes private mapping/details. Require a fresh reviewer to rerun Task 5 commands.
+Review only Task 5-owned controller/path/CLI files and tests. Reject if exporting the resolver changes Task 4's four positional arguments, runtime return keys, validation order, or resolved-parent `local_output_root`; if marker/private paths can determine that root; if context creation can occur twice or before task/plan/registry validation; preflight starts Stage1/process/GPU work; planned paths require existence; runtime accepts an absent public round; preexisting context/receipt/11-output/round leaves are ignored; a failed root can resume; completion requires 16 receipts instead of 16 rows; a producer may be later; a decoy file is searched; Gold176 enters measurement; or public output includes private mapping/details. Require a fresh reviewer to rerun Task 5 commands.
 
 - [ ] **Step 16: Commit**
 
@@ -2733,12 +2874,12 @@ If docs were not updated because the private run failed or was not executed, do 
 | Completed Task 1 | Training contract | None | Accepted in ledger | Historical content preserved |
 | Completed Task 2 | Wrapper profile/provisioning | Task 1 | Accepted in ledger | Historical content preserved |
 | Completed Task 3 | Projection/hash gates | Tasks 1–2 | Accepted in ledger | Historical content preserved |
-| Task 4 | Evidence schemas, paths, digests, classification, receipt publication, measurement routing | Task 3 | Fresh implementer + fresh focused reviewer | Owns new evidence module; only routing in measurement/source modules; migrates paused diff in place |
-| Task 5 | Controller context creation, exact path planner/resolver, zero-process preflight, completion verifier, relaunch rejection | Task 4 | Fresh implementer + fresh focused reviewer | Sequentially edits measurement/controller after Task 4; no parallel ownership |
+| Task 4 | Evidence schemas, resolved-root paths/hashes, digests, classification, receipt publication, measurement routing | Task 3 | Fresh implementer + fresh focused reviewer | Owns new evidence module and interim private resolver `local_output_root` routing; only routing in measurement/source modules; migrates paused diff in place |
+| Task 5 | Controller context creation, exact path planner/exported resolver, zero-process preflight, completion verifier, relaunch rejection | Task 4 | Fresh implementer + fresh focused reviewer | Formalizes Task 4's resolver semantics without signature/key/root drift, then edits controller; no parallel ownership |
 | Task 6 | Offline repeated-group lifecycle | Tasks 4–5 | Fresh test implementer + fresh lifecycle reviewer | Test-only new files; production gaps return to owner |
 | Task 7 | Private deploy/run/verification/docs | Tasks 1–6 all green | Fresh real-run evidence/docs reviewer | No tracked code; docs only after verifier success |
 
-Do not implement Tasks 4 and 5 in parallel: both touch `p6_history_measurement_v1.py`, and Task 5 consumes Task 4's stable evidence APIs. Do not let Task 6 patch production under a test-only commit. The five paused Task 4 modifications remain in the worktree and are migrated by the Task 4 implementer; no task may reset/stash/discard them. Existing files over 800 lines receive routing or fixture migration only; all new focused files start below 800 lines and must remain there.
+Do not implement Tasks 4 and 5 in parallel: both touch `p6_history_measurement_v1.py`, and Task 5 consumes Task 4's stable evidence APIs and validated resolved-parent routing. Task 4 must first add `local_output_root` to its private resolver; Task 5 may then extract the planner and export the runtime resolver while preserving its arguments, keys, and exact root derivation. Do not let Task 6 patch production under a test-only commit. The five paused Task 4 modifications remain in the worktree and are migrated by the Task 4 implementer; no task may reset/stash/discard them. Existing files over 800 lines receive routing or fixture migration only; all new focused files start below 800 lines and must remain there.
 
 ## Acceptance Matrix
 
@@ -2862,8 +3003,8 @@ Expected: all pytest/lint/compile/diff/privacy gates pass, coverage is at least 
 - [ ] Spec coverage: every goal, invariant, fail-closed category, public/private rule, TDD matrix row, provisioning rule, preflight rule, relaunch rule, and closure criterion maps to at least one task above.
 - [ ] Placeholder scan: the plan contains no unresolved implementation marker, deferred-fill instruction, unbounded test instruction, or unresolved private example path. Task 7's named environment variables are required operator inputs guarded with `${VAR:?}`, not missing implementation details.
 - [ ] Red-flag scan: run the literal-token scan requested by the reviewer against this plan and keep it clean before handoff.
-- [ ] Type consistency: Task 4 owns `P6FreshRunContext`, `P6GroupSourceReceipt`, `P6GroupReuseDecision`, `plan_source_reuse_paths()`, `resolve_existing_source_reuse_paths()`, `create_fresh_run_context()`, `load_fresh_run_context()`, `classify_selected_group_sources()`, `first_use_group_ids()`, `validate_and_publish_group_receipt()`, and `require_selected_groups_ready_current_run()`; Tasks 5–7 consume those exact names/types. Binding-owned `EXPECTED_HISTORY_ENV_KEYS` remains the sole five-key owner.
-- [ ] Sequential consistency: Task 4 first uses the existing runtime round resolver; Task 5 exposes the planned/runtime pair and updates Task 4 routing. Task 6 changes tests only. Task 7 changes docs only after success.
+- [ ] Type consistency: Task 4 owns `P6FreshRunContext`, `P6GroupSourceReceipt`, `P6GroupReuseDecision`, `plan_source_reuse_paths()`, `resolve_existing_source_reuse_paths()`, `create_fresh_run_context()`, `load_fresh_run_context()`, `classify_selected_group_sources()`, `first_use_group_ids()`, `validate_and_publish_group_receipt()`, and `require_selected_groups_ready_current_run()`; Tasks 5–7 consume those exact names/types. `P6SourceReusePaths.local_output_root` is always the validated `root.resolve(strict=True)`, and create/load join leaves and hash `str()` from that exact object, never the raw argument. Binding-owned `EXPECTED_HISTORY_ENV_KEYS` remains the sole five-key owner.
+- [ ] Sequential consistency: Task 4 adds the exact resolved public-round parent as `local_output_root` to its existing private runtime resolver before measurement loads context. Task 5 exposes the planned/runtime pair and updates routing without positional signature, mapping-key, validation-order, or root-derivation drift. Task 6 changes tests only. Task 7 changes docs only after success.
 - [ ] File-size check: new evidence/path/controller/lifecycle test files are split up front; existing over-limit controller/measurement/test files receive routing glue only.
 - [ ] Security/privacy check: public projection, docs, stderr, tests, and release manifests must not contain private paths, GPU UUIDs, raw logs, checkpoints, datasets, hostnames, candidate IDs, or static training values.
 - [ ] Reuse semantics check: no task enforces global group uniqueness, retrains per q-mode/row, treats bare markers as reuse authority, or compares later consumer request mtime to first-use markers.
