@@ -206,6 +206,37 @@ def _downstream(runner: BundleRunner) -> tuple[str, ...]:
     )
 
 
+def _install_deletion_after_validation(
+    monkeypatch: pytest.MonkeyPatch,
+    target: Path,
+) -> dict[str, Any]:
+    original_lstat = Path.lstat
+    original_stat = Path.stat
+    state: dict[str, Any] = {"validated": 0, "fired": False}
+
+    def delete() -> None:
+        if not state["fired"]:
+            state["fired"] = True
+            target.unlink()
+
+    def racing_lstat(path: Path):
+        if path == target and state["validated"]:
+            delete()
+        result = original_lstat(path)
+        if path == target:
+            state["validated"] += 1
+        return result
+
+    def racing_stat(path: Path, *args: Any, **kwargs: Any):
+        if path == target and state["validated"]:
+            delete()
+        return original_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "lstat", racing_lstat)
+    monkeypatch.setattr(Path, "stat", racing_stat)
+    return state
+
+
 def test_first_use_publishes_receipts_after_sorted_source_calls(tmp_path: Path) -> None:
     request, binding, public_round = _runtime(tmp_path)
     runner = BundleRunner(request)
@@ -412,6 +443,42 @@ def test_missing_private_producer_round_is_redacted_before_reuse_process(
     assert str(token_root) not in str(exc_info.value)
     assert runner.calls == []
     assert probe.calls == []
+
+
+@pytest.mark.parametrize(
+    "target_key",
+    (*SOURCE_MARKER_KEYS, "measurement_request"),
+)
+def test_first_use_mtime_race_is_redacted_before_receipt_or_downstream(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    target_key: str,
+) -> None:
+    token_root = tmp_path / "PRIVATE-TOKEN-P6-MTIME-RACE"
+    token_root.mkdir()
+    request, binding, public_round = _runtime(token_root)
+    group_id = min(row["group_id"] for row in request["rows"])
+    row = next(row for row in request["rows"] if row["group_id"] == group_id)
+    target = (
+        public_round.parent / "private-runs/0/measurement-request.json"
+        if target_key == "measurement_request"
+        else Path(row["source_contract"][target_key])
+    )
+    state = _install_deletion_after_validation(monkeypatch, target)
+    runner = BundleRunner(request)
+
+    with pytest.raises(P6HistoryMeasurementError) as exc_info:
+        run_history_measurement_batch(
+            request, binding, public_round, runner, fixtures.FakeProbe()
+        )
+
+    assert state["fired"] is True
+    assert str(exc_info.value) == "history_execution_invalid"
+    assert "PRIVATE-TOKEN-P6-MTIME-RACE" not in str(exc_info.value)
+    assert str(token_root) not in str(exc_info.value)
+    paths = plan_source_reuse_paths(public_round.parent)
+    assert not receipt_path_for_group(paths, group_id).exists()
+    assert _downstream(runner) == ()
 
 
 def test_tamper_between_publication_and_downstream_gate_stops_all_stages(

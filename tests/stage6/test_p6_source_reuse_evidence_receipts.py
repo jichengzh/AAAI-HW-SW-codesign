@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from framework.stage6 import p6_source_reuse_evidence_v1 as evidence
 from framework.stage6.p6_source_reuse_evidence_v1 import (
     P6GroupSourceReceipt,
     P6SourceReuseEvidenceError,
@@ -193,6 +194,53 @@ def _publish(fixture: Fixture) -> P6GroupSourceReceipt:
         group_id=GROUP_ID,
         **fixture.receipt_kwargs,
     )
+
+
+def _install_mtime_race(
+    monkeypatch: pytest.MonkeyPatch,
+    target: Path,
+    mutation: str,
+) -> dict[str, Any]:
+    original_lstat = Path.lstat
+    original_stat = Path.stat
+    state: dict[str, Any] = {"validated": 0, "fired": False}
+    baseline = original_lstat(target).st_mtime_ns
+
+    def mutate() -> None:
+        if state["fired"]:
+            return
+        state["fired"] = True
+        if mutation == "deleted":
+            target.unlink()
+        elif mutation == "replacement":
+            target.unlink()
+            target.write_bytes(b"PRIVATE-TOKEN-P6-MTIME-RACE")
+            os.utime(target, ns=(baseline, baseline))
+        elif mutation == "wrong_type":
+            target.unlink()
+            target.mkdir()
+            os.utime(target, ns=(baseline, baseline))
+        else:
+            relocated = target.with_name(f"PRIVATE-TOKEN-P6-MTIME-RACE-{target.name}")
+            target.rename(relocated)
+            target.symlink_to(relocated)
+
+    def racing_lstat(path: Path):
+        if path == target and state["validated"]:
+            mutate()
+        result = original_lstat(path)
+        if path == target:
+            state["validated"] += 1
+        return result
+
+    def racing_stat(path: Path, *args: Any, **kwargs: Any):
+        if path == target and state["validated"]:
+            mutate()
+        return original_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "lstat", racing_lstat)
+    monkeypatch.setattr(Path, "stat", racing_stat)
+    return state
 
 
 def _receipt_path(fixture: Fixture) -> Path:
@@ -519,6 +567,72 @@ def test_publication_refuses_and_preserves_wrapper_created_receipt(tmp_path: Pat
 
     assert str(exc_info.value) == "history_execution_invalid"
     assert path.read_bytes() == wrapper_bytes
+
+
+@pytest.mark.parametrize(
+    ("target_key", "mutation"),
+    tuple(
+        (target_key, mutation)
+        for target_key in (*SOURCE_MARKER_KEYS, "measurement_request")
+        for mutation in ("deleted", "replacement", "wrong_type", "symlink")
+    ),
+)
+def test_publication_redacts_mtime_races_and_publishes_no_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    target_key: str,
+    mutation: str,
+) -> None:
+    fixture = _fresh_fixture(tmp_path / "PRIVATE-TOKEN-P6-MTIME-RACE")
+    _write_complete_bundle(fixture)
+    target = (
+        fixture.private_root / "private-runs/0/measurement-request.json"
+        if target_key == "measurement_request"
+        else Path(fixture.request["rows"][0]["source_contract"][target_key])
+    )
+    state = _install_mtime_race(monkeypatch, target, mutation)
+
+    with pytest.raises(P6SourceReuseEvidenceError) as exc_info:
+        _publish(fixture)
+
+    assert state["fired"] is True
+    assert str(exc_info.value) == "history_execution_invalid"
+    assert exc_info.value.private_category == "p6_source_reuse_mismatch"
+    assert "PRIVATE-TOKEN-P6-MTIME-RACE" not in str(exc_info.value)
+    assert str(fixture.root) not in str(exc_info.value)
+    assert not _receipt_path(fixture).exists()
+
+
+def test_publication_redacts_directory_entry_lstat_race(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _fresh_fixture(tmp_path / "PRIVATE-TOKEN-P6-DIRECTORY-RACE")
+    _write_complete_bundle(fixture)
+    directory = Path(
+        fixture.request["rows"][0]["source_contract"]["checkpoint_dir"]
+    )
+    target = directory / "z.bin"
+    original_scandir = evidence.os.scandir
+    state = {"fired": False}
+
+    def racing_scandir(path: Path):
+        entries = list(original_scandir(path))
+        if Path(path) == directory and not state["fired"]:
+            state["fired"] = True
+            target.unlink()
+        return entries
+
+    monkeypatch.setattr(evidence.os, "scandir", racing_scandir)
+
+    with pytest.raises(P6SourceReuseEvidenceError) as exc_info:
+        _publish(fixture)
+
+    assert state["fired"] is True
+    assert str(exc_info.value) == "history_execution_invalid"
+    assert exc_info.value.private_category == "p6_source_reuse_mismatch"
+    assert "PRIVATE-TOKEN-P6-DIRECTORY-RACE" not in str(exc_info.value)
+    assert not _receipt_path(fixture).exists()
 
 
 @pytest.mark.parametrize(

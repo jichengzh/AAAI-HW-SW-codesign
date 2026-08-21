@@ -20,9 +20,8 @@ RUN_CONTEXT_SCHEMA_VERSION: Final = "p6_materializer_fresh_run_context_v1"
 PLAN_SCHEMA_VERSION: Final = "p6_pyramid_candidate_plan_v2"
 REGISTRY_SCHEMA_VERSION: Final = "stage5_candidate_source_registry_v2"
 SOURCE_ARTIFACT_KEYS: Final = (
-    "checkpoint_path", "checkpoint_dir", "config_path", "onnx_path",
-    "onnx_report_path", "calibration_root", "calibration_npz",
-    "calibration_summary", "trt_calibration_dir",
+    "checkpoint_path", "checkpoint_dir", "config_path", "onnx_path", "onnx_report_path",
+    "calibration_root", "calibration_npz", "calibration_summary", "trt_calibration_dir",
 )
 SOURCE_MARKER_KEYS: Final = ("training_done_marker", "source_done_marker")
 _DIRECTORY_ARTIFACT_KEYS: Final = frozenset({"checkpoint_dir", "calibration_root", "trt_calibration_dir"})
@@ -95,14 +94,11 @@ def canonical_json_sha256(value: Any) -> str:
         _fail()
     return hashlib.sha256(encoded).hexdigest()
 def _canonical_json_bytes(value: Any) -> bytes:
-    return json.dumps(value, ensure_ascii=True, allow_nan=False, sort_keys=True,
-                      separators=(",", ":")).encode("utf-8")
+    return json.dumps(value, ensure_ascii=True, allow_nan=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
 def _fail(private_category: PrivateCategory | None = "p6_source_reuse_mismatch", *, public_category: PublicCategory = "history_execution_invalid") -> None:
-    raise P6SourceReuseEvidenceError(
-        public_category=public_category, private_category=private_category) from None
+    raise P6SourceReuseEvidenceError(public_category=public_category, private_category=private_category) from None
 def _is_lower_hex(value: Any, length: int = 64) -> bool:
-    return (isinstance(value, str) and len(value) == length
-            and set(value).issubset(_HEX_CHARS))
+    return isinstance(value, str) and len(value) == length and set(value).issubset(_HEX_CHARS)
 def _is_nonempty_string(value: Any) -> bool:
     return type(value) is str and bool(value)
 def _has_exact_hashes(raw: Mapping[str, Any], keys: Sequence[str]) -> bool:
@@ -205,22 +201,14 @@ def plan_source_reuse_paths(local_output_root: Path) -> P6SourceReusePaths:
     return paths
 def resolve_existing_source_reuse_paths(local_output_root: Path) -> P6SourceReusePaths:
     paths = plan_source_reuse_paths(local_output_root)
-    _validate_existing_directory(
-        paths.metadata_root, missing_category="p6_source_reuse_partial"
-    )
-    _validate_existing_directory(
-        paths.receipt_root, missing_category="p6_source_reuse_partial"
-    )
-    _validate_regular_single_link(
-        paths.run_context, missing_category="p6_source_reuse_partial"
-    )
+    _validate_existing_directory(paths.metadata_root, missing_category="p6_source_reuse_partial")
+    _validate_existing_directory(paths.receipt_root, missing_category="p6_source_reuse_partial")
+    _validate_regular_single_link(paths.run_context, missing_category="p6_source_reuse_partial")
     return paths
 def receipt_path_for_group(paths: P6SourceReusePaths, group_id: str) -> Path:
     if not isinstance(paths, P6SourceReusePaths) or not isinstance(group_id, str) or not group_id:
         _fail()
-    name = hashlib.sha256(
-        b"p6-group-receipt-v1\0" + group_id.encode("utf-8")
-    ).hexdigest()
+    name = hashlib.sha256(b"p6-group-receipt-v1\0" + group_id.encode("utf-8")).hexdigest()
     return paths.receipt_root / f"{name}.json"
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
@@ -547,7 +535,10 @@ def _directory_digest(root: Path) -> P6ArtifactDigest:
         for child in children:
             path = Path(child.path)
             relative = path.relative_to(root).as_posix()
-            info = path.lstat()
+            try:
+                info = path.lstat()
+            except OSError:
+                _fail()
             if stat.S_ISLNK(info.st_mode):
                 _fail()
             if stat.S_ISDIR(info.st_mode):
@@ -771,13 +762,21 @@ def validate_and_publish_group_receipt(
         request["row_sha256"][producer_row["row_id"]], producer_row["q_mode"],
         artifacts, markers, "",
     )
-    producer_request, request_path = _producer_request(
-        provisional, consumer_round=producer_round, interface=interface, private_root=private_root
-    )
-    del producer_request
-    training = outputs["training_done_marker"].stat().st_mtime_ns
-    source = outputs["source_done_marker"].stat().st_mtime_ns
-    if not request_path.stat().st_mtime_ns <= training <= source:
+    _, request_path = _producer_request(
+        provisional, consumer_round=producer_round, interface=interface, private_root=private_root)
+    try:
+        if tuple((key, _sha_file(outputs[key])) for key in SOURCE_MARKER_KEYS) != markers:
+            _fail()
+        _, confirmed_path = _producer_request(
+            provisional, consumer_round=producer_round, interface=interface, private_root=private_root)
+        ordered_paths = (confirmed_path, *(outputs[key] for key in SOURCE_MARKER_KEYS))
+        infos = tuple(path.lstat() for path in ordered_paths)
+        if confirmed_path != request_path or any(
+            not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode) or info.st_nlink != 1
+            for info in infos
+        ) or not infos[0].st_mtime_ns <= infos[1].st_mtime_ns <= infos[2].st_mtime_ns:
+            _fail()
+    except (OSError, RuntimeError, P6SourceReuseEvidenceError):
         _fail()
     without_hash = _receipt_to_json(provisional)
     without_hash.pop("receipt_sha256")
