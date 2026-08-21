@@ -5,20 +5,23 @@ from dataclasses import dataclass
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 import pytest
 
-from framework.stage6.p6_history_binding_v1 import GpuRecord, public_binding_projection
+from framework.stage6.p6_history_binding_v1 import (
+    EXPECTED_HISTORY_ENV_KEYS,
+    GpuRecord,
+    public_binding_projection,
+)
 from framework.stage6.p6_history_measurement_v1 import (
     P6HistoryMeasurementError,
+    _render_environment,
     run_history_measurement_batch,
 )
 from framework.stage6.p6_history_recipe_profiles_v1 import SHARED_SOURCE_PATH_KEYS
-from framework.stage6.p6_history_source_materialization_v1 import (
-    project_source_materialization_request,
-)
 
 
 METRICS = ("latency_ms", "energy_j", "ap30", "ap50", "ap70")
@@ -277,7 +280,7 @@ def _request() -> dict[str, Any]:
     return {**body, "measurement_request_sha256": _sha(body)}
 
 
-def _unprojected_recipe_v2_request() -> dict[str, Any]:
+def _unprojected_recipe_v2_request(local_output_root: Path) -> dict[str, Any]:
     request = _request()
     for row in request["rows"]:
         group_slug = "-".join(map(str, row["width"]))
@@ -307,7 +310,12 @@ def _unprojected_recipe_v2_request() -> dict[str, Any]:
                     "freeze_policy": "pyramid_backbone_partial",
                 },
                 "shared_source_paths": {
-                    key: f"/private/synthetic/materialized/{group_slug}/{key}"
+                    key: str(
+                        local_output_root
+                        / "materialized"
+                        / group_slug
+                        / key
+                    )
                     for key in SHARED_SOURCE_PATH_KEYS
                 },
             }
@@ -373,11 +381,13 @@ class FakeRunner:
         mutation: str | None = None,
         fail_call: int | None = None,
         raise_call: int | None = None,
+        marker_mutation: str | None = None,
     ) -> None:
         self.request = copy.deepcopy(dict(request))
         self.mutation = mutation
         self.fail_call = fail_call
         self.raise_call = raise_call
+        self.marker_mutation = marker_mutation
         self.calls: list[Call] = []
         self.initial_state: dict[str, Any] | None = None
 
@@ -400,9 +410,49 @@ class FakeRunner:
             self.initial_state = json.loads(
                 cwd.joinpath("state/task-state.json").read_text(encoding="utf-8")
             )
+            self._write_source_markers(argv)
         if Path(argv[0]).name == "stage5_finalize_feedback_v2.py":
             self._finalize(argv)
         return Result()
+
+    def _write_source_markers(self, argv: Sequence[str]) -> None:
+        matching_rows = [
+            row for row in self.request["rows"] if row["group_id"] == argv[6]
+        ]
+        if not matching_rows:
+            return
+        contract = matching_rows[0]["source_contract"]
+        if not {
+            "training_done_marker",
+            "source_done_marker",
+        }.issubset(contract):
+            return
+        markers = {
+            key: Path(contract[key])
+            for key in ("training_done_marker", "source_done_marker")
+        }
+        for key, marker in markers.items():
+            if self.marker_mutation == f"missing_{key}":
+                continue
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            if self.marker_mutation == "symlink_source" and key == "source_done_marker":
+                target = marker.with_name("source-target")
+                target.write_text("complete\n", encoding="utf-8")
+                marker.symlink_to(target)
+            else:
+                marker.write_text("complete\n", encoding="utf-8")
+        request_mtime = Path(argv[2]).stat().st_mtime_ns
+        if self.marker_mutation == "source_before_training":
+            os.utime(markers["source_done_marker"], ns=(request_mtime + 1, request_mtime + 1))
+            os.utime(
+                markers["training_done_marker"],
+                ns=(request_mtime + 2, request_mtime + 2),
+            )
+        elif self.marker_mutation == "training_before_request":
+            os.utime(
+                markers["training_done_marker"],
+                ns=(request_mtime - 1, request_mtime - 1),
+            )
 
     def _finalize(self, argv: Sequence[str]) -> None:
         request_path, state_path, result_path, receipt_path, barrier_path = map(Path, argv[1:6])
@@ -605,67 +655,31 @@ def test_valid_route_executes_activation_and_five_stages_then_returns_four_rows(
     assert len(runner.initial_state["rows"]) == 4
 
 
-def test_measurement_projects_recipe_v2_before_write_invocation_and_feedback(
+def test_rendered_runtime_environment_rejects_any_key_beyond_binding_owner(
     tmp_path: Path,
 ) -> None:
-    """Catches original/projected request hashes becoming two measurement truths."""
-    original = _unprojected_recipe_v2_request()
-    original_snapshot = copy.deepcopy(original)
-    projected = dict(project_source_materialization_request(original).request)
-    private_root = tmp_path / "private"
-    private_root.mkdir()
-    round_root = private_root / "controller-round"
-    round_root.mkdir()
-    runner = FakeRunner(projected)
+    """Catches runtime environment widening after binding validation."""
+    values = {
+        key: {"kind": "literal", "value": "synthetic"}
+        for key in EXPECTED_HISTORY_ENV_KEYS
+    }
+    values["PYTHONPATH"] = {"kind": "literal", "value": "/private/leak"}
 
-    feedback = run_history_measurement_batch(
-        original, _binding(private_root), round_root, runner, FakeProbe()
-    )
-
-    request_path = private_root / "private-runs/0/measurement-request.json"
-    assert json.loads(request_path.read_text(encoding="utf-8")) == projected
-    assert original == original_snapshot
-    assert feedback["measurement_request_sha256"] == projected["measurement_request_sha256"]
-    source_calls = [
-        call
-        for call in runner.calls
-        if Path(call.argv[0]).name == "stage5_materialize_round_sources_v1.sh"
-    ]
-    assert [call.argv[2] for call in source_calls] == [str(request_path)] * 4
-    assert all(
-        "shared_source_paths" not in row["source_contract"]
-        for row in projected["rows"]
-    )
-
-
-def test_measurement_projection_is_idempotent_for_already_projected_request(
-    tmp_path: Path,
-) -> None:
-    """Catches a second projection changing canonical row or request hashes."""
-    projected = dict(
-        project_source_materialization_request(_unprojected_recipe_v2_request()).request
-    )
-    snapshot = copy.deepcopy(projected)
-    private_root = tmp_path / "private"
-    private_root.mkdir()
-    round_root = private_root / "controller-round"
-    round_root.mkdir()
-
-    feedback = run_history_measurement_batch(
-        projected,
-        _binding(private_root),
-        round_root,
-        FakeRunner(projected),
-        FakeProbe(),
-    )
-
-    assert projected == snapshot
-    assert feedback["measurement_request_sha256"] == projected["measurement_request_sha256"]
-    assert json.loads(
-        (private_root / "private-runs/0/measurement-request.json").read_text(
-            encoding="utf-8"
+    with pytest.raises(P6HistoryMeasurementError) as captured:
+        _render_environment(
+            {"environment": {"values": values}},
+            {
+                "measurement_request": tmp_path / "request.json",
+                "round_root": tmp_path,
+                "task_state": tmp_path / "state.json",
+                "actual_feedback": tmp_path / "feedback.json",
+                "actual_receipt": tmp_path / "receipt.json",
+                "finalization_barrier": tmp_path / "barrier.json",
+            },
         )
-    ) == projected
+
+    assert captured.value.category == "history_execution_invalid"
+    assert str(captured.value) == "history_execution_invalid"
 
 
 def test_measurement_revalidates_the_binding_private_policy_before_and_after_execution(

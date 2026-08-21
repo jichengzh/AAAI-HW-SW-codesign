@@ -17,6 +17,7 @@ from framework.stage5.genome_contract_v1 import validate_structure_identity
 from framework.stage5.production_search_v1 import validate_source_contract
 from framework.stage6.p6_history_binding_v1 import (
     ALLOWED_NORMALIZED_H800_MODELS,
+    EXPECTED_HISTORY_ENV_KEYS,
     MAX_GPU_OCCUPANCY,
     GpuProbe,
     GpuRecord,
@@ -32,6 +33,16 @@ from framework.stage6.p6_history_source_materialization_v1 import (
     build_source_invocations,
     project_source_materialization_request,
     run_source_invocations,
+)
+from framework.stage6.p6_source_reuse_evidence_v1 import (
+    P6FreshRunContext,
+    P6SourceReuseEvidenceError,
+    classify_selected_group_sources,
+    first_use_group_ids,
+    load_fresh_run_context,
+    require_selected_groups_ready_current_run,
+    requires_current_run_source_evidence,
+    validate_and_publish_group_receipt,
 )
 
 
@@ -134,11 +145,22 @@ def run_history_measurement_batch(
     paths = _resolve_round_paths(
         interface, private_root, Path(round_output_root), canonical_request["round_index"]
     )
-    source_invocations = build_source_invocations(
-        paths["measurement_request"],
+    run_context, source_group_ids = _plan_current_run_sources(
+        canonical_request,
         projected.ordered_group_ids,
-        source_materializer=Path(interface["execution_chain"][0]["argv"][0]),
-        validated_gpu_policy=gpu_policy,
+        interface=interface,
+        private_root=private_root,
+        local_output_root=paths["local_output_root"],
+    )
+    source_invocations = (
+        build_source_invocations(
+            paths["measurement_request"],
+            source_group_ids,
+            source_materializer=Path(interface["execution_chain"][0]["argv"][0]),
+            validated_gpu_policy=gpu_policy,
+        )
+        if source_group_ids
+        else ()
     )
     _validate_gpu(gpu_probe, gpu_policy)
     _initialize_private_round(canonical_request, interface, paths)
@@ -146,18 +168,97 @@ def run_history_measurement_batch(
     substitutions = _substitutions(paths)
     _execute(interface["environment"]["activation_argv"], substitutions, runner, paths, environment)
     try:
-        run_source_invocations(
-            source_invocations,
-            runner=runner,
-            cwd=paths["round_root"],
-            env=environment,
-        )
-    except P6HistorySourceMaterializationError:
+        if run_context is None:
+            run_source_invocations(
+                source_invocations,
+                runner=runner,
+                cwd=paths["round_root"],
+                env=environment,
+            )
+        else:
+            _run_first_use_sources(
+                canonical_request,
+                source_group_ids,
+                source_invocations,
+                run_context=run_context,
+                interface=interface,
+                private_root=private_root,
+                paths=paths,
+                runner=runner,
+                environment=environment,
+            )
+            require_selected_groups_ready_current_run(
+                canonical_request,
+                run_context=run_context,
+                local_output_root=paths["local_output_root"],
+                interface=interface,
+                private_root=private_root,
+            )
+    except (P6HistorySourceMaterializationError, P6SourceReuseEvidenceError):
         raise P6HistoryMeasurementError("history_execution_invalid") from None
     for stage in interface["execution_chain"][1:]:
         _execute(stage["argv"], substitutions, runner, paths, environment)
     _validate_gpu(gpu_probe, gpu_policy)
     return _translate_feedback(canonical_request, interface, paths, private_root)
+
+
+def _plan_current_run_sources(request: Mapping[str, Any],
+    ordered_group_ids: Sequence[str], *, interface: Mapping[str, Any],
+    private_root: Path, local_output_root: Path,
+) -> tuple[P6FreshRunContext | None, tuple[str, ...]]:
+    try:
+        if not requires_current_run_source_evidence(request):
+            return None, tuple(ordered_group_ids)
+        context = load_fresh_run_context(
+            local_output_root=local_output_root,
+            expected_task_id=request["task_id"],
+            expected_task_sha256=request["task_sha256"],
+        )
+        decisions = classify_selected_group_sources(
+            request,
+            run_context=context,
+            local_output_root=local_output_root,
+            interface=interface,
+            private_root=private_root,
+        )
+        return context, first_use_group_ids(decisions)
+    except P6SourceReuseEvidenceError:
+        raise P6HistoryMeasurementError("history_execution_invalid") from None
+
+
+def _run_first_use_sources(request: Mapping[str, Any], group_ids: Sequence[str],
+    invocations: Sequence[Sequence[str]], *, run_context: P6FreshRunContext,
+    interface: Mapping[str, Any], private_root: Path, paths: Mapping[str, Path],
+    runner: Runner, environment: Mapping[str, str]) -> None:
+    if len(group_ids) != len(invocations):
+        raise P6SourceReuseEvidenceError("history_execution_mismatch")
+    for group_id, invocation in zip(group_ids, invocations, strict=True):
+        decisions = classify_selected_group_sources(
+            request,
+            run_context=run_context,
+            local_output_root=paths["local_output_root"],
+            interface=interface,
+            private_root=private_root,
+        )
+        decision_by_group = {item.group_id: item for item in decisions}
+        if decision_by_group.get(group_id) is None or (
+            decision_by_group[group_id].state != "UNSEEN"
+        ):
+            raise P6SourceReuseEvidenceError("history_execution_mismatch")
+        run_source_invocations(
+            (invocation,),
+            runner=runner,
+            cwd=paths["round_root"],
+            env=environment,
+        )
+        validate_and_publish_group_receipt(
+            request,
+            group_id=group_id,
+            run_context=run_context,
+            local_output_root=paths["local_output_root"],
+            interface=interface,
+            private_root=private_root,
+        )
 
 def _validated_interface(binding: Mapping[str, Any]) -> Mapping[str, Any]:
     try:
@@ -358,7 +459,10 @@ def _resolve_round_paths(
     round_index: int,
 ) -> dict[str, Path]:
     try:
-        _validate_controller_round_root(supplied_root)
+        validated_supplied_root = _validate_controller_round_root(supplied_root)
+        local_output_root = _validate_controller_round_root(
+            validated_supplied_root.parent
+        )
         round_root = _resolve_template(
             private_root,
             interface["output_layout"]["round_root_template"],
@@ -393,6 +497,7 @@ def _resolve_round_paths(
         request_path = (round_root / "measurement-request.json").resolve(strict=False)
         paths = {
             "history_root": private_root,
+            "local_output_root": local_output_root,
             "round_root": round_root,
             "measurement_request": request_path,
             "task_state": task_state,
@@ -400,7 +505,11 @@ def _resolve_round_paths(
             "actual_receipt": receipt,
             "finalization_barrier": barrier,
         }
-        artifact_paths = {key: path for key, path in paths.items() if key != "history_root"}
+        artifact_paths = {
+            key: path
+            for key, path in paths.items()
+            if key not in {"history_root", "local_output_root"}
+        }
         if len(set(artifact_paths.values())) != len(artifact_paths) or any(
             not _beneath(path, private_root)
             for path in artifact_paths.values()
@@ -485,6 +594,8 @@ def _render_environment(interface: Mapping[str, Any], paths: Mapping[str, Path])
                 rendered[key] = substitutions[value]
             else:
                 raise ValueError
+        if set(rendered) != set(EXPECTED_HISTORY_ENV_KEYS):
+            raise ValueError
         return rendered
     except (KeyError, TypeError, ValueError):
         raise P6HistoryMeasurementError("history_execution_invalid") from None
