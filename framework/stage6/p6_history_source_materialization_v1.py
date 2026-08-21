@@ -17,6 +17,9 @@ from framework.stage5.genome_contract_v1 import (
 from framework.stage5.production_search_v1 import validate_source_contract
 from framework.stage6.p6_history_binding_v1 import MAX_GPU_OCCUPANCY
 from framework.stage6.p6_history_recipe_profiles_v1 import SHARED_SOURCE_PATH_KEYS
+from framework.stage6.p6_history_training_contract_v1 import (
+    validate_projected_training_contract,
+)
 
 
 REQUEST_SCHEMA_VERSION = "stage5_measurement_request_v2"
@@ -122,27 +125,22 @@ def project_source_materialization_request(
             "shared_source_paths" in row["source_contract"] for row in rows
         ]
         if not any(shared_presence):
+            flat_presence = [
+                set(SHARED_SOURCE_PATH_KEYS).issubset(row["source_contract"])
+                for row in rows
+            ]
+            if any(flat_presence):
+                if not all(flat_presence):
+                    _invalid()
+                _validate_flat_projected_contracts(rows)
             return ProjectedSourceRequest(projected, ordered_group_ids)
         if not all(shared_presence):
             _invalid()
 
-        paths_by_group: dict[str, tuple[str, ...]] = {}
-        paths_owned_by_group: dict[str, str] = {}
-        contract_by_group: dict[str, dict[str, Any]] = {}
         for row in rows:
-            group_id = row["group_id"]
             contract = row["source_contract"]
             _validate_shared_identity(row, contract)
             shared_paths = _validated_shared_paths(contract["shared_source_paths"])
-            path_identity = tuple(shared_paths[key] for key in SHARED_SOURCE_PATH_KEYS)
-            previous = paths_by_group.setdefault(group_id, path_identity)
-            if previous != path_identity:
-                _invalid()
-            for path in path_identity:
-                owner = paths_owned_by_group.setdefault(path, group_id)
-                if owner != group_id:
-                    _invalid()
-
             flat_contract = copy.deepcopy(contract)
             flat_contract.pop("shared_source_paths")
             flat_contract.pop("dynamic_materialization_recipe", None)
@@ -150,10 +148,10 @@ def project_source_materialization_request(
             for key in LEGACY_DYNAMIC_OUTPUT_KEYS:
                 flat_contract.pop(key, None)
             flat_contract.update(shared_paths)
-            canonical_contract = contract_by_group.setdefault(group_id, flat_contract)
-            if canonical_contract != flat_contract:
-                _invalid()
             row["source_contract"] = flat_contract
+        _validate_flat_projected_contracts(rows)
+        for row in rows:
+            flat_contract = row["source_contract"]
             row["source_contract_sha256"] = _canonical_sha(flat_contract)
             validate_source_contract(row)
 
@@ -170,6 +168,37 @@ def project_source_materialization_request(
     except P6HistorySourceMaterializationError:
         raise
     except (KeyError, OverflowError, TypeError, ValueError):
+        raise P6HistorySourceMaterializationError() from None
+
+
+def validate_projected_training_marker_pairs(
+    request: Mapping[str, Any],
+) -> tuple[tuple[Path, Path], ...]:
+    """Return one ordered, unique training/source marker pair per source group."""
+    try:
+        projected = _validated_request_copy(request)
+        _validate_flat_projected_contracts(projected["rows"])
+        pairs_by_group: dict[str, tuple[Path, Path]] = {}
+        owners_by_marker: dict[Path, str] = {}
+        for row in projected["rows"]:
+            group_id = str(row["group_id"])
+            contract = row["source_contract"]
+            pair = (
+                _validated_marker_path(contract["training_done_marker"]),
+                _validated_marker_path(contract["source_done_marker"]),
+            )
+            _validate_marker_pair(
+                group_id,
+                pair,
+                pairs_by_group,
+                owners_by_marker,
+            )
+        return tuple(
+            pairs_by_group[group_id] for group_id in sorted(pairs_by_group)
+        )
+    except P6HistorySourceMaterializationError:
+        raise
+    except (KeyError, OSError, OverflowError, TypeError, ValueError):
         raise P6HistorySourceMaterializationError() from None
 
 
@@ -256,6 +285,32 @@ def _absolute_path(raw_path: Path) -> Path:
 
 def _validated_materializer(raw_path: Path) -> Path:
     return _absolute_path(raw_path)
+
+
+def _validated_marker_path(raw_path: object) -> Path:
+    if not isinstance(raw_path, str):
+        _invalid()
+    path = _absolute_path(Path(raw_path))
+    if ".." in path.parts:
+        _invalid()
+    return path
+
+
+def _validate_marker_pair(
+    group_id: str,
+    pair: tuple[Path, Path],
+    pairs_by_group: dict[str, tuple[Path, Path]],
+    owners_by_marker: dict[Path, str],
+) -> None:
+    if pair[0] == pair[1]:
+        _invalid()
+    previous = pairs_by_group.setdefault(group_id, pair)
+    if previous != pair:
+        _invalid()
+    for marker in pair:
+        owner = owners_by_marker.setdefault(marker, group_id)
+        if owner != group_id:
+            _invalid()
 
 
 def _validated_group_id(raw_group_id: object) -> str:
@@ -490,6 +545,36 @@ def _validated_shared_paths(raw_paths: object) -> dict[str, str]:
     ) or len(set(paths.values())) != len(SHARED_SOURCE_PATH_KEYS):
         _invalid()
     return paths
+
+
+def _validate_flat_projected_contracts(rows: Sequence[Mapping[str, Any]]) -> None:
+    paths_by_group: dict[str, tuple[str, ...]] = {}
+    paths_owned_by_group: dict[str, str] = {}
+    contract_by_group: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        group_id = str(row["group_id"])
+        raw_contract = row["source_contract"]
+        if "shared_source_paths" in raw_contract:
+            _invalid()
+        _validate_shared_identity(row, raw_contract)
+        contract = validate_projected_training_contract(
+            raw_contract,
+            group_id=group_id,
+        )
+        paths = _validated_shared_paths(
+            {key: contract.get(key) for key in SHARED_SOURCE_PATH_KEYS}
+        )
+        path_identity = tuple(paths[key] for key in SHARED_SOURCE_PATH_KEYS)
+        previous_paths = paths_by_group.setdefault(group_id, path_identity)
+        if previous_paths != path_identity:
+            _invalid()
+        for path in path_identity:
+            owner = paths_owned_by_group.setdefault(path, group_id)
+            if owner != group_id:
+                _invalid()
+        canonical_contract = contract_by_group.setdefault(group_id, contract)
+        if canonical_contract != contract:
+            _invalid()
 
 
 def _canonical_sha(payload: Any) -> str:

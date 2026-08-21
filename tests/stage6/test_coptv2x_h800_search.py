@@ -425,6 +425,35 @@ def _write_normalized_history_source_map(tmp_path: Path) -> dict[str, Any]:
     }
 
 
+def _complete_training_contract(history_root: Path) -> dict[str, Any]:
+    base_checkpoint = history_root / "base" / "model.ckpt"
+    base_checkpoint.parent.mkdir(exist_ok=True)
+    base_checkpoint.write_text("synthetic base\n", encoding="utf-8")
+    dataset_root = history_root / "dataset"
+    dataset_root.mkdir(exist_ok=True)
+    pyramid_config = history_root / "configs" / "pyramid.py"
+    pyramid_config.parent.mkdir(exist_ok=True)
+    pyramid_config.write_text("# synthetic pyramid config\n", encoding="utf-8")
+    return {
+        "training_required": True,
+        "training_source_kind": "selected_candidate_finetune",
+        "base_checkpoint_path": str(base_checkpoint),
+        "dataset_root": str(dataset_root),
+        "pyramid_config_path": str(pyramid_config),
+        "training_parameters": {
+            "training_mode": "finetune_selected_width",
+            "epochs": 3,
+            "seed": 20260821,
+            "optimizer": "adamw",
+            "learning_rate": 0.0001,
+            "batch_size": 1,
+            "dataset_split": "trainval_coptv2x",
+            "checkpoint_selection": "best_ap70",
+            "freeze_policy": "pyramid_backbone_partial",
+        },
+    }
+
+
 def _write_runner_template(path: Path) -> Path:
     path.write_text(
         yaml.safe_dump(
@@ -652,6 +681,56 @@ def _write_source_registry_from_plan(path: Path, plan: Mapping[str, Any]) -> Non
         json.dumps({"schema_version": "stage5_candidate_source_registry_v2", "groups": groups}),
         encoding="utf-8",
     )
+
+
+def _write_recipe_v2_training_registry_from_plan(
+    path: Path, plan: Mapping[str, Any]
+) -> None:
+    _write_source_registry_from_plan(path, plan)
+    registry = json.loads(path.read_text(encoding="utf-8"))
+    for group in registry["groups"]:
+        width = group["width"]
+        group_slug = "-".join(map(str, width))
+        contract = group["source_contract"]
+        contract.update(
+            {
+                "artifact_id": f"pyramid-{group_slug}",
+                "stage_widths": {
+                    "stage1_width": width[0],
+                    "stage2_width": width[1],
+                    "stage3_width": width[2],
+                },
+                "training_required": True,
+                "training_source_kind": "selected_candidate_finetune",
+                "base_checkpoint_path": "/private/synthetic/base/model.ckpt",
+                "dataset_root": "/private/synthetic/dataset",
+                "pyramid_config_path": "/private/synthetic/configs/pyramid.py",
+                "training_parameters": {
+                    "training_mode": "finetune_selected_width",
+                    "epochs": 2,
+                    "seed": 20260821,
+                    "optimizer": "adamw",
+                    "learning_rate": 0.0001,
+                    "batch_size": 1,
+                    "dataset_split": "trainval_coptv2x",
+                    "checkpoint_selection": "best_ap70",
+                    "freeze_policy": "pyramid_backbone_partial",
+                },
+                "shared_source_paths": {
+                    key: f"/private/synthetic/materialized/{group_slug}/{key}"
+                    for key in SHARED_SOURCE_PATH_KEYS
+                },
+            }
+        )
+        group["source_contract_sha256"] = hashlib.sha256(
+            json.dumps(
+                contract,
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+    path.write_text(json.dumps(registry), encoding="utf-8")
 
 
 def _complete_framework_stage2_search_space() -> dict[str, Any]:
@@ -1287,13 +1366,7 @@ def test_zero_gpu_stage2_to_source_invocation_black_box(tmp_path: Path) -> None:
         "artifact_id_template": profile.artifact_id_template,
         "shared_source_path_templates": dict(profile.shared_source_path_templates),
     }
-    template.update(
-        {
-            "base_checkpoint_path": str(history_root / "base" / "model.ckpt"),
-            "dataset_root": str(history_root / "dataset"),
-            "training_parameters": {"epochs": 3, "optimizer": "synthetic"},
-        }
-    )
+    template.update(_complete_training_contract(history_root))
     synthetic_gpu_indices = (17, 19, 23)
     execution_interface = copy.deepcopy(validated_template.execution_interface)
     execution_interface["environment"]["values"]["P6_HISTORY_PRIVATE_ROOT"][
@@ -2535,6 +2608,62 @@ def test_run_p6_projection_failure_is_atomic_before_measurement_request_write(
     assert not (
         local.local_output_root / "round-00" / "measurement_request.json"
     ).exists()
+
+
+def test_round_request_write_uses_projected_training_hash_only(tmp_path: Path) -> None:
+    """Catches persisting or measuring a provisional unprojected request hash."""
+    contract = load_public_contract(
+        _write_yaml(tmp_path / "contract.yaml", _public_contract())
+    )
+    local = _framework_local_config_with_stage1_step(tmp_path)
+    captured_requests: list[dict[str, Any]] = []
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        del cwd
+        if argv[0] == "fake-stage1":
+            _write_real_stage1_manifest(Path(argv[1]))
+        elif argv[0] == "fake-registry":
+            plan = json.loads(Path(argv[3]).read_text(encoding="utf-8"))
+            _write_recipe_v2_training_registry_from_plan(Path(argv[2]), plan)
+        else:
+            request_path = Path(argv[1])
+            captured_requests.append(
+                json.loads(request_path.read_text(encoding="utf-8"))
+            )
+            _write_feedback_from_request(request_path, Path(argv[2]))
+        return 0
+
+    state = run_p6_coptv2x_search(
+        contract, local, "rev-projected-training", runner
+    )
+
+    assert state.completed_rounds == 4
+    assert len(captured_requests) == 4
+    for request in captured_requests:
+        first_row = request["rows"][0]
+        assert first_row["source_contract"]["training_required"] is True
+        assert "shared_source_paths" not in first_row["source_contract"]
+        assert request["row_sha256"][first_row["row_id"]] == hashlib.sha256(
+            json.dumps(
+                first_row,
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        body = {
+            key: value
+            for key, value in request.items()
+            if key != "measurement_request_sha256"
+        }
+        assert request["measurement_request_sha256"] == hashlib.sha256(
+            json.dumps(
+                body,
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
 
 
 def test_run_p6_rejects_symlinked_source_registry_before_adapter(

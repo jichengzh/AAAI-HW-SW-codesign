@@ -91,6 +91,26 @@ def validate_recipe_v2_group_training_contract(
     return canonical
 
 
+def validate_projected_training_contract(
+    contract: Mapping[str, Any],
+    *,
+    group_id: str,
+) -> dict[str, Any]:
+    """Return a detached projected contract after lexical-only validation."""
+    canonical = _detached_mapping(contract)
+    _require_training_required_true(canonical)
+    _require_training_source_kind(canonical)
+    _require_training_parameters(canonical)
+    _validate_group_identity(canonical, group_id)
+    _validate_stage_widths(canonical)
+    _require_lexical_absolute_paths(canonical, STATIC_TRAINING_INPUT_PATH_KEYS)
+    _require_lexical_absolute_paths(
+        canonical,
+        ("training_done_marker", "source_done_marker"),
+    )
+    return canonical
+
+
 def public_safe_contract_projection(contract: Mapping[str, Any]) -> dict[str, Any]:
     """Project only fixed public contract labels; never copy private training data."""
     canonical = _detached_mapping(contract)
@@ -183,6 +203,22 @@ def _validate_shared_source_paths(contract: Mapping[str, Any], local_output_root
     resolved_paths = [_resolve_local_output(paths[key], root) for key in SHARED_SOURCE_PATH_KEYS]
     if len(set(resolved_paths)) != len(resolved_paths):
         _invalid("shared training outputs are invalid")
+
+
+def _require_lexical_absolute_paths(
+    contract: Mapping[str, Any], keys: Sequence[str]
+) -> None:
+    for key in keys:
+        raw_path = contract.get(key)
+        if (
+            not isinstance(raw_path, str)
+            or not raw_path
+            or any(character in raw_path for character in ("\x00", "\r", "\n"))
+        ):
+            _invalid("training path is invalid")
+        path = Path(raw_path)
+        if not path.is_absolute() or ".." in path.parts:
+            _invalid("training path is invalid")
 
 
 def _resolve_root(raw_path: Path, label: str) -> Path:

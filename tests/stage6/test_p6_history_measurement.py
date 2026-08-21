@@ -290,9 +290,22 @@ def _unprojected_recipe_v2_request() -> dict[str, Any]:
                     "stage2_width": row["width"][1],
                     "stage3_width": row["width"][2],
                 },
+                "training_required": True,
+                "training_source_kind": "selected_candidate_finetune",
                 "base_checkpoint_path": "/private/synthetic/base/model.ckpt",
                 "dataset_root": "/private/synthetic/dataset",
-                "training_parameters": {"epochs": 7, "optimizer": "synthetic"},
+                "pyramid_config_path": "/private/synthetic/configs/pyramid.py",
+                "training_parameters": {
+                    "training_mode": "finetune_selected_width",
+                    "epochs": 7,
+                    "seed": 20260821,
+                    "optimizer": "adamw",
+                    "learning_rate": 0.0001,
+                    "batch_size": 1,
+                    "dataset_split": "trainval_coptv2x",
+                    "checkpoint_selection": "best_ap70",
+                    "freeze_policy": "pyramid_backbone_partial",
+                },
                 "shared_source_paths": {
                     key: f"/private/synthetic/materialized/{group_slug}/{key}"
                     for key in SHARED_SOURCE_PATH_KEYS

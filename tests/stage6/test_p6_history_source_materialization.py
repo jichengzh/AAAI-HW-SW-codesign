@@ -15,6 +15,7 @@ from framework.stage6.p6_history_source_materialization_v1 import (
     build_source_invocations,
     project_source_materialization_request,
     run_source_invocations,
+    validate_projected_training_marker_pairs,
 )
 
 
@@ -52,9 +53,22 @@ def _source_contract(width: list[int]) -> dict[str, Any]:
             "stage2_width": width[1],
             "stage3_width": width[2],
         },
+        "training_required": True,
+        "training_source_kind": "selected_candidate_finetune",
         "base_checkpoint_path": "/private/synthetic/base/model.ckpt",
         "dataset_root": "/private/synthetic/dataset",
-        "training_parameters": {"epochs": 7, "optimizer": "synthetic"},
+        "pyramid_config_path": "/private/synthetic/configs/pyramid.py",
+        "training_parameters": {
+            "training_mode": "finetune_selected_width",
+            "epochs": 7,
+            "seed": 20260821,
+            "optimizer": "adamw",
+            "learning_rate": 0.0001,
+            "batch_size": 1,
+            "dataset_split": "trainval_coptv2x",
+            "checkpoint_selection": "best_ap70",
+            "freeze_policy": "pyramid_backbone_partial",
+        },
         "shared_source_paths": _shared_paths("-".join(map(str, width))),
     }
 
@@ -203,9 +217,21 @@ def test_projection_flattens_shared_paths_and_recomputes_only_existing_hashes() 
         contract = row["source_contract"]
         assert "shared_source_paths" not in contract
         assert contract["base_checkpoint_path"] == "/private/synthetic/base/model.ckpt"
-        assert contract["training_parameters"] == {
-            "epochs": 7,
-            "optimizer": "synthetic",
+        assert contract["training_required"] is True
+        assert contract["training_source_kind"] == "selected_candidate_finetune"
+        assert contract["pyramid_config_path"] == (
+            "/private/synthetic/configs/pyramid.py"
+        )
+        assert set(contract["training_parameters"]) == {
+            "training_mode",
+            "epochs",
+            "seed",
+            "optimizer",
+            "learning_rate",
+            "batch_size",
+            "dataset_split",
+            "checkpoint_selection",
+            "freeze_policy",
         }
         assert row["source_contract_sha256"] == _sha(contract)
         assert projected.request["row_sha256"][row["row_id"]] == _sha(row)
@@ -228,6 +254,241 @@ def test_projection_flattens_shared_paths_and_recomputes_only_existing_hashes() 
     assert request["rows"][0]["source_contract"]["training_parameters"][
         "epochs"
     ] == 7
+
+
+def test_projection_preserves_complete_training_contract_and_rehashes() -> None:
+    """Catches dropping validated static inputs or retaining legacy aliases."""
+    request = _request()
+    for row in request["rows"]:
+        row["source_contract"]["training_path"] = "/private/untrusted/training"
+        row["source_contract_sha256"] = _sha(row["source_contract"])
+    _rehash_request(request)
+    original = copy.deepcopy(request)
+
+    projected = project_source_materialization_request(request)
+
+    assert request == original
+    assert request["measurement_request_sha256"] != projected.request[
+        "measurement_request_sha256"
+    ]
+    for row in projected.request["rows"]:
+        contract = row["source_contract"]
+        assert contract["training_required"] is True
+        assert contract["training_source_kind"] == "selected_candidate_finetune"
+        assert contract["base_checkpoint_path"] == (
+            "/private/synthetic/base/model.ckpt"
+        )
+        assert contract["dataset_root"] == "/private/synthetic/dataset"
+        assert contract["pyramid_config_path"] == (
+            "/private/synthetic/configs/pyramid.py"
+        )
+        assert "shared_source_paths" not in contract
+        assert "training_path" not in contract
+        assert row["source_contract_sha256"] == _sha(contract)
+        assert projected.request["row_sha256"][row["row_id"]] == _sha(row)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "same_group_training_parameters_drift",
+        "same_group_base_checkpoint_drift",
+        "same_group_dataset_drift",
+        "same_group_pyramid_config_drift",
+        "same_group_training_required_false",
+        "missing_training_done_marker",
+        "missing_source_done_marker",
+        "shared_path_collision_across_groups",
+        "mixed_legacy_and_recipe_v2_rows",
+        "stale_source_contract_hash",
+    ],
+)
+def test_projection_rejects_untrusted_training_or_shared_path_drift(
+    mutation: str,
+) -> None:
+    """Catches accepting self-consistent but untrusted recipe-v2 row contracts."""
+    request = _request()
+    first = request["rows"][0]["source_contract"]
+    second = request["rows"][1]["source_contract"]
+    third = request["rows"][2]["source_contract"]
+    rehash_index = 1
+    if mutation == "same_group_training_parameters_drift":
+        second["training_parameters"]["epochs"] = 8
+    elif mutation == "same_group_base_checkpoint_drift":
+        second["base_checkpoint_path"] += ".drift"
+    elif mutation == "same_group_dataset_drift":
+        second["dataset_root"] += "-drift"
+    elif mutation == "same_group_pyramid_config_drift":
+        second["pyramid_config_path"] += ".drift"
+    elif mutation == "same_group_training_required_false":
+        second["training_required"] = False
+    elif mutation == "missing_training_done_marker":
+        first["shared_source_paths"].pop("training_done_marker")
+        rehash_index = 0
+    elif mutation == "missing_source_done_marker":
+        first["shared_source_paths"].pop("source_done_marker")
+        rehash_index = 0
+    elif mutation == "shared_path_collision_across_groups":
+        third["shared_source_paths"]["source_done_marker"] = first[
+            "shared_source_paths"
+        ]["training_done_marker"]
+        rehash_index = 2
+    elif mutation == "mixed_legacy_and_recipe_v2_rows":
+        first.pop("shared_source_paths")
+        rehash_index = 0
+    else:
+        first["training_parameters"]["epochs"] = 8
+        _rehash_request(request)
+        rehash_index = -1
+    if rehash_index >= 0:
+        _rehash_row_contract(request, rehash_index)
+
+    with pytest.raises(P6HistorySourceMaterializationError) as captured:
+        project_source_materialization_request(request)
+
+    assert captured.value.category == "history_execution_invalid"
+    assert str(captured.value) == "history_execution_invalid"
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "training_required_false",
+        "missing_training_source_kind",
+        "checkpoint_reuse_source_kind",
+        "missing_base_checkpoint_path",
+        "missing_dataset_root",
+        "missing_pyramid_config_path",
+        "missing_training_parameter",
+        "relative_static_training_path",
+    ],
+)
+def test_projection_rejects_uniformly_invalid_training_contract(
+    mutation: str,
+) -> None:
+    """Catches invalid training fields agreeing across every q-mode and group."""
+    request = _request()
+    for row in request["rows"]:
+        contract = row["source_contract"]
+        if mutation == "training_required_false":
+            contract["training_required"] = False
+        elif mutation == "missing_training_source_kind":
+            contract.pop("training_source_kind")
+        elif mutation == "checkpoint_reuse_source_kind":
+            contract["training_source_kind"] = "checkpoint_already_exists"
+        elif mutation == "missing_base_checkpoint_path":
+            contract.pop("base_checkpoint_path")
+        elif mutation == "missing_dataset_root":
+            contract.pop("dataset_root")
+        elif mutation == "missing_pyramid_config_path":
+            contract.pop("pyramid_config_path")
+        elif mutation == "missing_training_parameter":
+            contract["training_parameters"].pop("freeze_policy")
+        else:
+            contract["dataset_root"] = "relative/dataset"
+        row["source_contract_sha256"] = _sha(contract)
+    _rehash_request(request)
+
+    with pytest.raises(P6HistorySourceMaterializationError) as captured:
+        project_source_materialization_request(request)
+
+    assert captured.value.category == "history_execution_invalid"
+    assert str(captured.value) == "history_execution_invalid"
+
+
+def test_projected_training_marker_pairs_are_unique_and_canonically_ordered() -> None:
+    """Catches row-order leakage or duplicate q-mode marker pairs in runtime gates."""
+    projected = project_source_materialization_request(_request())
+
+    pairs = validate_projected_training_marker_pairs(projected.request)
+
+    assert pairs == (
+        (
+            Path(
+                "/private/synthetic/materialized/17-31-63/training_done_marker"
+            ),
+            Path("/private/synthetic/materialized/17-31-63/source_done_marker"),
+        ),
+        (
+            Path(
+                "/private/synthetic/materialized/23-47-95/training_done_marker"
+            ),
+            Path("/private/synthetic/materialized/23-47-95/source_done_marker"),
+        ),
+        (
+            Path(
+                "/private/synthetic/materialized/29-53-101/training_done_marker"
+            ),
+            Path("/private/synthetic/materialized/29-53-101/source_done_marker"),
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "missing_training_marker",
+        "relative_source_marker",
+        "malformed_training_marker",
+        "self_alias",
+        "same_group_pair_drift",
+        "cross_group_marker_collision",
+    ],
+)
+def test_projected_training_marker_pairs_reject_malformed_or_colliding_paths(
+    mutation: str,
+) -> None:
+    """Catches unsafe marker admission before any source/downstream process."""
+    request = dict(project_source_materialization_request(_request()).request)
+    first = request["rows"][0]["source_contract"]
+    second = request["rows"][1]["source_contract"]
+    third = request["rows"][2]["source_contract"]
+    row_index = 0
+    if mutation == "missing_training_marker":
+        first.pop("training_done_marker")
+    elif mutation == "relative_source_marker":
+        first["source_done_marker"] = "relative/source.done"
+    elif mutation == "malformed_training_marker":
+        first["training_done_marker"] += "\nprivate"
+    elif mutation == "self_alias":
+        first["source_done_marker"] = first["training_done_marker"]
+    elif mutation == "same_group_pair_drift":
+        second["source_done_marker"] += ".drift"
+        row_index = 1
+    else:
+        third["training_done_marker"] = first["source_done_marker"]
+        row_index = 2
+    _rehash_row_contract(request, row_index)
+
+    with pytest.raises(P6HistorySourceMaterializationError) as captured:
+        validate_projected_training_marker_pairs(request)
+
+    assert captured.value.category == "history_execution_invalid"
+    assert str(captured.value) == "history_execution_invalid"
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["training_required_false", "cross_group_flat_output_collision"],
+)
+def test_projection_rejects_invalid_already_projected_request(mutation: str) -> None:
+    """Catches the idempotent projection path bypassing recipe-v2 validation."""
+    request = dict(project_source_materialization_request(_request()).request)
+    if mutation == "training_required_false":
+        for row in request["rows"]:
+            row["source_contract"]["training_required"] = False
+            row["source_contract_sha256"] = _sha(row["source_contract"])
+    else:
+        first = request["rows"][0]["source_contract"]
+        third = request["rows"][2]["source_contract"]
+        third["checkpoint_path"] = first["checkpoint_path"]
+        request["rows"][2]["source_contract_sha256"] = _sha(third)
+    _rehash_request(request)
+
+    with pytest.raises(P6HistorySourceMaterializationError) as captured:
+        project_source_materialization_request(request)
+
+    assert captured.value.category == "history_execution_invalid"
 
 
 def test_source_invocations_dedupe_canonical_group_order_and_round_robin_policy(
