@@ -9,6 +9,7 @@ from typing import Any, Mapping, Sequence
 import pytest
 
 from framework.stage6 import p6_history_measurement_v1 as measurement
+from framework.stage6 import p6_source_reuse_evidence_v1 as evidence
 from framework.stage6.p6_history_binding_v1 import EXPECTED_HISTORY_ENV_KEYS
 from framework.stage6.p6_history_measurement_v1 import (
     P6HistoryMeasurementError,
@@ -18,6 +19,7 @@ from framework.stage6.p6_history_source_materialization_v1 import (
     project_source_materialization_request,
 )
 from framework.stage6.p6_source_reuse_evidence_v1 import (
+    P6SourceReuseEvidenceError,
     SOURCE_ARTIFACT_KEYS,
     SOURCE_MARKER_KEYS,
     canonical_json_sha256,
@@ -26,6 +28,7 @@ from framework.stage6.p6_source_reuse_evidence_v1 import (
     receipt_path_for_group,
 )
 from tests.stage6 import test_p6_history_measurement as fixtures
+from tests.stage6 import test_p6_source_reuse_evidence_receipts as reuse_fixtures
 
 
 DIRECTORY_KEYS = frozenset(
@@ -235,6 +238,39 @@ def _install_deletion_after_validation(
     monkeypatch.setattr(Path, "lstat", racing_lstat)
     monkeypatch.setattr(Path, "stat", racing_stat)
     return state
+
+
+def _install_late_regular_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    target: Path,
+    mutation: str,
+) -> dict[str, Any]:
+    original_lstat = Path.lstat
+    state: dict[str, Any] = {"validated": 0, "fired": False}
+
+    def racing_lstat(path: Path):
+        info = original_lstat(path)
+        if path != target:
+            return info
+        state["validated"] += 1
+        if state["validated"] != 3:
+            return info
+        state["fired"] = True
+        payload = b"X" * max(info.st_size, 1)
+        if mutation == "inode_replacement":
+            target.unlink()
+        target.write_bytes(payload)
+        os.utime(target, ns=(info.st_atime_ns, info.st_mtime_ns))
+        return original_lstat(path)
+
+    monkeypatch.setattr(Path, "lstat", racing_lstat)
+    return state
+
+
+def _direct_race_target(fixture: Any, target_key: str) -> Path:
+    if target_key == "measurement_request":
+        return fixture.private_root / "private-runs/0/measurement-request.json"
+    return Path(fixture.request["rows"][0]["source_contract"][target_key])
 
 
 def test_first_use_publishes_receipts_after_sorted_source_calls(tmp_path: Path) -> None:
@@ -479,6 +515,105 @@ def test_first_use_mtime_race_is_redacted_before_receipt_or_downstream(
     paths = plan_source_reuse_paths(public_round.parent)
     assert not receipt_path_for_group(paths, group_id).exists()
     assert _downstream(runner) == ()
+
+
+@pytest.mark.parametrize(
+    ("target_key", "mutation"),
+    tuple(
+        (target_key, mutation)
+        for target_key in (*SOURCE_MARKER_KEYS, "measurement_request")
+        for mutation in ("inode_replacement", "in_place")
+    ),
+)
+def test_late_regular_identity_race_rolls_back_direct_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    target_key: str,
+    mutation: str,
+) -> None:
+    fixture = reuse_fixtures._fresh_fixture(tmp_path / "PRIVATE-TOKEN-P6-LATE-RACE")
+    reuse_fixtures._write_complete_bundle(fixture)
+    state = _install_late_regular_mutation(
+        monkeypatch, _direct_race_target(fixture, target_key), mutation
+    )
+
+    with pytest.raises(P6SourceReuseEvidenceError) as exc_info:
+        reuse_fixtures._publish(fixture)
+
+    assert state["fired"] is True
+    assert str(exc_info.value) == "history_execution_invalid"
+    assert exc_info.value.private_category == "p6_source_reuse_mismatch"
+    assert "PRIVATE-TOKEN-P6-LATE-RACE" not in str(exc_info.value)
+    assert not reuse_fixtures._receipt_path(fixture).exists()
+
+
+@pytest.mark.parametrize("target_key", (*SOURCE_MARKER_KEYS, "measurement_request"))
+def test_late_regular_identity_race_stops_measurement_downstream(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    target_key: str,
+) -> None:
+    token_root = tmp_path / "PRIVATE-TOKEN-P6-LATE-RACE"
+    token_root.mkdir()
+    request, binding, public_round = _runtime(token_root)
+    group_id = min(row["group_id"] for row in request["rows"])
+    row = next(row for row in request["rows"] if row["group_id"] == group_id)
+    target = (
+        public_round.parent / "private-runs/0/measurement-request.json"
+        if target_key == "measurement_request"
+        else Path(row["source_contract"][target_key])
+    )
+    state = _install_late_regular_mutation(monkeypatch, target, "inode_replacement")
+    runner = BundleRunner(request)
+
+    with pytest.raises(P6HistoryMeasurementError) as exc_info:
+        run_history_measurement_batch(request, binding, public_round, runner, fixtures.FakeProbe())
+
+    assert state["fired"] is True
+    assert str(exc_info.value) == "history_execution_invalid"
+    assert "PRIVATE-TOKEN-P6-LATE-RACE" not in str(exc_info.value)
+    paths = plan_source_reuse_paths(public_round.parent)
+    assert not receipt_path_for_group(paths, group_id).exists()
+    assert _downstream(runner) == ()
+
+
+@pytest.mark.parametrize("mutation", ("source_bytes", "receipt_bytes", "unrelated_receipt"))
+def test_post_link_mutation_never_returns_stale_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    fixture = reuse_fixtures._fresh_fixture(tmp_path / "PRIVATE-TOKEN-P6-POST-LINK")
+    reuse_fixtures._write_complete_bundle(fixture)
+    receipt_path = reuse_fixtures._receipt_path(fixture)
+    source = _direct_race_target(fixture, "source_done_marker")
+    unrelated = b"PRIVATE-TOKEN-P6-UNRELATED\n"
+    original_link = evidence.os.link
+
+    def mutating_link(src: Path, dst: Path, **kwargs: Any) -> None:
+        original_link(src, dst, **kwargs)
+        if Path(dst) != receipt_path:
+            return
+        if mutation == "source_bytes":
+            source.write_bytes(b"X" * source.stat().st_size)
+        elif mutation == "receipt_bytes":
+            receipt_path.write_bytes(b"X" * receipt_path.stat().st_size)
+        else:
+            receipt_path.unlink()
+            receipt_path.write_bytes(unrelated)
+
+    monkeypatch.setattr(evidence.os, "link", mutating_link)
+
+    with pytest.raises(P6SourceReuseEvidenceError) as exc_info:
+        reuse_fixtures._publish(fixture)
+
+    assert str(exc_info.value) == "history_execution_invalid"
+    assert exc_info.value.private_category == "p6_source_reuse_mismatch"
+    assert "PRIVATE-TOKEN-P6-POST-LINK" not in str(exc_info.value)
+    if mutation == "unrelated_receipt":
+        assert receipt_path.read_bytes() == unrelated
+    else:
+        assert not receipt_path.exists()
 
 
 def test_tamper_between_publication_and_downstream_gate_stops_all_stages(
