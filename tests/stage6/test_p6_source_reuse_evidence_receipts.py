@@ -219,6 +219,23 @@ def _rehash_request(request: dict[str, Any]) -> None:
     )
 
 
+def _rewrite_producer_request(fixture: Fixture, mutation: Any) -> None:
+    path = fixture.private_root / "private-runs/0/measurement-request.json"
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    mutation(raw)
+    raw["measurement_request_sha256"] = canonical_json_sha256(
+        {key: value for key, value in raw.items() if key != "measurement_request_sha256"}
+    )
+    _write_json(path, raw)
+    _rewrite_receipt(
+        fixture,
+        lambda receipt: receipt.__setitem__(
+            "producer_measurement_request_sha256",
+            raw["measurement_request_sha256"],
+        ),
+    )
+
+
 def test_first_use_publishes_adapter_receipt_and_reclassifies_ready(
     tmp_path: Path,
 ) -> None:
@@ -502,3 +519,130 @@ def test_publication_refuses_and_preserves_wrapper_created_receipt(tmp_path: Pat
 
     assert str(exc_info.value) == "history_execution_invalid"
     assert path.read_bytes() == wrapper_bytes
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "missing_round", "missing_intermediate", "missing_request",
+        "non_directory", "symlink", "invalid_json", "invalid_utf8",
+    ),
+)
+def test_producer_storage_failures_classify_mismatch_without_private_error(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    fixture = _fresh_fixture(tmp_path)
+    _write_complete_bundle(fixture)
+    _publish(fixture)
+    rounds = fixture.private_root / "private-runs"
+    if mutation == "missing_round":
+        request_path = rounds / "0/measurement-request.json"
+        request_path.unlink()
+        request_path.parent.rmdir()
+    elif mutation == "missing_intermediate":
+        fixture.interface["output_layout"]["round_root_template"] = (
+            "PRIVATE-TOKEN-P6-REUSE/missing/{round_id}"
+        )
+    elif mutation in {"missing_request", "invalid_json", "invalid_utf8"}:
+        request_path = rounds / "0/measurement-request.json"
+        if mutation == "missing_request":
+            request_path.unlink()
+        elif mutation == "invalid_json":
+            request_path.write_bytes(b"{")
+        else:
+            request_path.write_bytes(b"\xff")
+    else:
+        relocated = fixture.private_root / "PRIVATE-TOKEN-P6-REUSE-rounds"
+        rounds.rename(relocated)
+        if mutation == "non_directory":
+            rounds.write_bytes(b"not-a-directory")
+        else:
+            rounds.symlink_to(relocated, target_is_directory=True)
+
+    decision = classify_selected_group_sources(**fixture.classification_kwargs)[0]
+
+    assert decision.state == "INVALID_MISMATCH"
+    with pytest.raises(P6SourceReuseEvidenceError) as exc_info:
+        first_use_group_ids((decision,))
+    assert str(exc_info.value) == "history_execution_invalid"
+    assert exc_info.value.private_category == "p6_source_reuse_mismatch"
+    assert "PRIVATE-TOKEN-P6-REUSE" not in str(exc_info.value)
+    assert str(fixture.private_root) not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "rows_none",
+        "rows_empty",
+        "rows_mapping",
+        "row_none",
+        "row_list",
+        "row_missing_id",
+        "row_id_list",
+        "row_group_bool",
+        "row_q_mode_bool",
+        "row_q_mode_list",
+        "row_contract_hash_bool",
+        "row_evidence_hash_bool",
+        "row_hashes_none",
+        "row_hashes_list",
+        "row_hash_value_bool",
+        "row_hash_missing",
+        "row_hash_extra",
+        "round_bool",
+    ),
+)
+def test_self_hashed_malformed_producer_request_classifies_mismatch(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    fixture = _fresh_fixture(tmp_path)
+    _write_complete_bundle(fixture)
+    _publish(fixture)
+
+    def mutate(raw: dict[str, Any]) -> None:
+        row = raw["rows"][0]
+        if mutation == "rows_none":
+            raw["rows"] = None
+        elif mutation == "rows_empty":
+            raw["rows"] = []
+        elif mutation == "rows_mapping":
+            raw["rows"] = {"PRIVATE-TOKEN-P6-REUSE": row}
+        elif mutation == "row_none":
+            raw["rows"] = [None]
+        elif mutation == "row_list":
+            raw["rows"] = [[]]
+        elif mutation == "row_missing_id":
+            del row["row_id"]
+        elif mutation == "row_id_list":
+            row["row_id"] = []
+        elif mutation == "row_group_bool":
+            row["group_id"] = True
+        elif mutation == "row_q_mode_bool":
+            row["q_mode"] = True
+        elif mutation == "row_q_mode_list":
+            row["q_mode"] = []
+        elif mutation == "row_contract_hash_bool":
+            row["source_contract_sha256"] = True
+        elif mutation == "row_evidence_hash_bool":
+            row["source_evidence_sha256"] = True
+        elif mutation == "row_hashes_none":
+            raw["row_sha256"] = None
+        elif mutation == "row_hashes_list":
+            raw["row_sha256"] = []
+        elif mutation == "row_hash_value_bool":
+            raw["row_sha256"][row["row_id"]] = True
+        elif mutation == "row_hash_missing":
+            raw["row_sha256"] = {}
+        elif mutation == "row_hash_extra":
+            raw["row_sha256"]["PRIVATE-TOKEN-P6-REUSE"] = "0" * 64
+        else:
+            raw["round_index"] = False
+
+    _rewrite_producer_request(fixture, mutate)
+
+    decision = classify_selected_group_sources(**fixture.classification_kwargs)[0]
+
+    assert decision.state == "INVALID_MISMATCH"

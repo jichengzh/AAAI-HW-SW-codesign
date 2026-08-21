@@ -99,7 +99,7 @@ def _canonical_json_bytes(value: Any) -> bytes:
                       separators=(",", ":")).encode("utf-8")
 def _fail(private_category: PrivateCategory | None = "p6_source_reuse_mismatch", *, public_category: PublicCategory = "history_execution_invalid") -> None:
     raise P6SourceReuseEvidenceError(
-        public_category=public_category, private_category=private_category)
+        public_category=public_category, private_category=private_category) from None
 def _is_lower_hex(value: Any, length: int = 64) -> bool:
     return (isinstance(value, str) and len(value) == length
             and set(value).issubset(_HEX_CHARS))
@@ -619,80 +619,80 @@ def _parse_receipt(path: Path) -> P6GroupSourceReceipt:
     converted["artifact_digests"] = tuple(parsed_artifacts)
     converted["marker_digests"] = tuple((key, markers[key]) for key in SOURCE_MARKER_KEYS)
     return P6GroupSourceReceipt(**converted)
-def _producer_request(receipt: P6GroupSourceReceipt, *, consumer_round: int,
-    interface: Mapping[str, Any], private_root: Path) -> tuple[dict[str, Any], Path]:
+def _producer_request(receipt: P6GroupSourceReceipt, *, consumer_round: int, interface: Mapping[str, Any], private_root: Path) -> tuple[dict[str, Any], Path]:
     producer_round = receipt.producer_round_index
-    template = interface.get("output_layout", {}).get("round_root_template")
-    if (
-        isinstance(producer_round, bool)
-        or not isinstance(producer_round, int)
-        or producer_round not in range(4)
-        or producer_round > consumer_round
-        or not isinstance(template, str)
-        or template.count("{round_id}") != 1
-    ):
+    layout = interface.get("output_layout")
+    template = layout.get("round_root_template") if isinstance(layout, Mapping) else None
+    if (isinstance(producer_round, bool) or not isinstance(producer_round, int)
+        or producer_round not in range(4) or producer_round > consumer_round
+        or not isinstance(template, str) or template.count("{round_id}") != 1):
         _fail()
     relative = Path(template.replace("{round_id}", str(producer_round)))
     if relative.is_absolute() or ".." in relative.parts or "." in relative.parts:
         _fail()
     request_path = private_root / relative / "measurement-request.json"
-    current = private_root
-    for component in request_path.relative_to(private_root).parts[:-1]:
-        current /= component
-        mode = current.lstat().st_mode
-        if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
-            _fail()
+    try:
+        current = private_root
+        for component in request_path.relative_to(private_root).parts[:-1]:
+            current /= component
+            mode = current.lstat().st_mode
+            if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+                _fail()
+    except (OSError, RuntimeError, ValueError):
+        _fail()
     request = _read_strict_json(request_path, missing_category="p6_source_reuse_mismatch")
     body = {key: value for key, value in request.items() if key != "measurement_request_sha256"}
-    if (
-        canonical_json_sha256(body) != request.get("measurement_request_sha256")
-        or request.get("measurement_request_sha256")
-        != receipt.producer_measurement_request_sha256
-        or request.get("round_index") != producer_round
-        or request.get("task_id") != receipt.task_id
-        or request.get("task_sha256") != receipt.task_sha256
-    ):
+    rows, row_hashes = request.get("rows"), request.get("row_sha256")
+    if (request.get("schema_version") != "stage5_measurement_request_v2"
+        or canonical_json_sha256(body) != request.get("measurement_request_sha256")
+        or request.get("measurement_request_sha256") != receipt.producer_measurement_request_sha256
+        or type(request.get("round_index")) is not int or request.get("round_index") != producer_round
+        or request.get("task_id") != receipt.task_id or request.get("task_sha256") != receipt.task_sha256
+        or not isinstance(rows, list) or not rows or not isinstance(row_hashes, Mapping)
+        or any(not isinstance(row, Mapping) for row in rows)):
+        _fail()
+    row_ids = []
+    for row in rows:
+        row_id = row.get("row_id")
+        if (not _is_nonempty_string(row_id) or not _is_nonempty_string(row.get("group_id"))
+            or row.get("q_mode") not in ("fp16", "int8")
+            or not _is_lower_hex(row.get("source_contract_sha256"))
+            or not _is_lower_hex(row.get("source_evidence_sha256"))):
+            _fail()
+        row_ids.append(row_id)
+    if (len(set(row_ids)) != len(row_ids) or set(row_hashes) != set(row_ids)
+        or any(not _is_lower_hex(row_hashes.get(key)) or row_hashes[key] != canonical_json_sha256(row)
+               for key, row in zip(row_ids, rows, strict=True))):
         _fail()
     return request, request_path
-def _validate_receipt(receipt: P6GroupSourceReceipt, *, group_id: str,
-    row: Mapping[str, Any], contract: Mapping[str, Any], request: Mapping[str, Any],
-    context: P6FreshRunContext, paths: Mapping[str, Path],
-    interface: Mapping[str, Any], private_root: Path) -> None:
-    if (
-        receipt.run_context_sha256 != context.run_context_sha256
-        or receipt.run_nonce != context.run_nonce
-        or receipt.task_id != context.task_id
-        or receipt.task_sha256 != context.task_sha256
-    ):
+def _validate_receipt(receipt: P6GroupSourceReceipt, *, group_id: str, row: Mapping[str, Any],
+    contract: Mapping[str, Any], request: Mapping[str, Any], context: P6FreshRunContext,
+    paths: Mapping[str, Path], interface: Mapping[str, Any], private_root: Path) -> None:
+    if (receipt.run_context_sha256 != context.run_context_sha256
+        or receipt.run_nonce != context.run_nonce or receipt.task_id != context.task_id
+        or receipt.task_sha256 != context.task_sha256):
         _fail("p6_source_reuse_stale")
-    if (
-        receipt.schema_version != "p6_group_source_reuse_receipt_v1"
-        or receipt.status != "READY_CURRENT_RUN"
-        or receipt.group_id != group_id
+    if (receipt.schema_version != "p6_group_source_reuse_receipt_v1"
+        or receipt.status != "READY_CURRENT_RUN" or receipt.group_id != group_id
         or receipt.group_key_sha256 != _group_key(group_id)
         or receipt.source_contract_sha256 != row.get("source_contract_sha256")
-        or receipt.source_evidence_sha256 != row.get("source_evidence_sha256")
-    ):
+        or receipt.source_evidence_sha256 != row.get("source_evidence_sha256")):
         _fail()
     consumer_round = request.get("round_index")
     if isinstance(consumer_round, bool) or not isinstance(consumer_round, int):
         _fail()
-    producer, _ = _producer_request(
-        receipt, consumer_round=consumer_round, interface=interface, private_root=private_root
-    )
-    producer_rows = [item for item in producer.get("rows", []) if item.get("group_id") == group_id]
+    producer, _ = _producer_request(receipt, consumer_round=consumer_round, interface=interface, private_root=private_root)
+    producer_rows = [item for item in producer["rows"] if item["group_id"] == group_id]
     if not producer_rows:
         _fail()
     producer_row = min(producer_rows, key=lambda item: item.get("row_id", ""))
-    row_id = producer_row.get("row_id")
-    if (
-        receipt.producer_row_id != row_id
-        or producer.get("row_sha256", {}).get(row_id) != receipt.producer_row_sha256
+    row_id = producer_row["row_id"]
+    if (receipt.producer_row_id != row_id
+        or producer["row_sha256"][row_id] != receipt.producer_row_sha256
         or canonical_json_sha256(producer_row) != receipt.producer_row_sha256
         or producer_row.get("q_mode") != receipt.producer_q_mode
         or producer_row.get("source_contract_sha256") != receipt.source_contract_sha256
-        or producer_row.get("source_evidence_sha256") != receipt.source_evidence_sha256
-    ):
+        or producer_row.get("source_evidence_sha256") != receipt.source_evidence_sha256):
         _fail()
     artifacts, markers = _bundle_digests(paths)
     if artifacts != receipt.artifact_digests or markers != receipt.marker_digests:

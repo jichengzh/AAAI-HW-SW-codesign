@@ -384,6 +384,36 @@ def test_invalid_reuse_state_fails_before_gpu_or_process(
     assert runner.calls == []
 
 
+def test_missing_private_producer_round_is_redacted_before_reuse_process(
+    tmp_path: Path,
+) -> None:
+    token_root = tmp_path / "PRIVATE-TOKEN-P6-REUSE"
+    token_root.mkdir()
+    request, binding, first_round = _runtime(token_root)
+    run_history_measurement_batch(
+        request, binding, first_round, BundleRunner(request), fixtures.FakeProbe()
+    )
+    private_producer_round = first_round.parent / "private-runs/0"
+    relocated = first_round.parent / "PRIVATE-TOKEN-P6-REUSE-producer-round"
+    private_producer_round.rename(relocated)
+    later = copy.deepcopy(request)
+    later["round_index"] = 1
+    _rehash(later)
+    later_round = first_round.parent / "controller-round-1"
+    later_round.mkdir()
+    runner = BundleRunner(later)
+    probe = fixtures.FakeProbe()
+
+    with pytest.raises(P6HistoryMeasurementError) as exc_info:
+        run_history_measurement_batch(later, binding, later_round, runner, probe)
+
+    assert str(exc_info.value) == "history_execution_invalid"
+    assert "PRIVATE-TOKEN-P6-REUSE" not in str(exc_info.value)
+    assert str(token_root) not in str(exc_info.value)
+    assert runner.calls == []
+    assert probe.calls == []
+
+
 def test_tamper_between_publication_and_downstream_gate_stops_all_stages(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
