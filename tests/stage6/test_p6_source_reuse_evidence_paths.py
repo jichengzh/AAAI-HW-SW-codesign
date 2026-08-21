@@ -178,7 +178,97 @@ def test_existing_paths_require_context_and_receipt_namespace(tmp_path: Path) ->
         resolve_existing_source_reuse_paths(local_output_root)
 
     assert str(exc_info.value) == "history_execution_invalid"
-    assert exc_info.value.private_category == "history_execution_partial"
+    assert exc_info.value.private_category == "p6_source_reuse_partial"
+
+
+@pytest.mark.parametrize(
+    ("public_category", "private_category"),
+    (
+        ("history_execution_invalid", "p6_source_reuse_partial"),
+        ("history_execution_invalid", "p6_source_reuse_stale"),
+        ("history_execution_invalid", "p6_source_reuse_mismatch"),
+        ("unsafe_destination", None),
+    ),
+)
+def test_evidence_error_exposes_exact_public_and_private_categories(
+    public_category: str,
+    private_category: str | None,
+) -> None:
+    error = P6SourceReuseEvidenceError(
+        public_category=public_category,
+        private_category=private_category,
+    )
+
+    assert str(error) == public_category
+    assert error.public_category == public_category
+    assert error.private_category == private_category
+
+
+@pytest.mark.parametrize(
+    ("field", "malformed_value"),
+    (
+        ("schema_version", True),
+        ("run_nonce", 1),
+        ("task_id", True),
+        ("task_sha256", 1),
+        ("code_revision", 1),
+        ("code_revision", True),
+        ("code_revision", ""),
+        ("local_output_root_sha256", 1),
+        ("candidate_plan_schema_version", False),
+        ("candidate_plan_sha256", 1),
+        ("source_registry_schema_version", 1),
+        ("source_registry_sha256", False),
+        ("created_before_round_index", False),
+        ("created_before_round_index", True),
+        ("created_before_round_index", 1),
+        ("created_before_round_index", 0.0),
+    ),
+)
+def test_context_loader_rejects_rehashed_malformed_exact_field_types(
+    tmp_path: Path,
+    field: str,
+    malformed_value: Any,
+) -> None:
+    local_output_root, plan, registry = _fresh_inputs(tmp_path)
+    _create(local_output_root, plan, registry)
+    paths = resolve_existing_source_reuse_paths(local_output_root)
+    raw = json.loads(paths.run_context.read_text(encoding="utf-8"))
+    raw[field] = malformed_value
+    raw["run_context_sha256"] = canonical_json_sha256(
+        {key: value for key, value in raw.items() if key != "run_context_sha256"}
+    )
+    _canonical_write(paths.run_context, raw)
+
+    with pytest.raises(P6SourceReuseEvidenceError):
+        load_fresh_run_context(
+            local_output_root=local_output_root,
+            expected_task_id=TASK_CONTRACT["task_id"],
+            expected_task_sha256=TASK_CONTRACT["task_sha256"],
+        )
+
+
+@pytest.mark.parametrize(
+    "malformed_hash",
+    (True, 1, "", "A" * 64, "0" * 63),
+)
+def test_context_loader_rejects_malformed_context_hash_type_or_spelling(
+    tmp_path: Path,
+    malformed_hash: Any,
+) -> None:
+    local_output_root, plan, registry = _fresh_inputs(tmp_path)
+    _create(local_output_root, plan, registry)
+    paths = resolve_existing_source_reuse_paths(local_output_root)
+    raw = json.loads(paths.run_context.read_text(encoding="utf-8"))
+    raw["run_context_sha256"] = malformed_hash
+    _canonical_write(paths.run_context, raw)
+
+    with pytest.raises(P6SourceReuseEvidenceError):
+        load_fresh_run_context(
+            local_output_root=local_output_root,
+            expected_task_id=TASK_CONTRACT["task_id"],
+            expected_task_sha256=TASK_CONTRACT["task_sha256"],
+        )
 
 
 Mutation = Callable[[Path, dict[str, Any], dict[str, Any]], None]
@@ -381,5 +471,17 @@ def test_context_boundary_mutations_fail_closed_without_private_details(
     finally:
         monkeypatch.chdir(original_cwd)
 
-    assert str(exc_info.value) == "history_execution_invalid"
+    unsafe_root_mutations = {
+        "relative_root", "noncanonical_root", "missing_root",
+        "root_symlink_component", "root_not_directory",
+    }
+    expected_public = (
+        "unsafe_destination"
+        if mutation_name in unsafe_root_mutations
+        else "history_execution_invalid"
+    )
+    assert str(exc_info.value) == expected_public
+    assert exc_info.value.public_category == expected_public
+    if expected_public == "unsafe_destination":
+        assert exc_info.value.private_category is None
     assert str(local_output_root) not in str(exc_info.value)

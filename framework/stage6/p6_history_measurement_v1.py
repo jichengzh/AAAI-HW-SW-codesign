@@ -58,12 +58,8 @@ MAX_PRIVATE_JSON_BYTES = 16 * 1024 * 1024
 
 REQUEST_KEYS = frozenset(
     {
-        "schema_version",
-        "task_id",
-        "task_sha256",
-        "round_index",
-        "batch_size",
-        "sample_budget",
+        "schema_version", "task_id", "task_sha256", "round_index",
+        "batch_size", "sample_budget",
         "required_metrics",
         "atomic_feedback",
         "real_h800_measurement_required",
@@ -74,20 +70,9 @@ REQUEST_KEYS = frozenset(
 )
 ROW_KEYS = frozenset(
     {
-        "schema_version",
-        "task_id",
-        "task_sha256",
-        "row_id",
-        "manifest_job_id",
-        "group_id",
-        "model",
-        "width",
-        "width_schema",
-        "structure_widths",
-        "genome",
-        "strategy_id",
-        "q_mode",
-        "hardware_id",
+        "schema_version", "task_id", "task_sha256", "row_id", "manifest_job_id",
+        "group_id", "model", "width", "width_schema", "structure_widths",
+        "genome", "strategy_id", "q_mode", "hardware_id",
         "capability_profile_id",
         "capability_digest",
         "dispatch_key",
@@ -143,7 +128,7 @@ def run_history_measurement_batch(
     private_root, gpu_policy = _validate_binding_runtime(binding)
     _validate_interface_gpu_policy(interface, gpu_policy)
     paths = _resolve_round_paths(
-        interface, private_root, Path(round_output_root), canonical_request["round_index"]
+        interface, private_root, round_output_root, canonical_request["round_index"]
     )
     run_context, source_group_ids = _plan_current_run_sources(
         canonical_request,
@@ -231,7 +216,8 @@ def _run_first_use_sources(request: Mapping[str, Any], group_ids: Sequence[str],
     interface: Mapping[str, Any], private_root: Path, paths: Mapping[str, Path],
     runner: Runner, environment: Mapping[str, str]) -> None:
     if len(group_ids) != len(invocations):
-        raise P6SourceReuseEvidenceError("history_execution_mismatch")
+        raise P6SourceReuseEvidenceError(
+            public_category="history_execution_invalid", private_category="p6_source_reuse_mismatch")
     for group_id, invocation in zip(group_ids, invocations, strict=True):
         decisions = classify_selected_group_sources(
             request,
@@ -244,7 +230,9 @@ def _run_first_use_sources(request: Mapping[str, Any], group_ids: Sequence[str],
         if decision_by_group.get(group_id) is None or (
             decision_by_group[group_id].state != "UNSEEN"
         ):
-            raise P6SourceReuseEvidenceError("history_execution_mismatch")
+            raise P6SourceReuseEvidenceError(
+                public_category="history_execution_invalid",
+                private_category="p6_source_reuse_mismatch")
         run_source_invocations(
             (invocation,),
             runner=runner,
@@ -455,7 +443,7 @@ def _validate_interface_gpu_policy(
 def _resolve_round_paths(
     interface: Mapping[str, Any],
     private_root: Path,
-    supplied_root: Path,
+    supplied_root: str | Path,
     round_index: int,
 ) -> dict[str, Path]:
     try:
@@ -520,9 +508,14 @@ def _resolve_round_paths(
         raise P6HistoryMeasurementError("history_execution_invalid") from None
 
 
-def _validate_controller_round_root(path: Path) -> Path:
-    if not path.is_absolute():
+def _validate_controller_round_root(supplied: str | Path) -> Path:
+    if type(supplied) is not str and not isinstance(supplied, Path):
         raise ValueError
+    spelling = str(supplied)
+    if (os.path.normpath(spelling) != spelling or not Path(spelling).is_absolute()
+        or any(part in {"", ".", ".."} for part in spelling.split(os.sep)[1:])):
+        raise ValueError
+    path = Path(spelling)
     current = Path(path.anchor)
     for component in path.parts[1:]:
         current /= component

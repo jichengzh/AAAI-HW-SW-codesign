@@ -19,7 +19,6 @@ REGISTRY_RELATIVE_PATH: Final = Path("source_registry.json")
 RUN_CONTEXT_SCHEMA_VERSION: Final = "p6_materializer_fresh_run_context_v1"
 PLAN_SCHEMA_VERSION: Final = "p6_pyramid_candidate_plan_v2"
 REGISTRY_SCHEMA_VERSION: Final = "stage5_candidate_source_registry_v2"
-PUBLIC_ERROR_CATEGORY: Final = "history_execution_invalid"
 SOURCE_ARTIFACT_KEYS: Final = (
     "checkpoint_path", "checkpoint_dir", "config_path", "onnx_path",
     "onnx_report_path", "calibration_root", "calibration_npz",
@@ -27,40 +26,18 @@ SOURCE_ARTIFACT_KEYS: Final = (
 )
 SOURCE_MARKER_KEYS: Final = ("training_done_marker", "source_done_marker")
 _DIRECTORY_ARTIFACT_KEYS: Final = frozenset(
-    {"checkpoint_dir", "calibration_root", "trt_calibration_dir"}
-)
-_RECEIPT_FIELDS: Final = frozenset(
-    {
-        "schema_version", "status", "run_context_sha256", "run_nonce",
-        "task_id", "task_sha256", "group_id", "group_key_sha256",
-        "source_contract_sha256", "source_evidence_sha256",
-        "producer_round_index", "producer_measurement_request_sha256",
-        "producer_row_id", "producer_row_sha256", "producer_q_mode",
-        "artifact_digests", "marker_digests", "receipt_sha256",
-    }
-)
+    {"checkpoint_dir", "calibration_root", "trt_calibration_dir"})
 _HEX_CHARS: Final = frozenset("0123456789abcdef")
-_CONTEXT_FIELDS: Final = frozenset(
-    {
-        "schema_version",
-        "run_nonce",
-        "task_id",
-        "task_sha256",
-        "code_revision",
-        "local_output_root_sha256",
-        "candidate_plan_schema_version",
-        "candidate_plan_sha256",
-        "source_registry_schema_version",
-        "source_registry_sha256",
-        "created_before_round_index",
-        "run_context_sha256",
-    }
-)
+PrivateCategory = Literal[
+    "p6_source_reuse_partial", "p6_source_reuse_stale", "p6_source_reuse_mismatch"]
+PublicCategory = Literal["history_execution_invalid", "unsafe_destination"]
 class P6SourceReuseEvidenceError(ValueError):
-    def __init__(self, private_category: str) -> None:
-        super().__init__(PUBLIC_ERROR_CATEGORY)
-        self.private_category = private_category
-        self.public_category = PUBLIC_ERROR_CATEGORY
+    private_category: PrivateCategory | None
+    public_category: PublicCategory
+    def __init__(self, *, public_category: PublicCategory,
+                 private_category: PrivateCategory | None = None) -> None:
+        super().__init__(public_category)
+        self.private_category, self.public_category = private_category, public_category
 @dataclass(frozen=True)
 class P6SourceReusePaths:
     local_output_root: Path
@@ -113,36 +90,69 @@ class P6GroupReuseDecision:
 def canonical_json_sha256(value: Any) -> str:
     try:
         encoded = _canonical_json_bytes(value)
-    except (TypeError, ValueError) as exc:
-        raise P6SourceReuseEvidenceError("history_execution_mismatch") from exc
+    except (TypeError, ValueError):
+        _fail()
     return hashlib.sha256(encoded).hexdigest()
 def _canonical_json_bytes(value: Any) -> bytes:
     return json.dumps(value, ensure_ascii=True, allow_nan=False, sort_keys=True,
                       separators=(",", ":")).encode("utf-8")
-def _fail(category: str = "history_execution_mismatch") -> None:
-    raise P6SourceReuseEvidenceError(category)
+def _fail(private_category: PrivateCategory | None = "p6_source_reuse_mismatch", *,
+          public_category: PublicCategory = "history_execution_invalid") -> None:
+    raise P6SourceReuseEvidenceError(
+        public_category=public_category, private_category=private_category)
 def _is_lower_hex(value: Any, length: int = 64) -> bool:
     return (isinstance(value, str) and len(value) == length
             and set(value).issubset(_HEX_CHARS))
-def _validate_real_directory(path: Path, *, missing_category: str) -> Path:
-    if not path.is_absolute() or path != Path(os.path.normpath(path)):
+def _is_nonempty_string(value: Any) -> bool:
+    return type(value) is str and bool(value)
+def _has_exact_hashes(raw: Mapping[str, Any], keys: Sequence[str]) -> bool:
+    return all(_is_lower_hex(raw.get(key)) for key in keys)
+def _validate_context_shape(raw: Mapping[str, Any]) -> None:
+    if (set(raw) != set(P6FreshRunContext.__dataclass_fields__)
+        or raw.get("schema_version") != RUN_CONTEXT_SCHEMA_VERSION
+        or not _has_exact_hashes(raw, ("run_nonce", "task_sha256",
+            "local_output_root_sha256", "candidate_plan_sha256", "source_registry_sha256",
+            "run_context_sha256"))
+        or not _is_nonempty_string(raw.get("task_id"))
+        or not _is_nonempty_string(raw.get("code_revision"))
+        or raw.get("candidate_plan_schema_version") != PLAN_SCHEMA_VERSION
+        or raw.get("source_registry_schema_version") != REGISTRY_SCHEMA_VERSION
+        or type(raw.get("created_before_round_index")) is not int
+        or raw.get("created_before_round_index") != 0):
         _fail()
+def _validate_receipt_shape(raw: Mapping[str, Any]) -> None:
+    if (set(raw) != set(P6GroupSourceReceipt.__dataclass_fields__)
+        or raw.get("schema_version") != "p6_group_source_reuse_receipt_v1"
+        or raw.get("status") != "READY_CURRENT_RUN"
+        or not _has_exact_hashes(raw, (
+            "run_context_sha256", "run_nonce", "task_sha256", "group_key_sha256",
+            "source_contract_sha256", "source_evidence_sha256", "producer_row_sha256",
+            "producer_measurement_request_sha256", "receipt_sha256"))
+        or not all(_is_nonempty_string(raw.get(key)) for key in (
+            "task_id", "group_id", "producer_row_id", "producer_q_mode"))
+        or raw.get("producer_q_mode") not in {"fp16", "int8"}
+        or type(raw.get("producer_round_index")) is not int
+        or raw.get("producer_round_index") not in range(4)):
+        _fail()
+def _validate_real_directory(path: Path) -> Path:
+    if not path.is_absolute() or path != Path(os.path.normpath(path)):
+        _fail(None, public_category="unsafe_destination")
     try:
         resolved = path.resolve(strict=True)
-    except (OSError, RuntimeError) as exc:
-        raise P6SourceReuseEvidenceError(missing_category) from exc
+    except (OSError, RuntimeError):
+        _fail(None, public_category="unsafe_destination")
     if resolved != path:
-        _fail()
+        _fail(None, public_category="unsafe_destination")
     current = path
     while True:
         try:
             mode = current.lstat().st_mode
-        except OSError as exc:
-            raise P6SourceReuseEvidenceError(missing_category) from exc
+        except OSError:
+            _fail(None, public_category="unsafe_destination")
         if stat.S_ISLNK(mode):
-            _fail()
+            _fail(None, public_category="unsafe_destination")
         if current == path and not stat.S_ISDIR(mode):
-            _fail()
+            _fail(None, public_category="unsafe_destination")
         if current == current.parent:
             break
         current = current.parent
@@ -152,29 +162,27 @@ def _ensure_absent(path: Path) -> None:
         path.lstat()
     except FileNotFoundError:
         return
-    except OSError as exc:
-        raise P6SourceReuseEvidenceError("history_execution_mismatch") from exc
+    except OSError:
+        _fail()
     _fail()
 def _validate_existing_directory(path: Path, *, missing_category: str) -> None:
     try:
         mode = path.lstat().st_mode
-    except OSError as exc:
-        raise P6SourceReuseEvidenceError(missing_category) from exc
+    except OSError:
+        _fail(missing_category)
     if not stat.S_ISDIR(mode) or stat.S_ISLNK(mode):
         _fail()
 def _validate_regular_single_link(path: Path, *, missing_category: str) -> None:
     try:
         info = path.lstat()
-    except OSError as exc:
-        raise P6SourceReuseEvidenceError(missing_category) from exc
+    except OSError:
+        _fail(missing_category)
     if not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode) or info.st_nlink != 1:
         _fail()
 def plan_source_reuse_paths(local_output_root: Path) -> P6SourceReusePaths:
     if not isinstance(local_output_root, Path):
         _fail()
-    root = _validate_real_directory(
-        local_output_root, missing_category="history_execution_partial"
-    )
+    root = _validate_real_directory(local_output_root)
     paths = P6SourceReusePaths(
         local_output_root=root,
         metadata_root=root / RUN_METADATA_RELATIVE_ROOT,
@@ -192,19 +200,19 @@ def plan_source_reuse_paths(local_output_root: Path) -> P6SourceReusePaths:
                 _fail()
         except FileNotFoundError:
             pass
-        except OSError as exc:
-            raise P6SourceReuseEvidenceError("history_execution_mismatch") from exc
+        except OSError:
+            _fail()
     return paths
 def resolve_existing_source_reuse_paths(local_output_root: Path) -> P6SourceReusePaths:
     paths = plan_source_reuse_paths(local_output_root)
     _validate_existing_directory(
-        paths.metadata_root, missing_category="history_execution_partial"
+        paths.metadata_root, missing_category="p6_source_reuse_partial"
     )
     _validate_existing_directory(
-        paths.receipt_root, missing_category="history_execution_partial"
+        paths.receipt_root, missing_category="p6_source_reuse_partial"
     )
     _validate_regular_single_link(
-        paths.run_context, missing_category="history_execution_partial"
+        paths.run_context, missing_category="p6_source_reuse_partial"
     )
     return paths
 def receipt_path_for_group(paths: P6SourceReusePaths, group_id: str) -> Path:
@@ -227,8 +235,8 @@ def _read_strict_json(path: Path, *, missing_category: str) -> dict[str, Any]:
         raw = json.loads(
             path.read_text(encoding="utf-8"), object_pairs_hook=_reject_duplicate_keys
         )
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise P6SourceReuseEvidenceError("history_execution_mismatch") from exc
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        _fail()
     if not isinstance(raw, dict):
         _fail()
     return raw
@@ -249,9 +257,9 @@ def _validate_context_inputs(*, paths: P6SourceReusePaths,
         or not isinstance(code_revision, str) or not code_revision):
         _fail()
     persisted_plan = _read_strict_json(paths.local_output_root / PLAN_RELATIVE_PATH,
-                                       missing_category="history_execution_partial")
+                                       missing_category="p6_source_reuse_partial")
     persisted_registry = _read_strict_json(paths.local_output_root / REGISTRY_RELATIVE_PATH,
-                                           missing_category="history_execution_partial")
+                                           missing_category="p6_source_reuse_partial")
     if persisted_plan != dict(candidate_plan) or persisted_registry != dict(source_registry):
         _fail()
     _validate_registry_paths(paths, source_registry)
@@ -342,8 +350,8 @@ def _exclusive_publish_json(path: Path, value: Mapping[str, Any]) -> None:
             os.fsync(directory_fd)
         finally:
             os.close(directory_fd)
-    except OSError as exc:
-        raise P6SourceReuseEvidenceError("history_execution_mismatch") from exc
+    except OSError:
+        _fail()
     finally:
         if descriptor >= 0:
             os.close(descriptor)
@@ -391,8 +399,8 @@ def create_fresh_run_context(*, local_output_root: Path,
     try:
         paths.metadata_root.mkdir(mode=0o700)
         paths.receipt_root.mkdir(mode=0o700)
-    except OSError as exc:
-        raise P6SourceReuseEvidenceError("history_execution_mismatch") from exc
+    except OSError:
+        _fail()
     _exclusive_publish_json(paths.run_context, serialized)
     return context
 def load_fresh_run_context(*, local_output_root: Path, expected_task_id: str,
@@ -402,18 +410,17 @@ def load_fresh_run_context(*, local_output_root: Path, expected_task_id: str,
         _fail()
     paths = resolve_existing_source_reuse_paths(local_output_root)
     candidate_plan = _read_strict_json(paths.local_output_root / PLAN_RELATIVE_PATH,
-                                       missing_category="history_execution_partial")
+                                       missing_category="p6_source_reuse_partial")
     source_registry = _read_strict_json(paths.local_output_root / REGISTRY_RELATIVE_PATH,
-                                        missing_category="history_execution_partial")
+                                        missing_category="p6_source_reuse_partial")
     if (candidate_plan.get("schema_version") != PLAN_SCHEMA_VERSION
         or source_registry.get("schema_version") != REGISTRY_SCHEMA_VERSION):
         _fail()
     _validate_registry_paths(paths, source_registry)
     raw = _read_strict_json(
-        paths.run_context, missing_category="history_execution_partial"
+        paths.run_context, missing_category="p6_source_reuse_partial"
     )
-    if set(raw) != _CONTEXT_FIELDS:
-        _fail()
+    _validate_context_shape(raw)
     without_hash = {key: value for key, value in raw.items() if key != "run_context_sha256"}
     if not _is_lower_hex(raw.get("run_context_sha256")) or raw[
         "run_context_sha256"
@@ -429,7 +436,7 @@ def load_fresh_run_context(*, local_output_root: Path, expected_task_id: str,
         registry_sha256=canonical_json_sha256(source_registry),
     )
     if not _is_lower_hex(raw.get("run_nonce")) or without_hash != expected:
-        _fail("history_execution_stale")
+        _fail("p6_source_reuse_stale")
     return P6FreshRunContext(**raw)
 def requires_current_run_source_evidence(request: Mapping[str, Any]) -> bool:
     rows = request.get("rows") if isinstance(request, Mapping) else None
@@ -506,8 +513,8 @@ def _contract_paths(contract: Mapping[str, Any], root: Path) -> dict[str, Path]:
                 mode = current.lstat().st_mode
             except FileNotFoundError:
                 break
-            except OSError as exc:
-                raise P6SourceReuseEvidenceError("history_execution_mismatch") from exc
+            except OSError:
+                _fail()
             if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
                 _fail()
     return result
@@ -516,27 +523,27 @@ def _leaf_exists(path: Path) -> bool:
         path.lstat()
     except FileNotFoundError:
         return False
-    except OSError as exc:
-        raise P6SourceReuseEvidenceError("history_execution_mismatch") from exc
+    except OSError:
+        _fail()
     return True
 def _sha_file(path: Path) -> str:
-    _validate_regular_single_link(path, missing_category="history_execution_partial")
+    _validate_regular_single_link(path, missing_category="p6_source_reuse_partial")
     digest = hashlib.sha256()
     try:
         with path.open("rb") as handle:
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(chunk)
-    except OSError as exc:
-        raise P6SourceReuseEvidenceError("history_execution_mismatch") from exc
+    except OSError:
+        _fail()
     return digest.hexdigest()
 def _directory_digest(root: Path) -> P6ArtifactDigest:
-    _validate_existing_directory(root, missing_category="history_execution_partial")
+    _validate_existing_directory(root, missing_category="p6_source_reuse_partial")
     entries: list[dict[str, Any]] = []
     def visit(directory: Path) -> None:
         try:
             children = sorted(os.scandir(directory), key=lambda item: item.name)
-        except OSError as exc:
-            raise P6SourceReuseEvidenceError("history_execution_mismatch") from exc
+        except OSError:
+            _fail()
         for child in children:
             path = Path(child.path)
             relative = path.relative_to(root).as_posix()
@@ -579,9 +586,8 @@ def _receipt_to_json(receipt: P6GroupSourceReceipt) -> dict[str, Any]:
     raw["marker_digests"] = dict(receipt.marker_digests)
     return raw
 def _parse_receipt(path: Path) -> P6GroupSourceReceipt:
-    raw = _read_strict_json(path, missing_category="history_execution_partial")
-    if set(raw) != _RECEIPT_FIELDS:
-        _fail()
+    raw = _read_strict_json(path, missing_category="p6_source_reuse_partial")
+    _validate_receipt_shape(raw)
     stored_hash = raw.get("receipt_sha256")
     without_hash = {key: value for key, value in raw.items() if key != "receipt_sha256"}
     artifacts = raw.get("artifact_digests")
@@ -636,7 +642,7 @@ def _producer_request(receipt: P6GroupSourceReceipt, *, consumer_round: int,
         mode = current.lstat().st_mode
         if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
             _fail()
-    request = _read_strict_json(request_path, missing_category="history_execution_mismatch")
+    request = _read_strict_json(request_path, missing_category="p6_source_reuse_mismatch")
     body = {key: value for key, value in request.items() if key != "measurement_request_sha256"}
     if (
         canonical_json_sha256(body) != request.get("measurement_request_sha256")
@@ -658,7 +664,7 @@ def _validate_receipt(receipt: P6GroupSourceReceipt, *, group_id: str,
         or receipt.task_id != context.task_id
         or receipt.task_sha256 != context.task_sha256
     ):
-        _fail("history_execution_stale")
+        _fail("p6_source_reuse_stale")
     if (
         receipt.schema_version != "p6_group_source_reuse_receipt_v1"
         or receipt.status != "READY_CURRENT_RUN"
@@ -726,16 +732,14 @@ def classify_selected_group_sources(
                 )
                 state = "READY_CURRENT_RUN"
         except P6SourceReuseEvidenceError as exc:
-            state = (
-                "INVALID_STALE"
-                if exc.private_category == "history_execution_stale"
-                else "INVALID_MISMATCH"
-            )
+            state = {"p6_source_reuse_partial": "INVALID_PARTIAL", "p6_source_reuse_stale": "INVALID_STALE"}.get(
+                exc.private_category, "INVALID_MISMATCH")
         decisions.append(P6GroupReuseDecision(group_id, state, receipt_path))
     return tuple(decisions)
 def first_use_group_ids(decisions: Sequence[P6GroupReuseDecision]) -> tuple[str, ...]:
-    if any(item.state not in {"UNSEEN", "READY_CURRENT_RUN"} for item in decisions):
-        _fail()
+    invalid = next((item.state for item in decisions if item.state not in {"UNSEEN", "READY_CURRENT_RUN"}), None)
+    if invalid:
+        _fail({"INVALID_PARTIAL": "p6_source_reuse_partial", "INVALID_STALE": "p6_source_reuse_stale"}.get(invalid, "p6_source_reuse_mismatch"))
     return tuple(sorted(item.group_id for item in decisions if item.state == "UNSEEN"))
 def validate_and_publish_group_receipt(
     request: Mapping[str, Any], *, group_id: str, run_context: P6FreshRunContext,

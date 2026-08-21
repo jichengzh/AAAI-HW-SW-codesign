@@ -275,6 +275,65 @@ def test_directory_tree_digest_is_creation_order_independent_and_exact(
 
 
 @pytest.mark.parametrize(
+    ("field", "malformed_value"),
+    (
+        ("schema_version", True),
+        ("status", 1),
+        ("run_context_sha256", 1),
+        ("run_nonce", False),
+        ("task_id", 1),
+        ("task_sha256", True),
+        ("group_id", 1),
+        ("group_key_sha256", False),
+        ("source_contract_sha256", 1),
+        ("source_evidence_sha256", True),
+        ("producer_round_index", False),
+        ("producer_round_index", True),
+        ("producer_round_index", 0.0),
+        ("producer_measurement_request_sha256", 1),
+        ("producer_row_id", False),
+        ("producer_row_sha256", 1),
+        ("producer_q_mode", True),
+        ("artifact_digests", []),
+        ("marker_digests", []),
+    ),
+)
+def test_receipt_parser_rejects_rehashed_malformed_exact_field_types(
+    tmp_path: Path,
+    field: str,
+    malformed_value: Any,
+) -> None:
+    fixture = _fresh_fixture(tmp_path)
+    _write_complete_bundle(fixture)
+    _publish(fixture)
+    _rewrite_receipt(
+        fixture, lambda raw: raw.__setitem__(field, malformed_value)
+    )
+
+    decision = classify_selected_group_sources(**fixture.classification_kwargs)[0]
+
+    assert decision.state == "INVALID_MISMATCH"
+
+
+@pytest.mark.parametrize("malformed_hash", (True, 1, "", "A" * 64, "0" * 63))
+def test_receipt_parser_rejects_malformed_receipt_hash_type_or_spelling(
+    tmp_path: Path,
+    malformed_hash: Any,
+) -> None:
+    fixture = _fresh_fixture(tmp_path)
+    _write_complete_bundle(fixture)
+    _publish(fixture)
+    path = _receipt_path(fixture)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["receipt_sha256"] = malformed_hash
+    _write_json(path, raw)
+
+    decision = classify_selected_group_sources(**fixture.classification_kwargs)[0]
+
+    assert decision.state == "INVALID_MISMATCH"
+
+
+@pytest.mark.parametrize(
     ("mutation", "expected_state"),
     (
         ("bare_training_and_source_markers", "INVALID_PARTIAL"),
@@ -423,6 +482,11 @@ def test_group_classification_is_exact_and_fail_closed(
         with pytest.raises(P6SourceReuseEvidenceError) as exc_info:
             first_use_group_ids((decision,))
         assert str(exc_info.value) == "history_execution_invalid"
+        assert exc_info.value.private_category == {
+            "INVALID_PARTIAL": "p6_source_reuse_partial",
+            "INVALID_STALE": "p6_source_reuse_stale",
+            "INVALID_MISMATCH": "p6_source_reuse_mismatch",
+        }[expected_state]
         assert expected_state not in str(exc_info.value)
 
 

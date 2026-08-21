@@ -1111,6 +1111,34 @@ def test_unsafe_or_symlinked_controller_round_root_fails_before_process(
     assert probe.calls == []
 
 
+@pytest.mark.parametrize("spelling", ["dot", "dotdot", "duplicate", "trailing"])
+def test_controller_round_root_rejects_noncanonical_lexical_spelling_before_resolution(
+    tmp_path: Path,
+    spelling: str,
+) -> None:
+    private_root = tmp_path / "private"
+    private_root.mkdir()
+    round_root = private_root / "controller-round"
+    round_root.mkdir()
+    malformed = {
+        "dot": f"{round_root}/.",
+        "dotdot": f"{round_root}/../{round_root.name}",
+        "duplicate": f"{round_root.parent}//{round_root.name}",
+        "trailing": f"{round_root}/",
+    }[spelling]
+    runner = FakeRunner(_request())
+    probe = FakeProbe()
+
+    with pytest.raises(P6HistoryMeasurementError) as raised:
+        run_history_measurement_batch(
+            _request(), _binding(private_root), malformed, runner, probe
+        )
+
+    assert raised.value.category == "history_execution_invalid"
+    assert runner.calls == []
+    assert probe.calls == []
+
+
 def test_template_resolution_rejects_preexisting_lexical_symlink_parent(
     tmp_path: Path,
 ) -> None:
