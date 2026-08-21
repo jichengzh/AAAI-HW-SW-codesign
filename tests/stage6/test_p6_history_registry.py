@@ -551,6 +551,7 @@ def test_recipe_v2_registry_preserves_training_fields_and_rehashes_contract(
     [
         "missing_training_required",
         "false_training_required",
+        "checkpoint_already_exists",
         "missing_pyramid_config_path",
         "static_path_outside_root",
         "shared_output_outside_root",
@@ -567,6 +568,8 @@ def test_recipe_v2_registry_rejects_unsafe_training_contract_before_write(
         template.pop("training_required")
     elif mutation == "false_training_required":
         template["training_required"] = False
+    elif mutation == "checkpoint_already_exists":
+        template["training_source_kind"] = "checkpoint_already_exists"
     elif mutation == "missing_pyramid_config_path":
         template.pop("pyramid_config_path")
     elif mutation == "static_path_outside_root":

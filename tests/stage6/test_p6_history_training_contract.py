@@ -131,6 +131,42 @@ def test_training_template_requires_real_training_and_all_static_fields(tmp_path
     assert validated["training_parameters"] is not template["training_parameters"]
 
 
+@pytest.mark.parametrize("source_kind", ["selected_candidate_finetune"])
+def test_training_template_accepts_canonical_selected_candidate_training_kind(
+    tmp_path: Path, source_kind: str
+) -> None:
+    private_root = _private_root_with_training_inputs(tmp_path)
+    template = _training_template(private_root)
+    template["training_source_kind"] = source_kind
+
+    validated = validate_recipe_v2_training_template(template, private_root=private_root)
+
+    assert validated["training_source_kind"] == source_kind
+
+
+@pytest.mark.parametrize(
+    "source_kind",
+    [
+        "checkpoint_already_exists",
+        "pretrained_checkpoint_reuse",
+        "reuse_pretrained_checkpoint",
+        "selected_candidate_checkpoint_reuse",
+        ["selected_candidate_finetune"],
+    ],
+)
+def test_training_template_rejects_checkpoint_reuse_source_kind(
+    tmp_path: Path, source_kind: object
+) -> None:
+    private_root = _private_root_with_training_inputs(tmp_path)
+    template = _training_template(private_root)
+    template["training_source_kind"] = source_kind
+
+    with pytest.raises(P6HistoryTrainingContractError) as captured:
+        validate_recipe_v2_training_template(template, private_root=private_root)
+
+    assert captured.value.category == "history_execution_invalid"
+
+
 @pytest.mark.parametrize(
     "mutation",
     [

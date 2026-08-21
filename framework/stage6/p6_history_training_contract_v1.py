@@ -39,6 +39,7 @@ STATIC_TRAINING_INPUT_PATH_KEYS: tuple[str, ...] = (
     "dataset_root",
     "pyramid_config_path",
 )
+ALLOWED_TRAINING_SOURCE_KINDS = frozenset({"selected_candidate_finetune"})
 _PUBLIC_SAFE_CONTRACT_KEYS = (
     "schema_version",
     "group_id",
@@ -122,7 +123,7 @@ def _require_training_required_true(contract: Mapping[str, Any]) -> None:
 
 def _require_training_source_kind(contract: Mapping[str, Any]) -> None:
     value = contract.get("training_source_kind")
-    if not isinstance(value, str) or not value.strip():
+    if not isinstance(value, str) or value not in ALLOWED_TRAINING_SOURCE_KINDS:
         _invalid("training source kind is invalid")
 
 

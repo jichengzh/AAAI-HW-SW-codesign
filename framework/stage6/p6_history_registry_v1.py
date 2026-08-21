@@ -536,9 +536,7 @@ def _render_output_path(
 
 
 def _materialize_groups(
-    plan_mapping: Mapping[
-        tuple[tuple[int, int, int], str], tuple[str, str, str]
-    ],
+    plan_mapping: Mapping[tuple[tuple[int, int, int], str], tuple[str, str, str]],
     template: Mapping[str, Any],
     recipe: Mapping[str, Any],
     private_root: Path,
@@ -772,9 +770,7 @@ def materialize_history_registry(
 ) -> dict[str, Any]:
     """Validate, fully materialize, and atomically persist one dynamic registry."""
     try:
-        local_output_root = _resolve_existing_root(
-            local_registry_root, "local output root"
-        )
+        local_output_root = _resolve_existing_root(local_registry_root, "local output root")
         output_path = _resolve_registry_output(registry_output_path, local_output_root)
         _require_private_registry_output(output_path)
         plan_mapping = _validate_plan(plan)
