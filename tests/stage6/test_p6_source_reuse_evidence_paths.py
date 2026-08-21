@@ -205,6 +205,63 @@ def test_evidence_error_exposes_exact_public_and_private_categories(
 
 
 @pytest.mark.parametrize(
+    "invalid_public_category",
+    (
+        None,
+        True,
+        1,
+        [],
+        {},
+        "",
+        "history_execution_partial",
+        "history_execution_stale",
+        "history_execution_mismatch",
+        "p6_source_reuse_mismatch",
+        "/private/PRIVATE-TOKEN-P6-REUSE",
+    ),
+)
+def test_evidence_error_rejects_invalid_public_category_without_echo(
+    invalid_public_category: Any,
+) -> None:
+    with pytest.raises(TypeError) as exc_info:
+        P6SourceReuseEvidenceError(public_category=invalid_public_category)
+
+    assert str(exc_info.value) == "invalid_error_category"
+    assert "PRIVATE-TOKEN-P6-REUSE" not in str(exc_info.value)
+    assert "/private/" not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "invalid_private_category",
+    (
+        True,
+        1,
+        [],
+        {},
+        "",
+        "history_execution_partial",
+        "history_execution_stale",
+        "history_execution_mismatch",
+        "history_execution_invalid",
+        "unsafe_destination",
+        "/private/PRIVATE-TOKEN-P6-REUSE",
+    ),
+)
+def test_evidence_error_rejects_invalid_private_category_without_echo(
+    invalid_private_category: Any,
+) -> None:
+    with pytest.raises(TypeError) as exc_info:
+        P6SourceReuseEvidenceError(
+            public_category="history_execution_invalid",
+            private_category=invalid_private_category,
+        )
+
+    assert str(exc_info.value) == "invalid_error_category"
+    assert "PRIVATE-TOKEN-P6-REUSE" not in str(exc_info.value)
+    assert "/private/" not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
     ("field", "malformed_value"),
     (
         ("schema_version", True),

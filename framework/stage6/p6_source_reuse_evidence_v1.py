@@ -25,17 +25,18 @@ SOURCE_ARTIFACT_KEYS: Final = (
     "calibration_summary", "trt_calibration_dir",
 )
 SOURCE_MARKER_KEYS: Final = ("training_done_marker", "source_done_marker")
-_DIRECTORY_ARTIFACT_KEYS: Final = frozenset(
-    {"checkpoint_dir", "calibration_root", "trt_calibration_dir"})
+_DIRECTORY_ARTIFACT_KEYS: Final = frozenset({"checkpoint_dir", "calibration_root", "trt_calibration_dir"})
 _HEX_CHARS: Final = frozenset("0123456789abcdef")
-PrivateCategory = Literal[
-    "p6_source_reuse_partial", "p6_source_reuse_stale", "p6_source_reuse_mismatch"]
+PrivateCategory = Literal["p6_source_reuse_partial", "p6_source_reuse_stale", "p6_source_reuse_mismatch"]
 PublicCategory = Literal["history_execution_invalid", "unsafe_destination"]
 class P6SourceReuseEvidenceError(ValueError):
     private_category: PrivateCategory | None
     public_category: PublicCategory
-    def __init__(self, *, public_category: PublicCategory,
-                 private_category: PrivateCategory | None = None) -> None:
+    def __init__(self, *, public_category: PublicCategory, private_category: PrivateCategory | None = None) -> None:
+        if (type(public_category) is not str or public_category not in ("history_execution_invalid", "unsafe_destination")
+            or private_category is not None and (type(private_category) is not str
+                or private_category not in ("p6_source_reuse_partial", "p6_source_reuse_stale", "p6_source_reuse_mismatch"))):
+            raise TypeError("invalid_error_category")
         super().__init__(public_category)
         self.private_category, self.public_category = private_category, public_category
 @dataclass(frozen=True)
@@ -96,8 +97,7 @@ def canonical_json_sha256(value: Any) -> str:
 def _canonical_json_bytes(value: Any) -> bytes:
     return json.dumps(value, ensure_ascii=True, allow_nan=False, sort_keys=True,
                       separators=(",", ":")).encode("utf-8")
-def _fail(private_category: PrivateCategory | None = "p6_source_reuse_mismatch", *,
-          public_category: PublicCategory = "history_execution_invalid") -> None:
+def _fail(private_category: PrivateCategory | None = "p6_source_reuse_mismatch", *, public_category: PublicCategory = "history_execution_invalid") -> None:
     raise P6SourceReuseEvidenceError(
         public_category=public_category, private_category=private_category)
 def _is_lower_hex(value: Any, length: int = 64) -> bool:
