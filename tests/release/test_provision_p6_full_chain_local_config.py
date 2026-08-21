@@ -353,12 +353,37 @@ def _attach_expected_recipe(
     *,
     actual_recipe: dict[str, Any],
     expected_recipe: dict[str, Any],
-) -> None:
+) -> Path:
     root = tmp_path / "private-history"
+    (root / "checkpoints").mkdir(exist_ok=True)
+    (root / "datasets" / "coptv2x").mkdir(parents=True, exist_ok=True)
+    (root / "configs").mkdir(exist_ok=True)
+    (root / "checkpoints" / "base.ckpt").write_text("base\n", encoding="utf-8")
+    (root / "configs" / "pyramid.py").write_text("config\n", encoding="utf-8")
     registry_path = root / "registry" / "candidate_source_registry.json"
     registry = json.loads(registry_path.read_text(encoding="utf-8"))
     contract = registry["groups"][0]["source_contract"]
-    contract["dynamic_materialization_recipe"] = copy.deepcopy(actual_recipe)
+    contract.update(
+        {
+            "training_required": True,
+            "training_source_kind": "selected_candidate_finetune",
+            "base_checkpoint_path": str(root / "checkpoints" / "base.ckpt"),
+            "dataset_root": str(root / "datasets" / "coptv2x"),
+            "pyramid_config_path": str(root / "configs" / "pyramid.py"),
+            "training_parameters": {
+                "training_mode": "finetune_selected_width",
+                "epochs": 2,
+                "seed": 20260821,
+                "optimizer": "adamw",
+                "learning_rate": 0.0001,
+                "batch_size": 1,
+                "dataset_split": "trainval_coptv2x",
+                "checkpoint_selection": "best_ap70",
+                "freeze_policy": "pyramid_backbone_partial",
+            },
+            "dynamic_materialization_recipe": copy.deepcopy(actual_recipe),
+        }
+    )
     encoded = json.dumps(
         contract, ensure_ascii=True, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")
@@ -373,6 +398,29 @@ def _attach_expected_recipe(
     legacy = yaml.safe_load(legacy_path.read_text(encoding="utf-8"))
     legacy["history_recipe_derivation_path"] = str(expected_path)
     _write_yaml(legacy_path, legacy)
+    implementation = (
+        root
+        / "private-relocated-history-repo"
+        / "bin"
+        / "stage5_materialize_round_sources_v1.original.sh"
+    )
+    _write_executable(implementation)
+    (root / "documented-stage5-chain" / MARKERS["source_materializer"]).unlink()
+    return _write_yaml(
+        tmp_path / "private-inputs" / "source-wrapper-profile.yaml",
+        {
+            "schema_version": "p6_private_source_wrapper_profile_v1",
+            "wrapper_kind": "repo_cwd_exec_v1",
+            "destination_relative_path": (
+                f"documented-stage5-chain/{MARKERS['source_materializer']}"
+            ),
+            "implementation_relative_path": (
+                "private-relocated-history-repo/bin/"
+                "stage5_materialize_round_sources_v1.original.sh"
+            ),
+            "implementation_cwd_relative_path": "private-relocated-history-repo",
+        },
+    )
 
 
 def _fake_nvidia_smi(tmp_path: Path, rows: tuple[str, ...] | None = None) -> Path:
@@ -502,14 +550,16 @@ def test_cli_enforces_matching_normalized_recipe_before_writing_pair(
 ) -> None:
     args = _valid_args(tmp_path)
     recipe = _recipe_v2()
-    _attach_expected_recipe(
+    profile = _attach_expected_recipe(
         tmp_path,
         args,
         actual_recipe=recipe,
         expected_recipe=recipe,
     )
 
-    result = _run_cli(tmp_path, *args)
+    result = _run_cli(
+        tmp_path, *args, "--source-wrapper-profile", str(profile)
+    )
 
     assert result.returncode == 0
     assert result.stdout == "p6_full_chain_config_written\n"
@@ -523,18 +573,74 @@ def test_cli_rejects_normalized_recipe_drift_without_pair(tmp_path: Path) -> Non
     expected["group_id_template"] = (
         "pyramid-drift|{stage1_width}x{stage2_width}x{stage3_width}"
     )
-    _attach_expected_recipe(
+    profile = _attach_expected_recipe(
         tmp_path,
         args,
         actual_recipe=actual,
         expected_recipe=expected,
     )
 
-    result = _run_cli(tmp_path, *args)
+    result = _run_cli(
+        tmp_path, *args, "--source-wrapper-profile", str(profile)
+    )
 
     assert result.returncode == 1
     assert result.stdout == ""
     assert result.stderr == "history_recipe_derivation_invalid\n"
+    assert not _private_pair_paths(tmp_path)[0].exists()
+    assert not _private_pair_paths(tmp_path)[1].exists()
+
+
+def test_cli_requires_source_wrapper_profile_for_recipe_v2_without_pair(
+    tmp_path: Path,
+) -> None:
+    args = _valid_args(tmp_path)
+    recipe = _recipe_v2()
+    _attach_expected_recipe(
+        tmp_path,
+        args,
+        actual_recipe=recipe,
+        expected_recipe=recipe,
+    )
+
+    result = _run_cli(tmp_path, *args)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "history_execution_invalid\n"
+    assert not _private_pair_paths(tmp_path)[0].exists()
+    assert not _private_pair_paths(tmp_path)[1].exists()
+
+
+def test_cli_does_not_overwrite_differing_source_marker_or_write_pair(
+    tmp_path: Path,
+) -> None:
+    args = _valid_args(tmp_path)
+    recipe = _recipe_v2()
+    profile = _attach_expected_recipe(
+        tmp_path,
+        args,
+        actual_recipe=recipe,
+        expected_recipe=recipe,
+    )
+    marker = (
+        tmp_path
+        / "private-history"
+        / "documented-stage5-chain"
+        / MARKERS["source_materializer"]
+    )
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("#!/bin/sh\nexit 91\n", encoding="utf-8")
+    marker.chmod(0o700)
+
+    result = _run_cli(
+        tmp_path, *args, "--source-wrapper-profile", str(profile)
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "history_execution_invalid\n"
+    assert marker.read_text(encoding="utf-8") == "#!/bin/sh\nexit 91\n"
     assert not _private_pair_paths(tmp_path)[0].exists()
     assert not _private_pair_paths(tmp_path)[1].exists()
 

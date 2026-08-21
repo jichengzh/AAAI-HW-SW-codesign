@@ -41,6 +41,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--local-output-root", required=True, type=_absolute_path)
     parser.add_argument("--binding-output", required=True, type=_absolute_path)
     parser.add_argument("--config-output", required=True, type=_absolute_path)
+    parser.add_argument("--source-wrapper-profile", type=_absolute_path)
     return parser.parse_args(argv)
 
 
@@ -59,6 +60,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.binding_output,
             args.config_output,
             NvidiaSmiGpuProbe(),
+            source_wrapper_profile=args.source_wrapper_profile,
         )
     except FullChainBootstrapError as error:
         sys.stderr.write(f"{error.category}\n")

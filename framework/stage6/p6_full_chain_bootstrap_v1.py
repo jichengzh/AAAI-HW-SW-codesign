@@ -28,12 +28,23 @@ from framework.stage6.p6_history_binding_v1 import (
     prevalidate_private_binding_pair_destinations,
     validate_binding_recipe_consistency,
     validate_history_execution_binding,
+    validate_ready_source_contract_template,
     write_private_binding_pair,
+)
+from framework.stage6.p6_history_recipe_profiles_v1 import RECIPE_V2
+from framework.stage6.p6_history_training_contract_v1 import (
+    P6HistoryTrainingContractError,
 )
 from framework.stage6.p6_runner_template_validator_v1 import (
     EXECUTION_INTERFACE_KEYS,
     RunnerTemplateValidationError,
     validate_pre_provision_runner_template,
+)
+from framework.stage6.p6_source_wrapper_profile_v1 import (
+    P6SourceWrapperProfileError,
+    load_source_wrapper_profile,
+    render_self_contained_source_wrapper,
+    validate_self_contained_source_wrapper,
 )
 
 
@@ -122,6 +133,8 @@ def materialize_full_chain_binding(
     binding_output: Path,
     config_output: Path,
     gpu_probe: GpuProbe,
+    *,
+    source_wrapper_profile: Path | None = None,
 ) -> dict[str, Any]:
     """Validate private inputs and atomically materialize one binding/config pair."""
     output_root, binding_path, config_path = _resolve_private_outputs(
@@ -142,11 +155,46 @@ def materialize_full_chain_binding(
     expected_recipe_path = _validate_expected_recipe_location(locator, root)
     expected_recipe = _load_expected_recipe(expected_recipe_path)
     try:
+        source_contract = validate_ready_source_contract_template(root)
+    except (P6HistoryBindingError, P6HistoryTrainingContractError) as error:
+        category = getattr(error, "category", "history_execution_invalid")
+        raise FullChainBootstrapError(
+            category, "history source contract is invalid"
+        ) from error
+    recipe = source_contract.get("dynamic_materialization_recipe")
+    recipe_v2 = (
+        isinstance(recipe, Mapping) and recipe.get("schema_version") == RECIPE_V2
+    )
+    if recipe_v2 and source_wrapper_profile is None:
+        raise FullChainBootstrapError(
+            "history_execution_invalid", "source wrapper profile is required"
+        )
+    if source_wrapper_profile is not None:
+        try:
+            profile = load_source_wrapper_profile(source_wrapper_profile)
+            render_self_contained_source_wrapper(profile, history_root=root)
+        except P6SourceWrapperProfileError as error:
+            raise FullChainBootstrapError(
+                error.category, "source wrapper profile is invalid"
+            ) from error
+    try:
         validated_template = validate_pre_provision_runner_template(
-            runner_template, root
+            runner_template,
+            root,
+            require_exact_history_environment=True,
         )
     except RunnerTemplateValidationError as error:
         raise FullChainBootstrapError(error.category, error.detail) from error
+    if source_wrapper_profile is not None:
+        try:
+            validate_self_contained_source_wrapper(
+                validated_template,
+                source_wrapper_profile=source_wrapper_profile,
+            )
+        except P6SourceWrapperProfileError as error:
+            raise FullChainBootstrapError(
+                error.category, "source wrapper profile is invalid"
+            ) from error
     stage1_scan = _load_validated_stage1_scan(runner_template)
     interface = _render_runner_interface(
         root, validated_template.execution_interface
@@ -165,7 +213,11 @@ def materialize_full_chain_binding(
             },
             gpu_probe=gpu_probe,
         )
-    except P6HistoryBindingError as error:
+    except (P6HistoryBindingError, P6HistoryTrainingContractError) as error:
+        if isinstance(error, P6HistoryTrainingContractError):
+            raise FullChainBootstrapError(
+                error.category, "history binding is invalid"
+            ) from error
         category = (
             "execution_interface_unavailable"
             if error.category == "execution_interface"

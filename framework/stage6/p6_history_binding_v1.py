@@ -105,6 +105,7 @@ WRAPPER_ENVIRONMENT_SPEC = {
     "P6_HISTORY_TASK_STATE": ("placeholder", "{task_state}"),
     "P6_HISTORY_ROUND_OUTPUT_ROOT": ("placeholder", "{round_output_root}"),
 }
+EXPECTED_HISTORY_ENV_KEYS = tuple(WRAPPER_ENVIRONMENT_SPEC)
 INTERFACE_TOP_LEVEL_KEYS = frozenset(
     {
         "schema_version",
@@ -241,6 +242,20 @@ def build_history_binding(
 def _is_recipe_v2_source_template(source_contract: Mapping[str, Any]) -> bool:
     recipe = source_contract.get("dynamic_materialization_recipe")
     return isinstance(recipe, Mapping) and recipe.get("schema_version") == RECIPE_V2
+
+
+def validate_ready_source_contract_template(
+    history_root: str | Path,
+) -> dict[str, Any]:
+    """Return the ready-only source template after recipe-v2 training validation."""
+    root = _resolve_history_root(history_root)
+    _, source_contract = _discover_source_contract(root)
+    if _is_recipe_v2_source_template(source_contract):
+        source_contract = validate_recipe_v2_training_template(
+            source_contract,
+            private_root=root,
+        )
+    return copy.deepcopy(source_contract)
 
 
 def public_binding_projection(binding: Mapping[str, Any]) -> dict[str, Any]:

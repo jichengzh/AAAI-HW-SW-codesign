@@ -22,6 +22,9 @@ from framework.stage6.p6_full_chain_bootstrap_v1 import (
     materialize_full_chain_binding,
 )
 from framework.stage6.p6_history_binding_v1 import GpuRecord
+from framework.stage6.p6_source_wrapper_profile_v1 import (
+    render_self_contained_source_wrapper,
+)
 from tests.stage6.test_p6_history_normalization import _recipe_v2
 
 
@@ -410,10 +413,35 @@ def _attach_expected_recipe(
     expected_recipe: Mapping[str, Any],
 ) -> Path:
     root = tmp_path / "source"
+    (root / "checkpoints").mkdir(exist_ok=True)
+    (root / "datasets" / "coptv2x").mkdir(parents=True, exist_ok=True)
+    (root / "configs").mkdir(exist_ok=True)
+    (root / "checkpoints" / "base.ckpt").write_text("base\n", encoding="utf-8")
+    (root / "configs" / "pyramid.py").write_text("config\n", encoding="utf-8")
     registry_path = root / "registry" / "candidate_source_registry.json"
     registry = json.loads(registry_path.read_text(encoding="utf-8"))
     contract = registry["groups"][0]["source_contract"]
-    contract["dynamic_materialization_recipe"] = copy.deepcopy(dict(actual_recipe))
+    contract.update(
+        {
+            "training_required": True,
+            "training_source_kind": "selected_candidate_finetune",
+            "base_checkpoint_path": str(root / "checkpoints" / "base.ckpt"),
+            "dataset_root": str(root / "datasets" / "coptv2x"),
+            "pyramid_config_path": str(root / "configs" / "pyramid.py"),
+            "training_parameters": {
+                "training_mode": "finetune_selected_width",
+                "epochs": 2,
+                "seed": 20260821,
+                "optimizer": "adamw",
+                "learning_rate": 0.0001,
+                "batch_size": 1,
+                "dataset_split": "trainval_coptv2x",
+                "checkpoint_selection": "best_ap70",
+                "freeze_policy": "pyramid_backbone_partial",
+            },
+            "dynamic_materialization_recipe": copy.deepcopy(dict(actual_recipe)),
+        }
+    )
     registry["groups"][0]["source_contract_sha256"] = _canonical_json_sha(contract)
     _write_json(registry_path, registry)
     expected_path = _write_json(
@@ -422,7 +450,33 @@ def _attach_expected_recipe(
     legacy = yaml.safe_load(legacy_config.read_text(encoding="utf-8"))
     legacy["history_recipe_derivation_path"] = str(expected_path)
     _write_yaml(legacy_config, legacy)
-    return expected_path
+    implementation = (
+        root
+        / "private-relocated-history-repo"
+        / "bin"
+        / "stage5_materialize_round_sources_v1.original.sh"
+    )
+    _write_executable(implementation)
+    marker = root / "documented-stage5-chain" / MARKERS["source_materializer"]
+    marker.unlink()
+    profile_payload = {
+        "schema_version": "p6_private_source_wrapper_profile_v1",
+        "wrapper_kind": "repo_cwd_exec_v1",
+        "destination_relative_path": (
+            f"documented-stage5-chain/{MARKERS['source_materializer']}"
+        ),
+        "implementation_relative_path": (
+            "private-relocated-history-repo/bin/"
+            "stage5_materialize_round_sources_v1.original.sh"
+        ),
+        "implementation_cwd_relative_path": "private-relocated-history-repo",
+    }
+    profile_path = _write_yaml(
+        tmp_path / "private-inputs" / "source-wrapper-profile.yaml",
+        profile_payload,
+    )
+    render_self_contained_source_wrapper(profile_payload, history_root=root)
+    return profile_path
 
 
 def _write_invalid_private_inputs(
@@ -516,7 +570,7 @@ def test_materialize_accepts_matching_normalized_recipe_before_pair_write(
 ) -> None:
     legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
     recipe = _recipe_v2()
-    _attach_expected_recipe(
+    profile = _attach_expected_recipe(
         tmp_path,
         legacy_config,
         actual_recipe=recipe,
@@ -530,6 +584,7 @@ def test_materialize_accepts_matching_normalized_recipe_before_pair_write(
         output_root / "binding.json",
         output_root / "local.yaml",
         _gpu_probe(),
+        source_wrapper_profile=profile,
     )
 
     assert binding["source_contract_template"]["dynamic_materialization_recipe"] == recipe
@@ -547,7 +602,7 @@ def test_materialize_rejects_recipe_drift_before_pair_write(
     expected["artifact_id_template"] = (
         "pyramid-drift-{stage1_width}-{stage2_width}-{stage3_width}"
     )
-    _attach_expected_recipe(
+    profile = _attach_expected_recipe(
         tmp_path,
         legacy_config,
         actual_recipe=actual,
@@ -570,8 +625,77 @@ def test_materialize_rejects_recipe_drift_before_pair_write(
             output_root / "binding.json",
             output_root / "local.yaml",
             _gpu_probe(),
+            source_wrapper_profile=profile,
         )
 
+    assert not (output_root / "binding.json").exists()
+    assert not (output_root / "local.yaml").exists()
+
+
+def test_materialize_recipe_v2_requires_wrapper_profile_before_probe_or_pair_write(
+    tmp_path: Path,
+) -> None:
+    legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
+    recipe = _recipe_v2()
+    _attach_expected_recipe(
+        tmp_path,
+        legacy_config,
+        actual_recipe=recipe,
+        expected_recipe=recipe,
+    )
+    probe = _gpu_probe()
+
+    with pytest.raises(FullChainBootstrapError) as captured:
+        materialize_full_chain_binding(
+            legacy_config,
+            template,
+            output_root,
+            output_root / "binding.json",
+            output_root / "local.yaml",
+            probe,
+        )
+
+    assert captured.value.category == "history_execution_invalid"
+    assert probe.calls == []
+    assert not (output_root / "binding.json").exists()
+    assert not (output_root / "local.yaml").exists()
+
+
+def test_materialize_rejects_differing_wrapper_marker_without_probe_or_pair_write(
+    tmp_path: Path,
+) -> None:
+    legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
+    recipe = _recipe_v2()
+    profile = _attach_expected_recipe(
+        tmp_path,
+        legacy_config,
+        actual_recipe=recipe,
+        expected_recipe=recipe,
+    )
+    marker = (
+        tmp_path
+        / "source"
+        / "documented-stage5-chain"
+        / MARKERS["source_materializer"]
+    )
+    marker.write_text("#!/bin/sh\nexit 91\n", encoding="utf-8")
+    marker.chmod(0o700)
+    probe = _gpu_probe()
+
+    with pytest.raises(FullChainBootstrapError) as captured:
+        materialize_full_chain_binding(
+            legacy_config,
+            template,
+            output_root,
+            output_root / "binding.json",
+            output_root / "local.yaml",
+            probe,
+            source_wrapper_profile=profile,
+        )
+
+    assert captured.value.category == "history_execution_invalid"
+    assert probe.calls == []
+    assert marker.read_text(encoding="utf-8") == "#!/bin/sh\nexit 91\n"
     assert not (output_root / "binding.json").exists()
     assert not (output_root / "local.yaml").exists()
 

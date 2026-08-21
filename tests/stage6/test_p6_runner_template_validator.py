@@ -10,6 +10,7 @@ import pytest
 import yaml
 
 from framework.stage6 import p6_runner_template_validator_v1 as validator
+from framework.stage6.p6_history_binding_v1 import EXPECTED_HISTORY_ENV_KEYS
 
 
 MARKERS = {
@@ -102,7 +103,25 @@ def _runner_template() -> dict[str, Any]:
                     ],
                 },
             ],
-            "environment": {"values": {}, "activation_argv": ["private-runner/bin/activate-private"]},
+            "environment": {
+                "values": {
+                    "CUDA_VISIBLE_DEVICES": {"kind": "literal", "value": "17,19,23"},
+                    "P6_HISTORY_RUN_MODE": {"kind": "literal", "value": "bound"},
+                    "P6_HISTORY_PRIVATE_ROOT": {
+                        "kind": "private_path",
+                        "value": ".",
+                    },
+                    "P6_HISTORY_TASK_STATE": {
+                        "kind": "placeholder",
+                        "value": "{task_state}",
+                    },
+                    "P6_HISTORY_ROUND_OUTPUT_ROOT": {
+                        "kind": "placeholder",
+                        "value": "{round_output_root}",
+                    },
+                },
+                "activation_argv": ["private-runner/bin/activate-private"],
+            },
             "output_layout": {},
             "actual_feedback": {},
         },
@@ -144,6 +163,9 @@ def test_validator_returns_private_copy_for_exact_template(
 
     assert validated.history_root == history_root
     assert tuple(validated.stage_argv) == STAGES
+    assert set(
+        validated.execution_interface["environment"]["values"]  # type: ignore[index]
+    ) == set(EXPECTED_HISTORY_ENV_KEYS)
     assert validated.component_paths == {
         role: history_root / "documented-stage5-chain" / marker
         for role, marker in MARKERS.items()
@@ -152,6 +174,46 @@ def test_validator_returns_private_copy_for_exact_template(
     assert _template_payload(template)["execution_interface"]["controller"]["argv"] == [
         f"documented-stage5-chain/{MARKERS['controller']}"
     ]
+
+
+@pytest.mark.parametrize("mutation", ["missing", "extra"])
+def test_validator_rejects_environment_key_set_drift(
+    tmp_path: Path, mutation: str
+) -> None:
+    """Catches provisioning and runtime using different environment-key sets."""
+    template, history_root = _write_valid_template(tmp_path)
+    payload = _template_payload(template)
+    values = payload["execution_interface"]["environment"]["values"]
+    if mutation == "missing":
+        values.pop("P6_HISTORY_TASK_STATE")
+    else:
+        values["PYTHONPATH"] = {"kind": "literal", "value": "private"}
+    _write_yaml(template, payload)
+
+    with pytest.raises(validator.RunnerTemplateValidationError) as captured:
+        validator.validate_pre_provision_runner_template(
+            template,
+            history_root,
+            require_exact_history_environment=True,
+        )
+
+    assert captured.value.category == "execution_interface_unavailable"
+
+
+def test_validator_allows_narrow_environment_for_non_provision_recipe_parsing(
+    tmp_path: Path,
+) -> None:
+    """Catches a provisioning-only gate breaking generic recipe derivation."""
+    template, history_root = _write_valid_template(tmp_path)
+    payload = _template_payload(template)
+    payload["execution_interface"]["environment"]["values"] = {}
+    _write_yaml(template, payload)
+
+    validated = validator.validate_pre_provision_runner_template(
+        template, history_root
+    )
+
+    assert validated.execution_interface["environment"]["values"] == {}  # type: ignore[index]
 
 
 @pytest.mark.parametrize("mutation", ["missing", "extra", "duplicate"])

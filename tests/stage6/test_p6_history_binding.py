@@ -11,6 +11,7 @@ from typing import Any, Iterable, Mapping
 import pytest
 
 from framework.stage6.p6_history_binding_v1 import (
+    EXPECTED_HISTORY_ENV_KEYS,
     GpuRecord,
     P6HistoryBindingError,
     discover_history_binding,
@@ -35,6 +36,17 @@ LOCAL_INPUT_NAMES = (
     "capability_profiles",
     "closure",
 )
+
+
+def test_binding_exports_canonical_history_environment_key_order() -> None:
+    """Catches wrapper/provisioning consumers defining a second env contract."""
+    assert EXPECTED_HISTORY_ENV_KEYS == (
+        "CUDA_VISIBLE_DEVICES",
+        "P6_HISTORY_RUN_MODE",
+        "P6_HISTORY_PRIVATE_ROOT",
+        "P6_HISTORY_TASK_STATE",
+        "P6_HISTORY_ROUND_OUTPUT_ROOT",
+    )
 
 
 class SequenceProbe:

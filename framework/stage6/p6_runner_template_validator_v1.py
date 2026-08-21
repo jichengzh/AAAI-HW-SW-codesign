@@ -12,6 +12,8 @@ from typing import Any
 
 import yaml
 
+from framework.stage6.p6_history_binding_v1 import EXPECTED_HISTORY_ENV_KEYS
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 RUNNER_TEMPLATE_SCHEMA_VERSION = "p6_history_runner_template_v1"
@@ -96,6 +98,8 @@ _UniqueKeyLoader.add_constructor(
 def validate_pre_provision_runner_template(
     runner_template_path: Path,
     history_root: Path,
+    *,
+    require_exact_history_environment: bool = False,
 ) -> ValidatedRunnerTemplate:
     """Return a detached, validated runner interface for one private Git root."""
     root = _resolve_history_root(history_root)
@@ -105,7 +109,9 @@ def validate_pre_provision_runner_template(
     interface = payload["execution_interface"]
     _validate_stage1_scan(stage1_scan, root)
     component_paths, canonical_interface, stage_argv = _validate_interface(
-        interface, root
+        interface,
+        root,
+        require_exact_history_environment=require_exact_history_environment,
     )
     return ValidatedRunnerTemplate(
         history_root=root,
@@ -207,7 +213,10 @@ def _validate_stage1_scan(raw: object, root: Path) -> None:
 
 
 def _validate_interface(
-    raw: object, root: Path
+    raw: object,
+    root: Path,
+    *,
+    require_exact_history_environment: bool,
 ) -> tuple[dict[str, Path], dict[str, Any], dict[str, tuple[str, ...]]]:
     if not isinstance(raw, Mapping) or set(raw) != EXECUTION_INTERFACE_KEYS:
         raise RunnerTemplateValidationError(
@@ -222,6 +231,12 @@ def _validate_interface(
         )
     if not isinstance(environment, Mapping) or not isinstance(
         environment.get("values"), Mapping
+    ):
+        raise RunnerTemplateValidationError(
+            "execution_interface_unavailable", "execution interface is invalid"
+        )
+    if require_exact_history_environment and set(environment["values"]) != set(
+        EXPECTED_HISTORY_ENV_KEYS
     ):
         raise RunnerTemplateValidationError(
             "execution_interface_unavailable", "execution interface is invalid"
