@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 import copy
+from dataclasses import dataclass
 import hashlib
 import json
 import os
@@ -28,6 +29,11 @@ from framework.stage6.p6_history_binding_v1 import (
 from framework.stage6.p6_history_recipe_profiles_v1 import (
     RECIPE_V2,
     SHARED_SOURCE_PATH_KEYS,
+)
+from framework.stage6.p6_history_training_contract_v1 import (
+    P6HistoryTrainingContractError,
+    validate_recipe_v2_group_training_contract,
+    validate_recipe_v2_training_template,
 )
 
 
@@ -94,6 +100,15 @@ class P6HistoryRegistryError(ValueError):
         self.category = category
         self.detail = detail
         super().__init__(f"{category}: {detail}")
+
+
+@dataclass(frozen=True)
+class ValidatedSourceTemplate:
+    """Detached template and its authoritative private history root."""
+
+    private_root: Path
+    template: Mapping[str, Any]
+    recipe: Mapping[str, Any]
 
 
 def _invalid(detail: str) -> None:
@@ -281,7 +296,7 @@ def _validate_plan(
     return mapping
 
 
-def _validate_template(binding: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+def _validate_template(binding: Mapping[str, Any]) -> ValidatedSourceTemplate:
     if not isinstance(binding, Mapping):
         _invalid("history binding must be an object")
     try:
@@ -339,7 +354,21 @@ def _validate_template(binding: Mapping[str, Any]) -> tuple[dict[str, Any], dict
     ):
         _invalid("source contract template is incompatible")
     recipe = _validate_recipe(validated_template.get("dynamic_materialization_recipe"))
-    return validated_template, recipe
+    if recipe.get("schema_version") == RECIPE_V2:
+        try:
+            validated_template = validate_recipe_v2_training_template(
+                validated_template,
+                private_root=private_root,
+            )
+        except P6HistoryTrainingContractError as error:
+            raise P6HistoryRegistryError(
+                "source_registry_invalid", "recipe-v2 training template is invalid"
+            ) from error
+    return ValidatedSourceTemplate(
+        private_root=private_root,
+        template=validated_template,
+        recipe=recipe,
+    )
 
 
 def _validate_no_forbidden_context(value: object) -> None:
@@ -512,6 +541,7 @@ def _materialize_groups(
     ],
     template: Mapping[str, Any],
     recipe: Mapping[str, Any],
+    private_root: Path,
     local_output_root: Path,
     registry_output_path: Path,
 ) -> list[dict[str, Any]]:
@@ -594,6 +624,18 @@ def _materialize_groups(
                 ),
             }
         )
+        if recipe_version == RECIPE_V2:
+            try:
+                contract = validate_recipe_v2_group_training_contract(
+                    contract,
+                    private_root=private_root,
+                    local_output_root=local_output_root,
+                    group_id=group_id,
+                )
+            except P6HistoryTrainingContractError as error:
+                raise P6HistoryRegistryError(
+                    "source_registry_invalid", "recipe-v2 group training contract is invalid"
+                ) from error
         evidence_sha = contract["source_evidence_sha256"]
         group = {
             "group_id": group_id,
@@ -736,11 +778,12 @@ def materialize_history_registry(
         output_path = _resolve_registry_output(registry_output_path, local_output_root)
         _require_private_registry_output(output_path)
         plan_mapping = _validate_plan(plan)
-        template, recipe = _validate_template(binding)
+        validated = _validate_template(binding)
         groups = _materialize_groups(
             plan_mapping,
-            template,
-            recipe,
+            validated.template,
+            validated.recipe,
+            validated.private_root,
             local_output_root,
             output_path,
         )

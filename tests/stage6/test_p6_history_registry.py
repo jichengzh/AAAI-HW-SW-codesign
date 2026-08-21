@@ -14,6 +14,9 @@ from framework.stage6.p6_history_registry_v1 import (
     P6HistoryRegistryError,
     materialize_history_registry,
 )
+from framework.stage6.p6_history_training_contract_v1 import (
+    REQUIRED_TRAINING_PARAMETER_KEYS,
+)
 import framework.stage6.p6_history_registry_v1 as registry_module
 
 
@@ -282,7 +285,7 @@ def _execution_binding_fields(private_root: Path) -> dict[str, Any]:
 
 def _binding(tmp_path: Path) -> dict[str, Any]:
     private_root = tmp_path / "synthetic-history"
-    private_root.mkdir()
+    private_root.mkdir(exist_ok=True)
     evidence_sha = hashlib.sha256(b"synthetic-history-evidence").hexdigest()
     return {
         "schema_version": "p6_history_binding_v1",
@@ -306,6 +309,43 @@ def _binding(tmp_path: Path) -> dict[str, Any]:
         },
         "status": "validated",
     }
+
+
+def _private_root_with_training_inputs(tmp_path: Path) -> Path:
+    root = tmp_path / "synthetic-history"
+    (root / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (root / "datasets" / "coptv2x").mkdir(parents=True, exist_ok=True)
+    (root / "configs").mkdir(parents=True, exist_ok=True)
+    (root / "checkpoints" / "base.ckpt").write_text("base\n", encoding="utf-8")
+    (root / "configs" / "pyramid.py").write_text("config\n", encoding="utf-8")
+    return root
+
+
+def _binding_with_recipe_v2_training_template(private_root: Path) -> dict[str, Any]:
+    binding = _binding(private_root.parent)
+    template = binding["source_contract_template"]
+    template.update(
+        {
+            "training_required": True,
+            "training_source_kind": "selected_candidate_finetune",
+            "base_checkpoint_path": str(private_root / "checkpoints" / "base.ckpt"),
+            "dataset_root": str(private_root / "datasets" / "coptv2x"),
+            "pyramid_config_path": str(private_root / "configs" / "pyramid.py"),
+            "training_parameters": {
+                "training_mode": "finetune_selected_width",
+                "epochs": 2,
+                "seed": 20260821,
+                "optimizer": "adamw",
+                "learning_rate": 0.0001,
+                "batch_size": 1,
+                "dataset_split": "trainval_coptv2x",
+                "checkpoint_selection": "best_ap70",
+                "freeze_policy": "pyramid_backbone_partial",
+            },
+            "dynamic_materialization_recipe": _recipe_v2(),
+        }
+    )
+    return binding
 
 
 @pytest.mark.parametrize("tampering", ["missing", "environment_field"])
@@ -416,16 +456,10 @@ def test_registry_v2_materializes_one_shared_bundle_per_group(
     tmp_path: Path, q_modes: tuple[str, ...]
 ) -> None:
     """Catches q-mode-specific source bundles or dropped private static fields."""
-    binding = _binding(tmp_path)
-    private_root = Path(binding["private_root"])
-    binding["source_contract_template"]["dynamic_materialization_recipe"] = (
-        _recipe_v2()
-    )
+    private_root = _private_root_with_training_inputs(tmp_path)
+    binding = _binding_with_recipe_v2_training_template(private_root)
     binding["source_contract_template"].update(
         {
-            "base_checkpoint_path": str(private_root / "base" / "model.ckpt"),
-            "dataset_root": str(private_root / "datasets"),
-            "training_parameters": {"epochs": 7, "optimizer": "synthetic"},
             **{
                 key: str(private_root / "legacy-flat" / key)
                 for key in (
@@ -474,12 +508,9 @@ def test_registry_v2_materializes_one_shared_bundle_per_group(
         )
         assert not observed_paths.intersection(shared_paths.values())
         observed_paths.update(shared_paths.values())
-        assert contract["base_checkpoint_path"].endswith("/base/model.ckpt")
-        assert contract["dataset_root"].endswith("/datasets")
-        assert contract["training_parameters"] == {
-            "epochs": 7,
-            "optimizer": "synthetic",
-        }
+        assert contract["base_checkpoint_path"].endswith("/checkpoints/base.ckpt")
+        assert contract["dataset_root"].endswith("/datasets/coptv2x")
+        assert contract["training_parameters"]["epochs"] == 2
         assert "untrusted-self-report" not in json.dumps(shared_paths)
         assert "materialization_outputs_by_q_mode" not in contract
         assert not {
@@ -492,6 +523,71 @@ def test_registry_v2_materializes_one_shared_bundle_per_group(
         assert group["available_q_modes"] == sorted(q_modes)
 
     assert binding == original_binding
+
+
+def test_recipe_v2_registry_preserves_training_fields_and_rehashes_contract(
+    tmp_path: Path,
+) -> None:
+    private_root = _private_root_with_training_inputs(tmp_path)
+    binding = _binding_with_recipe_v2_training_template(private_root)
+    local_output_root = tmp_path / "ignored-output"
+    local_output_root.mkdir()
+    registry = materialize_history_registry(
+        _plan(("fp16", "int8")), binding, local_output_root
+    )
+
+    first = registry["groups"][0]["source_contract"]
+    assert first["training_required"] is True
+    assert first["training_source_kind"] == "selected_candidate_finetune"
+    assert set(first["training_parameters"]) == set(REQUIRED_TRAINING_PARAMETER_KEYS)
+    assert first["base_checkpoint_path"].startswith(str(private_root))
+    assert first["dataset_root"].startswith(str(private_root))
+    assert first["pyramid_config_path"].startswith(str(private_root))
+    assert registry["groups"][0]["source_contract_sha256"] == _canonical_sha(first)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "missing_training_required",
+        "false_training_required",
+        "missing_pyramid_config_path",
+        "static_path_outside_root",
+        "shared_output_outside_root",
+        "shared_output_collision",
+    ],
+)
+def test_recipe_v2_registry_rejects_unsafe_training_contract_before_write(
+    tmp_path: Path, mutation: str
+) -> None:
+    private_root = _private_root_with_training_inputs(tmp_path)
+    binding = _binding_with_recipe_v2_training_template(private_root)
+    template = binding["source_contract_template"]
+    if mutation == "missing_training_required":
+        template.pop("training_required")
+    elif mutation == "false_training_required":
+        template["training_required"] = False
+    elif mutation == "missing_pyramid_config_path":
+        template.pop("pyramid_config_path")
+    elif mutation == "static_path_outside_root":
+        template["base_checkpoint_path"] = str(tmp_path / "outside.ckpt")
+    elif mutation == "shared_output_outside_root":
+        template["dynamic_materialization_recipe"]["shared_source_path_templates"][
+            "checkpoint_path"
+        ] = "../outside.ckpt"
+    else:
+        template["dynamic_materialization_recipe"]["shared_source_path_templates"][
+            "checkpoint_dir"
+        ] = template["dynamic_materialization_recipe"]["shared_source_path_templates"][
+            "checkpoint_path"
+        ]
+    local_output_root = tmp_path / "private-output"
+    local_output_root.mkdir()
+
+    with pytest.raises(P6HistoryRegistryError, match=r"^source_registry_invalid:"):
+        materialize_history_registry(_plan(("fp16",)), binding, local_output_root)
+
+    assert not (local_output_root / "source_registry.json").exists()
 
 
 def test_registry_output_contains_no_search_result_or_terminal_leakage(

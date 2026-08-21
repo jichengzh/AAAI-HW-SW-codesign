@@ -19,6 +19,8 @@ from framework.stage6.p6_history_binding_v1 import (
     validate_history_execution_binding,
     write_private_binding_pair,
 )
+from framework.stage6.p6_history_recipe_profiles_v1 import RECIPE_V2, SHARED_SOURCE_PATH_KEYS
+from framework.stage6.p6_history_training_contract_v1 import P6HistoryTrainingContractError
 
 
 MARKERS = {
@@ -392,6 +394,16 @@ def test_discovers_documented_history_and_returns_no_leak_projection(
         "ap70",
     )
     assert "private_root" not in projected
+    assert not {
+        "base_checkpoint_path",
+        "dataset_root",
+        "pyramid_config_path",
+        "training_parameters",
+        "gpu_policy",
+        "execution_interface",
+        "source_contract_template",
+        "component_paths",
+    }.intersection(projected)
     projected_strings = tuple(_walk_strings(projected))
     assert not any(str(history_root) in value for value in projected_strings)
     assert not any("GPU-fixture" in value for value in projected_strings)
@@ -412,6 +424,81 @@ def test_discovers_documented_history_and_returns_no_leak_projection(
         },
         "status": "validated",
     }
+
+
+def test_binding_discovers_only_ready_recipe_v2_template_and_validates_training(
+    tmp_path: Path,
+) -> None:
+    history_root = _history_root(tmp_path)
+    (history_root / "checkpoints").mkdir()
+    (history_root / "datasets" / "coptv2x").mkdir(parents=True)
+    (history_root / "configs").mkdir()
+    (history_root / "checkpoints" / "base.ckpt").write_text("base\n", encoding="utf-8")
+    (history_root / "configs" / "pyramid.py").write_text("config\n", encoding="utf-8")
+    registry_path = history_root / "registry" / "candidate_source_registry.json"
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    ready = registry["groups"][0]
+    template = ready["source_contract"]
+    template.update(
+        {
+            "training_required": True,
+            "training_source_kind": "selected_candidate_finetune",
+            "base_checkpoint_path": str(history_root / "checkpoints" / "base.ckpt"),
+            "dataset_root": str(history_root / "datasets" / "coptv2x"),
+            "pyramid_config_path": str(history_root / "configs" / "pyramid.py"),
+            "training_parameters": {
+                "training_mode": "finetune_selected_width",
+                "epochs": 2,
+                "seed": 20260821,
+                "optimizer": "adamw",
+                "learning_rate": 0.0001,
+                "batch_size": 1,
+                "dataset_split": "trainval_coptv2x",
+                "checkpoint_selection": "best_ap70",
+                "freeze_policy": "pyramid_backbone_partial",
+            },
+            "dynamic_materialization_recipe": {
+                "schema_version": RECIPE_V2,
+                "stage_width_fields": ["stage1_width", "stage2_width", "stage3_width"],
+                "group_id_template": "pyramid|{stage1_width}x{stage2_width}x{stage3_width}",
+                "artifact_id_template": "pyramid-{stage1_width}-{stage2_width}-{stage3_width}",
+                "shared_source_path_templates": {
+                    key: f"materialized/{{artifact_id}}/{key}"
+                    for key in SHARED_SOURCE_PATH_KEYS
+                },
+            },
+        }
+    )
+    ready["source_contract_sha256"] = _canonical_json_sha(template)
+    materializable = copy.deepcopy(ready)
+    materializable["source_status"] = "materializable"
+    materializable["source_contract"]["source_status"] = "materializable"
+    materializable["source_contract"]["training_required"] = False
+    materializable["source_contract_sha256"] = _canonical_json_sha(
+        materializable["source_contract"]
+    )
+    registry["groups"] = [materializable, ready]
+    _write_json(registry_path, registry)
+
+    binding = discover_history_binding(history_root, _probe())
+
+    assert binding["source_contract_template"]["training_required"] is True
+    assert binding["source_contract_template"]["training_source_kind"] == (
+        "selected_candidate_finetune"
+    )
+
+
+def test_binding_rejects_invalid_recipe_v2_training_template(tmp_path: Path) -> None:
+    history_root = _history_root(tmp_path)
+    registry_path = history_root / "registry" / "candidate_source_registry.json"
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    template = registry["groups"][0]["source_contract"]
+    template["dynamic_materialization_recipe"] = {"schema_version": RECIPE_V2}
+    registry["groups"][0]["source_contract_sha256"] = _canonical_json_sha(template)
+    _write_json(registry_path, registry)
+
+    with pytest.raises(P6HistoryTrainingContractError, match=r"^history_execution_invalid:"):
+        discover_history_binding(history_root, _probe())
 
 
 def test_binding_derives_probe_indices_from_private_cuda_policy(

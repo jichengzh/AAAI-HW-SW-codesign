@@ -15,6 +15,10 @@ from typing import Any, Protocol
 from types import MappingProxyType
 
 from framework.stage5.production_search_v1 import validate_source_contract
+from framework.stage6.p6_history_recipe_profiles_v1 import RECIPE_V2
+from framework.stage6.p6_history_training_contract_v1 import (
+    validate_recipe_v2_training_template,
+)
 
 
 BINDING_SCHEMA_VERSION = "p6_history_binding_v1"
@@ -200,6 +204,11 @@ def build_history_binding(
     )
     gpu_indices = _private_gpu_indices(canonical_interface)
     registry_path, source_contract = _discover_source_contract(root)
+    if _is_recipe_v2_source_template(source_contract):
+        source_contract = validate_recipe_v2_training_template(
+            source_contract,
+            private_root=root,
+        )
     first_snapshot = _probe_snapshot(gpu_probe, gpu_indices)
     second_snapshot = _probe_snapshot(gpu_probe, gpu_indices)
     first_uuid_map = _validate_gpu_snapshot(first_snapshot, gpu_indices)
@@ -227,6 +236,11 @@ def build_history_binding(
         },
         "status": "validated",
     }
+
+
+def _is_recipe_v2_source_template(source_contract: Mapping[str, Any]) -> bool:
+    recipe = source_contract.get("dynamic_materialization_recipe")
+    return isinstance(recipe, Mapping) and recipe.get("schema_version") == RECIPE_V2
 
 
 def public_binding_projection(binding: Mapping[str, Any]) -> dict[str, Any]:
