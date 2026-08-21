@@ -631,11 +631,11 @@ Existing public categories remain authoritative:
 - `unsafe_destination`: unsafe or preexisting planned destination.
 - `command_failed`: outer measurement command failure.
 
-Public errors and state contain only the category. Private diagnostics may
-record a stable private subcategory under ignored output, but never an absolute
-path, argv, environment, traceback, nonce, digest, group id, row id, GPU UUID,
-hostname, or raw stderr/stdout. Tests must inject recognizable private tokens
-and prove none crosses the adapter/CLI boundary.
+Public error diagnostics contain only stable categories; public reports and state may contain only approved status/count fields enumerated here. Private
+diagnostics may record a stable private subcategory under ignored output, but
+no public surface may contain a private id, path, hash, nonce, receipt mapping,
+argv, environment, traceback, GPU UUID, hostname, or raw stderr/stdout. Tests
+must inject recognizable private tokens and prove none crosses the boundary.
 
 ## Task ownership corrections
 
@@ -728,7 +728,7 @@ field. Failure means no final-doc update and no in-place relaunch.
 | Current receipt with artifact/marker tamper | `INVALID_MISMATCH` | Zero | Zero | Redacted stop |
 | Producer request/row/contract binding drifts | `INVALID_MISMATCH` | Zero | Zero | Redacted stop |
 | Wrapper writes receipt | `INVALID_MISMATCH` | Source has run | Zero | Redacted stop; new root required |
-| Symlink/hard-link/path escape | Invalid | Zero | Zero | Redacted stop |
+| Unsafe leaf/root/type/link violation, including symlink, hard link, or path escape | `INVALID_MISMATCH` | Zero | Zero | `p6_source_reuse_mismatch`; redacted public stop |
 | Four rounds, 16 unique q-level rows, shared receipts allowed | All valid | First-use groups only | 16 rows | Completion may pass |
 | Any Gold176 row enters measurement | Irrelevant | Stop | Stop | Completion fails |
 
