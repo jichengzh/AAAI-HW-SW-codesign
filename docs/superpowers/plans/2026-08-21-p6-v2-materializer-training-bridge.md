@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make P6 recipe-v2 materialization fail closed unless every selected Pyramid/H800/TVM candidate has a self-contained private source wrapper, complete static training contract, preserved source hashes, marker-gated downstream execution, and a fresh four-round real run with no Gold176 remeasurement.
+**Goal:** Make P6 recipe-v2 train each canonical Pyramid source group on first use in one fresh run, reuse only adapter-receipted current-run source evidence for later q-modes, execute q-specific downstream work for all 16 selected rows, and complete without Gold176 remeasurement.
 
-**Architecture:** Keep the public adapter boundary strict: direct argv, `shell=False`, private round cwd, and exactly the five-key private environment. Add private-only validators for the source wrapper profile and static Pyramid training contract, then enforce those validators in binding/provisioning, registry materialization, request projection, source invocation, downstream marker gates, preflight, and fresh-run state handling. Split new logic out of already-large binding/registry/measurement modules so implementation remains focused and reviewable.
+**Architecture:** Keep the public adapter boundary strict: direct argv, `shell=False`, private round cwd, and exactly the five-key private environment. A focused private evidence module creates one immutable fresh-run context, classifies each selected group as first-use or validated current-run reuse, hashes the exact q-independent 11-output bundle, and exclusively publishes adapter-owned per-group receipts. The controller creates the context exactly once after dynamic plan/registry validation; measurement only loads it, invokes unseen groups, revalidates all selected groups, and then runs every q-specific downstream stage.
 
 **Tech Stack:** Python 3.10+, pytest, Ruff, JSON/YAML canonical serialization, existing Stage1/Stage2/Stage5/Stage6 P6 modules, injected runner tests, optional private H800 execution only in final gated task.
 
-**Spec:** `docs/superpowers/specs/2026-08-21-p6-v2-materializer-training-bridge-design.md`
+**Spec:** `docs/superpowers/specs/2026-08-21-p6-v2-materializer-training-bridge-design.md` (approved authority at `258e37d`)
 
 ## Global Constraints
 
@@ -18,15 +18,26 @@
 - Gold176 is frozen cold-start evidence only; it is never emitted as a measurement request row.
 - Round 0 cost-model fit count must be 176; online refit counts after accepted feedback must be 180, 184, and 188.
 - Each round selects exactly four unmeasured rows; the full successful run selects 16 unique rows.
+- The 16 identities are row-level `(group_id, q_mode)` genomes. Canonical group ids may repeat under another q-mode in the same or a later round; global group uniqueness is explicitly rejected.
 - Public adapter must not add `PYTHONPATH`, inherit ambient environment, construct shell command strings, use `shell=True`, run from the history root, leak raw stderr/stdout, or publish private paths, GPU UUIDs, dataset roots, checkpoint paths, host details, static training values, or raw logs. Direct `shell=False` execution of the validated private `/bin/sh` marker wrapper is the approved boundary.
-- Source materialization must be one direct argv call per canonical Pyramid group: `<source_materializer> --request <projected-request> --model pyramid --group-id <group_id> --gpu <validated-index>`.
+- Source materialization must be one direct argv call on a canonical group's first use in the fresh run: `<source_materializer> --request <projected-request> --model pyramid --group-id <group_id> --gpu <validated-index>`. A current-run ready group receives zero later source calls; per-row and per-q-mode retraining are explicitly rejected.
 - Recipe-v2 source contracts must enforce `training_required: true`, `training_source_kind`, `base_checkpoint_path`, `dataset_root`, `pyramid_config_path`, `training_parameters`, `stage_widths`, and exactly the 11 existing `shared_source_paths` keys.
 - Required `training_parameters` semantic keys are `training_mode`, `epochs`, `seed`, `optimizer`, `learning_rate`, `batch_size`, `dataset_split`, `checkpoint_selection`, and `freeze_policy`.
 - Static training input paths must be absolute, symlink-safe, existing where required, and under the validated private history root; rendered output paths must be absolute, symlink-safe, unique, and under the local private output root.
 - Fail closed before process launch for incomplete private wrapper, binding, recipe-v2 contract, output layout, source contract, static training contract, hash drift, stale state, unsafe symlink, or path collision.
+- Bare markers never authorize reuse. Only an adapter-owned `p6_group_source_reuse_receipt_v1` bound to the immutable `p6_materializer_fresh_run_context_v1`, its producer request/row, and recomputed artifact/marker digests may authorize skipping a source call.
+- Run context and receipt locations are exact under `.p6-materializer-training-bridge-v1`; no `glob`, `rglob`, basename search, marker-parent inference, or filename guessing may locate them. Bounded traversal is allowed only inside an already-declared directory artifact to compute its digest.
+- Contexts and receipts are create-only, atomically published with no-replace semantics, mode `0600` beneath mode-`0700` parents, and never updated, repaired, overwritten, or accepted from a wrapper.
+- All root, metadata, receipt, and declared artifact paths must pass canonical lexical spelling, component-wise `lstat`, resolved containment, exact type, symlink rejection, path-escape rejection, and single-link regular-file checks. Directory digests reject symlinks, hard-linked regular files, sockets, devices, and FIFOs.
+- The controller creates one fresh 32-byte nonce and run context only after validating the task, public-safe revision, local-root fingerprint, complete Stage2 plan, and registry identities, and before any measurement/GPU/activation boundary. No nonce/context/receipt/local-root environment key is added.
+- Measurement requires an existing valid context and never creates one. `UNSEEN` means receipt plus all 11 leaves are absent; `READY_CURRENT_RUN` means the receipt and all bound bytes validate; partial, stale, or mismatched states stop before downstream execution.
+- All four selected rows in every round continue through quantization, performance/TVM, AP, and finalization, including same-group mixed q-mode rows. Reuse skips only source materialization/training.
+- Completion requires four exact requests, 16 unique row ids, 16 row-to-receipt mappings, all terminal success evidence and five finite metrics, and zero Gold176 overlap. Multiple rows may share one receipt, and a producer may be from the same or an earlier round.
+- Stable private reuse categories are `p6_source_reuse_partial`, `p6_source_reuse_stale`, and `p6_source_reuse_mismatch`; all map to public `history_execution_invalid` without values.
 - Existing v1/static compatibility must be preserved; stricter training enforcement applies only to recipe-v2 P6 real-run contracts.
 - Files touched by implementation should stay under 800 lines. Existing files already over the limit must receive only routing glue plus a focused split module.
 - Every task is RED→GREEN→REFACTOR, includes a review boundary, and uses a conventional commit message. Do not commit from the planning step.
+- A failed or partial run is preserved for ignored private diagnosis and never resumed in place. Any retry uses a new scoped ignored local output root.
 - Final public docs are conditional: update release/audit docs only after the private preflight and real four-round run actually complete successfully.
 
 ---
@@ -43,10 +54,13 @@
 - Modify `framework/stage6/p6_full_chain_bootstrap_v1.py`: require a regenerated binding/config pair with a valid wrapper profile and complete static training contract before atomic write.
 - Modify `tools/release/provision_p6_full_chain_local_config.py`: surface stable categories for invalid wrapper/training contracts and add no-private-value stderr guarantees.
 - Modify `framework/stage6/p6_history_registry_v1.py`: use the new training contract validator for recipe-v2 group contracts and remove untrusted output aliases before hashing.
-- Modify `framework/stage6/p6_history_source_materialization_v1.py`: preserve training fields through projection, reject static drift across q-modes, recompute hashes after projection, validate marker paths, and add marker-gate helpers.
-- Modify `framework/stage6/p6_history_measurement_v1.py`: enforce exact five-key environment, call source wrapper under round cwd, verify `training_done_marker` and `source_done_marker` before quantization/performance/AP/finalization, and redact failures.
-- Modify `framework/stage6/coptv2x_h800_search_v2.py`: add fresh-run/relaunch guards for Stage1 manifest, registry destination, round roots, request/feedback/task-state/receipt/barrier leaves, and no in-place partial resume.
-- Modify tests under `tests/stage6/` and `tests/release/` named in each task.
+- Create `framework/stage6/p6_source_reuse_evidence_v1.py`: immutable run-context/receipt schemas, canonical hashing and strict JSON loading, deterministic paths, filesystem safety, source-bundle digests, group classification, first-use filtering, producer validation, and exclusive adapter receipt publication.
+- Modify `framework/stage6/p6_history_measurement_v1.py`: expose planned/runtime exact round-path APIs, enforce the exact five-key environment, require the existing fresh context, invoke only unseen groups, publish receipts from the public adapter, revalidate all selected groups, then run every downstream stage.
+- Modify `framework/stage6/p6_history_source_materialization_v1.py`: preserve Task 3 training/hash projection and canonical marker/invocation extraction, route reusable runtime path safety into the focused evidence module, and remove the contradictory blanket per-invocation marker-absence rule.
+- Modify `framework/stage6/coptv2x_h800_search_v2.py`: validate the public-safe revision, perform exact fresh-run/relaunch guards, and create the one context after plan/registry validation and before the round loop.
+- Create focused Task 4 tests: `tests/stage6/test_p6_source_reuse_evidence_paths.py`, `tests/stage6/test_p6_source_reuse_evidence_receipts.py`, and `tests/stage6/test_p6_source_reuse_measurement.py`.
+- Create Task 5 tests: `tests/stage6/test_p6_history_round_paths.py`, `tests/stage6/test_p6_fresh_run_controller.py`, `tests/release/test_preflight_p6_materializer_training_bridge.py`, and `tests/release/test_verify_p6_materializer_training_run.py`.
+- Create Task 6 offline lifecycle fixture/gate: `tests/release/p6_source_reuse_lifecycle_fixture.py` and `tests/release/test_p6_source_reuse_lifecycle.py`.
 - Conditionally modify final docs such as `docs/AAAI27_RELEASE_AUDIT.md` and a release manifest only after Task 7 succeeds.
 
 ---
@@ -1113,241 +1127,586 @@ git commit -m "fix: preserve P6 training fields through projection"
 
 ---
 
-### Task 4: Runtime Environment Boundary and Marker-Gated Downstream Stages
+### Task 4: Immutable Current-Run Source-Reuse Evidence and Measurement Gate
 
 **Files:**
 
-- Modify: `framework/stage6/p6_history_measurement_v1.py`
-- Modify: `framework/stage6/p6_history_source_materialization_v1.py`
-- Test: `tests/stage6/test_p6_history_measurement.py`
-- Test: `tests/stage6/test_p6_history_source_materialization.py`
-- Test: `tests/release/test_p6_history_execution_adapters.py`
+- Create: `framework/stage6/p6_source_reuse_evidence_v1.py`
+- Modify: `framework/stage6/p6_history_measurement_v1.py` (routing glue only)
+- Modify: `framework/stage6/p6_history_source_materialization_v1.py` (projection/invocation routing only)
+- Create: `tests/stage6/test_p6_source_reuse_evidence_paths.py`
+- Create: `tests/stage6/test_p6_source_reuse_evidence_receipts.py`
+- Create: `tests/stage6/test_p6_source_reuse_measurement.py`
+- Modify: `tests/stage6/test_p6_history_measurement.py` (migrate/retain the exact-env regression only)
+- Modify: `tests/stage6/test_p6_history_source_materialization.py` (move paused blanket marker-gate coverage to the focused files)
+- Modify: `tests/release/test_p6_history_execution_adapters.py` (fixture routing only)
+
+**Paused-diff migration rule:** The five unstaged Task 4 files are existing user work, not disposable scaffolding. Preserve their exact five-key environment assertion, local-root containment checks, source failure redaction, regular-file marker checks, and first-use marker-order test logic where compatible. Move focused new cases out of the already-large mixed test modules. Replace `assert_source_markers_absent_before_invocation()` as a blanket per-measurement rule with `UNSEEN`/`READY_CURRENT_RUN` classification: absence and mtime ordering apply only to first-use groups; later reuse is authorized by current-run receipt and recomputed digests. Do not discard, stash, reset, or overwrite the paused work wholesale.
 
 **Interfaces:**
 
-- Consumes: projected request written by `run_history_measurement_batch()`, the binding-owned `EXPECTED_HISTORY_ENV_KEYS`, `run_source_invocations()`, and marker pairs from `validate_projected_training_marker_pairs()`.
-- Produces:
+- Consumes: Task 3's detached canonical projected request, binding-owned `EXPECTED_HISTORY_ENV_KEYS`, `SHARED_SOURCE_PATH_KEYS`, the exact binding round templates, and existing `build_source_invocations()`/`run_source_invocations()`.
+- Produces these exact immutable types and APIs from `p6_source_reuse_evidence_v1.py`:
 
 ```python
-def assert_source_markers_absent_before_invocation(
-    request: Mapping[str, Any],
+P6SourceReuseState = Literal[
+    "UNSEEN",
+    "READY_CURRENT_RUN",
+    "INVALID_PARTIAL",
+    "INVALID_STALE",
+    "INVALID_MISMATCH",
+]
+ArtifactKind = Literal["regular_file", "directory_tree"]
+
+class P6SourceReuseEvidenceError(ValueError):
+    private_category: Literal[
+        "p6_source_reuse_partial",
+        "p6_source_reuse_stale",
+        "p6_source_reuse_mismatch",
+    ] | None
+    public_category: Literal["history_execution_invalid", "unsafe_destination"]
+
+RUN_METADATA_RELATIVE_ROOT = Path(".p6-materializer-training-bridge-v1")
+RUN_CONTEXT_RELATIVE_PATH = RUN_METADATA_RELATIVE_ROOT / "run-context.json"
+GROUP_RECEIPT_RELATIVE_ROOT = RUN_METADATA_RELATIVE_ROOT / "group-receipts"
+SOURCE_OUTPUT_RELATIVE_ROOT = Path("materialized")
+
+SOURCE_ARTIFACT_KEYS: tuple[str, ...] = (
+    "checkpoint_path",
+    "checkpoint_dir",
+    "config_path",
+    "onnx_path",
+    "onnx_report_path",
+    "calibration_root",
+    "calibration_npz",
+    "calibration_summary",
+    "trt_calibration_dir",
+)
+SOURCE_MARKER_KEYS: tuple[str, str] = (
+    "training_done_marker",
+    "source_done_marker",
+)
+
+@dataclass(frozen=True)
+class P6SourceReusePaths:
+    local_output_root: Path
+    metadata_root: Path
+    run_context: Path
+    receipt_root: Path
+
+@dataclass(frozen=True)
+class P6FreshRunContext:
+    schema_version: Literal["p6_materializer_fresh_run_context_v1"]
+    run_nonce: str
+    task_id: str
+    task_sha256: str
+    code_revision: str
+    local_output_root_sha256: str
+    candidate_plan_schema_version: Literal["p6_pyramid_candidate_plan_v2"]
+    candidate_plan_sha256: str
+    source_registry_schema_version: Literal[
+        "stage5_candidate_source_registry_v2"
+    ]
+    source_registry_sha256: str
+    created_before_round_index: Literal[0]
+    run_context_sha256: str
+
+@dataclass(frozen=True)
+class P6ArtifactDigest:
+    kind: ArtifactKind
+    sha256: str
+
+@dataclass(frozen=True)
+class P6GroupSourceReceipt:
+    schema_version: Literal["p6_group_source_reuse_receipt_v1"]
+    status: Literal["READY_CURRENT_RUN"]
+    run_context_sha256: str
+    run_nonce: str
+    task_id: str
+    task_sha256: str
+    group_id: str
+    group_key_sha256: str
+    source_contract_sha256: str
+    source_evidence_sha256: str
+    producer_round_index: int
+    producer_measurement_request_sha256: str
+    producer_row_id: str
+    producer_row_sha256: str
+    producer_q_mode: Literal["fp16", "int8"]
+    artifact_digests: tuple[tuple[str, P6ArtifactDigest], ...]
+    marker_digests: tuple[tuple[str, str], ...]
+    receipt_sha256: str
+
+@dataclass(frozen=True)
+class P6GroupReuseDecision:
+    group_id: str
+    state: P6SourceReuseState
+    receipt_path: Path
+
+def canonical_json_sha256(value: object) -> str: ...
+def plan_source_reuse_paths(local_output_root: Path) -> P6SourceReusePaths: ...
+def resolve_existing_source_reuse_paths(
+    local_output_root: Path,
+) -> P6SourceReusePaths: ...
+def receipt_path_for_group(paths: P6SourceReusePaths, group_id: str) -> Path: ...
+def create_fresh_run_context(
     *,
     local_output_root: Path,
-) -> None: ...
-
-def assert_training_and_source_markers_complete(
-    request: Mapping[str, Any],
+    task_contract: Mapping[str, Any],
+    code_revision: str,
+    candidate_plan: Mapping[str, Any],
+    source_registry: Mapping[str, Any],
+) -> P6FreshRunContext: ...
+def load_fresh_run_context(
     *,
     local_output_root: Path,
-    request_path: Path,
-) -> None: ...
+    expected_task_id: str,
+    expected_task_sha256: str,
+) -> P6FreshRunContext: ...
+def requires_current_run_source_evidence(
+    request: Mapping[str, Any],
+) -> bool: ...
+def classify_selected_group_sources(
+    request: Mapping[str, Any],
+    *,
+    run_context: P6FreshRunContext,
+    local_output_root: Path,
+    interface: Mapping[str, Any],
+    private_root: Path,
+) -> tuple[P6GroupReuseDecision, ...]: ...
+def first_use_group_ids(
+    decisions: Sequence[P6GroupReuseDecision],
+) -> tuple[str, ...]: ...
+def validate_and_publish_group_receipt(
+    request: Mapping[str, Any],
+    *,
+    group_id: str,
+    run_context: P6FreshRunContext,
+    local_output_root: Path,
+    interface: Mapping[str, Any],
+    private_root: Path,
+) -> P6GroupSourceReceipt: ...
+def require_selected_groups_ready_current_run(
+    request: Mapping[str, Any],
+    *,
+    run_context: P6FreshRunContext,
+    local_output_root: Path,
+    interface: Mapping[str, Any],
+    private_root: Path,
+) -> tuple[P6GroupSourceReceipt, ...]: ...
 ```
 
-- `run_history_measurement_batch()` must call activation, source materializer, marker gate, then quantization/performance/AP/finalization.
-- Marker gate must run after all source invocations return 0 and before any downstream wrapper executes.
-- Ordering evidence is an explicit fresh-run filesystem contract: both exact marker leaves must be absent immediately before source invocation; after source returns, both must be regular non-symlink files; `measurement-request` mtime must be no later than the training marker, and the training marker mtime must be no later than the source marker. Equal timestamps are allowed for coarse filesystems. Preflight and runtime both reject preexisting marker leaves, so an old marker cannot satisfy this evidence.
-- Missing `training_done_marker` or `source_done_marker` maps to `history_execution_invalid`; source wrapper nonzero/import failure maps to redacted `history_execution_invalid` at the source adapter boundary or `history_execution_failed` if raised by the generic private stage executor. Public state must not include private paths, argv, traceback, env, or raw stderr.
+`artifact_digests` serializes as an exact-key object with the nine `SOURCE_ARTIFACT_KEYS`; expected kinds are `regular_file` for checkpoint/config/ONNX/report/NPZ/summary and `directory_tree` for checkpoint/calibration/TRT directories. A declared file may also appear inside a declared directory-tree digest; this intentional duplicate coverage proves both leaf and tree identities. `marker_digests` serializes as an exact-key object with the two `SOURCE_MARKER_KEYS`. Tuple order in memory is the constant order above; JSON hashes use sorted keys.
 
-- [ ] **Step 1: Write RED exact-env test**
+- [ ] **Step 1: Write RED canonical hashing, layout, and context tests**
 
-Add to `tests/stage6/test_p6_history_measurement.py`:
+Create `tests/stage6/test_p6_source_reuse_evidence_paths.py` with this canonical-hash anchor and exact path assertions:
 
 ```python
-def test_measurement_source_wrapper_gets_round_cwd_exact_five_key_env(
-    tmp_path: Path,
+def test_canonical_json_hash_and_group_receipt_path_are_exact(tmp_path: Path) -> None:
+    root = _safe_local_root(tmp_path)
+    paths = plan_source_reuse_paths(root)
+    group_id = "pyramid|16x32x64"
+    expected_key = hashlib.sha256(
+        b"p6-group-receipt-v1\0" + group_id.encode("utf-8")
+    ).hexdigest()
+
+    assert canonical_json_sha256({"b": 2, "a": 1}) == hashlib.sha256(
+        b'{"a":1,"b":2}'
+    ).hexdigest()
+    assert paths.run_context == root / RUN_CONTEXT_RELATIVE_PATH
+    assert receipt_path_for_group(paths, group_id) == (
+        root / GROUP_RECEIPT_RELATIVE_ROOT / f"{expected_key}.json"
+    )
+```
+
+Add `test_create_context_binds_exact_task_revision_root_plan_and_registry()` using `_validated_task_contract()`, `_candidate_plan()`, and `_source_registry()` fixtures. It must assert a 64-lowercase-hex nonce, `created_before_round_index == 0`, exact plan/registry hashes, root fingerprint
+`sha256(b"p6-local-output-root-v1\0" + str(root.resolve()).encode()).hexdigest()`, canonical context hash, mode `0600` context, and mode `0700` metadata/receipt directories. Patch `secrets.token_bytes` to a known 32-byte value only in this unit test and assert it is called once.
+
+Add this exact path/context mutation table:
+
+```python
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "relative_root",
+        "missing_root",
+        "root_symlink_component",
+        "root_not_directory",
+        "metadata_symlink",
+        "context_preexists",
+        "receipt_root_preexists",
+        "materialized_root_preexists",
+        "one_declared_output_preexists",
+        "one_group_receipt_preexists",
+        "plan_file_mismatch",
+        "registry_file_mismatch",
+        "duplicate_json_key",
+        "unknown_context_key",
+        "noncanonical_context_hash",
+        "second_context_create",
+    ],
+)
+def test_context_and_path_boundaries_fail_closed(
+    tmp_path: Path, mutation: str
 ) -> None:
-    binding = _binding_with_recipe_v2_training_contract(tmp_path / "private")
-    request = project_source_materialization_request(_request_with_training_contract()).request
-    runner = _MarkerWritingRunner()
-    gpu_probe = _GpuProbeOk()
-
-    run_history_measurement_batch(request, binding, tmp_path / "private" / "private-runs" / "0", runner, gpu_probe)
-
-    source_calls = [call for call in runner.calls if call.argv[0].endswith("stage5_materialize_round_sources_v1.sh")]
-    assert source_calls
-    for call in source_calls:
-        assert call.cwd.name == "0"
-        assert set(call.env) == set(EXPECTED_HISTORY_ENV_KEYS)
-        assert "PYTHONPATH" not in call.env
-        assert call.shell is False
-        assert call.argv[1::2] == ("--request", "--model", "--group-id", "--gpu")
+    inputs = _mutated_context_inputs(tmp_path, mutation)
+    with pytest.raises(P6SourceReuseEvidenceError) as captured:
+        _exercise_context_boundary(mutation, inputs)
+    assert captured.value.public_category in {
+        "history_execution_invalid",
+        "unsafe_destination",
+    }
 ```
 
-- [ ] **Step 2: Write RED marker-gate tests**
+`_mutated_context_inputs()` must create the exact plan leaf `pyramid_candidate_plan.json`, registry leaf `source_registry.json`, deterministic receipt leaf, and one of the 11 contract paths without searching. `resolve_existing_source_reuse_paths()` must fail until a valid context and real receipt directory exist; `plan_source_reuse_paths()` must allow both to be absent while validating every existing ancestor.
 
-Add:
-
-```python
-@pytest.mark.parametrize("missing_marker", ["training_done_marker", "source_done_marker"])
-def test_missing_source_marker_blocks_downstream_stages(
-    tmp_path: Path, missing_marker: str
-) -> None:
-    binding = _binding_with_recipe_v2_training_contract(tmp_path / "private")
-    request = project_source_materialization_request(_request_with_training_contract()).request
-    runner = _SelectiveMarkerRunner(missing_marker=missing_marker)
-
-    with pytest.raises(P6HistoryMeasurementError) as captured:
-        run_history_measurement_batch(request, binding, tmp_path / "private" / "private-runs" / "0", runner, _GpuProbeOk())
-
-    assert captured.value.category == "history_execution_invalid"
-    assert [call.stage for call in runner.calls if call.stage in ("quantization", "performance", "ap", "finalization")] == []
-```
-
-Add a reversed-order case that creates both fresh files but sets the source marker mtime before the
-training marker with `os.utime()`; assert the same stable failure and zero downstream calls. Add a
-preexisting-marker case and prove source invocation itself is not started.
-
-Add source failure redaction:
-
-```python
-def test_source_import_failure_is_redacted_and_stops_downstream(tmp_path: Path) -> None:
-    binding = _binding_with_recipe_v2_training_contract(tmp_path / "private")
-    request = project_source_materialization_request(_request_with_training_contract()).request
-    runner = _FailingSourceRunner(stderr="Traceback private/root/module.py")
-
-    with pytest.raises(P6HistoryMeasurementError) as captured:
-        run_history_measurement_batch(request, binding, tmp_path / "private" / "private-runs" / "0", runner, _GpuProbeOk())
-
-    assert captured.value.category in {"history_execution_invalid", "history_execution_failed"}
-    assert "private" not in str(captured.value).lower()
-    assert "traceback" not in str(captured.value).lower()
-```
-
-- [ ] **Step 3: Run RED tests**
+- [ ] **Step 2: Run the path/context RED slice**
 
 Run:
 
 ```bash
 PYTHONPATH=. pytest \
-  tests/stage6/test_p6_history_measurement.py::test_measurement_source_wrapper_gets_round_cwd_exact_five_key_env \
-  tests/stage6/test_p6_history_measurement.py::test_missing_source_marker_blocks_downstream_stages \
+  tests/stage6/test_p6_source_reuse_evidence_paths.py \
   -q
 ```
 
-Expected: FAIL because marker gate is not yet enforced before downstream stages and env exactness is not centralized.
+Expected: collection FAIL with `ModuleNotFoundError: framework.stage6.p6_source_reuse_evidence_v1`.
 
-- [ ] **Step 4: Implement exact environment assertion**
+- [ ] **Step 3: Implement strict JSON, deterministic paths, and exclusive context publication**
 
-In `p6_history_measurement_v1._render_environment()` after rendering, import the canonical tuple
-from `p6_history_binding_v1` (the same owner used by provisioning) and do not redeclare it in the
-measurement or wrapper modules:
+Create `p6_source_reuse_evidence_v1.py`. Use the approved hash bytes exactly:
 
 ```python
-if set(rendered) != set(EXPECTED_HISTORY_ENV_KEYS):
-    raise P6HistoryMeasurementError("history_execution_invalid")
+def canonical_json_sha256(value: object) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=True,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+def _local_root_sha256(root: Path) -> str:
+    return hashlib.sha256(
+        b"p6-local-output-root-v1\0" + str(root).encode("utf-8")
+    ).hexdigest()
+
+def _group_key_sha256(group_id: str) -> str:
+    return hashlib.sha256(
+        b"p6-group-receipt-v1\0" + group_id.encode("utf-8")
+    ).hexdigest()
 ```
 
-Import `EXPECTED_HISTORY_ENV_KEYS` only from `p6_history_binding_v1`.
+Strict JSON loading uses `object_pairs_hook` to reject duplicate keys and exact schema-key sets; reject booleans where integers are required, non-finite numbers, noncanonical path strings, invalid schema literals, uppercase/non-64-hex hashes, and unknown keys. `_publish_exclusive_json()` writes canonical bytes to a same-directory `O_CREAT|O_EXCL|O_NOFOLLOW` mode-`0600` temp file, flushes and `fsync`s it, publishes with `renameat2(RENAME_NOREPLACE)` or same-filesystem hard-link no-replace semantics, unlinks only its temp, and `fsync`s the parent. Ordinary `os.replace()` is forbidden. If the final appears at any point, fail without modifying it.
 
-- [ ] **Step 5: Implement marker gate**
+`create_fresh_run_context()` must, before calling `secrets.token_bytes(32)`, validate the exact persisted plan/registry bytes against the supplied validated mappings and require the context, metadata/receipt namespace, deterministic receipt leaf for every registry group, `materialized` root, and every one of the 11 declared group leaves absent. It creates the metadata and empty receipt directories and publishes once. A crash after either directory create is intentionally not repairable in place.
 
-In `p6_history_source_materialization_v1.py`:
+`run_context_sha256` hashes the exact context object excluding only `run_context_sha256`; `receipt_sha256` hashes the exact receipt object excluding only `receipt_sha256`. `load_fresh_run_context()` must re-read the exact `pyramid_candidate_plan.json` and `source_registry.json` leaves, validate their schemas and canonical hashes, recompute the resolved-root fingerprint, and reject task/root/plan/registry/context drift without consulting environment state.
+
+- [ ] **Step 4: Write RED artifact, receipt, classification, and tamper tests**
+
+Create `tests/stage6/test_p6_source_reuse_evidence_receipts.py`. The happy path must build all exact leaves, not only markers:
 
 ```python
-def assert_source_markers_absent_before_invocation(
-    request: Mapping[str, Any],
-    *,
-    local_output_root: Path,
+def test_first_use_publishes_adapter_receipt_and_reclassifies_ready(
+    tmp_path: Path,
 ) -> None:
-    for training_marker, source_marker in validate_projected_training_marker_pairs(request):
-        for marker in (training_marker, source_marker):
-            _reject_marker_if_symlink_or_outside(
-                marker,
-                local_output_root=local_output_root,
-            )
-            if marker.exists() or marker.is_symlink():
-                _invalid()
+    fixture = _fresh_run_fixture(tmp_path, q_modes=("fp16",))
+    before = classify_selected_group_sources(**fixture.classification_kwargs)
+    assert [(item.group_id, item.state) for item in before] == [
+        (fixture.group_id, "UNSEEN")
+    ]
+    _write_complete_source_bundle(fixture.request, fixture.group_id)
 
-def assert_training_and_source_markers_complete(
-    request: Mapping[str, Any],
-    *,
-    local_output_root: Path,
-    request_path: Path,
-) -> None:
-    for training_marker, source_marker in validate_projected_training_marker_pairs(request):
-        for marker in (training_marker, source_marker):
-            _reject_marker_if_symlink_or_outside(
-                marker,
-                local_output_root=local_output_root,
-            )
-            if not marker.is_file():
-                _invalid()
-        if not (
-            request_path.stat().st_mtime_ns
-            <= training_marker.stat().st_mtime_ns
-            <= source_marker.stat().st_mtime_ns
-        ):
-            _invalid()
+    receipt = validate_and_publish_group_receipt(
+        fixture.request,
+        group_id=fixture.group_id,
+        **fixture.receipt_kwargs,
+    )
+
+    assert receipt.producer_row_id == min(
+        row["row_id"]
+        for row in fixture.request["rows"]
+        if row["group_id"] == fixture.group_id
+    )
+    assert receipt.producer_measurement_request_sha256 == (
+        fixture.request["measurement_request_sha256"]
+    )
+    assert first_use_group_ids(
+        classify_selected_group_sources(**fixture.classification_kwargs)
+    ) == ()
+    assert require_selected_groups_ready_current_run(
+        **fixture.ready_kwargs
+    ) == (receipt,)
 ```
 
-The allowed marker location rule is: marker must be beneath the validated ignored
-`local_output_root` used by registry rendering, not guessed beneath the separate historical
-`private_root` or the public round directory. It must never point into a tracked public path;
-provisioning/registry and the runtime gate independently enforce containment and symlink safety.
-At runtime derive `validated_local_output_root` only as the safe resolved parent of the supplied
-public round root after `_validate_controller_round_root()` succeeds; require its lexical
-components to be non-symlinks, then require every flattened shared output path and marker in the
-already-hashed projected request to remain beneath it. Do not infer the root from a marker path.
+The helper writes regular files with `open(..., "xb")`, real directories, the training marker, then source marker, and sets supplemental first-use order to
+`producer_request_mtime <= training_marker_mtime <= source_marker_mtime`. The private producer request is the exact binding-resolved request leaf, parses to the same canonical projected object, and recomputes the same request hash; public/private serializers may use different whitespace. For a same-round mixed-q request, it writes one shared bundle and the canonical producer is the lexicographically smallest row id.
 
-In `run_history_measurement_batch()`:
+Add this classification/tamper matrix and assert exact state plus zero public detail:
 
 ```python
-assert_source_markers_absent_before_invocation(...)
-run_source_invocations(...)
-assert_training_and_source_markers_complete(
-    canonical_request,
-    local_output_root=validated_local_output_root,
-    request_path=paths["measurement_request"],
+@pytest.mark.parametrize(
+    ("mutation", "expected_state"),
+    [
+        ("bare_training_and_source_markers", "INVALID_PARTIAL"),
+        ("one_marker_only", "INVALID_PARTIAL"),
+        ("artifact_without_receipt", "INVALID_PARTIAL"),
+        ("receipt_only", "INVALID_PARTIAL"),
+        ("receipt_missing_one_artifact", "INVALID_PARTIAL"),
+        ("cross_run_receipt_copy", "INVALID_STALE"),
+        ("different_run_nonce", "INVALID_STALE"),
+        ("different_task", "INVALID_STALE"),
+        ("different_revision", "INVALID_STALE"),
+        ("different_root_fingerprint", "INVALID_STALE"),
+        ("different_plan_hash", "INVALID_STALE"),
+        ("different_registry_hash", "INVALID_STALE"),
+        ("unknown_receipt_key", "INVALID_MISMATCH"),
+        ("malformed_receipt_hash", "INVALID_MISMATCH"),
+        ("wrong_group_key", "INVALID_MISMATCH"),
+        ("artifact_byte_tamper", "INVALID_MISMATCH"),
+        ("marker_byte_tamper", "INVALID_MISMATCH"),
+        ("producer_request_tamper", "INVALID_MISMATCH"),
+        ("producer_row_hash_tamper", "INVALID_MISMATCH"),
+        ("consumer_contract_drift", "INVALID_MISMATCH"),
+        ("consumer_evidence_drift", "INVALID_MISMATCH"),
+        ("artifact_symlink", "INVALID_MISMATCH"),
+        ("artifact_hard_link", "INVALID_MISMATCH"),
+        ("directory_contains_symlink", "INVALID_MISMATCH"),
+        ("directory_contains_hard_link", "INVALID_MISMATCH"),
+        ("directory_contains_fifo", "INVALID_MISMATCH"),
+        ("wrong_leaf_type", "INVALID_MISMATCH"),
+        ("lexical_path_escape", "INVALID_MISMATCH"),
+        ("resolved_parent_escape", "INVALID_MISMATCH"),
+    ],
 )
-for stage in interface["execution_chain"][1:]:
-    _execute(...)
+def test_group_classification_is_exact_and_fail_closed(
+    tmp_path: Path, mutation: str, expected_state: P6SourceReuseState
+) -> None:
+    fixture = _mutated_ready_fixture(tmp_path, mutation)
+    decision = classify_selected_group_sources(**fixture.classification_kwargs)[0]
+    assert decision.state == expected_state
+    assert expected_state not in str(P6HistoryMeasurementError("history_execution_invalid"))
 ```
 
-- [ ] **Step 6: Run focused tests**
+Add dedicated tests that directory-tree digests are stable across creation order and hash the exact sorted POSIX-relative canonical entries `{"kind":"directory","path":"relative/path"}` and `{"kind":"regular_file","path":"relative/path","sha256":"...","size":N}`; the declared root itself is omitted and an empty directory hashes `[]`. File size is an integer, not bool; regular-file digests stream raw bytes. Receipt publication refuses a wrapper-created receipt even when its JSON is otherwise byte-perfect. The wrapper-created case must assert source has returned, downstream call log is empty, the leaf is preserved, and a new root is required.
+
+- [ ] **Step 5: Run the receipt RED slice**
 
 Run:
 
 ```bash
 PYTHONPATH=. pytest \
+  tests/stage6/test_p6_source_reuse_evidence_receipts.py \
+  -q
+```
+
+Expected: FAIL because classification, digest, producer-binding, and exclusive receipt publication functions are not implemented.
+
+- [ ] **Step 6: Implement exact digest, classification, producer, and publication semantics**
+
+Implement classification without scanning. For each sorted distinct request `group_id`, derive its exact receipt and 11 paths from that group's canonical projected contract:
+
+```python
+if receipt_absent and all(output_absent for output in outputs):
+    state = "UNSEEN"
+elif receipt_absent or any(output_absent for output in outputs):
+    state = "INVALID_PARTIAL"
+else:
+    state = _validate_complete_receipt_or_return_invalid_state(...)
+```
+
+Every leaf check uses `lstat`; a symlink counts as existing and invalid, never absent. A complete receipt whose run-level fields disagree with the loaded context is `INVALID_STALE`. A context-bound receipt with schema/hash/group/producer/contract/evidence/type/digest/order drift is `INVALID_MISMATCH`. `first_use_group_ids()` accepts only decisions whose states are all executable, returns sorted `UNSEEN` ids, and raises `P6SourceReuseEvidenceError` with public `history_execution_invalid` for any invalid state.
+
+Producer validation resolves the exact request using `interface["output_layout"]["round_root_template"]` and `producer_round_index`; it never searches. Require producer round `0..3` and `<= consumer round`, exact request hash, exact row hash, group id, q-mode, source-contract hash, and source-evidence hash. The producer row is the lexicographically smallest same-group row in the first-use request. Consumer row id and q-mode may differ, but group source-contract/source-evidence hashes must match.
+
+For first use only, require receipt and all 11 outputs absent immediately before the source call. After a zero-return wrapper, require receipt still absent, all outputs exact and safe, and
+`producer_request_mtime <= training_marker_mtime <= source_marker_mtime`. Compute nine artifact and two marker digests and exclusively publish. On later validation, ignore current consumer request mtime and recompute content digests; marker mtimes alone never authorize reuse.
+
+- [ ] **Step 7: Write RED measurement integration tests for first use, same-round mixed q, and later reuse**
+
+Create `tests/stage6/test_p6_source_reuse_measurement.py` with a public adapter fixture whose fake source wrapper writes the complete 11-leaf bundle but never a receipt. The real `run_history_measurement_batch()` must publish receipts.
+
+```python
+def test_same_round_fp16_int8_share_one_source_call_but_both_run_downstream(
+    tmp_path: Path,
+) -> None:
+    fixture = _measurement_fixture(
+        tmp_path,
+        rounds=(("shared", "fp16"), ("shared", "int8"),
+                ("other-a", "fp16"), ("other-b", "int8")),
+    )
+    feedback = run_history_measurement_batch(**fixture.call_kwargs)
+
+    assert fixture.source_group_ids == tuple(sorted({
+        fixture.shared_group_id,
+        fixture.other_a_group_id,
+        fixture.other_b_group_id,
+    }))
+    assert fixture.downstream_row_ids_by_stage == {
+        stage: tuple(sorted(row["row_id"] for row in fixture.request["rows"]))
+        for stage in ("quantization", "performance", "ap", "finalization")
+    }
+    assert {row["row_id"] for row in feedback["rows"]} == {
+        row["row_id"] for row in fixture.request["rows"]
+    }
+```
+
+Add `test_round0_fp16_first_use_then_round2_int8_reuses_source_bundle()` and the reverse INT8-producer/FP16-consumer case. Both create one context once, execute two exact round requests, assert first-use source count one for the repeated group, later source count zero for that group, producer round remains earlier, later q-specific downstream stages contain the later row, and receipt bytes are unchanged. Add a ready-only request with four groups and assert zero source calls plus all four downstream rows.
+
+Add failures for context absent, context invalid, partial/stale/mismatched group, wrapper-created receipt, source nonzero, missing artifact, missing marker, reversed first-use marker order, artifact tamper between classification and downstream revalidation, and private token redaction. Context and initial partial/stale/mismatch failures must assert `gpu_probe.calls == 0` and `runner.calls == []`; failures after valid GPU/activation/source admission must still assert zero downstream calls.
+
+Retain the paused exact-env assertion in focused form:
+
+```python
+assert set(source_call.env) == set(EXPECTED_HISTORY_ENV_KEYS)
+assert set(source_call.env) == {
+    "CUDA_VISIBLE_DEVICES",
+    "P6_HISTORY_RUN_MODE",
+    "P6_HISTORY_PRIVATE_ROOT",
+    "P6_HISTORY_TASK_STATE",
+    "P6_HISTORY_ROUND_OUTPUT_ROOT",
+}
+assert not {
+    "PYTHONPATH", "P6_RUN_CONTEXT", "P6_RUN_NONCE",
+    "P6_SOURCE_RECEIPT", "P6_LOCAL_OUTPUT_ROOT",
+} & set(source_call.env)
+assert source_call.cwd == fixture.private_round_root
+assert source_call.shell is False
+```
+
+- [ ] **Step 8: Run the measurement RED slice**
+
+Run:
+
+```bash
+PYTHONPATH=. pytest \
+  tests/stage6/test_p6_source_reuse_measurement.py \
+  -q
+```
+
+Expected: FAIL because measurement still applies blanket marker absence/builds every group invocation and does not load context or publish receipts.
+
+- [ ] **Step 9: Route measurement through current-run classification**
+
+Refactor `run_history_measurement_batch()` in this exact order:
+
+```python
+projected = project_source_materialization_request(verified_request)
+canonical_request = projected.request
+private_root, gpu_policy = _validate_binding_runtime(binding)
+paths = _resolve_round_paths(
+    interface,
+    private_root,
+    Path(round_output_root),
+    canonical_request["round_index"],
+)
+reuse_required = requires_current_run_source_evidence(canonical_request)
+if reuse_required:
+    run_context = load_fresh_run_context(
+        local_output_root=paths["local_output_root"],
+        expected_task_id=canonical_request["task_id"],
+        expected_task_sha256=canonical_request["task_sha256"],
+    )
+    decisions = classify_selected_group_sources(
+        canonical_request,
+        run_context=run_context,
+        local_output_root=paths["local_output_root"],
+        interface=interface,
+        private_root=private_root,
+    )
+    unseen_group_ids = first_use_group_ids(decisions)
+else:
+    run_context = None
+    unseen_group_ids = projected.ordered_group_ids
+source_invocations = (
+    build_source_invocations(
+        paths["measurement_request"],
+        unseen_group_ids,
+        source_materializer=Path(interface["execution_chain"][0]["argv"][0]),
+        validated_gpu_policy=gpu_policy,
+    )
+    if unseen_group_ids
+    else ()
+)
+```
+
+Then run GPU admission, initialize the private request/task-state, render the exact environment, and execute activation. In the recipe-v2 branch, immediately reclassify each unseen group as `UNSEEN`, run only its source invocation, require the wrapper did not create the receipt, and call `validate_and_publish_group_receipt()` once per sorted unseen group. Call `require_selected_groups_ready_current_run()` immediately before `for stage in interface["execution_chain"][1:]`; only then execute quantization, performance, AP, and finalization for the full unchanged four-row request. In the true legacy/v1 branch, preserve the existing all-group source flow and do not create/load context or receipts. Mixed or malformed recipe-v2 identity has already failed Task 3 projection and must never fall back to legacy.
+
+Measurement must not import `secrets`, call `create_fresh_run_context()`, write plan/registry/context bytes, or add an environment key. Keep exact-env enforcement owned by `EXPECTED_HISTORY_ENV_KEYS`. Move compatible paused filesystem helpers into the focused evidence module; `p6_history_source_materialization_v1.py` remains the owner of projection and direct source invocation shape, not receipt state.
+
+- [ ] **Step 10: Run focused GREEN tests and legacy regressions**
+
+Run:
+
+```bash
+PYTHONPATH=. pytest \
+  tests/stage6/test_p6_source_reuse_evidence_paths.py \
+  tests/stage6/test_p6_source_reuse_evidence_receipts.py \
+  tests/stage6/test_p6_source_reuse_measurement.py \
   tests/stage6/test_p6_history_measurement.py \
   tests/stage6/test_p6_history_source_materialization.py \
+  tests/stage6/test_p6_history_source_materialization_training_contract.py \
   tests/release/test_p6_history_execution_adapters.py \
   -q
 ```
 
-Expected: PASS.
+Expected: PASS. Existing v1/static measurement tests remain green without a run context; the context/receipt lane activates only for identifiable recipe-v2 requests.
 
-- [ ] **Step 7: Quality and privacy gates**
+- [ ] **Step 11: Coverage, size, lint, and privacy gates**
 
 Run:
 
 ```bash
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=. coverage run \
+  --source=framework.stage6.p6_source_reuse_evidence_v1 \
+  -m pytest \
+  tests/stage6/test_p6_source_reuse_evidence_paths.py \
+  tests/stage6/test_p6_source_reuse_evidence_receipts.py \
+  tests/stage6/test_p6_source_reuse_measurement.py \
+  -q
+coverage report -m --fail-under=80
 python -m ruff check \
+  framework/stage6/p6_source_reuse_evidence_v1.py \
   framework/stage6/p6_history_measurement_v1.py \
   framework/stage6/p6_history_source_materialization_v1.py \
-  framework/stage6/p6_source_wrapper_profile_v1.py \
+  tests/stage6/test_p6_source_reuse_evidence_paths.py \
+  tests/stage6/test_p6_source_reuse_evidence_receipts.py \
+  tests/stage6/test_p6_source_reuse_measurement.py \
   tests/stage6/test_p6_history_measurement.py \
   tests/stage6/test_p6_history_source_materialization.py \
   tests/release/test_p6_history_execution_adapters.py
+wc -l \
+  framework/stage6/p6_source_reuse_evidence_v1.py \
+  framework/stage6/p6_history_source_materialization_v1.py \
+  tests/stage6/test_p6_source_reuse_evidence_paths.py \
+  tests/stage6/test_p6_source_reuse_evidence_receipts.py \
+  tests/stage6/test_p6_source_reuse_measurement.py
 git diff --check
 ```
 
-Expected: all commands exit 0.
+Expected: focused coverage is at least 80%; every listed new/focused file and both touched below-limit production modules are under 800 lines; existing over-limit measurement/release test modules contain only fixture/routing changes; all other commands exit 0. Injected `PRIVATE-TOKEN-P6-REUSE` appears in neither exception text nor public feedback.
 
-- [ ] **Step 8: Review boundary**
+- [ ] **Step 12: Fresh implementer/reviewer boundary**
 
-Review only runtime boundary and marker gate. Reject if downstream wrappers can run without both markers, if the source stage receives positional legacy argv, if `PYTHONPATH` appears, or if failure messages include private diagnostics.
+Review only Task 4-owned evidence/runtime files and the migrated paused diff. Reject Critical/Important if any of these hold: global group uniqueness is introduced; a later q-mode retrains; bare markers authorize reuse; measurement creates context; wrapper can publish a receipt; receipt/context is searched or overwritten; directory/file digest safety is incomplete; a reused group's current request mtime is compared to old markers; source calls include ready groups; downstream omits a q-mode row; or private values reach a public error. Require a fresh reviewer to rerun the Task 4 focused commands before acceptance.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 13: Commit**
 
 ```bash
 git add \
+  framework/stage6/p6_source_reuse_evidence_v1.py \
   framework/stage6/p6_history_measurement_v1.py \
   framework/stage6/p6_history_source_materialization_v1.py \
+  tests/stage6/test_p6_source_reuse_evidence_paths.py \
+  tests/stage6/test_p6_source_reuse_evidence_receipts.py \
+  tests/stage6/test_p6_source_reuse_measurement.py \
   tests/stage6/test_p6_history_measurement.py \
   tests/stage6/test_p6_history_source_materialization.py \
   tests/release/test_p6_history_execution_adapters.py
-git commit -m "fix: gate P6 downstream stages on training markers"
+git commit -m "feat: add current-run P6 source reuse evidence"
 ```
 
 ---
@@ -1360,20 +1719,20 @@ git commit -m "fix: gate P6 downstream stages on training markers"
 - Create: `tools/release/verify_p6_materializer_training_run.py`
 - Modify: `framework/stage6/coptv2x_h800_search_v2.py`
 - Modify: `framework/stage6/p6_history_measurement_v1.py`
+- Create: `tests/stage6/test_p6_history_round_paths.py`
+- Create: `tests/stage6/test_p6_fresh_run_controller.py`
 - Test: `tests/release/test_preflight_p6_materializer_training_bridge.py`
 - Test: `tests/release/test_verify_p6_materializer_training_run.py`
-- Test: `tests/stage6/test_coptv2x_h800_search.py`
-- Test: `tests/release/test_run_p6_h800_search.py`
 
 **Interfaces:**
 
-- Consumes: public contract path, local config path, private binding path, runner template path, ignored private source wrapper profile path, optional expected round count.
+- Consumes: Task 4's exact run-context/receipt APIs, validated public/local contracts, the private binding and wrapper profile, existing `validate_search_task()`, Task 3's plan/registry identities, exact round templates, `translate_history_feedback()`, and frozen Gold176 inputs.
 - Produces:
 
 ```python
 @dataclass(frozen=True)
 class P6MaterializerPreflightReport:
-    schema_version: str
+    schema_version: Literal["p6_materializer_training_bridge_preflight_v1"]
     status: Literal["accepted"]
     validated_round_count: int
     wrapper_marker: str
@@ -1392,7 +1751,7 @@ def preflight_materializer_training_bridge(
 
 @dataclass(frozen=True)
 class P6MaterializerCompletionReport:
-    schema_version: str
+    schema_version: Literal["p6_materializer_training_bridge_completion_v1"]
     status: Literal["completed"]
     completed_rounds: int
     selected_rows: int
@@ -1404,14 +1763,79 @@ def verify_materializer_training_run(
     local_config_path: Path,
     private_binding_path: Path,
 ) -> P6MaterializerCompletionReport: ...
+
+def plan_validated_history_round_paths(
+    interface: Mapping[str, Any],
+    private_root: Path,
+    round_index: int,
+) -> Mapping[str, Path]: ...
+
+def resolve_validated_history_round_paths(
+    interface: Mapping[str, Any],
+    private_root: Path,
+    supplied_public_round_root: Path,
+    round_index: int,
+) -> Mapping[str, Path]: ...
 ```
 
-- The CLI prints only public-safe JSON with `historical_process_launch_count: 0` and `gpu_probe_count: 0`. `historical_process_launch_count` counts prohibited activation/history/training/materialization/measurement runners only; it does not count unavoidable current-process validation, JSON/YAML parsing, or read-only `git check-ignore` validation used by existing safety gates.
-- It validates schemas, private binding target, exact five-key environment, source wrapper marker, static training fields, static path safety, shared output renderability, registry destination, Stage1 manifest leaf, round leaves, request/feedback/task-state/receipt/barrier absence, and no stale state.
+- The preflight CLI prints only the dataclass fields above. `historical_process_launch_count` counts prohibited activation/history/training/materialization/measurement runners; current-process validation, JSON/YAML parsing, and existing read-only `git check-ignore` checks are not launches.
+- Zero-process preflight is run before Stage1. It validates schemas, target, exact five-key environment, self-contained wrapper, static training inputs, and exact planned destinations. It requires absent: `.p6-materializer-training-bridge-v1`, context, receipt namespace/leafs, the fixed `materialized` root (therefore any of the 11 output leaves), Stage1 manifest, plan, registry, state, all four public round roots, and every binding-resolved private round root/request/task-state/result/completion-receipt/barrier destination. Binding/config inputs intentionally present in the local root are allowed.
+- After Stage1/Stage2 registry creation, `create_fresh_run_context()` performs the second exact freshness gate over every deterministic group receipt plus every one of the 11 declared leaves. The controller does not duplicate or weaken that gate.
 - It must not import historical Python modules, execute wrappers, call GPU probes, call TVM/AP/training code, or read raw private logs.
-- The post-run verifier must resolve task-state/result/receipt/barrier through the validated binding's exact templates, not `glob`/`rglob` or guessed basenames. It reuses `translate_history_feedback()` and the controller's canonical request/hash rules, checks the five metric fields, validates marker order, proves 16 unique selected rows, and compares their identities against the frozen Gold176 identities.
+- Completion resolves the one context, four public/private requests, task-state/result/actual completion receipt/barrier, and group receipts through exact constants/templates only. It reuses `translate_history_feedback()`, requires successful terminal status and five finite metrics for every row, validates current artifact/marker digests and exact producer mapping, proves 16 unique row ids and zero Gold176 overlap, and allows multiple rows to share one group receipt. The public report never emits distinct receipt count or mapping.
 
-- [ ] **Step 1: Write RED zero-process preflight tests**
+- [ ] **Step 1: Write RED planned-absent versus runtime-existing path tests**
+
+Create `tests/stage6/test_p6_history_round_paths.py`:
+
+```python
+def test_planner_allows_absent_private_round_but_runtime_requires_public_round(
+    tmp_path: Path,
+) -> None:
+    private_root, interface = _safe_binding_interface(tmp_path)
+    planned = plan_validated_history_round_paths(interface, private_root, 2)
+    assert planned["round_root"] == private_root / "private-runs/2"
+    assert planned["measurement_request"] == (
+        private_root / "private-runs/2/measurement-request.json"
+    )
+    assert all(path.is_absolute() for path in planned.values())
+
+    public_round = tmp_path / "local-output/round-02"
+    with pytest.raises(P6HistoryMeasurementError):
+        resolve_validated_history_round_paths(
+            interface, private_root, public_round, 2
+        )
+
+    public_round.mkdir(parents=True)
+    resolved = resolve_validated_history_round_paths(
+        interface, private_root, public_round, 2
+    )
+    assert resolved["local_output_root"] == public_round.parent.resolve()
+    assert {
+        key: value for key, value in resolved.items()
+        if key not in {"local_output_root", "history_root"}
+    } == planned
+```
+
+Add exact rejections for round index `-1`, `4`, boolean index, template escape, duplicate private destinations, symlinked existing parent, non-directory parent, relative private root, and a runtime public-round symlink. Assert neither API creates directories or files.
+
+- [ ] **Step 2: Run the path RED slice**
+
+Run:
+
+```bash
+PYTHONPATH=. pytest tests/stage6/test_p6_history_round_paths.py -q
+```
+
+Expected: FAIL because only private `_resolve_round_paths()` exists and conflates planned absence with runtime existence.
+
+- [ ] **Step 3: Split exact round planning from runtime resolution**
+
+Refactor the existing `_resolve_round_paths()` into the two exported functions. The planner validates templates, canonical lexical spelling, every existing component with `lstat`, resolved containment beneath `private_root`, destination uniqueness, and round `0..3`, while allowing the round root and leaves absent. The runtime function first validates the supplied public round as an existing absolute nonsymlink directory, derives its safe parent as `local_output_root`, calls the planner, and returns the planned mapping plus `history_root` and `local_output_root`. Do not weaken `_initialize_private_round()` create-only checks.
+
+Update Task 4 measurement routing to call the exported runtime function; this is a rename/split of the same behavior, not a second resolver.
+
+- [ ] **Step 4: Write RED zero-process preflight tests**
 
 Add to `tests/release/test_preflight_p6_materializer_training_bridge.py`:
 
@@ -1447,11 +1871,32 @@ Add rejection coverage:
         "old_binding_false_training_required",
         "missing_static_training_field",
         "wrapper_not_self_contained",
-        "source_registry_preexists_as_directory",
-        "stage1_manifest_preexists_stale",
+        "metadata_namespace_preexists",
+        "run_context_preexists",
+        "receipt_namespace_preexists",
+        "one_group_receipt_preexists",
+        "materialized_root_preexists",
+        "checkpoint_path_preexists",
+        "checkpoint_dir_preexists",
+        "config_path_preexists",
+        "training_done_marker_preexists",
+        "onnx_path_preexists",
+        "onnx_report_path_preexists",
+        "calibration_root_preexists",
+        "calibration_npz_preexists",
+        "calibration_summary_preexists",
+        "trt_calibration_dir_preexists",
+        "source_done_marker_preexists",
+        "source_registry_preexists",
+        "candidate_plan_preexists",
+        "stage1_manifest_preexists",
+        "state_preexists",
+        "public_round_root_preexists",
+        "private_round_root_preexists",
         "round_request_preexists",
-        "round_feedback_preexists",
         "task_state_preexists",
+        "actual_feedback_preexists",
+        "actual_completion_receipt_preexists",
         "barrier_preexists",
         "output_root_symlink",
     ],
@@ -1464,67 +1909,139 @@ def test_preflight_rejects_stale_or_incomplete_private_state_without_launch(
     with pytest.raises(P6CoptV2XExecutionError) as captured:
         preflight_materializer_training_bridge(**inputs)
 
-    assert captured.value.failure_code in {"history_execution_invalid", "unsafe_destination", "source_registry_invalid"}
+    assert captured.value.failure_code in {
+        "history_execution_invalid",
+        "unsafe_destination",
+        "source_registry_invalid",
+    }
     assert _process_launch_log(tmp_path) == []
     assert _gpu_probe_log(tmp_path) == []
 ```
 
-- [ ] **Step 2: Write RED relaunch safety tests**
+Each 11-output mutation is generated from the exact `SHARED_SOURCE_PATH_KEYS`, not a guessed filename. Assert injected strings `PRIVATE-PREFLIGHT-PATH` and `GPU-private-preflight` appear in neither CLI stdout nor stderr. Add an AST/mock gate proving the function never calls `_run_step`, `GpuProbe.snapshot`, `run_history_measurement_batch`, `subprocess.run` other than existing Git ignore validation, or any historical wrapper.
 
-Add to `tests/stage6/test_coptv2x_h800_search.py`:
+- [ ] **Step 5: Run the preflight RED slice**
+
+Run:
+
+```bash
+PYTHONPATH=. pytest \
+  tests/release/test_preflight_p6_materializer_training_bridge.py \
+  -q
+```
+
+Expected: FAIL with missing preflight module and missing exact metadata/materialized freshness gates.
+
+- [ ] **Step 6: Implement zero-process preflight and CLI**
+
+Create the report and `main()` with exact arguments `--contract`, `--local-config`, `--binding`, `--runner-template`, and `--source-wrapper-profile`. On accepted input print one sorted JSON object; on any private validation failure print only `preflight_failed\n` to stderr and return 1.
+
+Use `plan_source_reuse_paths()` and `plan_validated_history_round_paths()` only. Require exact destination absence with `lstat` checks; reject the complete metadata and `materialized` namespaces before checking descendants. Validate the binding's recipe-v2 template through Tasks 1/2 without running it. Never delete an existing destination and never generate a nonce/context during preflight.
+
+- [ ] **Step 7: Write RED controller context-order and relaunch tests**
+
+Create `tests/stage6/test_p6_fresh_run_controller.py`:
 
 ```python
-def test_run_p6_rejects_preexisting_public_search_round_before_measurement(
+def test_controller_creates_one_context_after_registry_before_measurement(
     tmp_path: Path,
 ) -> None:
-    contract, local = _framework_mode_setup(tmp_path)
-    round_root = local.local_output_root / "round-00"
-    round_root.mkdir(parents=True)
-    (round_root / "measurement_request.json").write_text("stale\n", encoding="utf-8")
-    measurement_started = False
+    fixture = _fresh_controller_fixture(tmp_path)
+    events: list[str] = []
+    fixture.on_stage1 = lambda: events.append("stage1")
+    fixture.on_registry = lambda: events.append("registry")
+    fixture.on_context_publish = lambda: events.append("context")
+    fixture.on_measurement = lambda: events.append("measurement")
 
-    def command_runner(argv: tuple[str, ...], cwd: Path) -> int:
-        nonlocal measurement_started
-        if argv[1] == "local_build_registry.py":
-            _write_recipe_v2_training_registry(Path(argv[3]))
-            return 0
-        measurement_started = True
-        return 1
+    state = run_p6_coptv2x_search(**fixture.call_kwargs)
 
-    with pytest.raises(P6CoptV2XExecutionError) as captured:
-        run_p6_coptv2x_search(contract, local, "rev-no-resume", command_runner)
-
-    assert captured.value.failure_code in {"history_execution_invalid", "unsafe_output"}
-    assert measurement_started is False
+    assert state.completed_rounds == 4
+    assert events.count("context") == 1
+    assert events.index("stage1") < events.index("registry")
+    assert events.index("registry") < events.index("context")
+    assert events.index("context") < events.index("measurement")
+    context = load_fresh_run_context(
+        local_output_root=fixture.local_output_root,
+        expected_task_id=fixture.task_contract["task_id"],
+        expected_task_sha256=fixture.task_contract["task_sha256"],
+    )
+    assert context.code_revision == "rev-fresh-context"
+    assert context.candidate_plan_sha256 == canonical_json_sha256(fixture.plan)
+    assert context.source_registry_sha256 == canonical_json_sha256(fixture.registry)
 ```
 
-The zero-process preflight mutation matrix separately places a stale file at the exact private
-receipt/task-state/barrier path resolved from the validated binding template. Assert that a decoy
-file under the public `round-00` cannot hide or satisfy that private stale-state check.
-
-Also assert Stage1 manifest is unlinked/reserved before scan and a no-op Stage1 adapter cannot reuse stale manifest:
+Add a parametrized controller freshness table for preexisting Stage1 manifest, plan, registry, state, public round root, metadata/context/receipt namespace, `materialized` root, deterministic group receipt, and each declared 11-output leaf. For every mutation assert context nonce generation count zero, measurement count zero, and stable failure. Add malformed revision and plan/registry drift cases. Add this relaunch anchor:
 
 ```python
-def test_stage1_scan_must_rewrite_manifest_not_reuse_stale_file(tmp_path: Path) -> None:
-    contract, local = _framework_mode_setup(tmp_path)
-    assert local.stage2_search_space_path is not None
-    local.stage2_search_space_path.write_text("schema: stale\n", encoding="utf-8")
+def test_failed_root_cannot_relaunch_in_place(tmp_path: Path) -> None:
+    fixture = _fresh_controller_fixture(tmp_path, fail_round=1)
+    first = run_p6_coptv2x_search(**fixture.call_kwargs)
+    assert first.status == "failed"
 
     with pytest.raises(P6CoptV2XExecutionError) as captured:
-        run_p6_coptv2x_search(contract, local, "rev-stale-stage1", _noop_stage1_runner)
+        run_p6_coptv2x_search(**fixture.call_kwargs)
 
-    assert captured.value.failure_code == "stage1_scan_invalid"
+    assert captured.value.failure_code in {
+        "history_execution_invalid",
+        "unsafe_output",
+        "unsafe_destination",
+    }
+    assert fixture.second_run_processes == []
 ```
 
-- [ ] **Step 2b: Write RED exact-layout completion verifier tests**
+- [ ] **Step 8: Run the controller RED slice**
+
+Run:
+
+```bash
+PYTHONPATH=. pytest tests/stage6/test_p6_fresh_run_controller.py -q
+```
+
+Expected: FAIL because the controller does not create a context, accepts existing exact output leaves, and permits an existing public round directory.
+
+- [ ] **Step 9: Integrate exactly-once context creation and fail-closed relaunch guards**
+
+At `run_p6_coptv2x_search()` entry validate `code_revision = validate_code_revision(code_revision)`. Keep zero-process preflight as the operator gate before Stage1. Inside the controller, require the exact Stage1 manifest absent before Stage1; exact plan/registry/state/public round destinations absent before writes; and never unlink stale feedback/request leaves.
+
+After `_build_source_registry()` and `_validate_p6_source_space()` succeed in `framework_stage2_search_space` mode, and before the round loop, call exactly:
+
+```python
+if local.candidate_source_mode == "framework_stage2_search_space":
+    task_contract = validate_search_task(task)
+    if framework_plan is None:
+        raise P6CoptV2XExecutionError(
+            "source_registry_invalid", "source registry invalid"
+        )
+    try:
+        create_fresh_run_context(
+            local_output_root=local.local_output_root,
+            task_contract=task_contract,
+            code_revision=code_revision,
+            candidate_plan=framework_plan,
+            source_registry=source_registry,
+        )
+    except P6SourceReuseEvidenceError as error:
+        raise P6CoptV2XExecutionError(
+            error.public_category, "history execution invalid"
+        ) from None
+```
+
+The branch above is the dynamic framework recipe-v2 lane. Static/v1 mode preserves its existing context-free compatibility path and receives no synthesized plan. Context creation owns nonce generation and the second exact registry/output freshness gate. There is no context creation in `_run_search_round()`, measurement, preflight, or relaunch. `_prepare_round_output()` rejects an existing round root rather than reusing it. Failure preserves diagnostics and makes the same root non-relaunchable.
+
+- [ ] **Step 10: Write RED exact-layout completion verifier tests**
 
 Add to `tests/release/test_verify_p6_materializer_training_run.py`:
 
 ```python
-def test_completion_verifier_uses_binding_templates_and_rejects_gold176_remeasurement(
+def test_completion_accepts_16_unique_rows_with_shared_current_run_receipts(
     tmp_path: Path,
 ) -> None:
-    inputs = _completed_four_round_private_run(tmp_path, nonstandard_private_leaf_names=True)
+    inputs = _completed_four_round_private_run(
+        tmp_path,
+        repeated_group_across_rounds=True,
+        same_round_mixed_q=True,
+        nonstandard_private_leaf_names=True,
+    )
 
     report = verify_materializer_training_run(**inputs)
 
@@ -1532,175 +2049,148 @@ def test_completion_verifier_uses_binding_templates_and_rejects_gold176_remeasur
     assert report.completed_rounds == 4
     assert report.selected_rows == 16
     assert report.gold176_remeasured_rows == 0
-
-    _replace_selected_row_with_gold176_identity(inputs)
-    with pytest.raises(P6CoptV2XExecutionError):
-        verify_materializer_training_run(**inputs)
+    assert inputs.private_distinct_receipt_count < 16
+    assert "receipt" not in dataclasses.asdict(report)
 ```
 
-Add mutations for a missing exact receipt, missing exact barrier, receipt/request hash drift,
-row/source-contract hash drift, duplicate selected row, missing training/source marker, reversed
-marker order, absent/extra/non-finite metric, and a decoy `receipt.json` that must not satisfy a
-different binding template.
+The fixture creates a producer in round 0 and a consumer in round 2, plus a same-round mixed-q group. Add this exact mutation table:
 
-Add focused path-planning tests: planned private leaves may all be absent and still resolve to safe
-lexical destinations; a symlinked existing parent or escape is rejected; the runtime resolver still
-rejects an absent supplied public round root; and after that public round exists it returns the same
-private paths as the planner.
+```python
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "context_missing",
+        "context_hash_drift",
+        "public_private_request_mismatch",
+        "producer_request_missing",
+        "producer_request_hash_drift",
+        "producer_is_later_round",
+        "producer_row_missing",
+        "producer_row_hash_drift",
+        "group_receipt_missing",
+        "group_receipt_cross_run",
+        "group_receipt_artifact_tamper",
+        "group_receipt_marker_tamper",
+        "task_state_missing",
+        "actual_result_missing",
+        "actual_completion_receipt_missing",
+        "finalization_barrier_missing",
+        "duplicate_selected_row_id",
+        "duplicate_measurement_identity",
+        "gold176_overlap",
+        "terminal_failure_status",
+        "metric_missing",
+        "metric_extra",
+        "metric_boolean",
+        "metric_nan",
+        "metric_infinite",
+        "latency_nonpositive",
+        "energy_nonpositive",
+        "ap_out_of_bounds",
+        "decoy_context_or_receipt",
+    ],
+)
+def test_completion_rejects_invalid_exact_evidence(
+    tmp_path: Path, mutation: str
+) -> None:
+    inputs = _mutated_completed_run(tmp_path, mutation)
+    with pytest.raises(P6CoptV2XExecutionError) as captured:
+        verify_materializer_training_run(**inputs.call_kwargs)
+    assert captured.value.failure_code == "history_execution_invalid"
+    assert "PRIVATE-COMPLETION-TOKEN" not in str(captured.value)
+```
 
-- [ ] **Step 3: Run RED tests**
+The decoy case places plausible `run-context.json`/receipt files at noncanonical names and proves they are ignored. Add a positive case in which 16 rows map to 16 receipts and one with fewer receipts; receipt count is dynamic and never an acceptance constant.
+
+- [ ] **Step 11: Run the verifier RED slice**
 
 Run:
 
 ```bash
 PYTHONPATH=. pytest \
-  tests/release/test_preflight_p6_materializer_training_bridge.py \
   tests/release/test_verify_p6_materializer_training_run.py \
-  tests/stage6/test_coptv2x_h800_search.py::test_run_p6_rejects_preexisting_public_search_round_before_measurement \
-  tests/stage6/test_coptv2x_h800_search.py::test_stage1_scan_must_rewrite_manifest_not_reuse_stale_file \
   -q
 ```
 
-Expected: FAIL with missing preflight/verifier modules and incomplete stale round gating.
+Expected: FAIL with missing verifier module and no row-to-current-run-receipt mapping validation.
 
-- [ ] **Step 4: Expose exact round-path resolution and implement preflight**
+- [ ] **Step 12: Implement the exact completion verifier and CLI**
 
-First expose two immutable seams from `p6_history_measurement_v1.py`:
+Load the public contract/local config/binding and reconstruct the validated `SearchTask` through the same public profile inputs used by the controller. Resolve, never search:
 
-```python
-def plan_validated_history_round_paths(
-    interface: Mapping[str, Any],
-    private_root: Path,
-    round_index: int,
-) -> Mapping[str, Path]: ...
+- context through `RUN_CONTEXT_RELATIVE_PATH`;
+- public request through `round-{round_index:02d}/measurement_request.json`;
+- private request/task-state/result/actual completion receipt/barrier through `resolve_validated_history_round_paths()`;
+- group receipt through `receipt_path_for_group()`.
 
-def resolve_validated_history_round_paths(
-    interface: Mapping[str, Any],
-    private_root: Path,
-    supplied_public_round_root: Path,
-    round_index: int,
-) -> Mapping[str, Path]: ...
-```
+For each round, require public and private projected request JSON to parse to equal canonical objects and both request hashes to recompute; do not require formatting whitespace to match. Call `require_selected_groups_ready_current_run()` and map each row's `group_id` to its validated receipt; repeated mappings are accepted. Revalidate producer request/row and current artifact/marker digests for every row, then call `translate_history_feedback()` and require four successful rows with `latency_ms > 0`, `energy_j > 0`, and finite `ap30`, `ap50`, `ap70` within `[0, 1]`. Accumulate exactly 16 unique row ids and 16 unique measurement identities using `str(row.get("manifest_job_id") or row["row_id"])`; compute frozen Gold176 identities with the same rule and require the sets disjoint without emitting either set.
 
-`plan_validated_history_round_paths()` validates templates, lexical components that already exist,
-containment, uniqueness, and symlink safety while allowing the planned private round root/leaves to
-be absent. `resolve_validated_history_round_paths()` retains the current runtime requirement that
-the supplied public round root already exists as a safe directory, then delegates private template
-resolution to the planner. Do not weaken the runtime check to make preflight work.
+The CLI accepts only `--contract`, `--local-config`, and `--binding`. On failure print `verification_failed\n`; on success print sorted dataclass JSON. Do not print receipt count, group/producer/q-mode, paths, hashes, nonce, mtimes, artifact details, or metric values.
 
-Create the CLI with:
-
-```python
-def main(argv: Sequence[str] | None = None) -> int:
-    # argparse requires --contract, --local-config, --binding,
-    # --runner-template, and --source-wrapper-profile.
-    try:
-        report = preflight_materializer_training_bridge(
-            public_contract_path=args.contract,
-            local_config_path=args.local_config,
-            private_binding_path=args.binding,
-            runner_template_path=args.runner_template,
-            source_wrapper_profile_path=args.source_wrapper_profile,
-        )
-    except (P6CoptV2XContractError, P6CoptV2XExecutionError):
-        sys.stderr.write("preflight_failed\n")
-        return 1
-    sys.stdout.write(json.dumps(dataclasses.asdict(report), sort_keys=True) + "\n")
-    return 0
-```
-
-Use existing validators from Tasks 1 and 2. Do not call `_run_step()`, `GpuProbe.snapshot()`,
-`run_history_measurement_batch()`, any historical/training/materialization/measurement executable,
-or historical Python imports. Existing read-only `git rev-parse`/`git check-ignore` subprocesses
-inside the repository safety validators are allowed and do not increment
-`historical_process_launch_count`; no other subprocess is allowed in preflight.
-
-For every configured round, call `plan_validated_history_round_paths()` with the validated
-binding/interface and require the exact private round root, measurement-request, task-state,
-actual-feedback, receipt, and finalization-barrier leaves to be absent. Separately require each
-public search round directory to be absent. Never apply public `round-00` basenames to the private
-history tree.
-
-- [ ] **Step 4b: Implement exact-layout completion verification**
-
-Implement the verifier CLI using `load_public_contract()`, `load_local_config()`,
-`validate_history_execution_binding()`, `resolve_validated_history_round_paths()` for the completed
-public/private round pair, and
-`translate_history_feedback()`. Never reconstruct receipt/barrier names, scan directories, emit
-private values, or accept a decoy artifact. The CLI prints only the completion dataclass as sorted
-JSON and maps invalid private evidence to a stable public failure category.
-
-- [ ] **Step 5: Implement fresh-run/relaunch gates**
-
-In `coptv2x_h800_search_v2.py`:
-
-```python
-def _reject_preexisting_public_search_round(round_root: Path) -> None:
-    if round_root.exists() or round_root.is_symlink():
-        raise P6CoptV2XExecutionError(
-            "history_execution_invalid",
-            "public search round output already exists",
-        )
-```
-
-Call this from `_prepare_round_output()` before creating the public search round. Preserve failed
-diagnostics by not deleting scoped round roots automatically. Do not put private history leaf names
-in this controller gate: preflight resolves those exact paths from the binding, and
-`_initialize_private_round()` retains the final just-in-time rejection for the exact private
-measurement-request/task-state/result/receipt/barrier leaves.
-
-- [ ] **Step 6: Run focused tests**
+- [ ] **Step 13: Run focused Task 5 GREEN tests**
 
 Run:
 
 ```bash
 PYTHONPATH=. pytest \
+  tests/stage6/test_p6_history_round_paths.py \
+  tests/stage6/test_p6_fresh_run_controller.py \
   tests/release/test_preflight_p6_materializer_training_bridge.py \
   tests/release/test_verify_p6_materializer_training_run.py \
-  tests/stage6/test_coptv2x_h800_search.py \
-  tests/release/test_run_p6_h800_search.py \
+  tests/stage6/test_p6_source_reuse_measurement.py \
   -q
 ```
 
 Expected: PASS.
 
-- [ ] **Step 7: Quality and privacy gates**
+- [ ] **Step 14: Run Stage6/release regressions, coverage, static no-search, and privacy gates**
 
 Run:
 
 ```bash
+PYTHONPATH=. pytest tests/stage6 tests/release -q
+PYTHONPATH=. pytest -q \
+  --cov=framework \
+  --cov=scripts/reproduce \
+  --cov-report=term-missing \
+  --cov-report=xml \
+  --cov-fail-under=80
 python -m ruff check \
-  tools/release/preflight_p6_materializer_training_bridge.py \
-  tools/release/verify_p6_materializer_training_run.py \
   framework/stage6/coptv2x_h800_search_v2.py \
   framework/stage6/p6_history_measurement_v1.py \
+  tools/release/preflight_p6_materializer_training_bridge.py \
+  tools/release/verify_p6_materializer_training_run.py \
+  tests/stage6/test_p6_history_round_paths.py \
+  tests/stage6/test_p6_fresh_run_controller.py \
   tests/release/test_preflight_p6_materializer_training_bridge.py \
-  tests/release/test_verify_p6_materializer_training_run.py \
-  tests/stage6/test_coptv2x_h800_search.py \
-  tests/release/test_run_p6_h800_search.py
+  tests/release/test_verify_p6_materializer_training_run.py
+rg -n '\.(glob|rglob)\(|os\.walk\(|filename guessing|marker-parent' \
+  framework/stage6/p6_source_reuse_evidence_v1.py \
+  framework/stage6/p6_history_measurement_v1.py \
+  tools/release/preflight_p6_materializer_training_bridge.py \
+  tools/release/verify_p6_materializer_training_run.py
 git diff --check
-PYTHONPATH=. python tools/release/preflight_p6_materializer_training_bridge.py --help >/tmp/p6-preflight-help.txt
 ```
 
-Expected: all commands exit 0; help text contains no private paths.
+Expected: suites pass, project coverage is at least 80%, Ruff/diff exit 0, and `rg` returns no matches. The two CLIs' stdout/stderr contain no injected private path, GPU id, group id, nonce, hash, or metric value.
 
-- [ ] **Step 8: Review boundary**
+- [ ] **Step 15: Fresh implementer/reviewer boundary**
 
-Review only zero-process preflight, exact-layout completion verification, and stale-run prevention. Reject if preflight launches any non-git process, probes GPUs, imports private historical modules, deletes partial diagnostics, or silently resumes a partial round; the existing read-only Git safety subprocesses are the only exception. Also reject if completion verification guesses filenames, scans directories, bypasses existing feedback validators, or emits private identities/paths.
+Review only Task 5-owned controller/path/CLI files and tests. Reject if context creation can occur twice or before task/plan/registry validation; preflight starts Stage1/process/GPU work; planned paths require existence; runtime accepts an absent public round; preexisting context/receipt/11-output/round leaves are ignored; a failed root can resume; completion requires 16 receipts instead of 16 rows; a producer may be later; a decoy file is searched; Gold176 enters measurement; or public output includes private mapping/details. Require a fresh reviewer to rerun Task 5 commands.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 16: Commit**
 
 ```bash
 git add \
-  tools/release/preflight_p6_materializer_training_bridge.py \
-  tools/release/verify_p6_materializer_training_run.py \
   framework/stage6/coptv2x_h800_search_v2.py \
   framework/stage6/p6_history_measurement_v1.py \
+  tools/release/preflight_p6_materializer_training_bridge.py \
+  tools/release/verify_p6_materializer_training_run.py \
+  tests/stage6/test_p6_history_round_paths.py \
+  tests/stage6/test_p6_fresh_run_controller.py \
   tests/release/test_preflight_p6_materializer_training_bridge.py \
-  tests/release/test_verify_p6_materializer_training_run.py \
-  tests/stage6/test_coptv2x_h800_search.py \
-  tests/release/test_run_p6_h800_search.py
-git commit -m "feat: preflight P6 materializer training bridge"
+  tests/release/test_verify_p6_materializer_training_run.py
+git commit -m "feat: bind P6 reuse to one fresh controller run"
 ```
 
 ---
@@ -1709,144 +2199,215 @@ git commit -m "feat: preflight P6 materializer training bridge"
 
 **Files:**
 
-- Modify: `tests/release/test_run_p6_h800_search.py`
-- Modify: `tests/stage6/test_coptv2x_h800_search.py`
-- Modify: `tests/stage6/test_p6_history_measurement.py`
-- Modify: `tests/stage6/test_p6_history_source_materialization.py`
+- Create: `tests/release/p6_source_reuse_lifecycle_fixture.py`
+- Create: `tests/release/test_p6_source_reuse_lifecycle.py`
+- No production file changes are expected; if the test exposes a missing production seam, return to the owning Task 4 or Task 5 review rather than hiding the gap in a fake.
 
 **Interfaces:**
 
-- Consumes: Stage1 fake scan, real Stage2 loader/build adapter, recipe-v2 registry builder, projection, source invocation builder, injected measurement runner.
-- Produces: no production API; this task is an end-to-end test gate proving the lifecycle without GPU/training/measurement process execution.
-
-- [ ] **Step 1: Write RED zero-GPU black-box lifecycle test**
-
-Add to `tests/release/test_run_p6_h800_search.py`:
+- Consumes: real `run_p6_coptv2x_search()`, real Stage2 plan/registry validation, real request projection, real Task 4 public measurement adapter and receipt publication, and Task 5 context/relaunch integration. The fixture injects Stage1/registry/selection/process boundaries only.
+- Produces no production API. `p6_source_reuse_lifecycle_fixture.py` exports:
 
 ```python
-def test_cli_zero_gpu_dynamic_lifecycle_trains_markers_without_gold_remeasurement(
+@dataclass(frozen=True)
+class OfflineReuseLifecycle:
+    call_kwargs: Mapping[str, Any]
+    local_output_root: Path
+    private_root: Path
+    gold176_row_ids: frozenset[str]
+    selected_rows_by_round: tuple[tuple[tuple[str, str], ...], ...]
+    process_records: list[Mapping[str, Any]]
+    source_calls: list[Mapping[str, Any]]
+    downstream_rows: dict[str, list[tuple[str, ...]]]
+
+def build_offline_reuse_lifecycle(
     tmp_path: Path,
-) -> None:
-    paths = _prepare_framework_recipe_v2_training_run(tmp_path)
-    process_log = paths["process_log"]
-
-    result = run_cli(
-        [
-            "--contract",
-            str(paths["contract"]),
-            "--local-config",
-            str(paths["local_config"]),
-            "--code-revision",
-            "rev-zero-gpu-training-bridge",
-        ]
-    )
-
-    assert result.returncode == 0
-    state = json.loads((paths["output_root"] / "state.json").read_text(encoding="utf-8"))
-    assert state["completed_rounds"] == 4
-    assert state["measured_candidate_count"] == 16
-    records = [json.loads(line) for line in process_log.read_text(encoding="utf-8").splitlines()]
-    assert [record["stage"] for record in records if record["stage"] == "stage1"] == ["stage1"]
-    assert [record["fit_count"] for record in records if record["stage"] == "initial_fit"] == [176]
-    assert [record["fit_count"] for record in records if record["stage"] == "online_fit"] == [180, 184, 188]
-    measured_row_ids = {
-        str(row.get("row_id") or row.get("manifest_job_id"))
-        for round_index in range(4)
-        for row in json.loads((paths["output_root"] / f"round-{round_index:02d}" / "measurement_request.json").read_text(encoding="utf-8"))["rows"]
-    }
-    gold_row_ids = {
-        str(row.get("manifest_job_id") or row.get("row_id"))
-        for row in json.loads(paths["gold176_rows"].read_text(encoding="utf-8"))
-    }
-    assert measured_row_ids.isdisjoint(gold_row_ids)
-    assert _all_source_marker_pairs_exist(paths["private_root"])
-    assert _no_gpu_or_training_process_was_launched(records)
+    monkeypatch: pytest.MonkeyPatch,
+) -> OfflineReuseLifecycle: ...
 ```
 
-The fake measurement adapter must:
+The deterministic selected schedule contains 16 unique row ids and intentionally includes both: one canonical group selected as FP16 in round 0 and INT8 in round 2; and another canonical group selected as FP16 plus INT8 in round 1. The test computes expected group/source counts from this schedule and never treats the fixture's candidate-pool or distinct-group count as a product constant.
 
-- read the projected request,
-- create `training_done_marker` and `source_done_marker` per selected group,
-- record source invocation shape only,
-- synthesize feedback only after marker creation,
-- never call GPU, TVM, AP, latency, energy, or historical code.
+- [ ] **Step 1: Write the RED repeated-group offline lifecycle fixture and gate**
 
-- [ ] **Step 2: Add exact dynamic counts and no static fallback assertions**
-
-In the same test, assert:
+Create the two files and add:
 
 ```python
-registry = json.loads((paths["output_root"] / "source_registry.json").read_text(encoding="utf-8"))
-plan = json.loads((paths["output_root"] / "pyramid_candidate_plan.json").read_text(encoding="utf-8"))
-expected_candidate_count = _expected_candidate_count_from_stage2_fixture(paths["stage2_fixture"])
+def test_zero_gpu_dynamic_lifecycle_reuses_group_source_and_runs_all_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = build_offline_reuse_lifecycle(tmp_path, monkeypatch)
+    state = run_p6_coptv2x_search(**fixture.call_kwargs)
+
+    assert state.status == "completed"
+    assert state.completed_rounds == 4
+    assert state.measured_candidate_count == 16
+    selected = [item for round_rows in fixture.selected_rows_by_round for item in round_rows]
+    assert len(selected) == len(set(selected)) == 16
+    selected_group_ids = {group_id for group_id, _q_mode in selected}
+    assert len(fixture.source_calls) == len(selected_group_ids)
+    assert len(fixture.source_calls) < len(selected)
+    assert {call["group_id"] for call in fixture.source_calls} == selected_group_ids
+    assert all(
+        len({call["group_id"] for call in fixture.source_calls if call["round"] == round_index})
+        == len({
+            group_id for group_id, _q_mode in fixture.selected_rows_by_round[round_index]
+            if group_id not in {
+                prior_group
+                for prior_round in fixture.selected_rows_by_round[:round_index]
+                for prior_group, _prior_q in prior_round
+            }
+        })
+        for round_index in range(4)
+    )
+```
+
+Add explicit repeated-group assertions without a literal distinct-group count:
+
+```python
+repeated_later_group = fixture.selected_rows_by_round[0][0][0]
+same_round_group = fixture.selected_rows_by_round[1][0][0]
+assert (repeated_later_group, "int8") in fixture.selected_rows_by_round[2]
+assert {
+    q_mode for group_id, q_mode in fixture.selected_rows_by_round[1]
+    if group_id == same_round_group
+} == {"fp16", "int8"}
+assert len([call for call in fixture.source_calls if call["group_id"] == repeated_later_group]) == 1
+assert len([call for call in fixture.source_calls if call["group_id"] == same_round_group]) == 1
+for stage in ("quantization", "performance", "ap", "finalization"):
+    assert len(fixture.downstream_rows[stage]) == 4
+    assert {
+        row_id for batch in fixture.downstream_rows[stage] for row_id in batch
+    } == _selected_row_ids(fixture.selected_rows_by_round)
+```
+
+The fixture's source-stage fake must:
+
+- receive the exact direct argv/five-key environment from the real public adapter;
+- read the exact projected private request and write all nine artifacts plus two markers for only the requested first-use group;
+- write directory contents in deliberately non-sorted creation order so the canonical digest is exercised;
+- never know, receive, locate, or write the receipt/context path;
+- never spawn a subprocess or touch a GPU.
+
+The real public adapter, not the fake wrapper, calls `validate_and_publish_group_receipt()`. The fake downstream stages read the request and write exact task-state/result/actual completion receipt/barrier evidence for all four row ids and record `(row_id, q_mode)` per stage. They never execute TVM, AP, latency, energy, training, or historical code.
+
+- [ ] **Step 2: Add dynamic Stage2/Gold176/context/receipt assertions**
+
+In the same test, load the exact persisted files:
+
+```python
+registry = _read_json(fixture.local_output_root / "source_registry.json")
+plan = _read_json(fixture.local_output_root / "pyramid_candidate_plan.json")
+expected_candidate_count = _expected_candidate_count_from_fixture(fixture)
 assert registry["schema_version"] == "stage5_candidate_source_registry_v2"
 assert len(registry["groups"]) == plan["structure_count"]
 assert sum(len(group["available_q_modes"]) for group in registry["groups"]) == plan["candidate_count"]
 assert plan["candidate_count"] == expected_candidate_count
 assert expected_candidate_count >= 16
 assert plan["candidate_count"] not in {343, 686}
-assert paths["candidate_source_mode"] == "framework_stage2_search_space"
+assert fixture.call_kwargs["local"].candidate_source_mode == "framework_stage2_search_space"
+
+context = _read_json(fixture.local_output_root / RUN_CONTEXT_RELATIVE_PATH)
+assert context["created_before_round_index"] == 0
+assert context["candidate_plan_sha256"] == canonical_json_sha256(plan)
+assert context["source_registry_sha256"] == canonical_json_sha256(registry)
+assert sum(
+    record.get("event") == "context_publish"
+    for record in fixture.process_records
+) == 1
 ```
 
-The synthetic Stage2 fixture may deterministically yield 126 candidates, but 126 is not a product invariant. Compute the expected count from the fixture/adapter and assert the plan and registry match that count. Separately assert framework mode has no 343/686/static fallback. The real H800 run accepts whatever fresh Stage2 outputs if it is at least the 16-row sample budget and passes plan/registry identity validation.
-
-- [ ] **Step 3: Add source invocation and marker-order assertions**
-
-Assert four selected rows per round and one source invocation per distinct group:
+For every exact public request assert four rows, canonical hashes, and Gold176 disjointness:
 
 ```python
+measured_row_ids: set[str] = set()
 for round_index in range(4):
-    request = json.loads((paths["output_root"] / f"round-{round_index:02d}" / "measurement_request.json").read_text(encoding="utf-8"))
+    request = _read_json(
+        fixture.local_output_root
+        / f"round-{round_index:02d}/measurement_request.json"
+    )
     assert request["round_index"] == round_index
     assert len(request["rows"]) == 4
     assert all(row["source_contract"]["training_required"] is True for row in request["rows"])
-    group_ids = []
-    for row in request["rows"]:
-        group_ids.append(row["group_id"])
-        contract = row["source_contract"]
-        training_marker = Path(contract["training_done_marker"])
-        source_marker = Path(contract["source_done_marker"])
-        assert training_marker.is_file()
-        assert source_marker.is_file()
-        assert training_marker.stat().st_mtime_ns <= source_marker.stat().st_mtime_ns
-    expected_source_calls = sorted(set(group_ids))
-    actual_source_calls = _source_calls_for_round(process_log, round_index)
-    assert [call["group_id"] for call in actual_source_calls] == expected_source_calls
+    assert request["measurement_request_sha256"] == canonical_json_sha256({
+        key: value for key, value in request.items()
+        if key != "measurement_request_sha256"
+    })
+    measured_row_ids.update(row["row_id"] for row in request["rows"])
+assert len(measured_row_ids) == 16
+assert measured_row_ids.isdisjoint(fixture.gold176_row_ids)
+assert not any(
+    row_id in fixture.gold176_row_ids
+    for stage_batches in fixture.downstream_rows.values()
+    for batch in stage_batches
+    for row_id in batch
+)
 ```
 
-- [ ] **Step 4: Run RED test**
+Assert fit input counts are `[176]` for initial and `[180, 184, 188]` for online refits, derived from recorded accepted feedback. Assert no fixed source-call count and no receipt-count field in public state. Load each selected group's exact receipt through `receipt_path_for_group()`, validate it, and assert a repeated group's receipt bytes do not change after its later q-mode.
 
-Run:
+- [ ] **Step 3: Add explicit no-process/no-wrapper-receipt privacy gate**
 
-```bash
-PYTHONPATH=. pytest tests/release/test_run_p6_h800_search.py::test_cli_zero_gpu_dynamic_lifecycle_trains_markers_without_gold_remeasurement -q
-```
-
-Expected: FAIL until fake dynamic lifecycle fixture and marker-writing measurement adapter are wired to the stricter training contract.
-
-- [ ] **Step 5: Implement only test fixtures and adapter hooks required for zero-GPU**
-
-Keep production behavior unchanged unless a production seam from Tasks 1–5 is missing. The fake measurement adapter must never mark success before it has written both markers for each group:
+Add:
 
 ```python
-for row in request["rows"]:
-    contract = row["source_contract"]
-    Path(contract["training_done_marker"]).parent.mkdir(parents=True, exist_ok=True)
-    Path(contract["training_done_marker"]).write_text("trained\n", encoding="utf-8")
-    Path(contract["source_done_marker"]).parent.mkdir(parents=True, exist_ok=True)
-    Path(contract["source_done_marker"]).write_text("source-ready\n", encoding="utf-8")
+for record in fixture.process_records:
+    assert record.get("kind") == "injected_boundary"
+    assert record.get("launched") is False
+assert not any(
+    record.get("stage") in {"gpu", "training", "tvm", "ap", "latency", "energy", "history"}
+    and record.get("launched")
+    for record in fixture.process_records
+)
+assert all("receipt" not in call["argv"] and "context" not in call["env"] for call in fixture.source_calls)
+public_bytes = (fixture.local_output_root / "state.json").read_bytes()
+assert b"PRIVATE-OFFLINE-REUSE-TOKEN" not in public_bytes
 ```
 
-- [ ] **Step 6: Run focused tests**
+- [ ] **Step 4: Run the RED lifecycle test**
 
 Run:
 
 ```bash
 PYTHONPATH=. pytest \
-  tests/release/test_run_p6_h800_search.py \
-  tests/stage6/test_coptv2x_h800_search.py \
-  tests/stage6/test_p6_history_measurement.py \
-  tests/stage6/test_p6_history_source_materialization.py \
+  tests/release/test_p6_source_reuse_lifecycle.py::test_zero_gpu_dynamic_lifecycle_reuses_group_source_and_runs_all_rows \
+  -q
+```
+
+Expected: FAIL until the deterministic repeated-group fixture routes through the real current-run context/receipt adapter and all downstream row evidence.
+
+- [ ] **Step 5: Implement only the offline fixture and injected boundaries**
+
+The fixture builds a Stage2 space with more than 16 `(group_id, q_mode)` rows and monkeypatches only deterministic selection/model scoring so the schedule is reproducible. It invokes the real controller and measurement adapter in-process. The source fake writes exact kinds:
+
+```python
+FILE_KEYS = {
+    "checkpoint_path", "config_path", "onnx_path", "onnx_report_path",
+    "calibration_npz", "calibration_summary",
+}
+DIRECTORY_KEYS = {"checkpoint_dir", "calibration_root", "trt_calibration_dir"}
+for key in DIRECTORY_KEYS:
+    Path(contract[key]).mkdir(parents=True)
+for key in FILE_KEYS:
+    path = Path(contract[key])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(f"{group_id}:{key}\n".encode("ascii"))
+Path(contract["training_done_marker"]).write_bytes(b"trained\n")
+Path(contract["source_done_marker"]).write_bytes(b"source-ready\n")
+```
+
+The fixture must not call a fake receipt writer. If adapter receipt publication is absent or wrong, the test stays RED and returns to Task 4.
+
+- [ ] **Step 6: Run lifecycle and cross-task GREEN gates**
+
+Run:
+
+```bash
+PYTHONPATH=. pytest \
+  tests/release/test_p6_source_reuse_lifecycle.py \
+  tests/stage6/test_p6_source_reuse_measurement.py \
+  tests/stage6/test_p6_fresh_run_controller.py \
+  tests/release/test_verify_p6_materializer_training_run.py \
   -q
 ```
 
@@ -1865,24 +2426,25 @@ PYTHONPATH=. pytest -q \
   --cov-fail-under=80
 PYTHONPATH=. pytest tests/release tests/integration/test_anonymous_archive.py -q
 python -m ruff check framework tools scripts tests
+wc -l \
+  tests/release/p6_source_reuse_lifecycle_fixture.py \
+  tests/release/test_p6_source_reuse_lifecycle.py
 git diff --check
 ```
 
-Expected: all commands exit 0, coverage is at least 80%, and anonymous archive tests find no private values.
+Expected: all commands exit 0, total framework coverage is at least 80%, both new files are under 800 lines, and anonymous archive tests find no private values.
 
-- [ ] **Step 8: Review boundary**
+- [ ] **Step 8: Fresh implementer/reviewer boundary**
 
-Review the full zero-GPU lifecycle only. Reject if Gold176 appears in any measurement request, if static P6.1 registry fallback can satisfy framework mode, if synthetic metrics are accepted without source markers, or if process logs include private paths.
+Review the full zero-GPU lifecycle only. Reject if the fixture publishes receipts, hard-codes a candidate/source/receipt count as a product invariant, omits the later-round or same-round mixed-q case, lets Gold176 enter a request, lets static P6.1 fallback satisfy framework mode, skips downstream work for a reused q-mode, launches GPU/training/TVM/AP/latency/energy/history code, or leaks private paths. Require a fresh reviewer to rerun the lifecycle and full gates.
 
 - [ ] **Step 9: Commit**
 
 ```bash
 git add \
-  tests/release/test_run_p6_h800_search.py \
-  tests/stage6/test_coptv2x_h800_search.py \
-  tests/stage6/test_p6_history_measurement.py \
-  tests/stage6/test_p6_history_source_materialization.py
-git commit -m "test: gate P6 dynamic training lifecycle offline"
+  tests/release/p6_source_reuse_lifecycle_fixture.py \
+  tests/release/test_p6_source_reuse_lifecycle.py
+git commit -m "test: gate P6 source reuse lifecycle offline"
 ```
 
 ---
@@ -1897,10 +2459,10 @@ git commit -m "test: gate P6 dynamic training lifecycle offline"
 
 **Interfaces:**
 
-- Consumes: completed Tasks 1–6, already-cleared ignored private runner template/source-contract/source-map, regenerated private binding/config, H800 private environment, and existing release CLIs.
-- Produces: private ignored run artifacts and public-safe final docs only if all acceptance gates succeed.
+- Consumes: completed and freshly reviewed Tasks 1–6; ignored private source map, source history root, runner template, wrapper profile, and deployment roots; tracked public contract; actual H800/TVM environment; existing derive/normalize/provision/preflight/run/verify CLIs.
+- Produces: one fresh normalized private deployment, one exclusively created context, first-use source training receipts, four exact rounds/16 actual measurements, and public-safe docs only after the completion verifier succeeds.
 
-- [ ] **Step 1: Confirm clean tracked state and full local gates**
+- [ ] **Step 1: Confirm clean tracked state and rerun all implementation gates**
 
 Run:
 
@@ -1918,57 +2480,98 @@ git diff --check
 
 Expected: `git status --short` is empty before private execution; all verification commands pass.
 
-- [ ] **Step 2: Regenerate private binding/config; do not patch old binding**
+- [ ] **Step 2: Validate operator-supplied private inputs without recording values**
 
-Use the existing ignored private source-map, runner template, source wrapper profile, source-contract template, and local output root. Before provisioning, build a fresh private component staging root: copy the verified minimal historical implementation repository/module tree beneath the profile's non-marker implementation subroot; preserve the required validator/import siblings; omit the raw `stage5_materialize_round_sources_v1.sh` marker from that relocated tree; copy the separately validated downstream components; then let the renderer create the one unique source marker referenced by the runner template. Do not copy only the source shell entrypoint, infer its repository root, or overwrite a differing marker.
-
-Private paths are supplied by the operator through already-set environment variables. The plan intentionally does not assign illustrative absolute paths:
+Every real private path remains only in an environment variable or ignored/external artifact. Do not paste values into the shell history transcript, tracked docs, test output, or this plan:
 
 ```bash
 : "${P6_PUBLIC_CONTRACT_JSON:?set to the existing public contract path}"
-: "${P6_LEGACY_LOCAL_CONFIG:?set to the ignored private locator/config path}"
-: "${P6_RUNNER_TEMPLATE_YAML:?set to the ignored staged runner template path}"
+: "${P6_SOURCE_MAP_JSON:?set to the ignored procedural source map}"
+: "${P6_SOURCE_HISTORY_ROOT:?set to the validated source history root}"
+: "${P6_RUNNER_TEMPLATE_YAML:?set to the ignored fresh-deployment runner template}"
 : "${P6_SOURCE_WRAPPER_PROFILE_YAML:?set to the ignored wrapper profile path}"
-: "${P6_LOCAL_OUTPUT_ROOT:?set to a fresh ignored preflight output root}"
+: "${P6_PRIVATE_DERIVATION_DIR:?set to a new ignored derivation directory}"
+: "${P6_FRESH_PRIVATE_DIR:?set to a new ignored normalized deployment root}"
+: "${P6_FRESH_LOCAL_OUTPUT_ROOT:?set to a new ignored real-run output root}"
 : "${P6_CODE_REVISION_LABEL:?set to a public-safe non-digest revision label}"
+test -f "${P6_PUBLIC_CONTRACT_JSON}"
+test -f "${P6_SOURCE_MAP_JSON}"
+test -d "${P6_SOURCE_HISTORY_ROOT}"
+test -f "${P6_RUNNER_TEMPLATE_YAML}"
+test -f "${P6_SOURCE_WRAPPER_PROFILE_YAML}"
 ```
 
-Run:
+Expected: all checks exit 0 without printing a path.
+
+- [ ] **Step 3: Preflight exact freshness before deployment**
+
+The derivation, normalized deployment, and local output roots must all be absent. Do not scan, empty, or repair an existing root:
 
 ```bash
-: "${P6_LEGACY_LOCAL_CONFIG:?}"
-: "${P6_RUNNER_TEMPLATE_YAML:?}"
-: "${P6_SOURCE_WRAPPER_PROFILE_YAML:?}"
-: "${P6_LOCAL_OUTPUT_ROOT:?}"
-mkdir -p "${P6_LOCAL_OUTPUT_ROOT}"
+test ! -e "${P6_PRIVATE_DERIVATION_DIR:?}"
+test ! -e "${P6_FRESH_PRIVATE_DIR:?}"
+test ! -e "${P6_FRESH_LOCAL_OUTPUT_ROOT:?}"
+install -d -m 0700 "${P6_PRIVATE_DERIVATION_DIR}"
+```
+
+If any `test ! -e` fails, stop and choose a new scoped ignored root. Do not delete the existing root.
+
+- [ ] **Step 4: Derive the canonical recipe and normalize/deploy the complete private root**
+
+Derive from the ignored source map and validated runner template, then use the normalizer as the reviewed deployment mechanism. It copies the complete approved component/module tree and required sibling imports, not only the source entrypoint. The relocated tree omits the raw marker wrapper; Task 2's renderer creates the unique validated marker during provisioning.
+
+```bash
+PYTHONPATH=. python tools/release/derive_p6_history_recipe.py \
+  --source-map "${P6_SOURCE_MAP_JSON:?}" \
+  --runner-template "${P6_RUNNER_TEMPLATE_YAML:?}" \
+  --recipe-json "${P6_PRIVATE_DERIVATION_DIR:?}/recipe.json"
+PYTHONPATH=. python tools/release/normalize_p6_history_root.py \
+  --source-map "${P6_SOURCE_MAP_JSON:?}" \
+  --history-root "${P6_SOURCE_HISTORY_ROOT:?}" \
+  --private-dir "${P6_FRESH_PRIVATE_DIR:?}" \
+  --runner-template "${P6_RUNNER_TEMPLATE_YAML:?}"
+test -f "${P6_PRIVATE_DERIVATION_DIR}/recipe.json"
+test -f "${P6_FRESH_PRIVATE_DIR}/derivation/recipe.json"
+test -f "${P6_FRESH_PRIVATE_DIR}/legacy.local.yaml"
+```
+
+Expected: stdout is only `p6_history_recipe_derived` and `p6_history_root_normalized`; stderr is empty; tracked Git state remains unchanged. Reject any ambiguous component/source selection, missing import sibling, raw duplicate marker, symlink, or nonignored destination.
+
+- [ ] **Step 5: Provision one fresh binding/config pair; do not patch an old pair**
+
+Create the local root once and provision through the reviewed CLI:
+
+```bash
+install -d -m 0700 "${P6_FRESH_LOCAL_OUTPUT_ROOT:?}"
 PYTHONPATH=. python tools/release/provision_p6_full_chain_local_config.py \
-  --legacy-local-config "${P6_LEGACY_LOCAL_CONFIG}" \
-  --runner-template "${P6_RUNNER_TEMPLATE_YAML}" \
-  --local-output-root "${P6_LOCAL_OUTPUT_ROOT}" \
-  --binding-output "${P6_LOCAL_OUTPUT_ROOT}/binding.json" \
-  --config-output "${P6_LOCAL_OUTPUT_ROOT}/local-config.json" \
-  --source-wrapper-profile "${P6_SOURCE_WRAPPER_PROFILE_YAML}"
+  --legacy-local-config "${P6_FRESH_PRIVATE_DIR:?}/legacy.local.yaml" \
+  --runner-template "${P6_RUNNER_TEMPLATE_YAML:?}" \
+  --local-output-root "${P6_FRESH_LOCAL_OUTPUT_ROOT:?}" \
+  --binding-output "${P6_FRESH_LOCAL_OUTPUT_ROOT}/binding.json" \
+  --config-output "${P6_FRESH_LOCAL_OUTPUT_ROOT}/local-config.json" \
+  --source-wrapper-profile "${P6_SOURCE_WRAPPER_PROFILE_YAML:?}"
 ```
 
 Expected:
 
 - old V2 binding lacking `training_required: true` fails preflight/provisioning;
 - regenerated binding accepts only if the wrapper is self-contained and the source contract template has all static Pyramid training fields;
-- stdout/stderr contains no private paths in tracked logs.
+- the exact five-key environment remains unchanged;
+- stdout is only `p6_full_chain_config_written`; no private path is echoed or stored in tracked output.
 
-- [ ] **Step 3: Run zero-process private preflight**
+- [ ] **Step 6: Run the zero-process private preflight before Stage1/controller launch**
 
 Run:
 
 ```bash
 : "${P6_PUBLIC_CONTRACT_JSON:?}"
-: "${P6_LOCAL_OUTPUT_ROOT:?}"
+: "${P6_FRESH_LOCAL_OUTPUT_ROOT:?}"
 : "${P6_RUNNER_TEMPLATE_YAML:?}"
 : "${P6_SOURCE_WRAPPER_PROFILE_YAML:?}"
 PYTHONPATH=. python tools/release/preflight_p6_materializer_training_bridge.py \
   --contract "${P6_PUBLIC_CONTRACT_JSON}" \
-  --local-config "${P6_LOCAL_OUTPUT_ROOT}/local-config.json" \
-  --binding "${P6_LOCAL_OUTPUT_ROOT}/binding.json" \
+  --local-config "${P6_FRESH_LOCAL_OUTPUT_ROOT}/local-config.json" \
+  --binding "${P6_FRESH_LOCAL_OUTPUT_ROOT}/binding.json" \
   --runner-template "${P6_RUNNER_TEMPLATE_YAML}" \
   --source-wrapper-profile "${P6_SOURCE_WRAPPER_PROFILE_YAML}"
 ```
@@ -1987,36 +2590,17 @@ Expected public-safe JSON:
 }
 ```
 
-If this fails, stop this task, preserve private diagnostics under the ignored output root, do not update docs, and do not relaunch in-place.
-
-- [ ] **Step 4: Start a fresh private output root for the real run**
-
-Use a new ignored private local output root, or explicitly clean only a scoped ignored root after reviewing the exact directory. Do not remove a repository root, home directory, broad workspace, or unscoped path. Do not reuse a partial round directory.
-
-The operator creates and exports a new ignored `P6_FRESH_LOCAL_OUTPUT_ROOT` outside tracked/public artifacts. Validate it instead of assigning a fake example path, then provision it:
-
-```bash
-: "${P6_FRESH_LOCAL_OUTPUT_ROOT:?set to a new ignored real-run output root}"
-mkdir -p "${P6_FRESH_LOCAL_OUTPUT_ROOT}"
-PYTHONPATH=. python tools/release/provision_p6_full_chain_local_config.py \
-  --legacy-local-config "${P6_LEGACY_LOCAL_CONFIG:?}" \
-  --runner-template "${P6_RUNNER_TEMPLATE_YAML:?}" \
-  --local-output-root "${P6_FRESH_LOCAL_OUTPUT_ROOT}" \
-  --binding-output "${P6_FRESH_LOCAL_OUTPUT_ROOT}/binding.json" \
-  --config-output "${P6_FRESH_LOCAL_OUTPUT_ROOT}/local-config.json" \
-  --source-wrapper-profile "${P6_SOURCE_WRAPPER_PROFILE_YAML:?}"
-```
-
-Fresh-run criteria before launch are checked in two namespaces:
+This preflight must report zero historical process launches and zero GPU probes. It validates exact absence in two namespaces:
 
 - Stage1 manifest path is absent.
-- `source_registry.json` destination is absent and is not a symlink.
-- Public search `round-00` through `round-03` directories are absent; these contain only the search controller's request/feedback/failure leaves.
-- For private history rounds 0 through 3, the exact round root, measurement-request, task-state, actual-feedback, receipt, and finalization-barrier paths resolved from the validated binding templates are absent. No filename guessing or directory scan is allowed.
-- Any marker destinations statically renderable from the fresh registry/plan are absent. Because selected requests do not exist before Stage1/selection, each selected projected marker pair is also checked for absence immediately before its source invocation.
-- `state.json` is absent.
+- `pyramid_candidate_plan.json`, `source_registry.json`, `state.json`, and public `round-00` through `round-03` are absent.
+- `.p6-materializer-training-bridge-v1`, context, receipt namespace, and `materialized` are absent.
+- For private history rounds 0 through 3, exact round root, request, task-state, actual result, actual completion receipt, and barrier paths are absent.
+- Binding/config files intentionally present are valid and are not mistaken for stale run output.
 
-- [ ] **Step 5: Execute the fresh H800 run**
+If this fails, preserve private diagnostics, do not update docs, and do not relaunch in place.
+
+- [ ] **Step 7: Execute exactly one fresh Stage1→Stage2→Gold176→4×4 H800/TVM controller run**
 
 Run:
 
@@ -2038,11 +2622,15 @@ Expected:
 - Round 0 fits Gold176 cold-start rows only; Gold176 rows are not sent to measurement.
 - Four rows are selected in each of four rounds.
 - Source materializer no longer fails with the deterministic private import error.
-- For each selected group, private evidence shows training/fine-tuning marker before source marker and before downstream TVM/AP/latency/energy stages.
+- The controller creates exactly one current-run context before round 0 measurement/GPU/activation.
+- Every first-used group performs one real materialization/training call and publishes one adapter-owned receipt after all 11 outputs and first-use marker order validate.
+- If the search selects a later q-mode of a group, it performs zero later source calls for that group while still running its quantization/TVM/AP/latency/energy path. If all 16 rows happen to have distinct groups, 16 receipts are valid; sharing is permitted, not forced.
+- Same-round mixed q-mode, if selected, performs one source call and both downstream rows.
 - Online refits occur after accepted feedback for rounds 0, 1, and 2 with counts 180, 184, and 188.
-- No failed or fabricated metrics are treated as successful measurements.
+- The one controller invocation is the only run. No manual wrapper, Gold176 measurement, synthetic feedback, per-row retraining, partial retry, or second controller is allowed.
+- No failed, non-finite, or fabricated metrics are treated as success.
 
-- [ ] **Step 6: Validate private completion without leaking details**
+- [ ] **Step 8: Run the exact completion verifier once**
 
 Run the reviewed verifier against the exact binding and output-layout contract. It may inspect ignored private artifacts but prints only a public-safe summary:
 
@@ -2053,22 +2641,33 @@ PYTHONPATH=. python tools/release/verify_p6_materializer_training_run.py \
   --binding "${P6_FRESH_LOCAL_OUTPUT_ROOT}/binding.json"
 ```
 
-Expected: the verifier resolves each task-state/result/receipt/barrier from the validated binding templates, never by directory scan; validates completed state, four rounds of four rows, request/row/source-contract/source-evidence hashes, translated feedback identity, exactly five finite metrics, positive latency/energy, bounded AP values, training-before-source marker order, 16 unique rows, and zero overlap with frozen Gold176 measurement identities. It prints only sorted public-safe JSON equivalent to `status=completed`, `completed_rounds=4`, `selected_rows=16`, and `gold176_remeasured_rows=0`.
+Expected: the verifier resolves one context, four exact public/private requests, every task-state/result/actual completion receipt/barrier, and each deterministic group receipt without scans. It accepts fewer than 16 distinct receipts when rows share groups, but requires exactly 16 unique row ids and successful row measurements. It validates current-run context/receipt identities, producer request/row from the same or an earlier round, all current artifact/marker hashes, exactly five finite metrics, positive latency/energy, AP in `[0, 1]`, and zero Gold176 overlap. Public output contains only:
 
-- [ ] **Step 7: If real run fails, stop without docs**
+```json
+{
+  "completed_rounds": 4,
+  "gold176_remeasured_rows": 0,
+  "schema_version": "p6_materializer_training_bridge_completion_v1",
+  "selected_rows": 16,
+  "status": "completed"
+}
+```
 
-If any selected candidate cannot train/fine-tune, import failure persists, markers are missing, feedback fails validation, Gold176 is remeasured, or downstream metrics are absent/invalid:
+- [ ] **Step 9: On any failure, stop without docs or in-place resume**
+
+If source/runtime/context/receipt/artifact/feedback/GPU validation fails, any selected candidate cannot train, Gold176 enters measurement, downstream omits a row, or metrics are absent/invalid:
 
 - preserve ignored private diagnostics,
 - do not replace failed feedback with synthetic success,
-- do not skip candidates,
+- do not repair/delete individual context, receipts, markers, artifacts, requests, state, feedback, or barriers,
+- do not skip or substitute candidates,
 - do not switch to static registry,
 - do not update final docs,
-- start any retry from a new ignored private output root after fixing the cause.
+- after fixing the cause, restart derive/normalize/provision/preflight/run from new ignored derivation, deployment, and output roots.
 
-- [ ] **Step 8: Conditionally update public docs after success**
+- [ ] **Step 10: Conditionally update public docs only after verifier success**
 
-Only after Step 6 succeeds, update docs with stable public-safe facts:
+Only after Step 8 succeeds, update docs with stable public-safe facts:
 
 ```markdown
 ## P6 V2 materializer training bridge
@@ -2078,12 +2677,12 @@ Only after Step 6 succeeds, update docs with stable public-safe facts:
 - Stage1/Stage2 dynamic Pyramid/H800/TVM candidate generation fed four P6 rounds.
 - Gold176 was used only as cold-start cost-model evidence and was not remeasured.
 - Four rounds completed with 16 unique selected measurement rows.
-- Each selected group produced training and source markers before downstream TVM/AP/latency/energy stages.
+- Every selected row mapped to validated adapter-owned current-run source evidence before its downstream q-specific stages.
 ```
 
-Do not include private paths, dataset names beyond public labels, checkpoint paths, GPU UUIDs, hostnames, raw logs, candidate IDs, metric values, stdout/stderr, or static hyperparameter values.
+Do not disclose receipt count, which rows shared a receipt, producer row/round/q-mode, group/candidate ids, nonce, hash, path, mtime, artifact name/detail, metric value, dataset/checkpoint, GPU UUID, hostname, raw log, stdout/stderr, or static hyperparameter value.
 
-- [ ] **Step 9: Run final docs/privacy gates**
+- [ ] **Step 11: Run final docs/privacy and full repository gates**
 
 Run:
 
@@ -2100,15 +2699,21 @@ for path in [Path("docs/AAAI27_RELEASE_AUDIT.md"), Path("docs/release-manifests/
         for token in blocked:
             assert token not in text, f"{token} leaked in {path}"
 PY
+PYTHONPATH=. pytest -q \
+  --cov=framework \
+  --cov=scripts/reproduce \
+  --cov-report=term-missing \
+  --cov-report=xml \
+  --cov-fail-under=80
 ```
 
 Expected: all commands exit 0.
 
-- [ ] **Step 10: Review boundary**
+- [ ] **Step 12: Fresh real-run reviewer boundary**
 
-Review only public docs and the public-safe completion evidence. Reject if docs are updated before real success, if docs include private/static values, or if run closure is claimed with fewer than four completed rounds and 16 selected rows.
+Review exact verifier output and the conditional public-doc diff. Reject if closure depends on global group uniqueness, per-row retraining, bare markers, 16 receipts rather than 16 rows, a later-round producer, missing q-specific downstream work, non-finite metrics, Gold176 measurement, a relaunch, or private disclosure. The reviewer inspects ignored evidence locally but copies only stable public status into the review report.
 
-- [ ] **Step 11: Commit**
+- [ ] **Step 13: Commit only conditional docs**
 
 Only if docs were updated after real success:
 
@@ -2121,6 +2726,63 @@ If docs were not updated because the private run failed or was not executed, do 
 
 ---
 
+## Task Ordering, Sequential Dependencies, and Ownership Conflicts
+
+| Order | Owner | Depends on | Fresh review boundary | Shared-file rule |
+| --- | --- | --- | --- | --- |
+| Completed Task 1 | Training contract | None | Accepted in ledger | Historical content preserved |
+| Completed Task 2 | Wrapper profile/provisioning | Task 1 | Accepted in ledger | Historical content preserved |
+| Completed Task 3 | Projection/hash gates | Tasks 1–2 | Accepted in ledger | Historical content preserved |
+| Task 4 | Evidence schemas, paths, digests, classification, receipt publication, measurement routing | Task 3 | Fresh implementer + fresh focused reviewer | Owns new evidence module; only routing in measurement/source modules; migrates paused diff in place |
+| Task 5 | Controller context creation, exact path planner/resolver, zero-process preflight, completion verifier, relaunch rejection | Task 4 | Fresh implementer + fresh focused reviewer | Sequentially edits measurement/controller after Task 4; no parallel ownership |
+| Task 6 | Offline repeated-group lifecycle | Tasks 4–5 | Fresh test implementer + fresh lifecycle reviewer | Test-only new files; production gaps return to owner |
+| Task 7 | Private deploy/run/verification/docs | Tasks 1–6 all green | Fresh real-run evidence/docs reviewer | No tracked code; docs only after verifier success |
+
+Do not implement Tasks 4 and 5 in parallel: both touch `p6_history_measurement_v1.py`, and Task 5 consumes Task 4's stable evidence APIs. Do not let Task 6 patch production under a test-only commit. The five paused Task 4 modifications remain in the worktree and are migrated by the Task 4 implementer; no task may reset/stash/discard them. Existing files over 800 lines receive routing or fixture migration only; all new focused files start below 800 lines and must remain there.
+
+## Acceptance Matrix
+
+| Scenario | Classification | Source invocation | Downstream q-specific stages | Acceptance |
+| --- | --- | ---: | ---: | --- |
+| New group; receipt and all 11 leaves absent | `UNSEEN` | Once for group | Every selected row | Validate bundle, adapter publishes receipt, proceed |
+| FP16 producer; later INT8 same group/current run | `READY_CURRENT_RUN` | Zero later | INT8 row runs | Accept after producer/current digest validation |
+| INT8 producer; later FP16 same group/current run | `READY_CURRENT_RUN` | Zero later | FP16 row runs | Accept after producer/current digest validation |
+| FP16 + INT8 same group/same round | One `UNSEEN` group | Once | Both rows run | Lexicographically smallest row is producer |
+| Four ready groups in a later request | All `READY_CURRENT_RUN` | Zero | All four rows run | Accept |
+| Bare markers/artifacts without receipt | `INVALID_PARTIAL` | Zero | Zero | `p6_source_reuse_partial`; redacted stop |
+| Receipt with any missing artifact/marker | `INVALID_PARTIAL` | Zero | Zero | `p6_source_reuse_partial`; redacted stop |
+| Complete receipt copied from another run/root/task/revision/plan/registry | `INVALID_STALE` | Zero | Zero | `p6_source_reuse_stale`; redacted stop |
+| Current receipt with artifact/marker/producer/contract hash drift | `INVALID_MISMATCH` | Zero | Zero | `p6_source_reuse_mismatch`; redacted stop |
+| Wrapper creates a receipt | `INVALID_MISMATCH` after source | Source already returned | Zero | Preserve leaf; new root required |
+| Symlink, hard link, path escape, FIFO/device/socket, wrong type | `INVALID_MISMATCH` | Zero unless created by wrapper | Zero | Redacted stop |
+| Four rounds, 16 unique q-level rows, fewer than 16 valid receipts | All valid | Distinct first-use groups only | 16 rows | Completion accepts |
+| Four rounds, 16 unique q-level rows, 16 valid receipts | All valid | 16 first-use groups | 16 rows | Completion accepts |
+| Any Gold176 row enters measurement | Irrelevant | Stop | Stop | Completion rejects |
+| Failed/partial root relaunched | Invalid fresh-run destination | Zero new work | Zero | New root required |
+
+## Failure Category and Public-Privacy Matrix
+
+| Internal condition | Private stable category | Public category/output |
+| --- | --- | --- |
+| Request/row/q-mode/request hash drift | Existing request validator | `history_request_invalid` |
+| Partial source evidence | `p6_source_reuse_partial` | `history_execution_invalid` only |
+| Cross-run/root/task/revision/plan/registry evidence | `p6_source_reuse_stale` | `history_execution_invalid` only |
+| Receipt/artifact/marker/producer/type/link/path mismatch | `p6_source_reuse_mismatch` | `history_execution_invalid` only |
+| Invalid binding/context/source contract/projection | Existing stable validator | `history_execution_invalid` |
+| H800 identity/occupancy admission failure | Existing GPU validator | `history_gpu_admission_failed` |
+| Validated private process returns nonzero | Existing executor | `history_execution_failed` |
+| Preexisting/unsafe planned destination | Exact path gate | `unsafe_destination` or existing `unsafe_output` |
+| Outer measurement command fails | Controller step | `command_failed` |
+
+No public exception/report/state may include internal state name, path, argv, environment, group/row/q-mode, producer, receipt count/mapping, nonce, hash, mtime, artifact detail, metric value, GPU UUID, hostname, traceback, or raw stdout/stderr.
+
+## Explicitly Rejected Implementations
+
+- **A — global group uniqueness:** rejected because it changes the row-level `(group_id, q_mode)` search space/acquisition behavior and can prevent 16 valid selected rows.
+- **B — per-row or per-q-mode retraining:** rejected because recipe-v2 owns one q-independent trained bundle per canonical group and duplicate training would race on shared paths.
+- **Bare-marker reuse:** rejected because marker presence/mtime binds none of task, revision, root, plan, registry, nonce, producer request/row, contract, or artifact content.
+- **In-place resume/repair:** rejected because create-only context/receipt/source evidence makes a partial root diagnostic evidence, not a resumable cache.
+
 ## Spec Requirement Mapping
 
 | Spec requirement | Task coverage |
@@ -2129,27 +2791,80 @@ If docs were not updated because the private run failed or was not executed, do 
 | Enforce `training_required: true` and static Pyramid training fields | Task 1 binding/registry validation; Task 3 projection preservation |
 | Preserve static fields through projection and hashes | Task 3 projection tests and hash recomputation |
 | Reject incomplete recipe-v2 source contracts | Task 1 and Task 5 preflight |
-| Render one shared source bundle per Pyramid group | Task 1 registry integration; Task 3 projection drift tests; Task 6 lifecycle assertions |
+| Render one shared source bundle per Pyramid group | Task 1 registry integration; Task 3 projection drift tests; Task 4 first-use receipt; Task 6 lifecycle |
 | Remove untrusted output aliases before canonical group contract hash | Task 1 registry integration; Task 3 projection tests |
-| Public/private boundary and no private leakage | Tasks 1, 2, 4, 5, 7 privacy gates |
-| Source materializer direct argv per group | Tasks 2, 3, 4, 6 |
-| Gate downstream stages on training/source markers | Task 4 and Task 6 |
-| Zero-process preflight before activation/GPU/historical execution | Task 5 |
+| Immutable run context bound to task/revision/root/plan/registry/nonce | Task 4 schemas/persistence; Task 5 controller integration |
+| Deterministic exact paths and no search | Tasks 4–5 path APIs/static scans |
+| Lexical/resolved/symlink/type/hard-link safety | Task 4 path/digest matrix; Task 5 planned/runtime roots |
+| Adapter-only exclusive receipt publication | Task 4 publication/wrapper-receipt tests; Task 6 real adapter fake |
+| Current-run first-use/reuse classification | Task 4 unit/integration; Task 6 full lifecycle |
+| Public/private boundary and no private leakage | Tasks 1, 2, 4, 5, 6, 7 privacy gates |
+| Source materializer direct argv once per first-use group | Tasks 2, 3, 4, 6 |
+| Gate all downstream stages on validated current-run evidence | Tasks 4 and 6 |
+| Same-round mixed q-mode and later-round reuse | Task 4 integration and Task 6 end-to-end |
+| Zero-process preflight before Stage1/activation/GPU/history execution | Task 5 CLI; Task 7 invocation order |
 | Zero-GPU black-box dynamic lifecycle | Task 6 |
 | Fresh Stage1/Stage2 through four rounds | Task 6 fake lifecycle; Task 7 real H800 run |
 | No Gold176 remeasurement | Task 6 and Task 7 |
-| No in-place partial resume | Task 5 and Task 7 |
+| Completion maps 16 rows to a dynamic number of receipts | Task 5 verifier; Task 6 lifecycle; Task 7 real verifier |
+| No in-place partial resume | Tasks 4, 5, and 7 |
 | Preserve v1/static compatibility | Tasks 1, 3, 5 focused regression commands |
 | Final docs conditional on real completion | Task 7 only |
 
 ---
 
-## Self-Review
+## Final Full Gates Before Task 7 or Merge Handoff
+
+Run from a clean tracked worktree after Task 6:
+
+```bash
+PYTHONPATH=. pytest -q \
+  --cov=framework \
+  --cov=scripts/reproduce \
+  --cov-report=term-missing \
+  --cov-report=xml \
+  --cov-fail-under=80
+PYTHONPATH=. pytest tests/release tests/integration/test_anonymous_archive.py -q
+python -m ruff check framework tools scripts tests
+python -m compileall -q framework tools scripts tests
+git diff --check
+rg -n '\.(glob|rglob)\(|os\.walk\(' \
+  framework/stage6/p6_source_reuse_evidence_v1.py \
+  tools/release/preflight_p6_materializer_training_bridge.py \
+  tools/release/verify_p6_materializer_training_run.py
+python - <<'PY'
+from pathlib import Path
+
+limits = [
+    Path("framework/stage6/p6_source_reuse_evidence_v1.py"),
+    Path("tests/stage6/test_p6_source_reuse_evidence_paths.py"),
+    Path("tests/stage6/test_p6_source_reuse_evidence_receipts.py"),
+    Path("tests/stage6/test_p6_source_reuse_measurement.py"),
+    Path("tests/stage6/test_p6_history_round_paths.py"),
+    Path("tests/stage6/test_p6_fresh_run_controller.py"),
+    Path("tools/release/preflight_p6_materializer_training_bridge.py"),
+    Path("tools/release/verify_p6_materializer_training_run.py"),
+    Path("tests/release/test_preflight_p6_materializer_training_bridge.py"),
+    Path("tests/release/test_verify_p6_materializer_training_run.py"),
+    Path("tests/release/p6_source_reuse_lifecycle_fixture.py"),
+    Path("tests/release/test_p6_source_reuse_lifecycle.py"),
+]
+for path in limits:
+    count = len(path.read_text(encoding="utf-8").splitlines())
+    assert count < 800, f"{path} has {count} lines"
+PY
+```
+
+Expected: all pytest/lint/compile/diff/privacy gates pass, coverage is at least 80%, the no-search `rg` has no matches, and every focused file is below 800 lines.
+
+## Plan Self-Review
 
 - [ ] Spec coverage: every goal, invariant, fail-closed category, public/private rule, TDD matrix row, provisioning rule, preflight rule, relaunch rule, and closure criterion maps to at least one task above.
-- [ ] Placeholder scan: the plan contains no unresolved placeholder instructions or unbounded “write broad tests later” steps. Task 7 uses concrete operator-supplied private environment variables (`P6_PUBLIC_CONTRACT_JSON`, `P6_LEGACY_LOCAL_CONFIG`, `P6_RUNNER_TEMPLATE_YAML`, `P6_SOURCE_WRAPPER_PROFILE_YAML`, `P6_LOCAL_OUTPUT_ROOT`, `P6_FRESH_LOCAL_OUTPUT_ROOT`, `P6_CODE_REVISION_LABEL`) with shell `${VAR:?}` gates and Python `os.environ`; these are intentional runtime inputs, not unresolved path placeholders.
+- [ ] Placeholder scan: the plan contains no unresolved implementation marker, deferred-fill instruction, unbounded test instruction, or unresolved private example path. Task 7's named environment variables are required operator inputs guarded with `${VAR:?}`, not missing implementation details.
 - [ ] Red-flag scan: run the literal-token scan requested by the reviewer against this plan and keep it clean before handoff.
-- [ ] Type consistency: function names and constants are stable across tasks: `validate_recipe_v2_training_template()`, `validate_recipe_v2_group_training_contract()`, `validate_projected_training_contract()`, `validate_projected_training_marker_pairs()`, `validate_self_contained_source_wrapper(..., source_wrapper_profile=...)`, `materialize_full_chain_binding(..., *, source_wrapper_profile: Path | None = None) -> dict[str, Any]`, `plan_validated_history_round_paths()`, `resolve_validated_history_round_paths()`, `preflight_materializer_training_bridge(..., source_wrapper_profile_path=...)`, `verify_materializer_training_run()`, `historical_process_launch_count`, and binding-owned `EXPECTED_HISTORY_ENV_KEYS`.
-- [ ] File-size check: new validators are split into focused modules; existing over-limit files receive routing glue only.
+- [ ] Type consistency: Task 4 owns `P6FreshRunContext`, `P6GroupSourceReceipt`, `P6GroupReuseDecision`, `plan_source_reuse_paths()`, `resolve_existing_source_reuse_paths()`, `create_fresh_run_context()`, `load_fresh_run_context()`, `classify_selected_group_sources()`, `first_use_group_ids()`, `validate_and_publish_group_receipt()`, and `require_selected_groups_ready_current_run()`; Tasks 5–7 consume those exact names/types. Binding-owned `EXPECTED_HISTORY_ENV_KEYS` remains the sole five-key owner.
+- [ ] Sequential consistency: Task 4 first uses the existing runtime round resolver; Task 5 exposes the planned/runtime pair and updates Task 4 routing. Task 6 changes tests only. Task 7 changes docs only after success.
+- [ ] File-size check: new evidence/path/controller/lifecycle test files are split up front; existing over-limit controller/measurement/test files receive routing glue only.
 - [ ] Security/privacy check: public projection, docs, stderr, tests, and release manifests must not contain private paths, GPU UUIDs, raw logs, checkpoints, datasets, hostnames, candidate IDs, or static training values.
-- [ ] Completion check: Task 7 docs are explicitly conditional on private preflight plus successful fresh four-round H800 completion.
+- [ ] Reuse semantics check: no task enforces global group uniqueness, retrains per q-mode/row, treats bare markers as reuse authority, or compares later consumer request mtime to first-use markers.
+- [ ] Completion check: Task 7 docs are explicitly conditional on zero-process preflight, one fresh real run, and the exact completion verifier accepting four rounds/16 rows/zero Gold176 overlap; receipt count may be below 16.
