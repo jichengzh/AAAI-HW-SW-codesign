@@ -1,307 +1,800 @@
 # P6 V2 Materializer Training Bridge Design
 
-## Status and root cause evidence
+## Status and approved architecture ruling
 
-Status: approved design for the `p6-materializer-training-bridge` branch. This document specifies the smallest architecture change that keeps P6 faithful to CoptV2X while fixing the observed real-run failure.
+Status: approved architecture correction for the `p6-materializer-training-bridge` branch. This document is the design authority; it does not claim that the
+runtime, preflight, verifier, or private H800 run is complete.
 
-Observed run state:
+The observed failure remains a deterministic private source-wrapper/import
+packaging defect. The public adapter correctly invokes direct argv from the
+private round cwd with `shell=False` and the exact five-key environment. The
+private wrapper must make its own imports deterministic. Recipe-v2 must also
+require real selected-candidate training/fine-tuning and complete static
+Pyramid training inputs.
 
-- Stage1/Stage2 dynamic Pyramid/H800/TVM candidate generation completed and produced a fresh dynamic candidate pool, including the observed 126 FP16 candidates.
-- Gold176 loaded and was used as cold-start cost-model data.
-- Round 0 selected four rows and emitted a `stage5_measurement_request_v2` request.
-- The measurement command failed before any selected candidate was materialized, trained, fine-tuned, exported, compiled, measured, or evaluated.
+The approved correction is:
 
-Root cause:
+- Materialize and train a canonical Pyramid group on its first use in one
+  fresh four-round run.
+- Reuse that q-independent trained source bundle for a later selected
+  `q_mode` of the same group only after cryptographic and structural
+  validation of an adapter-owned receipt bound to the current fresh run.
+- Keep `q_mode` as a row-level search dimension. The 16 selected row
+  identities remain `(group_id, q_mode)` genomes even when fewer than 16
+  group-level bundles are trained.
+- Run every q-specific downstream stage for every selected row. Reuse skips
+  only the group-level source-materialization/training invocation.
 
-- The public activation wrapper path and invocation shape are correct: the adapter invokes the validated private activation executable with the `private-bound` argument.
-- The failing historical V2 source materializer imports a validator from its own repository as if the process cwd or `PYTHONPATH` were the historical repo root.
-- The production adapter intentionally runs from the private round cwd with direct argv, `shell=False`, and the exact five-key private environment. It does not inherit ambient environment and does not set `PYTHONPATH`.
-- Therefore the import failure is deterministic and is a private wrapper/import packaging defect, not a Stage1/Stage2 candidate defect or a Gold176 cost-model defect.
-
-Latent correctness failure:
-
-- Recipe-v2 projection currently provides shared materialization output paths, but the selected V2 source contracts can lack an explicit real-training mandate and Pyramid static training inputs.
-- If `training_required` is missing or false, the historical V2 defaults can skip training, assume nonexistent checkpoints, or treat output paths as already satisfied.
-- That would violate the P6 claim even after the import failure is fixed.
+This design rejects global group uniqueness, per-q-mode or per-row retraining,
+and reuse based only on marker presence.
 
 ## Goals
 
-- Keep CoptV2X lifecycle semantics: dynamic Stage1/Stage2 candidates, Gold176 cold-start cost-model retraining, four rounds, four selected candidates per round, and 16 total selected measurement slots.
-- Ensure every selected candidate is really trained or fine-tuned before TVM compilation, AP evaluation, latency measurement, and energy measurement.
-- Keep Gold176 as cost-model cold-start evidence only. Gold176 is never remeasured by this run.
-- Keep private paths, commands, raw logs, checkpoints, datasets, GPU UUIDs, and host details out of the public contract and public artifacts.
-- Make historical imports deterministic without weakening the public adapter environment boundary.
-- Fail closed before process launch when a private wrapper, binding, recipe-v2 contract, output layout, or static training contract is incomplete.
+- Preserve the CoptV2X lifecycle: fresh Stage1/Stage2 dynamic candidates,
+  Gold176 cold-start cost-model evidence, four rounds, four rows per round,
+  and 16 unique selected row ids.
+- Require real Pyramid materialization and training/fine-tuning before a
+  group's first downstream use.
+- Permit a q-independent source bundle to support FP16 and INT8 rows selected
+  in the same or later rounds of the same fresh run.
+- Make reuse provenance immutable, deterministic, fail-closed, and independent
+  of filesystem mtimes alone.
+- Keep the exact five-key private process environment and the existing direct
+  argv, cwd, binding, request, feedback, and round-layout boundaries.
+- Keep private paths, nonce values, artifact names, digests, logs, GPU
+  identities, and host details out of public output and errors.
+- Reject stale, partial, cross-run, mismatched, symlinked, or wrapper-authored
+  evidence before any downstream q-specific stage runs.
 
 ## Non-goals
 
-- Do not change the public P6 target: Pyramid, H800, TVM, Gold176, four rounds, batch size four, sample budget 16, metrics `latency_ms`, `energy_j`, `ap30`, `ap50`, `ap70`.
-- Do not add Orin, TensorRT, CPU, RTX 4090, mixed backends, static-registry fallback, or a new acquisition policy.
-- Do not publish private absolute paths, checkpoints, model code, dataset locations, raw historical logs, or per-host execution details.
-- Do not make Gold176 a measurement batch.
-- Do not rely on ambient cwd, shell startup files, inherited environment, or manual relaunch of a partial round.
+- No change to Pyramid/H800/TVM, Gold176, metrics, batch size, sample budget,
+  round count, or acquisition policy.
+- No static-registry fallback, Orin, TensorRT execution target, CPU, RTX 4090,
+  mixed backend, or Gold176 remeasurement.
+- No global rule that a canonical Pyramid group may be selected only once.
+- No retraining merely because a different `q_mode` is selected.
+- No reuse across fresh-run roots, task identities, revisions, candidate
+  plans, registries, or nonces.
+- No public schema or environment-key expansion.
+- No in-place resume after a failed or partial run.
 
-## CoptV2X lifecycle invariants
+## CoptV2X and source-bundle invariants
 
-The run is valid only if this sequence holds:
+1. Stage1 scans the real Pyramid structure for H800, and Stage2 produces the
+   dynamic Pyramid/H800/TVM candidate plan.
+2. The plan and registry preserve a separate row for every available
+   `(group_id, q_mode)`. Neither selection nor completion collapses rows by
+   group.
+3. Recipe-v2 renders exactly one shared source contract and one set of 11
+   shared output paths per canonical Pyramid group. The contract is
+   q-independent and is byte-for-byte canonical across that group's q-modes.
+4. Round 0 fits only frozen Gold176 evidence. Rounds 1-3 refit from Gold176 plus
+   accepted earlier feedback. Gold176 rows never enter a measurement request.
+5. A group's first selected use must execute the source wrapper and produce a
+   validated immutable source bundle plus an adapter-owned current-run
+   receipt, including the complete 11-path q-independent superset even when
+   the producer is FP16, so later INT8 never requires source retraining.
+6. A later selected row for the same group may skip only that source wrapper,
+   and only while its current-run receipt and every bound source artifact still
+   validate.
+7. Quantization, performance/TVM, AP, and finalization process all four selected
+   row ids in every round, including both q-modes of a reused group.
+8. Once a receipt is published, the 11 shared source paths are immutable.
+   Downstream q-specific stages may read them but must write q-specific results
+   only under their validated round/row outputs.
+9. A round is accepted only after existing request, row, source-contract,
+   source-evidence, task-state, feedback, receipt, barrier, terminal-status,
+   and metric validation succeeds.
+10. Any invalid source-reuse state, source failure, GPU failure, feedback
+    failure, or hash drift stops the run. No synthetic replacement row or
+    partial in-place retry is permitted.
 
-1. Stage1 scans the real Pyramid structure for H800.
-2. Stage2 produces the dynamic Pyramid/H800/TVM candidate space.
-3. The P6 adapter converts the Stage2 space into the dynamic candidate plan and then into a registry-v2 source space without reverting to the static 343/686 P6.1 registry.
-4. Round 0 fits the cost model from frozen Gold176 rows, Gold176 graph features, and the matching capability profiles. Gold176 is not remeasured.
-5. Each round selects exactly four unmeasured rows from the current dynamic source space.
-6. For every selected row, the private source materializer must execute real Pyramid candidate materialization and training/fine-tuning before downstream TVM/AP/latency/energy stages.
-7. A round is released only after the request hash, row hashes, source evidence hashes, receipt, finalization barrier, terminal status, and five metric fields validate.
-8. Rounds 1-3 refit online from Gold176 plus accepted prior feedback. They must not use failed or fabricated metrics as successful measurements.
-9. Any bridge, GPU, source, stage, feedback, or hash failure stops the run. No synthetic replacement row is allowed.
+## Existing API boundaries
 
-## Architecture and data flow
+The correction fits the current call graph:
 
 ```text
-public contract v2
-  -> local private config + private binding
-  -> Stage1 scan step
-  -> Stage2 search-space loader
-  -> dynamic Pyramid candidate plan
-  -> registry-v2 materialization from private source_contract_template
-  -> Gold176 cold-start cost-model fit
-  -> select 4 rows
-  -> project recipe-v2 request
-  -> write private round request/state
-  -> private activation wrapper
-  -> private source materializer wrapper per selected group
-  -> quantization wrapper
-  -> TVM/performance wrapper
-  -> AP wrapper
-  -> finalizer wrapper
-  -> validated P6 feedback
-  -> online cost-model refit for next round
+run_p6_coptv2x_search(contract, local, code_revision, command_runner)
+  -> Stage1 manifest
+  -> build_pyramid_candidate_plan()
+  -> materialize_history_registry()
+  -> validate_search_task()
+  -> create_fresh_run_context() exactly once
+  -> four calls through the configured measurement step
+
+run_history_measurement_batch(request, binding, round_output_root, runner, gpu_probe)
+  -> project_source_materialization_request()
+  -> load and validate the fixed run context
+  -> classify each distinct selected group
+  -> invoke source wrapper only for UNSEEN groups
+  -> validate artifacts and publish adapter-owned receipts
+  -> revalidate all selected groups as READY_CURRENT_RUN
+  -> quantization -> performance -> AP -> finalization for every row
 ```
 
-The public search loop remains responsible for selection, cost-model fitting, request identity, feedback validation, and run-state accounting. The private historical chain remains responsible for real selected-candidate training/fine-tuning, checkpoint production, ONNX/export artifacts, TVM compilation, AP evaluation, latency measurement, energy measurement, and private diagnostics.
+`run_p6_coptv2x_search()` already owns the code-revision label, the validated
+`SearchTask`, the Stage2 plan, the materialized registry, and the local output
+root. It is therefore the only run-context creator. The context is created
+after plan/registry identity validation and before the first measurement
+request is launched.
 
-The historical controller is not invoked as the round owner. The adapter keeps direct stage execution because it already validates stage order, task-state initialization, feedback receipt, finalization barrier, and GPU policy. If the historical controller contains useful implementation logic, it may be called from inside private wrappers, but it must not replace the public adapter's validated stage boundary.
+`run_history_measurement_batch()` already receives the supplied public round
+root. After the existing runtime round-root validation, its safe parent is the
+same local output root used by registry rendering. Measurement resolves the
+run context and receipts from that root. Nothing is passed to a private wrapper
+through a new argv flag or environment key.
 
-## Private self-contained wrapper contract
+`project_source_materialization_request()` remains the canonical request and
+hash gate. `q_mode` stays on the row; it is not inserted into the shared
+source contract, run-context path, or receipt path.
 
-Every private executable referenced by the runner template must be self-contained. In particular, the source materializer executable named by the validated `source_materialization` stage must be a wrapper with this contract:
+## Stable lifecycle states and categories
 
-- It is an executable regular file beneath the validated private history Git root.
-- It may be named with the documented marker, for example `stage5_materialize_round_sources_v1.sh`, but its internal implementation is private.
-- It accepts the direct argv emitted by the public adapter:
-  - `--request <absolute-private-request-json>`
-  - `--model pyramid`
-  - `--group-id <canonical-pyramid-group-id>`
-  - `--gpu <validated-binding-gpu-index>`
-- It must succeed from the private round cwd. It must not require the process cwd to be the historical repository root.
-- It must succeed with only the exact environment rendered by the adapter:
-  - `CUDA_VISIBLE_DEVICES`
-  - `P6_HISTORY_RUN_MODE`
-  - `P6_HISTORY_PRIVATE_ROOT`
-  - `P6_HISTORY_TASK_STATE`
-  - `P6_HISTORY_ROUND_OUTPUT_ROOT`
-- It must resolve its own private repository/import root internally, for example by using its script location or `P6_HISTORY_PRIVATE_ROOT`, then changing cwd or setting private import paths before execing the real historical materializer.
-- It must not require the public adapter to set `PYTHONPATH`, add environment keys, call a shell wrapper, or run from the history root.
-- It must write only to declared private output paths under the local output root and update task-state according to the validated interface.
-- It must return nonzero on any import, missing-training-input, skipped-training, failed-training, missing-marker, checkpoint, export, TVM, AP, latency, or energy failure.
+Each distinct selected group is classified into exactly one immutable result:
 
-The activation wrapper remains a validation/admission stage. It cannot be the only place where imports are fixed, because subprocess environment changes from activation do not persist unless the private wrappers independently consume an activation artifact or resolve their own imports.
+```python
+P6SourceReuseState = Literal[
+    "UNSEEN",
+    "READY_CURRENT_RUN",
+    "INVALID_PARTIAL",
+    "INVALID_STALE",
+    "INVALID_MISMATCH",
+]
+```
 
-## Recipe-v2 and static training contract
+- `UNSEEN`: the expected receipt leaf and all 11 declared shared source
+  outputs are absent, with no symlink at any leaf.
+- `READY_CURRENT_RUN`: the receipt and all outputs are present as the exact
+  expected types; the receipt binds the current context, group, contract,
+  producer request and row; and all artifact and marker digests recompute.
+- `INVALID_PARTIAL`: only a subset exists, including bare markers, artifacts
+  without a receipt, a receipt with a missing artifact, or one marker without
+  the other.
+- `INVALID_STALE`: a complete-looking receipt/output set binds a different
+  run context, nonce, task, revision, local-root fingerprint, plan, or registry.
+- `INVALID_MISMATCH`: current-run binding exists but receipt shape/hash,
+  group identity, producer binding, source-contract/source-evidence identity,
+  output type, artifact digest, marker digest, or immutable-bundle validation
+  fails.
 
-Recipe-v2 remains the public-safe description of shared output path templates. It does not carry real private paths or hyperparameter values.
+Only `UNSEEN` and `READY_CURRENT_RUN` are executable states. Invalid states
+are never persisted as success. Their stable private diagnostic categories are
+`p6_source_reuse_partial`, `p6_source_reuse_stale`, and
+`p6_source_reuse_mismatch`. All three map to the public
+`history_execution_invalid` category without diagnostic values.
 
-Every recipe-v2 source contract generated for a selected Pyramid group must contain these exact semantic fields after registry materialization and before request projection:
+## Canonical hashing
 
-- `training_required`: exactly `true`.
-- `training_source_kind`: a public-safe label whose semantics are "selected candidate must be trained/fine-tuned for this run", not "checkpoint already exists".
-- `base_checkpoint_path`: private absolute path to the existing Pyramid initialization checkpoint used for fine-tuning.
-- `dataset_root`: private absolute path to the existing CoptV2X training/evaluation dataset root.
-- `pyramid_config_path`: private absolute path to the existing base Pyramid training configuration.
-- `training_parameters`: a mapping with the following required semantic keys:
-  - `training_mode`: selected-candidate fine-tuning mode.
-  - `epochs`: positive integer epoch count or equivalent bounded training duration.
-  - `seed`: deterministic private training seed.
-  - `optimizer`: optimizer family label.
-  - `learning_rate`: finite positive learning-rate value or schedule reference.
-  - `batch_size`: positive integer batch size.
-  - `dataset_split`: train/validation split identity.
-  - `checkpoint_selection`: rule for selecting the produced checkpoint.
-  - `freeze_policy`: Pyramid layer-freezing or full-fine-tune policy.
-- `stage_widths`: the canonical Pyramid width identity for the group.
-- `shared_source_paths`: the recipe-v2 rendered output map with exactly the existing shared keys:
-  - `checkpoint_path`
-  - `checkpoint_dir`
-  - `config_path`
-  - `training_done_marker`
-  - `onnx_path`
-  - `onnx_report_path`
-  - `calibration_root`
-  - `calibration_npz`
-  - `calibration_summary`
-  - `trt_calibration_dir`
-  - `source_done_marker`
+All JSON identities introduced by this design use one shared function:
 
-No real values for these fields belong in this design document or in public docs. In the private binding and local generated registry, all path values must be absolute, symlink-safe, and under the validated private history root or local private output root as appropriate.
+```python
+def canonical_json_sha256(value: object) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=True,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+```
 
-The bridge must reject recipe-v2 source contracts that omit the static training fields, set `training_required` to false, provide empty `training_parameters`, point training inputs outside the private root, render output paths outside the local output root, or collide output paths across groups.
+Hashes are 64 lowercase hexadecimal characters. Unknown keys, duplicate JSON
+keys, booleans where integers are required, non-finite numbers, non-canonical
+paths, and non-exact key sets are rejected.
 
-## Registry, projection, and hash behavior
+- `run_context_sha256` hashes the exact run-context object excluding only
+  `run_context_sha256`.
+- `receipt_sha256` hashes the exact receipt object excluding only
+  `receipt_sha256`.
+- `candidate_plan_sha256` hashes the complete validated
+  `p6_pyramid_candidate_plan_v2` object.
+- `source_registry_sha256` hashes the complete validated
+  `stage5_candidate_source_registry_v2` object.
+- `local_output_root_sha256` is
+  `SHA256(b"p6-local-output-root-v1\0" + str(resolved_root).encode("utf-8"))`.
+- `group_key_sha256` is
+  `SHA256(b"p6-group-receipt-v1\0" + group_id.encode("utf-8"))`.
+- `run_nonce` is 32 bytes from `secrets.token_bytes(32)`, serialized as 64
+  lowercase hexadecimal characters and generated exactly once.
 
-Registry materialization:
+Regular-file digests stream the raw bytes through SHA-256. A directory-tree
+digest traverses only the exact declared directory root, never searches for a
+receipt, and hashes a canonical JSON list sorted by POSIX relative path:
 
-- `materialize_history_registry()` validates the dynamic candidate plan identity against the Stage2-derived plan.
-- For recipe-v2, it renders one shared source bundle per Pyramid group, not one source bundle per q-mode.
-- It copies all required static training fields from the private `source_contract_template`.
-- It removes untrusted self-reported output paths and legacy q-mode-specific output aliases before writing the canonical group contract.
-- It renders shared output paths beneath the local private output root.
-- It recomputes `source_contract_sha256` after inserting group identity, static training fields, and rendered shared paths.
-- It writes the registry atomically to an ignored private destination.
+- directory entry: `{"kind":"directory","path":"relative/path"}`
+- file entry:
+  `{"kind":"regular_file","path":"relative/path","sha256":"...","size":N}`
 
-Request projection:
+The declared root itself is not an entry; an empty directory hashes the empty
+list. Symlinks, sockets, devices, FIFOs, hard-linked regular files, path escape,
+and traversal outside the validated local root are rejected.
 
-- `project_source_materialization_request()` flattens recipe-v2 `shared_source_paths` into the row source contract consumed by the private materializer.
-- It preserves the required static training fields.
-- It rejects mixed legacy and recipe-v2 rows in one request.
-- It rejects same-group static training drift across q-modes.
-- It rejects shared-path mismatch, cross-group path collision, missing training fields, false `training_required`, or stale hashes.
-- It recomputes every row hash and the `measurement_request_sha256` after projection.
+## Deterministic private layout
 
-Runtime behavior:
+These root-relative constants are fixed:
 
-- The source materializer receives one projected request path and one canonical group id.
-- The materializer may train once per group and share the trained bundle across selected q-modes, but the selected row is not eligible for downstream TVM/AP/latency/energy until its group-level training marker and source marker are produced and validated.
-- Downstream stages must consume the produced checkpoint/export artifacts, not assume a preexisting checkpoint.
+```python
+RUN_METADATA_RELATIVE_ROOT = Path(".p6-materializer-training-bridge-v1")
+RUN_CONTEXT_RELATIVE_PATH = (
+    RUN_METADATA_RELATIVE_ROOT / "run-context.json"
+)
+GROUP_RECEIPT_RELATIVE_ROOT = (
+    RUN_METADATA_RELATIVE_ROOT / "group-receipts"
+)
+SOURCE_OUTPUT_RELATIVE_ROOT = Path("materialized")
+```
 
-## Public/private boundary
+For canonical `group_id`:
 
-Public surface:
+```python
+receipt_path = (
+    local_output_root
+    / GROUP_RECEIPT_RELATIVE_ROOT
+    / f"{group_key_sha256(group_id)}.json"
+)
+```
 
-- Public P6 contract labels, metric names, target, model, backend, round count, batch size, sample budget, asset labels, license/status labels.
-- Public-safe component versions and binding status.
-- Public-safe failure categories.
-- Hash identities for requests, rows, source contracts, and feedback validation.
+The run context is always
+`local_output_root / RUN_CONTEXT_RELATIVE_PATH`. Source output paths remain
+the 11 exact absolute leaves rendered by the existing recipe profile under
+`materialized/{artifact_id}/...`.
 
-Private surface:
+No code may use `glob`, `rglob`, directory scanning, basename search,
+marker-parent inference, or filename guessing to locate a context or receipt.
+The bounded directory traversal described above is allowed only to compute the
+digest of an already-declared directory artifact.
 
-- History root, local output root, binding JSON, local config JSON.
-- Runner template, executable paths, wrapper internals, import paths, real cwd behavior, raw stderr/stdout.
-- Dataset paths, checkpoint paths, model source paths, GPU UUIDs, host details, raw AP/TVM/latency/energy logs.
-- Static training values and materialized artifacts.
+## Filesystem and persistence rules
 
-Boundary rules:
+- The local output root must be absolute, existing, Git-ignored when inside
+  the repository, a real directory, and resolved component by component with
+  `lstat`. No root component may be a symlink.
+- Metadata and receipt paths must remain lexically and resolved beneath that
+  root. Existing parents must be real directories; absent parents are planned
+  lexically and created mode `0700`.
+- Declared source leaves must remain beneath the same root, have canonical
+  lexical spelling, and contain no symlink component. Expected files must be
+  single-link regular files; expected directories must be real directories.
+- Context and receipt publication is create-only. The adapter writes canonical
+  JSON to a same-directory temporary regular file opened with
+  `O_CREAT|O_EXCL|O_NOFOLLOW` and mode `0600`, flushes and `fsync`s it,
+  then publishes to the absent final leaf with an atomic no-replace operation.
+  `renameat2(RENAME_NOREPLACE)` or a same-filesystem hard-link publication
+  with equivalent no-replace semantics is acceptable. The parent directory is
+  `fsync`ed. No ordinary replace/rename is acceptable.
+- If the final leaf appears before publication, publication fails. Contexts
+  and receipts are never updated, repaired, truncated, or overwritten.
+- A private wrapper does not receive the receipt path. Immediately before
+  source invocation the adapter requires the receipt absent; immediately after
+  the wrapper returns it requires the receipt still absent. Only then may the
+  adapter publish it. A wrapper-created receipt is
+  `INVALID_MISMATCH`, even if its bytes would otherwise validate.
 
-- The public adapter must not add private import knowledge, `PYTHONPATH`, host-specific cwd, or shell execution.
-- The public binding projection must not copy static training values, GPU policy, paths, commands, or raw candidate identities.
-- Private generated registries and round outputs must stay under ignored private destinations.
-- Error messages crossing into public state must be stable categories only.
+The path APIs keep planned absence separate from runtime existence:
 
-## Versioning and compatibility
+```python
+@dataclass(frozen=True)
+class P6SourceReusePaths:
+    local_output_root: Path
+    metadata_root: Path
+    run_context: Path
+    receipt_root: Path
 
-No public top-level schema version change is required for this design:
+def plan_source_reuse_paths(
+    local_output_root: Path,
+) -> P6SourceReusePaths: ...
 
-- Keep `p6_h800_coptv2x_search_contract_v2`.
-- Keep `p6_h800_coptv2x_local_v2`.
-- Keep `stage5_measurement_request_v2`.
-- Keep `p6_h800_coptv2x_feedback_v2`.
-- Keep `p6_history_dynamic_materialization_recipe_v2`.
+def resolve_existing_source_reuse_paths(
+    local_output_root: Path,
+) -> P6SourceReusePaths: ...
 
-The required static training fields are a stricter P6 recipe-v2 source-contract validation layer, not a public contract expansion. Because `stage5_source_contract_v1` already permits additional hashed private fields, the bridge can enforce these fields for recipe-v2 P6 without breaking legacy static P6.1 source registries.
+def receipt_path_for_group(
+    paths: P6SourceReusePaths,
+    group_id: str,
+) -> Path: ...
+```
 
-If implementation later needs a machine-readable distinction, add a private-only recipe-v2 profile revision or binding capability flag. Do not change the public P6 search schema unless a public user must supply new non-private data, which this design avoids.
+`plan_source_reuse_paths()` permits the metadata root and final leaves to be
+absent while validating all existing ancestors. It is used by zero-process
+preflight and context creation. `resolve_existing_source_reuse_paths()`
+requires a valid published context and safe receipt directory and is used by
+measurement and completion. The existing
+`plan_validated_history_round_paths()` versus
+`resolve_validated_history_round_paths()` distinction remains unchanged.
 
-## Fail-closed errors
+## Immutable run-context schema
 
-Use existing stable categories where possible:
+The in-memory and on-disk contract is:
 
-- `history_request_invalid`: malformed measurement request, row hash drift, request hash drift, wrong batch/budget/metrics, bad q-mode, or identity mismatch.
-- `history_execution_invalid`: invalid private binding, runner template, environment shape, output layout, source contract, recipe-v2 static training contract, path collision, unsafe symlink, missing marker, or untrusted projection.
-- `history_gpu_admission_failed`: selected H800 indices unavailable, UUID drift, non-H800 device, or occupancy above policy before or after execution.
-- `history_execution_failed`: nonzero or raised private stage execution after validation, including deterministic import failure, training failure, export failure, TVM failure, AP failure, latency failure, or energy failure.
-- `unsafe_destination`: adapter output destination escapes its round root, is not ignored, already exists, or is symlinked.
-- `command_failed`: outer release runner reports the measurement adapter failed without exposing private stderr.
+```python
+@dataclass(frozen=True)
+class P6FreshRunContext:
+    schema_version: Literal["p6_materializer_fresh_run_context_v1"]
+    run_nonce: str
+    task_id: str
+    task_sha256: str
+    code_revision: str
+    local_output_root_sha256: str
+    candidate_plan_schema_version: Literal["p6_pyramid_candidate_plan_v2"]
+    candidate_plan_sha256: str
+    source_registry_schema_version: Literal[
+        "stage5_candidate_source_registry_v2"
+    ]
+    source_registry_sha256: str
+    created_before_round_index: Literal[0]
+    run_context_sha256: str
+```
 
-The implementation may preserve private diagnostics under ignored private logs, but public run state and failure JSON must contain only public-safe categories.
+The JSON object has exactly those keys. `task_id` and `task_sha256` come
+from `validate_search_task(task)`; `code_revision` is the already-validated
+public-safe label. The plan and registry hashes are computed from the exact
+validated objects also persisted as `pyramid_candidate_plan.json` and
+`source_registry.json`.
 
-## TDD test matrix
+```python
+def create_fresh_run_context(
+    *,
+    local_output_root: Path,
+    task_contract: Mapping[str, Any],
+    code_revision: str,
+    candidate_plan: Mapping[str, Any],
+    source_registry: Mapping[str, Any],
+) -> P6FreshRunContext: ...
 
-Add or update tests before implementation.
+def load_fresh_run_context(
+    *,
+    local_output_root: Path,
+    expected_task_id: str,
+    expected_task_sha256: str,
+) -> P6FreshRunContext: ...
+```
 
-| Area | Required failing test |
-| --- | --- |
-| Wrapper determinism | Fake source wrapper imports a sibling private module successfully while adapter cwd is the round root and env has exactly the five allowed keys. A wrapper that requires repo cwd fails closed. |
-| No public env widening | Source invocation never receives `PYTHONPATH`, ambient `PATH` expansion beyond the wrapper's own logic, shell execution, or inherited environment. |
-| Recipe-v2 training mandate | Registry rejects recipe-v2 source templates missing `training_required`, setting it false, or omitting any required static training field. |
-| Static training path safety | Registry rejects static training input paths outside the private root, symlinked paths, missing base checkpoint/config/dataset anchors, or path values in public projection. |
-| Projection preservation | Projection preserves `training_required` and static training fields, strips legacy dynamic output aliases, flattens shared paths, and recomputes row/request hashes. |
-| Same-group consistency | Mixed q-mode rows for one group with different training fields or shared paths are rejected before source execution. |
-| Dynamic lifecycle | Full fake run proves Stage1 scan, dynamic candidate plan, registry-v2, Gold176 initial fit count 176, online fit counts 180/184/188, four 4-row batches, and 16 unique selected rows. |
-| Gold176 boundary | No test path sends Gold176 rows to measurement; Gold176 is cold-start cost-model data only. |
-| Real training gate | Fake materializer that skips writing `training_done_marker` or `source_done_marker` causes downstream stages not to run. |
-| Failure category | Import failure or nonzero materializer exit returns a stable redacted category and does not leak private paths, argv, traceback, or environment. |
-| Relaunch safety | A partial or failed round cannot be resumed by silently reusing stale request, feedback, or Stage1 manifest files. |
+`create_fresh_run_context()` is called once in
+`run_p6_coptv2x_search()`, after dynamic plan/registry validation and before
+the round loop can launch measurement. Before generating the nonce it requires
+the context, receipt namespace, all deterministic group receipt leaves, and
+all 11 source leaves for every registry group to be absent. It then publishes
+the context exclusively and creates empty `group-receipts` as a real
+mode-`0700` directory. A crash between creates invalidates that root.
 
-## Migration and provisioning
+`load_fresh_run_context()` recomputes the context hash, root fingerprint,
+plan hash from the exact plan leaf, and registry hash from the exact registry
+leaf. It validates the current measurement request's task identity. It never
+reads environment state or private logs.
 
-Provisioning must produce a new private binding/config pair from already-cleared private inputs:
+## Immutable per-group receipt schema
 
-1. Validate the private history root and runner template.
-2. Require the source materializer marker to resolve to a self-contained wrapper.
-3. Validate that the wrapper executable is under the private Git root, regular, executable, non-symlinked, and referenced by the source stage.
-4. Validate the private `source_contract_template` has recipe-v2 plus the required static training fields.
-5. Validate private static input anchors exist and are under the private root.
-6. Render the local config so the public adapter still calls only the release adapters and private binding path.
-7. Write the binding/config atomically to ignored private destinations.
+The receipt records q-independent source provenance, not authorization to skip
+q-specific work:
 
-Existing generated bindings without `training_required: true` and the required static training fields are invalid for recipe-v2 real runs. They must be regenerated, not patched in public output.
+```python
+ArtifactKind = Literal["regular_file", "directory_tree"]
 
-## Zero-process preflight
+@dataclass(frozen=True)
+class P6ArtifactDigest:
+    kind: ArtifactKind
+    sha256: str
 
-Before launching activation, GPU probing, or any historical executable, the adapter/provisioning layer must be able to validate:
+@dataclass(frozen=True)
+class P6GroupSourceReceipt:
+    schema_version: Literal["p6_group_source_reuse_receipt_v1"]
+    status: Literal["READY_CURRENT_RUN"]
+    run_context_sha256: str
+    run_nonce: str
+    task_id: str
+    task_sha256: str
+    group_id: str
+    group_key_sha256: str
+    source_contract_sha256: str
+    source_evidence_sha256: str
+    producer_round_index: int
+    producer_measurement_request_sha256: str
+    producer_row_id: str
+    producer_row_sha256: str
+    producer_q_mode: Literal["fp16", "int8"]
+    artifact_digests: tuple[
+        tuple[str, P6ArtifactDigest], ...
+    ]
+    marker_digests: tuple[tuple[str, str], ...]
+    receipt_sha256: str
+```
 
-- Public and local contract schemas.
-- Private binding shape and target.
-- Runner interface stage order, placeholders, executable markers, and exact environment keys.
-- Source materializer wrapper path safety and executable bit.
-- Recipe-v2 source contract static training fields.
-- Static training path lexical safety and private-root containment.
-- Shared output path renderability, uniqueness, and local-output-root containment.
-- Measurement request identity, row hashes, q-mode identity, graph-feature identity, and source-contract hashes.
-- Round output root safety and absence of preexisting request/feedback/task-state/barrier files.
+The JSON object has exactly the receipt fields above, with
+`artifact_digests` serialized as an exact-key object and
+`marker_digests` serialized as an exact-key object.
 
-This preflight must not import historical Python modules, execute the source materializer, call the historical controller, invoke TVM/AP code, run training, or read private raw logs.
+`artifact_digests` has exactly these nine keys:
 
-## Fresh-run and relaunch criteria
+- `checkpoint_path`: `regular_file`
+- `checkpoint_dir`: `directory_tree`
+- `config_path`: `regular_file`
+- `onnx_path`: `regular_file`
+- `onnx_report_path`: `regular_file`
+- `calibration_root`: `directory_tree`
+- `calibration_npz`: `regular_file`
+- `calibration_summary`: `regular_file`
+- `trt_calibration_dir`: `directory_tree`
 
-Fresh run criteria:
+`marker_digests` has exactly `training_done_marker` and
+`source_done_marker`, each mapped directly to its raw-byte SHA-256.
+Duplicated content between a directory-tree digest and a declared file digest
+is intentional: the receipt proves both the declared leaf and the containing
+tree.
 
-- Use a newly prepared ignored private local output root or an output root with no completed/failed P6 state.
-- Stage1 manifest path is reserved and removed before the Stage1 scan step; a no-op Stage1 command must not reuse a stale manifest.
-- Source registry destination does not preexist as a directory or symlink and is rewritten atomically by the registry adapter.
-- Each round creates a fresh round directory and fresh request/feedback/task-state/receipt/barrier leaves.
+The producer row is the lexicographically smallest `row_id` for the group in
+the first-use request. Its row hash is taken from the request's
+`row_sha256`; its `q_mode` is evidence only and does not restrict later
+reuse. The producer request must be the canonical projected request persisted
+at the exact binding-resolved private round request path. Later validation
+requires:
 
-Relaunch criteria after failure:
+- producer round is in `0..3` and no later than the consumer round;
+- producer request hash recomputes and equals the receipt;
+- producer row exists in that request with the bound row hash, group id,
+  q-mode, source-contract hash, and source-evidence hash;
+- the current consumer row has the same group-level source-contract and
+  source-evidence hashes, while its row id and q-mode may differ.
 
-- Do not relaunch a partial round in place.
-- Preserve failed private diagnostics under the ignored output root.
-- Fix the private wrapper, binding, or source contract cause.
-- Start a new local output root or explicitly clean only the scoped ignored output root after reviewing what will be removed.
-- Do not replace failed feedback with synthetic success rows, do not skip candidates, and do not switch to the static registry.
+## Classification and receipt APIs
 
-## Acceptance and closure
+```python
+@dataclass(frozen=True)
+class P6GroupReuseDecision:
+    group_id: str
+    state: P6SourceReuseState
+    receipt_path: Path
 
-The bridge is accepted when:
+def classify_selected_group_sources(
+    request: Mapping[str, Any],
+    *,
+    run_context: P6FreshRunContext,
+    local_output_root: Path,
+    interface: Mapping[str, Any],
+    private_root: Path,
+) -> tuple[P6GroupReuseDecision, ...]: ...
 
-- TDD tests in the matrix are implemented and pass.
-- `git diff --check` passes.
-- A private preflight rejects the old V2 binding that lacks `training_required` and static Pyramid training fields.
-- A private preflight accepts a regenerated binding with self-contained wrappers and complete recipe-v2 training contract.
-- A fresh real run reaches Stage1/Stage2 dynamic generation, Gold176 cold-start cost-model fit, four selected round-0 rows, and source materialization without the deterministic import failure.
-- For each selected candidate, private evidence shows real training/fine-tuning completed before TVM/AP/latency/energy stages run.
-- Completed closure requires four rounds, 16 selected rows, validated feedback, online refits after rounds 0-2, and a completed local state with no public private-path leakage.
+def validate_and_publish_group_receipt(
+    request: Mapping[str, Any],
+    *,
+    group_id: str,
+    run_context: P6FreshRunContext,
+    local_output_root: Path,
+    interface: Mapping[str, Any],
+    private_root: Path,
+) -> P6GroupSourceReceipt: ...
 
-If any selected candidate cannot be trained/fine-tuned or cannot produce validated downstream metrics, the run is not closed as a successful measurement run. A real feasibility failure may consume budget only if it is emitted by the validated private chain after the required attempted materialization/training path and is represented by an allowed terminal failure status.
+def require_selected_groups_ready_current_run(
+    request: Mapping[str, Any],
+    *,
+    run_context: P6FreshRunContext,
+    local_output_root: Path,
+    interface: Mapping[str, Any],
+    private_root: Path,
+) -> tuple[P6GroupSourceReceipt, ...]: ...
+```
+
+All functions consume a detached canonical projected request. They validate
+same-group contract identity already enforced by
+`validate_projected_training_marker_pairs()`, derive paths only through the
+fixed layout, and return groups sorted by canonical `group_id`.
+
+## First-use and reuse execution flow
+
+`run_history_measurement_batch()` performs this flow:
+
+1. Validate the binding and projected request. Resolve the public/private round
+   paths with existing exact-template APIs.
+2. Load and validate the one run context from the local root before GPU probe,
+   activation, source execution, or any downstream wrapper.
+3. Classify every distinct selected group. Any invalid state stops with a
+   redacted `history_execution_invalid` before process launch.
+4. Run GPU admission, initialize the exact private round request/task-state
+   leaves, and run the existing activation boundary with the exact five-key
+   environment.
+5. Build source invocations only for `UNSEEN` group ids. If every selected
+   group is `READY_CURRENT_RUN`, the invocation tuple is empty and no source
+   wrapper runs. `build_source_invocations()` need not accept an empty group
+   list; the caller simply does not call it.
+6. Immediately before each first-use batch, require each unseen group's
+   receipt and all 11 outputs absent. Run one direct-argv source invocation per
+   unseen group.
+7. After all source invocations return zero, require the receipts still absent.
+   For each unseen group, validate all 11 outputs, require
+   `producer_request_mtime <= training_marker_mtime <= source_marker_mtime`
+   as supplemental first-use ordering evidence, compute digests, and publish
+   the adapter-owned receipt exclusively.
+8. Reclassify every selected group and require `READY_CURRENT_RUN`. This
+   revalidates artifact and marker content immediately before downstream work.
+9. Execute quantization, performance/TVM, AP, and finalization in their existing
+   order. Each stage's task-state/result evidence must cover all four selected
+   row ids, including every q-mode row that shared a receipt.
+
+For two q-modes of one group selected in the same request, classification sees
+one `UNSEEN` group, the source wrapper runs once, the canonical producer row
+is recorded, and both rows continue through all downstream stages.
+
+For FP16 selected in round 0 and INT8 of the same group selected later, round 0
+creates the receipt. The later round validates that earlier producer request
+through the exact binding template, skips only source materialization, and
+runs the INT8 downstream path. The reverse q-mode order is equally valid.
+
+Marker mtimes never authorize later reuse: a later request is expected to have
+a newer mtime than the original markers. The current-run receipt and recomputed
+content digests replace the contradictory “markers must be absent before every
+invocation” rule.
+
+## Exact process environment and wrapper boundary
+
+The private wrapper contract remains direct argv:
+
+- `--request <exact private measurement request>`
+- `--model pyramid`
+- `--group-id <canonical group id>`
+- `--gpu <validated binding index>`
+
+The environment remains exactly:
+
+- `CUDA_VISIBLE_DEVICES`
+- `P6_HISTORY_RUN_MODE`
+- `P6_HISTORY_PRIVATE_ROOT`
+- `P6_HISTORY_TASK_STATE`
+- `P6_HISTORY_ROUND_OUTPUT_ROOT`
+
+There is no `PYTHONPATH`, run-context, nonce, receipt, plan, registry, or local
+root environment key. The self-contained wrapper resolves its private imports
+from its own script/private-root contract. It writes only declared source
+outputs and task-state. It cannot publish, update, or bless a receipt.
+
+## Preflight, fresh-run, and relaunch policy
+
+Zero-process operator preflight occurs before Stage1, GPU probing, activation,
+or historical execution. It uses `plan_source_reuse_paths()` and requires:
+
+- the exact run-context leaf absent;
+- the entire exact `.p6-materializer-training-bridge-v1` namespace absent;
+- the fixed `materialized` source-output root absent;
+- Stage1 manifest, candidate-plan, source-registry, `state.json`, and public
+  round directories absent;
+- every binding-resolved private round root/request/task-state/result/receipt/
+  barrier destination absent through planned-path validation.
+
+It does not scan or delete the local root. Binding/config inputs intentionally
+present in the root are validated separately.
+
+After Stage1 and registry construction, but before context creation, the
+controller performs a second no-process freshness gate over the exact registry:
+every derived receipt leaf and all 11 declared source leaves for every group
+must be absent. This closes the gap between preflight templates and the fresh
+dynamic plan.
+
+Runtime permits existing source output only through a
+`READY_CURRENT_RUN` receipt. A preexisting marker, artifact, or receipt that
+cannot validate against the newly created context is not a cache hit; it is an
+invalid state.
+
+After any failure, preserve ignored private diagnostics and start with a new
+scoped ignored local output root after fixing the cause. Do not delete or
+repair individual markers, outputs, receipts, contexts, requests, feedback,
+task-state, or barriers and then resume in place.
+
+## Completion verification
+
+The completion verifier resolves, never searches:
+
+- the one run context through `RUN_CONTEXT_RELATIVE_PATH`;
+- each of four public/private requests through the existing exact round
+  templates;
+- a group's receipt through `receipt_path_for_group()`;
+- task-state, result, actual feedback receipt, and finalization barrier through
+  the validated binding templates.
+
+It validates four completed rounds and exactly 16 unique selected row ids.
+Each row must map to one valid `READY_CURRENT_RUN` group receipt. Several
+rows may map to the same receipt; receipt count is therefore the number of
+distinct first-used groups, not a required 16. A receipt producer may be in
+the same round or an earlier round, never a later round.
+
+For every row the verifier rechecks the producer request/row binding, current
+source-contract/source-evidence identity, current artifact/marker digests,
+per-row terminal status, and all five metric fields. It separately proves the
+16 selected row ids and measurement identities are disjoint from frozen
+Gold176. Gold176 remains cost-model evidence only.
+
+The public completion report remains limited to stable counts and status. It
+must not emit number of distinct receipts, group ids, producer rows, q-modes,
+nonce, hashes, paths, mtimes, metrics, or artifact details.
+
+## Public/private boundary and failures
+
+Public-safe surfaces remain the existing contract versions, target labels,
+metric names, round/sample counts, binding status, and stable failure
+categories. No new public top-level schema is required:
+
+- `p6_h800_coptv2x_search_contract_v2`
+- `p6_h800_coptv2x_local_v2`
+- `stage5_measurement_request_v2`
+- `p6_h800_coptv2x_feedback_v2`
+- `p6_history_dynamic_materialization_recipe_v2`
+
+`p6_materializer_fresh_run_context_v1` and
+`p6_group_source_reuse_receipt_v1` are ignored private schemas.
+
+Existing public categories remain authoritative:
+
+- `history_request_invalid`: request, row, q-mode, or request identity drift.
+- `history_execution_invalid`: invalid binding, context, receipt, artifact,
+  marker, path, source contract, projection, or reuse state.
+- `history_gpu_admission_failed`: H800 identity/occupancy admission failure.
+- `history_execution_failed`: nonzero private execution after validation.
+- `unsafe_destination`: unsafe or preexisting planned destination.
+- `command_failed`: outer measurement command failure.
+
+Public errors and state contain only the category. Private diagnostics may
+record a stable private subcategory under ignored output, but never an absolute
+path, argv, environment, traceback, nonce, digest, group id, row id, GPU UUID,
+hostname, or raw stderr/stdout. Tests must inject recognizable private tokens
+and prove none crosses the adapter/CLI boundary.
+
+## Task ownership corrections
+
+The approved architecture changes the responsibilities of Tasks 4–7 while
+leaving completed Task 3 projection and hash semantics intact.
+
+This supersedes only contradictory Task 4–7 clauses: marker absence applies to
+`UNSEEN` first use, source-call counting spans the whole run, and completion
+counts 16 q-level rows mapped to receipts. Other Task 3–7 constraints remain.
+
+### Task 4 — runtime source reuse contract
+
+Task 4 owns the focused source-reuse module, immutable schemas, canonical
+hash/digest helpers, deterministic paths, state classification, receipt
+publication/validation, source-invocation filtering, exact environment
+assertion, and downstream gate. It may route through
+`p6_history_measurement_v1.py` and
+`p6_history_source_materialization_v1.py`; focused reuse tests belong in a
+new small test module rather than enlarging an already oversized mixed module.
+
+Task 4 tests must cover:
+
+- round-0 FP16 first use followed by later INT8 reuse of the same group;
+- later FP16 after an INT8 producer;
+- FP16 and INT8 of one group in the same round;
+- one source invocation per first-use group and zero source invocation for a
+  ready group;
+- all downstream row ids executing in both first-use and reuse cases;
+- bare markers, receipt-only, one-marker, one-artifact-missing, wrapper-created
+  receipt, malformed receipt, artifact tamper, marker tamper, producer-request
+  tamper, cross-run receipt copy, root change, task/revision/plan/registry
+  drift, symlinks, hard links, and path escape;
+- exact five-key env with no receipt/context key and redacted failures.
+
+### Task 5 — fresh-run integration, preflight, and verifier
+
+Task 5 owns controller integration of
+`create_fresh_run_context()`, planned-absent versus runtime-existing path
+APIs, zero-process preflight freshness checks, exact-layout producer-request
+resolution, completion mapping from 16 rows to receipts, and relaunch safety.
+It must not weaken the existing runtime requirement that a supplied round root
+already exists.
+
+Preflight tests prove context/metadata/materialized namespaces and every
+binding-resolved round leaf are rejected when preexisting, without historical
+process launch or GPU probe. Completion tests prove a producer may be from an
+earlier round, multiple rows may share one receipt, all 16 row ids remain
+unique, and Gold176 overlap is zero.
+
+### Task 6 — zero-GPU lifecycle gate
+
+The fake source wrapper writes complete declared source artifacts and markers;
+the public adapter, not the fake wrapper, publishes receipts. The lifecycle
+fixture must deliberately select:
+
+- one group first as FP16 and later as INT8; and
+- one same-round mixed-q group.
+
+Expected source-call count is the number of distinct groups at their first use
+across the whole run, not the sum of distinct groups in each round. Expected
+downstream row count remains 16. The fake must never launch GPU, training, TVM,
+AP, latency, energy, or historical processes, and Gold176 must never appear in
+a request.
+
+### Task 7 — private H800 run and conditional closure
+
+Private preflight must pass on an absent context/receipt/source namespace.
+The fresh controller creates one context before round 0. Real evidence must
+show first-use training, valid current-run receipts, later same-group reuse
+when selected, downstream q-specific processing for all 16 rows, four accepted
+rounds, and no Gold176 remeasurement. The completion verifier, not marker
+counts, decides closure.
+
+Final public docs remain conditional on verifier success and may state only
+that every selected row mapped to validated current-run source evidence.
+They must not disclose which rows shared a receipt or any private receipt
+field. Failure means no final-doc update and no in-place relaunch.
+
+## Acceptance matrix
+
+| Scenario | Classification | Source invocation | Downstream q-specific stages | Result |
+| --- | --- | ---: | ---: | --- |
+| New group; no outputs or receipt | `UNSEEN` | Once for group | Every selected row | Publish receipt, then proceed |
+| FP16 producer; later INT8 same group/current run | `READY_CURRENT_RUN` | Zero later | INT8 row runs | Accept |
+| FP16 and INT8 same group/same round | One `UNSEEN` group | Once | Both rows run | Accept |
+| Four ready groups in later request | All `READY_CURRENT_RUN` | Zero | All four rows run | Accept |
+| Markers/artifacts without receipt | `INVALID_PARTIAL` | Zero | Zero | Redacted stop |
+| Receipt with missing output | `INVALID_PARTIAL` | Zero | Zero | Redacted stop |
+| Receipt copied from another fresh run/root | `INVALID_STALE` | Zero | Zero | Redacted stop |
+| Current receipt with artifact/marker tamper | `INVALID_MISMATCH` | Zero | Zero | Redacted stop |
+| Producer request/row/contract binding drifts | `INVALID_MISMATCH` | Zero | Zero | Redacted stop |
+| Wrapper writes receipt | `INVALID_MISMATCH` | Source has run | Zero | Redacted stop; new root required |
+| Symlink/hard-link/path escape | Invalid | Zero | Zero | Redacted stop |
+| Four rounds, 16 unique q-level rows, shared receipts allowed | All valid | First-use groups only | 16 rows | Completion may pass |
+| Any Gold176 row enters measurement | Irrelevant | Stop | Stop | Completion fails |
+
+## Stop conditions
+
+Stop before private execution when:
+
+- zero-process preflight finds any context, receipt namespace, source-output
+  namespace, public round, private round leaf, Stage1 manifest, plan, registry,
+  or state from an earlier attempt;
+- a fresh context cannot be exclusively and atomically created from the exact
+  task/revision/root/plan/registry identities;
+- projected same-group source contracts drift across q-modes;
+- group classification is any invalid state;
+- a new environment key, ambient environment, shell, guessed path, directory
+  search, or marker-parent receipt inference would be required.
+
+Stop after source execution and before downstream when:
+
+- the wrapper returns nonzero, creates a receipt, omits any declared source
+  artifact, produces unsafe types/links, reverses first-use marker order, or
+  fails receipt publication;
+- any selected group fails immediate `READY_CURRENT_RUN` revalidation.
+
+Stop closure and do not update final docs when:
+
+- a downstream stage does not process every selected row or mutates an
+  immutable shared source bundle;
+- four rounds, 16 unique selected rows, five metrics, feedback hashes,
+  producer bindings, receipt mappings, or zero Gold176 overlap do not verify;
+- success would depend on global group uniqueness, per-row retraining, bare
+  markers, synthetic feedback, static fallback, or an in-place retry.
+
+## Rejected alternatives
+
+### Global group uniqueness
+
+Rejecting every later q-mode of a previously selected group changes the
+row-level search space and acquisition behavior. It is not a source-integrity
+rule and can make a valid 16-row dynamic run unavailable.
+
+### Per-row or per-q-mode retraining
+
+Recipe-v2 intentionally defines one trained bundle per canonical Pyramid
+group. Retraining an identical q-independent bundle wastes private compute and
+creates competing ownership of shared paths without adding q-specific
+evidence.
+
+### Bare-marker reuse
+
+Marker existence and mtime do not bind a task, revision, root, plan, registry,
+request, row, contract, artifact content, or fresh nonce. Markers alone cannot
+distinguish current, stale, partial, copied, or tampered output and therefore
+never authorize reuse.
 
 ## Self-review
 
-This specification intentionally keeps the public adapter environment strict and moves import determinism into private wrappers. It does not require a public schema version change. It treats recipe-v2 static training fields as private hashed source-contract semantics. It explicitly states that Gold176 is cold-start cost-model data only and that every selected candidate must be really trained/fine-tuned before downstream TVM/AP/latency/energy work.
+- No unresolved placeholder, illustrative private absolute path, unresolved
+  schema key, or alternate receipt location remains.
+- One q-independent bundle per group is consistent with row-level q-mode
+  selection, same-round mixed q, later-round reuse, and 16-row completion.
+- The exact five-key environment is unchanged; context and receipt discovery
+  use the existing round-root caller boundary.
+- Planned-absent preflight and runtime-existing validation are separate.
+- Markers are first-use ordering evidence only; adapter-owned receipts are the
+  sole reuse authority.
+- Completion counts selected rows, not receipts, and never remeasures Gold176.
+- This document defines architecture and acceptance only; it is not an
+  implementation-completion claim or an execution checklist.
