@@ -16,8 +16,12 @@ from framework.stage5.genome_contract_v1 import (
 )
 from framework.stage5.production_search_v1 import validate_source_contract
 from framework.stage6.p6_history_binding_v1 import MAX_GPU_OCCUPANCY
-from framework.stage6.p6_history_recipe_profiles_v1 import SHARED_SOURCE_PATH_KEYS
+from framework.stage6.p6_history_recipe_profiles_v1 import (
+    RECIPE_V2,
+    SHARED_SOURCE_PATH_KEYS,
+)
 from framework.stage6.p6_history_training_contract_v1 import (
+    REQUIRED_TRAINING_CONTRACT_KEYS,
     validate_projected_training_contract,
 )
 
@@ -121,6 +125,13 @@ def project_source_materialization_request(
         projected = _validated_request_copy(request)
         rows = projected["rows"]
         ordered_group_ids = tuple(sorted({row["group_id"] for row in rows}))
+        recipe_v2_signals = [
+            _has_recipe_v2_signal(row["source_contract"]) for row in rows
+        ]
+        if not any(recipe_v2_signals):
+            return ProjectedSourceRequest(projected, ordered_group_ids)
+        if not all(recipe_v2_signals):
+            _invalid()
         shared_presence = [
             "shared_source_paths" in row["source_contract"] for row in rows
         ]
@@ -142,8 +153,6 @@ def project_source_materialization_request(
                 set(SHARED_SOURCE_PATH_KEYS).issubset(row["source_contract"])
                 for row in rows
             ]
-            if not any(flat_presence):
-                return ProjectedSourceRequest(projected, ordered_group_ids)
             if not all(flat_presence):
                 _invalid()
             for row in rows:
@@ -543,7 +552,10 @@ def _validated_lexical_path(raw_path: object) -> Path:
     if not isinstance(raw_path, str):
         _invalid()
     path = _absolute_path(Path(raw_path))
-    if ".." in raw_path.split("/"):
+    components = raw_path.split("/")
+    if components[0] or any(
+        component in {"", ".", ".."} for component in components[1:]
+    ):
         _invalid()
     return path
 
@@ -563,6 +575,20 @@ def _sanitized_flat_contract(
     if shared_paths is not None:
         flat_contract.update(shared_paths)
     return flat_contract
+
+
+def _has_recipe_v2_signal(contract: Mapping[str, Any]) -> bool:
+    recipe = contract.get("dynamic_materialization_recipe")
+    return (
+        (
+            isinstance(recipe, Mapping)
+            and recipe.get("schema_version") == RECIPE_V2
+        )
+        or "materialization_outputs_by_q_mode" in contract
+        or "shared_source_paths" in contract
+        or any(key in contract for key in SHARED_SOURCE_PATH_KEYS)
+        or any(key in contract for key in REQUIRED_TRAINING_CONTRACT_KEYS)
+    )
 
 
 def _validate_flat_projected_contracts(rows: Sequence[Mapping[str, Any]]) -> None:

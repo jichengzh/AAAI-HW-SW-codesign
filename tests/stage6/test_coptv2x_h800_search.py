@@ -403,6 +403,17 @@ def _write_normalized_history_source_map(tmp_path: Path) -> dict[str, Any]:
         _write_executable(toolchain / marker)
     for name in ("activate-private", "quantize-private", "measure-ap-private"):
         _write_executable(toolchain / name)
+    source_group = _dynamic_source_group()
+    source_contract = source_group["source_contract"]
+    source_contract.update(_complete_training_contract(history_root))
+    source_group["source_contract_sha256"] = hashlib.sha256(
+        json.dumps(
+            source_contract,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
     return {
         "schema_version": "p6_history_normalization_source_v1",
         "history_root": str(history_root),
@@ -420,7 +431,7 @@ def _write_normalized_history_source_map(tmp_path: Path) -> dict[str, Any]:
                 "closure",
             )
         },
-        "source_contract": _dynamic_source_group(),
+        "source_contract": source_group,
         "dynamic_materialization_recipe": _dynamic_recipe(),
     }
 
@@ -452,6 +463,55 @@ def _complete_training_contract(history_root: Path) -> dict[str, Any]:
             "freeze_policy": "pyramid_backbone_partial",
         },
     }
+
+
+def _migrate_normalized_training_registry(
+    registry_path: Path, normalized_root: Path
+) -> None:
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    group = registry["groups"][0]
+    contract = group["source_contract"]
+    profile = get_recipe_profile("p6_stage5_pyramid_h800_tvm_profile_v1")
+    assert profile is not None
+    contract["dynamic_materialization_recipe"] = {
+        "schema_version": RECIPE_V2,
+        "stage_width_fields": list(profile.stage_width_fields),
+        "group_id_template": profile.group_id_template,
+        "artifact_id_template": profile.artifact_id_template,
+        "shared_source_path_templates": dict(profile.shared_source_path_templates),
+    }
+    contract.update(_complete_training_contract(normalized_root))
+    group["source_contract_sha256"] = hashlib.sha256(
+        json.dumps(
+            contract,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    registry_path.write_text(json.dumps(registry), encoding="utf-8")
+
+
+def _write_normalized_source_wrapper_profile(
+    path: Path, normalized_root: Path
+) -> Path:
+    marker = "stage5_materialize_round_sources_v1.sh"
+    implementation_name = "stage5_materialize_round_sources_v1.original.sh"
+    implementation = normalized_root / "source-implementation" / implementation_name
+    _write_executable(implementation)
+    (normalized_root / "toolchain" / marker).unlink()
+    return _write_yaml(
+        path,
+        {
+            "schema_version": "p6_private_source_wrapper_profile_v1",
+            "wrapper_kind": "repo_cwd_exec_v1",
+            "destination_relative_path": f"toolchain/{marker}",
+            "implementation_relative_path": (
+                f"source-implementation/{implementation_name}"
+            ),
+            "implementation_cwd_relative_path": "source-implementation",
+        },
+    )
 
 
 def _write_runner_template(path: Path) -> Path:
@@ -1227,7 +1287,11 @@ def test_normalized_private_root_reaches_dynamic_stage2_and_registry_without_mea
     normalized = normalize_history_inputs(
         source_map, Path(str(source_map["history_root"])), normalized_root
     )
+    _migrate_normalized_training_registry(normalized["registry"], normalized_root)
     runner_template = _write_runner_template(normalized_root / "runner-template.yaml")
+    source_wrapper_profile = _write_normalized_source_wrapper_profile(
+        tmp_path / "source-wrapper-profile.yaml", normalized_root
+    )
     provisioned_root = normalized_root / "provisioned"
     provisioned_root.mkdir()
     binding_path = provisioned_root / "binding.json"
@@ -1241,6 +1305,7 @@ def test_normalized_private_root_reaches_dynamic_stage2_and_registry_without_mea
         binding_path,
         local_config_path,
         probe,
+        source_wrapper_profile=source_wrapper_profile,
     )
     local = load_local_config(
         local_config_path,

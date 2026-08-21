@@ -217,7 +217,16 @@ def _require_lexical_absolute_paths(
         ):
             _invalid("training path is invalid")
         path = Path(raw_path)
-        if not path.is_absolute() or ".." in path.parts:
+        components = raw_path.split("/")
+        if (
+            not path.is_absolute()
+            or components[0]
+            or any(
+                component in {"", ".", ".."}
+                for component in components[1:]
+            )
+            or str(path) != raw_path
+        ):
             _invalid("training path is invalid")
 
 
