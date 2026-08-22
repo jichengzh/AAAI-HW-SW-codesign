@@ -119,6 +119,8 @@ ROW_KEYS = (
     "source_evidence_kind", "source_contract", "source_contract_sha256",
     "source_evidence_sha256", "graph_features",
 )
+CANONICAL_MATERIALIZATION_KIND = "local_pyramid_tvm"
+LEGACY_MATERIALIZATION_KIND = "pyramid_prepare_train_export"
 IMPLEMENTATION_RELATIVE = __IMPLEMENTATION_RELATIVE__
 IMPLEMENTATION_CWD_RELATIVE = __IMPLEMENTATION_CWD_RELATIVE__
 
@@ -211,10 +213,16 @@ def _validated_binding(raw):
 
 def _legacy_row(row):
     contract = row.get("source_contract") if isinstance(row, dict) else None
+    width = row.get("width") if isinstance(row, dict) else None
     if (
         not isinstance(contract, dict)
         or not isinstance(row.get("row_id"), str)
         or not row["row_id"]
+        or row.get("model") != "pyramid"
+        or row.get("materialization_kind") != CANONICAL_MATERIALIZATION_KIND
+        or not isinstance(width, list)
+        or not width
+        or any(type(item) is not int for item in width)
         or set(contract).intersection(LEGACY_TRAINING_KEYS)
     ):
         raise CompatibilityError
@@ -222,10 +230,17 @@ def _legacy_row(row):
         **{key: value for key, value in contract.items() if key != "external_training_binding"},
         **_validated_binding(contract.get("external_training_binding")),
     }
+    evidence = {
+        "kind": LEGACY_MATERIALIZATION_KIND,
+        "width": copy.deepcopy(width),
+        "contract": legacy_contract,
+    }
     return {
         **copy.deepcopy(row),
+        "materialization_kind": LEGACY_MATERIALIZATION_KIND,
         "source_contract": legacy_contract,
         "source_contract_sha256": _canonical_sha(legacy_contract),
+        "source_evidence_sha256": _canonical_sha(evidence),
     }
 
 

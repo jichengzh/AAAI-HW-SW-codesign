@@ -132,7 +132,17 @@ def _write_relocated_materializer(
         "    contract = row['source_contract']\n"
         "    assert set(contract) == set(legacy_keys)\n"
         "    assert 'external_training_binding' not in contract\n"
+        "    assert row['model'] == 'pyramid'\n"
+        "    assert isinstance(row['width'], list) and row['width']\n"
+        "    assert all(type(item) is int for item in row['width'])\n"
+        "    assert row['materialization_kind'] == 'pyramid_prepare_train_export'\n"
         "    assert row['source_contract_sha256'] == sha(contract)\n"
+        "    evidence = {\n"
+        "        'kind': 'pyramid_prepare_train_export',\n"
+        "        'width': row['width'],\n"
+        "        'contract': contract,\n"
+        "    }\n"
+        "    assert row['source_evidence_sha256'] == sha(evidence)\n"
         "    assert request['row_sha256'][row['row_id']] == sha(row)\n"
         "body = {key: value for key, value in request.items() "
         "if key != 'measurement_request_sha256'}\n"
@@ -144,6 +154,8 @@ def _write_relocated_materializer(
         "    'pythonpath': os.environ.get('PYTHONPATH'),\n"
         "    'training': {key: request['rows'][0]['source_contract'][key] "
         "for key in legacy_keys},\n"
+        "    'materialization_kind': request['rows'][0]['materialization_kind'],\n"
+        "    'source_evidence_sha256': request['rows'][0]['source_evidence_sha256'],\n"
         "}\n"
         "(round_root / 'implementation-observed.json').write_text(\n"
         "    json.dumps(observed, sort_keys=True), encoding='utf-8'\n"
@@ -254,6 +266,15 @@ def test_wrapper_projects_nested_training_for_relocated_implementation(
         "groups": 3,
         "width_per_group": 5,
     }
+    legacy_contract = observed["training"]
+    assert observed["materialization_kind"] == "pyramid_prepare_train_export"
+    assert observed["source_evidence_sha256"] == _sha(
+        {
+            "kind": "pyramid_prepare_train_export",
+            "width": [16, 32, 64],
+            "contract": legacy_contract,
+        }
+    )
     assert not tuple(round_root.glob(".p6-legacy-source-request-*.json"))
     assert canonical == _canonical_request(tmp_path)
 
@@ -279,6 +300,18 @@ def _mutate_invalid_parameters(request: dict[str, Any]) -> None:
 
 def _mutate_flat_collision(request: dict[str, Any]) -> None:
     request["rows"][0]["source_contract"]["training_required"] = True
+
+
+def _mutate_unsupported_model(request: dict[str, Any]) -> None:
+    request["rows"][0]["model"] = "unsupported-model"
+
+
+def _mutate_unsupported_kind(request: dict[str, Any]) -> None:
+    request["rows"][0]["materialization_kind"] = "unsupported-kind"
+
+
+def _mutate_invalid_width_type(request: dict[str, Any]) -> None:
+    request["rows"][0]["width"] = [16, True, 64]
 
 
 def _mutate_stale_contract_hash(request: dict[str, Any]) -> None:
@@ -324,6 +357,46 @@ def _mutate_missing_row_identity(request: dict[str, Any]) -> None:
     ),
 )
 def test_wrapper_rejects_invalid_nested_training_before_implementation(
+    tmp_path: Path,
+    mutate: Any,
+) -> None:
+    history_root = _private_git_root(tmp_path)
+    _write_relocated_materializer(history_root)
+    wrapper = render_self_contained_source_wrapper(
+        _profile(), history_root=history_root
+    ).executable
+    round_root = history_root / "private-runs" / "0"
+    round_root.mkdir(parents=True)
+    request = _canonical_request(tmp_path)
+    mutate(request)
+    _rehash_request(request)
+    request_path = round_root / "measurement-request.json"
+    original_bytes = json.dumps(request, sort_keys=True).encode("utf-8")
+    request_path.write_bytes(original_bytes)
+
+    completed = _run_wrapper(
+        wrapper,
+        request_path,
+        round_root,
+        _runtime_env(history_root, round_root),
+    )
+
+    assert completed.returncode == 2
+    assert completed.stderr == "history_execution_invalid\n"
+    assert not (round_root / "implementation-observed.json").exists()
+    assert request_path.read_bytes() == original_bytes
+    assert not tuple(round_root.glob(".p6-legacy-source-request-*.json"))
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    (
+        _mutate_unsupported_model,
+        _mutate_unsupported_kind,
+        _mutate_invalid_width_type,
+    ),
+)
+def test_wrapper_rejects_unsupported_pyramid_row_before_implementation(
     tmp_path: Path,
     mutate: Any,
 ) -> None:
