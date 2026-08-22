@@ -8,9 +8,13 @@ runtime, preflight, verifier, or private H800 run is complete.
 The observed failure remains a deterministic private source-wrapper/import
 packaging defect. The public adapter correctly invokes direct argv from the
 private round cwd with `shell=False` and the exact five-key environment. The
-private wrapper must make its own imports deterministic. Recipe-v2 must also
-require real selected-candidate training/fine-tuning and complete static
-Pyramid training inputs.
+private wrapper must make its own imports deterministic. Convenient CoptV2X
+GitHub reproduction therefore requires a self-contained execution-code,
+wrapper, and toolchain closure. Recipe-v2 must also require real
+selected-candidate training/fine-tuning, but the dataset, base checkpoint,
+Pyramid config, and training parameters are explicit private external
+bindings. They are not members of the normalized code/toolchain root and need
+not share its private-history Git root.
 
 The approved correction is:
 
@@ -24,6 +28,10 @@ The approved correction is:
   group-level bundles are trained.
 - Run every q-specific downstream stage for every selected row. Reuse skips
   only the group-level source-materialization/training invocation.
+- Copy only explicitly selected execution code/module closure and wrapper
+  roles into the normalized private code/toolchain root. Validate external
+  training inputs in place and never copy them into that root or the fresh
+  output root.
 
 This design rejects global group uniqueness, per-q-mode or per-row retraining,
 and reuse based only on marker presence.
@@ -34,8 +42,9 @@ security. Canonical-path and no-symlink checks remain required for ordinary
 operator mistakes and corrupt artifacts. A directory-root symlink-swap race
 between validation and a later filesystem operation is a known environmental
 limitation: the operator must keep the local output root exclusively
-controlled for the run. It is real but is not an acceptance blocker, and this
-design adds no Task 4.1 race-hardening work.
+controlled and the explicitly bound external inputs unchanged for the run. It
+is real but is not an acceptance blocker, and this design adds no Task 4.1
+race-hardening or adversarial external-input TOCTOU work.
 
 ## Goals
 
@@ -44,6 +53,10 @@ design adds no Task 4.1 race-hardening work.
   and 16 unique selected row ids.
 - Require real Pyramid materialization and training/fine-tuning before a
   group's first downstream use.
+- Make the public reproducibility surface self-contained for execution code,
+  wrapper construction, and toolchain setup while keeping real dataset,
+  checkpoint, Pyramid config, and training-parameter values in an ignored
+  private binding.
 - Permit a q-independent source bundle to support FP16 and INT8 rows selected
   in the same or later rounds of the same fresh run.
 - Make reuse provenance immutable, deterministic, fail-closed, and independent
@@ -66,6 +79,10 @@ design adds no Task 4.1 race-hardening work.
 - No reuse across fresh-run roots, task identities, revisions, candidate
   plans, registries, or nonces.
 - No public schema or environment-key expansion.
+- No requirement that external training inputs live beneath, share a Git root
+  with, or be copied into the normalized private code/toolchain root.
+- No discovery, download, relocation, snapshotting, or mutation of an
+  external dataset, checkpoint, or Pyramid config.
 - No in-place resume after a failed or partial run.
 - No claim of protection from a malicious concurrent filesystem actor or a
   directory-root symlink-swap race after canonical-path validation.
@@ -139,6 +156,127 @@ through a new argv flag or environment key.
 `project_source_materialization_request()` remains the canonical request and
 hash gate. `q_mode` stays on the row; it is not inserted into the shared
 source contract, run-context path, or receipt path.
+
+## External training binding and normalized deployment boundary
+
+The reproducibility package has three deliberately separate roots:
+
+1. The normalized private code/toolchain root contains only the selected
+   executable code/module closure, deterministic wrapper roles, and validated
+   toolchain declarations needed to run the five-stage chain. Provisioning may
+   copy those roles from an explicitly selected source closure; it may not copy
+   training assets.
+2. The external training binding names read-only operator-owned inputs in
+   place. Its dataset, checkpoint, and Pyramid config may live in unrelated
+   directories or repositories and need not have any common Git root with the
+   code/toolchain root.
+3. The fresh private local output root owns every mutable request, task-state,
+   receipt, marker, artifact, result, feedback, barrier, and diagnostic for one
+   attempt. The complete 11-path q-independent source bundle remains strictly
+   beneath this root.
+
+The ignored source-map/local YAML is the only authority for real external
+values. Its recipe-v2 external-training object has this exact semantic shape;
+unknown keys are rejected:
+
+```yaml
+schema_version: p6_external_training_binding_v1
+training_required: true
+training_source_kind: selected_candidate_finetune
+dataset_root: null
+base_checkpoint_path: null
+base_checkpoint_sha256: null
+pyramid_config_path: null
+pyramid_config_sha256: null
+training_parameters:
+  training_mode: null
+  epochs: null
+  seed: null
+  optimizer: null
+  learning_rate: null
+  batch_size: null
+  dataset_split: null
+  checkpoint_selection: null
+  freeze_policy: null
+```
+
+The null values above are the tracked example shape, not an executable
+binding. For an executable ignored binding, `dataset_root`,
+`base_checkpoint_path`, and `pyramid_config_path` are nonempty canonical
+absolute POSIX paths;
+`training_required` is the boolean `true`; and `training_source_kind` is
+exactly `selected_candidate_finetune`. `training_parameters` has exactly the
+nine keys shown. `epochs` and `batch_size` are positive integers, `seed` is a
+nonnegative integer, `learning_rate` is a finite positive JSON number, and the
+remaining values are nonempty canonical strings with no leading or trailing
+whitespace. Booleans never satisfy numeric fields. The object is deep-copied
+without mutation and is included in the canonical source-contract and row
+hashes.
+
+The two SHA-256 assertions are optional in the operator-authored ignored
+binding and use `null` when the upstream source did not publish a trusted
+digest. Validation always streams the raw bytes of both stable regular files.
+If a non-null digest is supplied, it must be 64 lowercase hexadecimal
+characters and must match. The validated normalized binding replaces each
+`null` with the computed digest, so both `base_checkpoint_sha256` and
+`pyramid_config_sha256` are required non-null evidence in every registry,
+projected request, run-context identity through the registry hash, and
+first-use receipt decision.
+`dataset_root` is not recursively hashed: an implicit traversal of a large
+operator dataset is neither part of preflight nor a substitute for the exact
+`dataset_split` binding. No unbound dataset checksum or manifest is guessed.
+
+Each external path must be absolute, lexically canonical, resolved with every
+existing component checked by `lstat`, free of symlink components, existing,
+and readable. `dataset_root` must be a real readable/searchable directory;
+`base_checkpoint_path` and `pyramid_config_path` must be readable regular
+files. The resolved path must equal its canonical lexical spelling. These
+paths are validated independently rather than by containment beneath the
+normalized code/toolchain root. Real assets inside any repository must be
+Git-ignored; repository-external owner paths are also valid.
+
+External inputs are read-only inputs, never destinations. They must be
+pairwise distinct and may not equal, contain, or be contained by the fresh
+local output root, normalized code/toolchain root, any private round root, or
+any declared request/task-state/receipt/marker/artifact/result/feedback/barrier
+path. Regular-file identity checks also reject an external file that aliases
+an existing output/result inode. Conversely, all nine artifacts and both
+markers in `shared_source_paths` remain unique, canonical, and strictly below
+the fresh local output root. No output, result, receipt, or marker path may be
+accepted from the external binding.
+
+A program-declared external default is usable only when provisioning reads the
+program's explicit declaration, resolves that exact existing path, and copies
+the exact canonical path value into the ignored binding before validation.
+The binding is then the sole runtime authority. A basename search, sibling
+guess, cwd-relative inference, environment fallback, registry scan, glob, or
+“usual dataset location” is never authorization. If the exact declared path
+cannot be copied and validated, provisioning stops rather than guessing.
+
+The public repository must provide
+`configs/execution/p6_external_training_binding.example.yaml` with the schema
+and semantic constants but `null` path, digest, and training-value slots. It
+contains no real absolute path, digest, dataset identity, checkpoint/config
+value, or hyperparameter. That example is documentation only and must fail
+executable-binding validation until the operator creates a separate
+Git-ignored local YAML/source-map with exact real values.
+
+The resulting data flow is:
+
+```text
+tracked reproducibility code + wrapper/toolchain declarations
+  -> copy validated code/module closure and wrapper roles only
+  -> normalized private code/toolchain root
+
+ignored external-training YAML/source-map
+  -> validate exact paths, file bytes/digests, and canonical parameters in place
+  -> ignored normalized binding/source-contract template
+
+dynamic Stage1 -> dynamic Stage2 candidate count -> registry/request projection
+  -> first-use selected-candidate fine-tuning reads external inputs
+  -> writes exactly 11 shared paths beneath the fresh local output root
+  -> q-specific downstream stages run for every one of the 4x4 selected rows
+```
 
 ## Stable lifecycle states and categories
 
@@ -453,6 +591,10 @@ requires:
 - the current consumer row has the same group-level source-contract and
   source-evidence hashes, while its row id and q-mode may differ.
 
+Because the normalized checkpoint/config digests are fields of the canonical
+source contract, `source_contract_sha256` binds them transitively into the
+producer row, projected request, group receipt, and every reuse comparison.
+
 ## Classification and receipt APIs
 
 ```python
@@ -495,13 +637,19 @@ All functions consume a detached canonical projected request. They validate
 same-group contract identity already enforced by
 `validate_projected_training_marker_pairs()`, derive paths only through the
 fixed layout, and return groups sorted by canonical `group_id`.
+`private_root` in these APIs remains the normalized code/toolchain and private
+round-layout root; it is not a containment root for the three external
+training paths.
 
 ## First-use and reuse execution flow
 
 `run_history_measurement_batch()` performs this flow:
 
-1. Validate the binding and projected request. Resolve the public/private round
-   paths with existing exact-template APIs.
+1. Validate the binding and projected request. Revalidate the three external
+   paths in place and recompute both stable-file digests against the normalized
+   binding before resolving the public/private round paths with existing
+   exact-template APIs. This is a trusted single-user consistency check, not a
+   file-locking or adversarial TOCTOU protocol.
 2. Load and validate the one run context from the local root before GPU probe,
    activation, source execution, or any downstream wrapper.
 3. Classify every distinct selected group. Any invalid state stops with a
@@ -576,8 +724,10 @@ or historical execution. It uses `plan_source_reuse_paths()` and requires:
 - every binding-resolved private round root/request/task-state/result/receipt/
   barrier destination absent through planned-path validation.
 
-It does not scan or delete the local root. Binding/config inputs intentionally
-present in the root are validated separately.
+It does not scan or delete the local root. The ignored binding/source-map and
+external inputs are outside this mutable namespace and are validated
+separately, before any process or GPU boundary. External input presence never
+waives freshness for any output/result path.
 
 After Stage1 and registry construction, but before context creation, the
 controller performs a second no-process freshness gate over the exact registry:
@@ -634,8 +784,10 @@ categories. No new public top-level schema is required:
 - `p6_h800_coptv2x_feedback_v2`
 - `p6_history_dynamic_materialization_recipe_v2`
 
-`p6_materializer_fresh_run_context_v1` and
-`p6_group_source_reuse_receipt_v1` are ignored private schemas.
+`p6_external_training_binding_v1`,
+`p6_materializer_fresh_run_context_v1`, and
+`p6_group_source_reuse_receipt_v1` are ignored private runtime schemas. The
+tracked external-binding example documents only the null-valued shape.
 
 Existing public categories remain authoritative:
 
@@ -653,14 +805,71 @@ no public surface may contain a private id, path, hash, nonce, receipt mapping,
 argv, environment, traceback, GPU UUID, hostname, or raw stderr/stdout. Tests
 must inject recognizable private tokens and prove none crosses the boundary.
 
+### Privacy matrix
+
+| Value or artifact | Tracked public repository | Ignored private binding/code root | Fresh private output root | Public stdout/stderr/report |
+| --- | --- | --- | --- | --- |
+| Binding schema and fixed semantic key names | Example shape allowed | Required | May be referenced by private identity only | Stable schema/status only |
+| Real dataset/checkpoint/config paths or digests | Forbidden | Required in validated binding; assets remain external | Allowed only inside ignored request/receipt evidence | Forbidden |
+| Real training parameters | Null slots/key names only | Required | Allowed only inside ignored contract/request evidence | Forbidden |
+| Execution code, module closure, wrapper/toolchain roles | Tracked reproducibility implementation/declarations allowed | Self-contained normalized copy allowed | Not copied as results | Fixed public component labels only |
+| Dataset/checkpoint/config bytes | Forbidden | Never copied; read from external owner paths | Never copied as normalized input | Forbidden |
+| Eleven generated source paths and bytes | Forbidden | No destination aliases | Required under the fresh output root only | Counts/status only |
+| Attempt 1–3 diagnostics | Forbidden | Preserved in their ignored roots | Preserved, never reused as a new attempt | Controller launch count 0 only |
+
 ## Task ownership corrections
 
-The approved architecture changes the responsibilities of Tasks 4–7 while
-leaving completed Task 3 projection and hash semantics intact.
+The approved external-binding architecture changes the responsibilities of
+Tasks 1, 2, and 7 in addition to the source-reuse corrections for Tasks 4–7.
+Completed Task 3 projection and hash semantics remain intact except that the
+validated computed checkpoint/config digests travel with the canonical
+recipe-v2 training contract.
 
-This supersedes only contradictory Task 4–7 clauses: marker absence applies to
+This supersedes contradictory plan clauses that require static training inputs
+to be beneath one private-history Git root or copied into the normalized root.
+It also preserves the earlier source-reuse ruling: marker absence applies to
 `UNSEEN` first use, source-call counting spans the whole run, and completion
-counts 16 q-level rows mapped to receipts. Other Task 3–7 constraints remain.
+counts 16 q-level rows mapped to receipts. Other compatible Task 1–7
+constraints remain.
+
+### Task 1 — external Pyramid training contract validator
+
+Task 1 owns the exact `p6_external_training_binding_v1` schema, canonical
+training-parameter validation, independent external-path validation, stable
+file digest computation/assertion, input/destination non-alias checks, private
+contract copying, and public redaction. Its validators must no longer require
+`dataset_root`, `base_checkpoint_path`, or `pyramid_config_path` to be beneath
+`private_root`. They accept those paths only through the ignored binding and
+return a detached normalized object with both stable-file digests populated.
+
+Task 1 binding and registry integration must preserve exact external values
+and computed digests across every dynamically generated group while keeping
+all 11 rendered output leaves beneath `local_output_root`. Tests cover
+unrelated external roots, unreadable/wrong-type/missing paths, every symlink
+component position, noncanonical spelling, supplied digest mismatch, omitted
+digest normalization, unknown or noncanonical parameters, output/result
+aliasing, public projection redaction, and unchanged v1/static compatibility.
+The tracked example YAML contains only null private-value slots and is rejected
+as an executable binding.
+
+### Task 2 — self-contained code/toolchain deployment and provisioning
+
+Task 2 owns the self-contained execution code/module closure, deterministic
+wrapper roles, toolchain declarations, and provisioning boundary. The
+normalizer copies only explicitly selected code/module and wrapper-role inputs
+into the normalized private code/toolchain root. It must not copy, hard-link,
+vendor, rewrite, or synthesize the external dataset, checkpoint, Pyramid
+config, or training parameters.
+
+Provisioning consumes the ignored external binding/source-map, validates it
+through Task 1, and writes exact canonical external values plus computed
+stable-file digests only to ignored binding/registry/config artifacts. A
+program-declared default may enter this flow only through the exact-path copy
+rule above. The wrapper consumes the projected request and may not fall back
+to its own unbound defaults. Task 2 tests prove imports/toolchain are
+self-contained, external roots may be unrelated to the code Git root, no
+training asset appears beneath the normalized root, and no private value is
+written to tracked files or public output.
 
 ### Task 4 — runtime source reuse contract
 
@@ -724,12 +933,24 @@ a request.
 
 ### Task 7 — private H800 run and conditional closure
 
-Private preflight must pass on an absent context/receipt/source namespace.
-The fresh controller creates one context before round 0. Real evidence must
-show first-use training, valid current-run receipts, later same-group reuse
-when selected, downstream q-specific processing for all 16 rows, four accepted
-rounds, and no Gold176 remeasurement. The completion verifier, not marker
-counts, decides closure.
+Attempts 1–3 and every ignored diagnostic they produced remain preserved and
+unmodified. Their controller launch count is exactly 0; none is execution or
+paper evidence. Task 7 may start a new attempt only after the external-binding
+changes are implemented with TDD and all focused/offline gates pass. That
+attempt uses a fresh normalized private code/toolchain root, fresh ignored
+binding/config artifacts, and a fresh local output root; it does not patch,
+delete, or reuse an attempt 1–3 root. The same validated read-only external
+assets may be rebound because they are inputs rather than prior-run output.
+
+Private preflight must validate the external binding in place and pass on an
+absent context/receipt/source namespace without launching the controller,
+historical code, or GPU work. Only after that zero-process report still shows
+controller launch count 0 may the fresh controller create one context before
+round 0. Real evidence must show first-use selected-candidate fine-tuning from
+the exact external dataset/checkpoint/config/parameters, valid current-run
+receipts, later same-group reuse when selected, downstream q-specific
+processing for all 16 rows, four accepted rounds, and no Gold176
+remeasurement. The completion verifier, not marker counts, decides closure.
 
 Final public docs/config/results comparison remains conditional on verifier
 success. It may compare the approved public protocol/config labels with the
@@ -742,6 +963,10 @@ final-doc update and no in-place relaunch.
 
 | Scenario | Classification | Source invocation | Downstream q-specific stages | Result |
 | --- | --- | ---: | ---: | --- |
+| External dataset directory and stable files exist in unrelated canonical roots; optional assertions match or are null | Valid external binding | First-use groups only | Every selected row | Compute required stable-file digests and proceed |
+| Public example YAML with null private values used for execution | Invalid binding | Zero | Zero | Redacted stop |
+| Program default copied as its exact canonical existing path into ignored binding | Valid only after full binding validation | First-use groups only | Every selected row | Proceed without runtime guessing |
+| Dataset/checkpoint/config copied or aliased into normalized/output/result root | Invalid binding/layout | Zero | Zero | Redacted stop |
 | New group; no outputs or receipt | `UNSEEN` | Once for group | Every selected row | Publish receipt, then proceed |
 | FP16 producer; later INT8 same group/current run | `READY_CURRENT_RUN` | Zero later | INT8 row runs | Accept |
 | FP16 and INT8 same group/same round | One `UNSEEN` group | Once | Both rows run | Accept |
@@ -756,10 +981,29 @@ final-doc update and no in-place relaunch.
 | Four rounds, 16 unique q-level rows, shared receipts allowed | All valid | First-use groups only | 16 rows | Completion may pass |
 | Any Gold176 row enters measurement | Irrelevant | Stop | Stop | Completion fails |
 
+## Failure matrix
+
+| Boundary | Failure | Stable private handling | Public category/result |
+| --- | --- | --- | --- |
+| External binding parse | Missing/unknown key, wrong constant, null executable value, noncanonical parameter/type | Preserve ignored input; write no normalized binding | `history_execution_invalid` |
+| External path validation | Relative/noncanonical/missing/unreadable/wrong-type path or any symlink component | Launch no process; disclose no path | `history_execution_invalid` |
+| Stable-file identity | Supplied checkpoint/config digest is malformed or mismatched, or bytes drift after binding | Invalidate binding/current source evidence; require a fresh attempt root after correction | `history_execution_invalid` |
+| Path ownership | External input overlaps or aliases normalized code, output, request, marker, artifact, result, feedback, barrier, or receipt storage | Launch no process, copy nothing | `history_execution_invalid` |
+| Destination freshness | Any declared output/result/context/receipt/round leaf already exists before its create-only phase | Preserve prior root and select a fresh one | `unsafe_destination` |
+| Provisioning | Code/module closure or wrapper/toolchain role is incomplete; a training asset would need copying or a path would need guessing | Preserve source and failed deployment diagnostics; choose a fresh deployment root | `history_execution_invalid` |
+| First use/reuse | Source output is partial/stale/mismatched or any of 11 paths escapes the fresh output root | Publish no validating receipt; no q-specific stage | `history_execution_invalid` |
+| Private execution | Validated wrapper returns nonzero during first-use training | Preserve private stderr/logs only; no in-place retry | `history_execution_failed` |
+| Completion | Not 4x4 real selected rows, any Gold176 measurement, missing q-specific stage/metric, or source receipt drift | No final public-doc update | Verification fails with stable redacted status |
+
 ## Stop conditions
 
 Stop before private execution when:
 
+- the ignored external binding is incomplete, noncanonical, unreadable,
+  symlinked, wrong-type, digest-mismatched, or overlaps any code/output/result
+  namespace;
+- provisioning would need to copy a training asset, infer an undeclared
+  default, search for an input, or fall back to a wrapper/program default;
 - zero-process preflight finds any context, receipt namespace, source-output
   namespace, public round, private round leaf, Stage1 manifest, plan, registry,
   or state from an earlier attempt;
@@ -779,6 +1023,8 @@ Stop after source execution and before downstream when:
 - the wrapper returns nonzero, creates a receipt, omits any declared source
   artifact, produces unsafe types/links, reverses first-use marker order, or
   fails receipt publication;
+- checkpoint/config bytes no longer match the digests bound into the projected
+  request, or any external input/output identity begins to alias;
 - any selected group fails immediate `READY_CURRENT_RUN` revalidation.
 
 Stop closure and do not update final docs when:
@@ -814,10 +1060,25 @@ never authorize reuse.
 
 ## Self-review
 
-- No unresolved placeholder, illustrative private absolute path, unresolved
+- No unfinished draft marker, illustrative private absolute path, unresolved
   schema key, or alternate receipt location remains.
+- The tracked example contains intentional null documentation slots only; an
+  executable ignored binding requires exact real values and rejects those
+  nulls.
+- External dataset/checkpoint/config inputs are validated independently and
+  never required beneath or copied into the normalized code/toolchain root;
+  only code/module closure and wrapper roles are normalized.
+- Stable checkpoint/config digests are optional assertions at authoring and
+  required computed evidence after validation. Dataset-tree hashing is
+  deliberately not implicit.
+- All requests, results, receipts, nine artifacts, and two markers remain
+  strictly under the fresh private output root and cannot alias external
+  inputs.
 - One q-independent bundle per group is consistent with row-level q-mode
   selection, same-round mixed q, later-round reuse, and 16-row completion.
+- Stage2 candidate count remains dynamic; round execution remains four real
+  selected rows per round with every q-specific downstream stage, while
+  Gold176 remains cold-start cost-model evidence only.
 - The exact five-key environment is unchanged; context and receipt discovery
   use the existing round-root caller boundary.
 - Planned-absent preflight and runtime-existing validation are separate.
@@ -825,7 +1086,10 @@ never authorize reuse.
   sole reuse authority.
 - Completion counts selected rows, not receipts, and never remeasures Gold176.
 - The known directory-root symlink-swap TOCTOU limitation is documented as an
-  environmental assumption; ordinary existing-path symlink rejection remains
-  required and private-data redaction remains unchanged.
+  environmental assumption; external assets are also assumed stable under the
+  trusted single-user operator. Ordinary existing-path symlink rejection
+  remains required and private-data redaction remains unchanged.
+- Attempts 1–3 remain preserved with controller launch count 0; any post-TDD
+  execution is a new attempt with fresh normalized and output roots.
 - This document defines architecture and acceptance only; it is not an
   implementation-completion claim or an execution checklist.
