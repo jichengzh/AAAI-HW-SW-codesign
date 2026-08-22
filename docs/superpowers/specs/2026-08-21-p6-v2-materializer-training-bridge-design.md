@@ -28,6 +28,15 @@ The approved correction is:
 This design rejects global group uniqueness, per-q-mode or per-row retraining,
 and reuse based only on marker presence.
 
+The repository objective is convenient CoptV2X paper reproducibility in a
+trusted single-user local/H800 environment, not adversarial filesystem
+security. Canonical-path and no-symlink checks remain required for ordinary
+operator mistakes and corrupt artifacts. A directory-root symlink-swap race
+between validation and a later filesystem operation is a known environmental
+limitation: the operator must keep the local output root exclusively
+controlled for the run. It is real but is not an acceptance blocker, and this
+design adds no Task 4.1 race-hardening work.
+
 ## Goals
 
 - Preserve the CoptV2X lifecycle: fresh Stage1/Stage2 dynamic candidates,
@@ -58,6 +67,8 @@ and reuse based only on marker presence.
   plans, registries, or nonces.
 - No public schema or environment-key expansion.
 - No in-place resume after a failed or partial run.
+- No claim of protection from a malicious concurrent filesystem actor or a
+  directory-root symlink-swap race after canonical-path validation.
 
 ## CoptV2X and source-bundle invariants
 
@@ -257,6 +268,11 @@ digest of an already-declared directory artifact.
 - Declared source leaves must remain beneath the same root, have canonical
   lexical spelling, and contain no symlink component. Expected files must be
   single-link regular files; expected directories must be real directories.
+- These checks validate the path state observed by this trusted local process;
+  they are not a TOCTOU defense against a concurrent directory-root
+  symlink-swap. That race is the environmental limitation stated above and
+  does not block implementation, lifecycle, or paper-reproducibility
+  acceptance.
 - Context and receipt publication is create-only. The adapter writes canonical
   JSON to a same-directory temporary regular file opened with
   `O_CREAT|O_EXCL|O_NOFOLLOW` and mode `0600`, flushes and `fsync`s it,
@@ -667,8 +683,14 @@ Task 4 tests must cover:
 - bare markers, receipt-only, one-marker, one-artifact-missing, wrapper-created
   receipt, malformed receipt, artifact tamper, marker tamper, producer-request
   tamper, cross-run receipt copy, root change, task/revision/plan/registry
-  drift, symlinks, hard links, and path escape;
+  drift, straightforward existing symlinks, hard links, and path escape;
 - exact five-key env with no receipt/context key and redacted failures.
+
+Task 4 retains canonical lexical, containment, type, and no-symlink checks for
+the paths it observes. It does not need an adversarial concurrent
+directory-root symlink-swap test or a TOCTOU-proof publication protocol for
+acceptance; exclusive local-root control is the documented operator
+assumption.
 
 ### Task 5 — fresh-run integration, preflight, and verifier
 
@@ -709,10 +731,12 @@ when selected, downstream q-specific processing for all 16 rows, four accepted
 rounds, and no Gold176 remeasurement. The completion verifier, not marker
 counts, decides closure.
 
-Final public docs remain conditional on verifier success and may state only
-that every selected row mapped to validated current-run source evidence.
-They must not disclose which rows shared a receipt or any private receipt
-field. Failure means no final-doc update and no in-place relaunch.
+Final public docs/config/results comparison remains conditional on verifier
+success. It may compare the approved public protocol/config labels with the
+public completion counts and status, and may state only that every selected
+row mapped to validated current-run source evidence. It must not disclose
+which rows shared a receipt or any private receipt field. Failure means no
+final-doc update and no in-place relaunch.
 
 ## Acceptance matrix
 
@@ -728,7 +752,7 @@ field. Failure means no final-doc update and no in-place relaunch.
 | Current receipt with artifact/marker tamper | `INVALID_MISMATCH` | Zero | Zero | Redacted stop |
 | Producer request/row/contract binding drifts | `INVALID_MISMATCH` | Zero | Zero | Redacted stop |
 | Wrapper writes receipt | `INVALID_MISMATCH` | Source has run | Zero | Redacted stop; new root required |
-| Unsafe leaf/root/type/link violation, including symlink, hard link, or path escape | `INVALID_MISMATCH` | Zero | Zero | `p6_source_reuse_mismatch`; redacted public stop |
+| Observed unsafe leaf/root/type/link violation, including an existing symlink, hard link, or path escape | `INVALID_MISMATCH` | Zero | Zero | `p6_source_reuse_mismatch`; redacted public stop |
 | Four rounds, 16 unique q-level rows, shared receipts allowed | All valid | First-use groups only | 16 rows | Completion may pass |
 | Any Gold176 row enters measurement | Irrelevant | Stop | Stop | Completion fails |
 
@@ -745,6 +769,10 @@ Stop before private execution when:
 - group classification is any invalid state;
 - a new environment key, ambient environment, shell, guessed path, directory
   search, or marker-parent receipt inference would be required.
+
+A directory-root symlink swap by a concurrent adversarial actor after the
+ordinary canonical/no-symlink checks is not a stop condition or acceptance
+gate; it is outside the trusted single-user local/H800 operating assumption.
 
 Stop after source execution and before downstream when:
 
@@ -796,5 +824,8 @@ never authorize reuse.
 - Markers are first-use ordering evidence only; adapter-owned receipts are the
   sole reuse authority.
 - Completion counts selected rows, not receipts, and never remeasures Gold176.
+- The known directory-root symlink-swap TOCTOU limitation is documented as an
+  environmental assumption; ordinary existing-path symlink rejection remains
+  required and private-data redaction remains unchanged.
 - This document defines architecture and acceptance only; it is not an
   implementation-completion claim or an execution checklist.

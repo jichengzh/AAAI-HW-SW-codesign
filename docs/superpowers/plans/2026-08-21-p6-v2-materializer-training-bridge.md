@@ -29,6 +29,7 @@
 - Run context and receipt locations are exact under `.p6-materializer-training-bridge-v1`; no `glob`, `rglob`, basename search, marker-parent inference, or filename guessing may locate them. Bounded traversal is allowed only inside an already-declared directory artifact to compute its digest.
 - Contexts and receipts are create-only, atomically published with no-replace semantics, mode `0600` beneath mode-`0700` parents, and never updated, repaired, overwritten, or accepted from a wrapper.
 - All root, metadata, receipt, and declared artifact paths must pass canonical lexical spelling, component-wise `lstat`, resolved containment, exact type, symlink rejection, path-escape rejection, and single-link regular-file checks. The evidence path object stores the exact `root.resolve(strict=True)` reached after those checks, and both context create/load hash `str()` of that same resolved object; raw or marker-derived roots are forbidden. Directory digests reject symlinks, hard-linked regular files, sockets, devices, and FIFOs.
+- Scope is paper reproducibility in a trusted single-user local/H800 environment. The preceding canonical-path checks reject ordinary malformed, missing, corrupt, stale, and observed symlinked artifacts; they are not a claim to close a concurrent directory-root symlink-swap/TOCTOU race, which is a documented nonblocking environmental limitation.
 - The controller creates one fresh 32-byte nonce and run context only after validating the task, public-safe revision, local-root fingerprint, complete Stage2 plan, and registry identities, and before any measurement/GPU/activation boundary. No nonce/context/receipt/local-root environment key is added.
 - Measurement requires an existing valid context and never creates one. `UNSEEN` means receipt plus all 11 leaves are absent; `READY_CURRENT_RUN` means the receipt and all bound bytes validate; partial, stale, or mismatched states stop before downstream execution.
 - All four selected rows in every round continue through quantization, performance/TVM, AP, and finalization, including same-group mixed q-mode rows. Reuse skips only source materialization/training.
@@ -38,7 +39,7 @@
 - Files touched by implementation should stay under 800 lines. Existing files already over the limit must receive only routing glue plus a focused split module.
 - Every task is RED→GREEN→REFACTOR, includes a review boundary, and uses a conventional commit message. Do not commit from the planning step.
 - A failed or partial run is preserved for ignored private diagnosis and never resumed in place. Any retry uses a new scoped ignored local output root.
-- Final public docs are conditional: update release/audit docs only after the private preflight and real four-round run actually complete successfully.
+- Final public docs are conditional: update release/audit docs only after the private preflight and real four-round run actually complete successfully, with a public-safe protocol/config/results comparison rather than private run detail.
 
 ---
 
@@ -1143,6 +1144,14 @@ git commit -m "fix: preserve P6 training fields through projection"
 
 **Paused-diff migration rule:** The five unstaged Task 4 files are existing user work, not disposable scaffolding. Preserve their exact five-key environment assertion, local-root containment checks, source failure redaction, regular-file marker checks, first-use marker-order test logic, and compatible private-resolver `local_output_root` routing. Move focused new cases out of the already-large mixed test modules. Replace `assert_source_markers_absent_before_invocation()` as a blanket per-measurement rule with `UNSEEN`/`READY_CURRENT_RUN` classification: absence and mtime ordering apply only to first-use groups; later reuse is authorized by current-run receipt and recomputed digests. Do not discard, stash, reset, or overwrite the paused work wholesale.
 
+**Trusted-local limitation:** Task 4 keeps canonical-path, containment,
+`lstat`, and no-symlink checks for paths as observed. It does not add Task 4.1
+or require an adversarial concurrent directory-root symlink-swap/TOCTOU race
+to be prevented or tested for acceptance. The fresh local output root is
+operator-controlled and exclusively used for the run; malformed, missing,
+corrupt, stale, and straightforward symlinked artifacts still fail closed and
+all public failures remain redacted.
+
 **Interfaces:**
 
 - Consumes: Task 3's detached canonical projected request, binding-owned `EXPECTED_HISTORY_ENV_KEYS`, `SHARED_SOURCE_PATH_KEYS`, the exact binding round templates, and existing `build_source_invocations()`/`run_source_invocations()`.
@@ -1818,7 +1827,7 @@ Expected: focused coverage is at least 80%; every listed new/focused file and bo
 
 - [ ] **Step 12: Fresh implementer/reviewer boundary**
 
-Review only Task 4-owned evidence/runtime files and the migrated paused diff. Reject Critical/Important if any of these hold: global group uniqueness is introduced; a later q-mode retrains; bare markers authorize reuse; measurement creates context; wrapper can publish a receipt; receipt/context is searched or overwritten; directory/file digest safety is incomplete; the private resolver omits `local_output_root`, leaves it unresolved, or derives it from a marker/private leaf; create/load hash a raw root instead of their `P6SourceReusePaths.local_output_root`; a reused group's current request mtime is compared to old markers; source calls include ready groups; downstream omits a q-mode row; or private values reach a public error. Require a fresh reviewer to rerun the Task 4 focused commands before acceptance.
+Review only Task 4-owned evidence/runtime files and the migrated paused diff. Reject Critical/Important if any of these hold: global group uniqueness is introduced; a later q-mode retrains; bare markers authorize reuse; measurement creates context; wrapper can publish a receipt; receipt/context is searched or overwritten; malformed, missing, corrupt, stale, or observed symlinked evidence is accepted; the private resolver omits `local_output_root`, leaves it unresolved, or derives it from a marker/private leaf; create/load hash a raw root instead of their `P6SourceReusePaths.local_output_root`; a reused group's current request mtime is compared to old markers; source calls include ready groups; downstream omits a q-mode row; or private values reach a public error. Do not reject acceptance solely because a concurrent adversary could swap the directory root after validation; that documented TOCTOU limitation is outside this trusted-local scope. Require a fresh reviewer to rerun the Task 4 focused commands before acceptance.
 
 - [ ] **Step 13: Commit**
 
@@ -1839,6 +1848,12 @@ git commit -m "feat: add current-run P6 source reuse evidence"
 ---
 
 ### Task 5: Zero-Process Preflight and Relaunch Safety
+
+**Remaining priority 1:** Demonstrate that the controller creates exactly one
+fresh context only after the dynamic Stage1/Stage2 plan and registry validate,
+then protect the resulting zero-process preflight, exact-layout verification,
+and no-relaunch lifecycle. Straightforward canonical/no-symlink validation is
+in scope; the documented concurrent root-swap race is not an acceptance gate.
 
 **Files:**
 
@@ -2317,7 +2332,7 @@ Expected: suites pass, project coverage is at least 80%, Ruff/diff exit 0, and `
 
 - [ ] **Step 15: Fresh implementer/reviewer boundary**
 
-Review only Task 5-owned controller/path/CLI files and tests. Reject if exporting the resolver changes Task 4's four positional arguments, runtime return keys, validation order, or resolved-parent `local_output_root`; if marker/private paths can determine that root; if context creation can occur twice or before task/plan/registry validation; preflight starts Stage1/process/GPU work; planned paths require existence; runtime accepts an absent public round; preexisting context/receipt/11-output/round leaves are ignored; a failed root can resume; completion requires 16 receipts instead of 16 rows; a producer may be later; a decoy file is searched; Gold176 enters measurement; or public output includes private mapping/details. Require a fresh reviewer to rerun Task 5 commands.
+Review only Task 5-owned controller/path/CLI files and tests. Reject if exporting the resolver changes Task 4's four positional arguments, runtime return keys, validation order, or resolved-parent `local_output_root`; if marker/private paths can determine that root; if context creation can occur twice or before task/plan/registry validation; preflight starts Stage1/process/GPU work; planned paths require existence; runtime accepts an absent public round; preexisting context/receipt/11-output/round leaves are ignored; a failed root can resume; completion requires 16 receipts instead of 16 rows; a producer may be later; a decoy file is searched; Gold176 enters measurement; or public output includes private mapping/details. An adversarial post-validation directory-root symlink swap remains outside this trusted-local review scope. Require a fresh reviewer to rerun Task 5 commands.
 
 - [ ] **Step 16: Commit**
 
@@ -2337,6 +2352,11 @@ git commit -m "feat: bind P6 reuse to one fresh controller run"
 ---
 
 ### Task 6: Zero-GPU Full Dynamic Lifecycle Gate
+
+**Remaining priority 2:** Run the complete fresh dynamic lifecycle without GPU
+work, proving the real controller/context/adapter interfaces across
+Stage1→Stage2→Gold176→four rounds while deriving source-call expectations from
+the fixture's dynamic candidate schedule rather than a fixed candidate count.
 
 **Files:**
 
@@ -2592,6 +2612,13 @@ git commit -m "test: gate P6 source reuse lifecycle offline"
 
 ### Task 7: Private H800 Preflight, Fresh Four-Round Run, and Conditional Final Docs
 
+**Remaining priority 3:** After the controller and zero-GPU gates are green,
+run one fresh real Stage1→dynamic Stage2→Gold176→four rounds of four
+Pyramid/H800/TVM candidates, then publish only reproducible public
+docs/config/results comparison. Candidate and distinct-receipt counts remain
+dynamic; Gold176 is never remeasured and every selected row keeps its full
+q-specific downstream work.
+
 **Files:**
 
 - Conditionally modify after real success: `docs/AAAI27_RELEASE_AUDIT.md`
@@ -2601,7 +2628,7 @@ git commit -m "test: gate P6 source reuse lifecycle offline"
 **Interfaces:**
 
 - Consumes: completed and freshly reviewed Tasks 1–6; ignored private source map, source history root, runner template, wrapper profile, and deployment roots; tracked public contract; actual H800/TVM environment; existing derive/normalize/provision/preflight/run/verify CLIs.
-- Produces: one fresh normalized private deployment, one exclusively created context, first-use source training receipts, four exact rounds/16 actual measurements, and public-safe docs only after the completion verifier succeeds.
+- Produces: one fresh normalized private deployment, one exclusively created context, first-use source training receipts, four exact rounds/16 actual measurements, and a public-safe reproducibility comparison of approved protocol/config labels to completion counts/status only after the verifier succeeds.
 
 - [ ] **Step 1: Confirm clean tracked state and rerun all implementation gates**
 
@@ -2819,6 +2846,7 @@ Only after Step 8 succeeds, update docs with stable public-safe facts:
 - Gold176 was used only as cold-start cost-model evidence and was not remeasured.
 - Four rounds completed with 16 unique selected measurement rows.
 - Every selected row mapped to validated adapter-owned current-run source evidence before its downstream q-specific stages.
+- The recorded public protocol/config labels and public completion summary match the approved four-round, 16-row, zero-Gold176-remeasurement comparison; no private runtime value is recorded.
 ```
 
 Do not disclose receipt count, which rows shared a receipt, producer row/round/q-mode, group/candidate ids, nonce, hash, path, mtime, artifact name/detail, metric value, dataset/checkpoint, GPU UUID, hostname, raw log, stdout/stderr, or static hyperparameter value.
@@ -2852,7 +2880,7 @@ Expected: all commands exit 0.
 
 - [ ] **Step 12: Fresh real-run reviewer boundary**
 
-Review exact verifier output and the conditional public-doc diff. Reject if closure depends on global group uniqueness, per-row retraining, bare markers, 16 receipts rather than 16 rows, a later-round producer, missing q-specific downstream work, non-finite metrics, Gold176 measurement, a relaunch, or private disclosure. The reviewer inspects ignored evidence locally but copies only stable public status into the review report.
+Review exact verifier output and the conditional public-doc/config/results-comparison diff. Reject if closure depends on global group uniqueness, per-row retraining, bare markers, 16 receipts rather than 16 rows, a later-round producer, missing q-specific downstream work, non-finite metrics, Gold176 measurement, a relaunch, missing reproducible public protocol/config-to-status comparison, or private disclosure. The reviewer inspects ignored evidence locally but copies only stable public status into the review report. The known concurrent directory-root symlink-swap limitation is not a closure blocker in this trusted-local environment.
 
 - [ ] **Step 13: Commit only conditional docs**
 
@@ -2956,6 +2984,15 @@ No public exception/report/state may include internal state name, path, argv, en
 
 ## Final Full Gates Before Task 7 or Merge Handoff
 
+Acceptance proceeds in this order: (1) exactly-once fresh controller context,
+(2) zero-GPU full dynamic lifecycle, then (3) one fresh real
+Stage1→dynamic Stage2→Gold176→4×4 H800/TVM run and reproducible public
+docs/config/results comparison. The Stage2 candidate count and the number of
+distinct source receipts are observed dynamic values, never acceptance
+constants. Existing-path canonical/no-symlink validation and private-data
+redaction remain required. Adversarial TOCTOU/directory-root symlink-swap
+resistance is the documented trusted-environment limitation, not a final gate.
+
 Run from a clean tracked worktree after Task 6:
 
 ```bash
@@ -3008,4 +3045,4 @@ Expected: all pytest/lint/compile/diff/privacy gates pass, coverage is at least 
 - [ ] File-size check: new evidence/path/controller/lifecycle test files are split up front; existing over-limit controller/measurement/test files receive routing glue only.
 - [ ] Security/privacy check: public projection, docs, stderr, tests, and release manifests must not contain private paths, GPU UUIDs, raw logs, checkpoints, datasets, hostnames, candidate IDs, or static training values.
 - [ ] Reuse semantics check: no task enforces global group uniqueness, retrains per q-mode/row, treats bare markers as reuse authority, or compares later consumer request mtime to first-use markers.
-- [ ] Completion check: Task 7 docs are explicitly conditional on zero-process preflight, one fresh real run, and the exact completion verifier accepting four rounds/16 rows/zero Gold176 overlap; receipt count may be below 16.
+- [ ] Completion check: acceptance order is fresh controller context, zero-GPU full lifecycle, then one fresh real run plus public-safe docs/config/results comparison. Task 7 docs are explicitly conditional on zero-process preflight and the exact completion verifier accepting four rounds/16 rows/zero Gold176 overlap; candidate and receipt counts are dynamic, receipt count may be below 16, and the known root-swap TOCTOU limitation is not a blocker.
