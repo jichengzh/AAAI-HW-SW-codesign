@@ -439,7 +439,8 @@ def _copy_tree(source: Path, destination: Path) -> None:
 
 def _tree_digest(root: Path) -> str:
     entries: list[dict[str, object]] = []
-    for path in _walk(root):
+    ordered_paths = sorted(_walk(root), key=lambda path: path.relative_to(root).as_posix())
+    for path in ordered_paths:
         relative = path.relative_to(root).as_posix()
         info = path.lstat()
         if stat.S_ISDIR(info.st_mode):

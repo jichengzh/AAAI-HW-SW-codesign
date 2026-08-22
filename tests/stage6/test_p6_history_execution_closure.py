@@ -179,6 +179,37 @@ def test_closure_copies_all_roles_and_import_siblings(tmp_path: Path) -> None:
     assert not fixture["external"].pyramid_config_path.is_relative_to(fixture["staged"])
 
 
+def test_closure_digest_sorts_complete_posix_relative_paths_before_copy_recheck(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    closure_root = fixture["closure_root"]
+    nested = closure_root / "a"
+    nested.mkdir()
+    (nested / "file.txt").write_text("nested\n", encoding="utf-8")
+    (closure_root / "a.b").write_text("sibling\n", encoding="utf-8")
+    approved_digest = _tree_sha(closure_root)
+    fixture["manifest"]["roots"][0]["sha256"] = approved_digest
+
+    validated = validate_execution_closure_manifest(
+        fixture["manifest"],
+        source_history_root=fixture["source_root"],
+        external_training=fixture["external"],
+    )
+    copied = copy_execution_closure(validated, staged_private_root=fixture["staged"])
+
+    copied_root = copied["source_materializer"].parent
+    assert _tree_sha(copied_root) == approved_digest
+    bad_manifest = copy.deepcopy(fixture["manifest"])
+    bad_manifest["roots"][0]["sha256"] = "0" * 64
+    with pytest.raises(P6ExecutionClosureError):
+        validate_execution_closure_manifest(
+            bad_manifest,
+            source_history_root=fixture["source_root"],
+            external_training=fixture["external"],
+        )
+
+
 def test_copied_source_runs_through_wrapper_without_pythonpath(tmp_path: Path) -> None:
     fixture = _fixture(tmp_path)
     validated = validate_execution_closure_manifest(
