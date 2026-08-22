@@ -17,6 +17,7 @@ from framework.stage6.p6_history_normalization_v1 import (
 from framework.stage6.p6_history_binding_v1 import EXPECTED_HISTORY_ENV_KEYS
 from framework.stage6.p6_history_execution_closure_v1 import EXECUTION_CLOSURE_ROLES
 from framework.stage6.p6_history_recipe_profiles_v1 import PROFILE_V1
+from tests.p6_source_wrapper_support import source_bridge_request
 from tests.stage6.test_p6_history_recipe_bridge import (
     MARKERS,
     _runner_template,
@@ -668,9 +669,23 @@ def test_v2_normalizer_keeps_training_external_and_writes_all_role_runner(
         "P6_HISTORY_TASK_STATE": str(private_dir / "task-state.json"),
         "P6_HISTORY_ROUND_OUTPUT_ROOT": str(private_dir / "round-00"),
     }
+    round_root = Path(environment["P6_HISTORY_ROUND_OUTPUT_ROOT"])
+    round_root.mkdir()
+    request = round_root / "measurement-request.json"
+    request.write_text(json.dumps(source_bridge_request(external)), encoding="utf-8")
     completed = subprocess.run(
-        [str(destination)],
-        cwd=private_dir,
+        [
+            str(destination),
+            "--request",
+            str(request),
+            "--model",
+            "pyramid",
+            "--group-id",
+            "pyramid|16x32x64",
+            "--gpu",
+            "17",
+        ],
+        cwd=round_root,
         env=environment,
         shell=False,
         text=True,

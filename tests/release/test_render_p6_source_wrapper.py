@@ -95,23 +95,14 @@ def test_renderer_writes_deterministic_self_contained_wrapper_from_private_profi
         second.executable.read_bytes()
     ).hexdigest()
     body = first_bytes.decode("utf-8")
-    assert body == (
-        "#!/bin/sh\n"
-        "set -eu\n"
-        ': "${P6_HISTORY_PRIVATE_ROOT:?}"\n'
-        'root="$(cd "${P6_HISTORY_PRIVATE_ROOT}" && pwd -P)"\n'
-        'implementation="${root}/private-relocated-history-repo/bin/'
-        'stage5_materialize_round_sources_v1.original.sh"\n'
-        'implementation_cwd="${root}/private-relocated-history-repo"\n'
-        '[ -f "$implementation" ] && [ -x "$implementation" ]\n'
-        'cd "$implementation_cwd"\n'
-        'implementation_cwd="$(pwd -P)"\n'
-        'exec "$implementation" "$@"\n'
-    )
+    assert body.startswith("#!/usr/bin/python3\n")
+    compile(body, str(first.executable), "exec")
     assert "P6_HISTORY_PRIVATE_ROOT" in body
-    assert 'exec "$implementation" "$@"' in body
+    assert "private-relocated-history-repo/bin/" in body
+    assert "stage5_materialize_round_sources_v1.original.sh" in body
+    assert ".p6-legacy-source-request-" in body
+    assert '"PYTHONPATH": str(implementation_cwd)' in body
     assert "/usr/bin/env python3" not in body
-    assert "PYTHONPATH" not in body
     assert "module_name" not in body
     assert "callable_name" not in body
     assert str(history_root) not in body
@@ -308,4 +299,4 @@ def test_profile_loader_rejects_trackable_public_repository_profile(
     assert expected_wrapper_bytes_from_profile(
         profile_path,
         history_root=history_root,
-    ).startswith(b"#!/bin/sh\n")
+    ).startswith(b"#!/usr/bin/python3\n")

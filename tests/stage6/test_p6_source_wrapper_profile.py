@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -21,11 +22,37 @@ from framework.stage6.p6_source_wrapper_profile_v1 import (
     render_self_contained_source_wrapper,
     validate_self_contained_source_wrapper,
 )
+from tests.p6_source_wrapper_support import source_bridge_request
 from tests.stage6.test_p6_runner_template_validator import _write_valid_template
 
 
 SOURCE_MARKER = "stage5_materialize_round_sources_v1.sh"
 SOURCE_STAGE_TAIL = ("{measurement_request}", "{round_output_root}")
+
+
+def _canonical_request() -> dict[str, Any]:
+    binding = {
+        "schema_version": "p6_external_training_binding_v1",
+        "training_required": True,
+        "training_source_kind": "selected_candidate_finetune",
+        "dataset_root": "/operator/dataset",
+        "base_checkpoint_path": "/operator/base.ckpt",
+        "base_checkpoint_sha256": "a" * 64,
+        "pyramid_config_path": "/operator/pyramid.yaml",
+        "pyramid_config_sha256": "b" * 64,
+        "training_parameters": {
+            "training_mode": "finetune_selected_width",
+            "epochs": 8,
+            "seed": 0,
+            "optimizer": "adam",
+            "learning_rate": 0.002,
+            "batch_size": 2,
+            "dataset_split": "trainval_coptv2x",
+            "checkpoint_selection": "best_ap70",
+            "freeze_policy": "pyramid_backbone_partial",
+        },
+    }
+    return source_bridge_request(binding)
 
 
 def _wrapper_profile() -> dict[str, str]:
@@ -140,7 +167,7 @@ def test_source_wrapper_execs_relocated_implementation_from_private_cwd_with_exa
     round_root = history_root / "private-runs" / "0"
     round_root.mkdir(parents=True)
     request = round_root / "measurement-request.json"
-    request.write_text("{}", encoding="utf-8")
+    request.write_text(json.dumps(_canonical_request()), encoding="utf-8")
     task_state = round_root / "state" / "task-state.json"
     task_state.parent.mkdir()
     task_state.write_text("{}", encoding="utf-8")

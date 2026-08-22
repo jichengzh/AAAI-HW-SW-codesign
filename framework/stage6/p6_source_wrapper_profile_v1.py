@@ -52,6 +52,296 @@ SOURCE_RUNTIME_ARGV_SHAPE = (
 )
 MAX_PROFILE_SIZE = 1024 * 1024
 SAFE_RELATIVE_PATH = re.compile(r"\A[A-Za-z0-9._/-]+\Z")
+_WRAPPER_TEMPLATE = '''#!/usr/bin/python3
+"""Generated P6 historical source-materializer compatibility wrapper."""
+
+import copy
+import hashlib
+import json
+import math
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+
+ENVIRONMENT_KEYS = (
+    "CUDA_VISIBLE_DEVICES",
+    "P6_HISTORY_RUN_MODE",
+    "P6_HISTORY_PRIVATE_ROOT",
+    "P6_HISTORY_TASK_STATE",
+    "P6_HISTORY_ROUND_OUTPUT_ROOT",
+)
+LEGACY_TRAINING_KEYS = (
+    "training_required",
+    "training_source_kind",
+    "dataset_root",
+    "base_checkpoint_path",
+    "base_checkpoint_sha256",
+    "pyramid_config_path",
+    "pyramid_config_sha256",
+    "training_parameters",
+)
+BINDING_KEYS = ("schema_version", *LEGACY_TRAINING_KEYS)
+PARAMETER_KEYS = (
+    "training_mode",
+    "epochs",
+    "seed",
+    "optimizer",
+    "learning_rate",
+    "batch_size",
+    "dataset_split",
+    "checkpoint_selection",
+    "freeze_policy",
+)
+REQUEST_KEYS = (
+    "schema_version", "task_id", "task_sha256", "round_index", "batch_size",
+    "sample_budget", "required_metrics", "atomic_feedback",
+    "real_h800_measurement_required", "row_sha256", "rows",
+    "measurement_request_sha256",
+)
+ROW_KEYS = (
+    "schema_version", "task_id", "task_sha256", "row_id", "manifest_job_id",
+    "group_id", "model", "width", "width_schema", "structure_widths", "genome",
+    "strategy_id", "q_mode", "hardware_id", "capability_profile_id",
+    "capability_digest", "dispatch_key", "source_status", "materialization_kind",
+    "source_evidence_kind", "source_contract", "source_contract_sha256",
+    "source_evidence_sha256", "graph_features",
+)
+IMPLEMENTATION_RELATIVE = __IMPLEMENTATION_RELATIVE__
+IMPLEMENTATION_CWD_RELATIVE = __IMPLEMENTATION_CWD_RELATIVE__
+
+
+class CompatibilityError(ValueError):
+    pass
+
+
+def _canonical_sha(payload):
+    encoded = json.dumps(
+        payload, ensure_ascii=True, allow_nan=False,
+        sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _unique_mapping(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise CompatibilityError
+        result[key] = value
+    return result
+
+
+def _invalid_constant(_value):
+    raise CompatibilityError
+
+
+def _valid_parameters(raw):
+    if not isinstance(raw, dict) or set(raw) != set(PARAMETER_KEYS):
+        return False
+    strings = (
+        "training_mode", "optimizer", "dataset_split",
+        "checkpoint_selection", "freeze_policy",
+    )
+    return (
+        all(isinstance(raw[key], str) and raw[key].strip() for key in strings)
+        and isinstance(raw["epochs"], int) and not isinstance(raw["epochs"], bool)
+        and raw["epochs"] > 0
+        and isinstance(raw["seed"], int) and not isinstance(raw["seed"], bool)
+        and raw["seed"] >= 0
+        and isinstance(raw["learning_rate"], (int, float))
+        and not isinstance(raw["learning_rate"], bool)
+        and math.isfinite(raw["learning_rate"])
+        and raw["learning_rate"] > 0
+        and isinstance(raw["batch_size"], int)
+        and not isinstance(raw["batch_size"], bool)
+        and raw["batch_size"] > 0
+    )
+
+
+def _validated_binding(raw):
+    if not isinstance(raw, dict) or set(raw) != set(BINDING_KEYS):
+        raise CompatibilityError
+    digests = (raw["base_checkpoint_sha256"], raw["pyramid_config_sha256"])
+    paths = (raw["dataset_root"], raw["base_checkpoint_path"], raw["pyramid_config_path"])
+    if (
+        raw["schema_version"] != "p6_external_training_binding_v1"
+        or raw["training_required"] is not True
+        or raw["training_source_kind"] != "selected_candidate_finetune"
+        or any(not isinstance(value, str) or not value for value in paths)
+        or any(
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
+            for value in digests
+        )
+        or not _valid_parameters(raw["training_parameters"])
+    ):
+        raise CompatibilityError
+    return {key: copy.deepcopy(raw[key]) for key in LEGACY_TRAINING_KEYS}
+
+
+def _legacy_row(row):
+    contract = row.get("source_contract") if isinstance(row, dict) else None
+    if (
+        not isinstance(contract, dict)
+        or not isinstance(row.get("row_id"), str)
+        or not row["row_id"]
+        or set(contract).intersection(LEGACY_TRAINING_KEYS)
+    ):
+        raise CompatibilityError
+    legacy_contract = {
+        **{key: value for key, value in contract.items() if key != "external_training_binding"},
+        **_validated_binding(contract.get("external_training_binding")),
+    }
+    return {
+        **copy.deepcopy(row),
+        "source_contract": legacy_contract,
+        "source_contract_sha256": _canonical_sha(legacy_contract),
+    }
+
+
+def _validated_request_rows(request):
+    if not isinstance(request, dict) or set(request) != set(REQUEST_KEYS):
+        raise CompatibilityError
+    rows = request.get("rows")
+    row_hashes = request.get("row_sha256")
+    if (
+        request.get("schema_version") != "stage5_measurement_request_v2"
+        or not isinstance(rows, list)
+        or not rows
+        or not isinstance(row_hashes, dict)
+        or any(not isinstance(row, dict) or set(row) != set(ROW_KEYS) for row in rows)
+    ):
+        raise CompatibilityError
+    row_ids = tuple(row.get("row_id") for row in rows)
+    if (
+        any(not isinstance(row_id, str) or not row_id for row_id in row_ids)
+        or len(set(row_ids)) != len(row_ids)
+        or set(row_hashes) != set(row_ids)
+        or any(
+            row["source_contract_sha256"] != _canonical_sha(row["source_contract"])
+            or row_hashes[row_id] != _canonical_sha(row)
+            for row, row_id in zip(rows, row_ids, strict=True)
+        )
+    ):
+        raise CompatibilityError
+    body = {
+        key: value for key, value in request.items()
+        if key != "measurement_request_sha256"
+    }
+    if request.get("measurement_request_sha256") != _canonical_sha(body):
+        raise CompatibilityError
+    return rows
+
+
+def _legacy_view(request):
+    rows = _validated_request_rows(request)
+    bindings = tuple(
+        row.get("source_contract", {}).get("external_training_binding")
+        if isinstance(row, dict) and isinstance(row.get("source_contract"), dict)
+        else None
+        for row in rows
+    )
+    if any(binding != bindings[0] for binding in bindings[1:]):
+        raise CompatibilityError
+    projected_rows = [_legacy_row(row) for row in rows]
+    projected = {
+        **copy.deepcopy(request),
+        "rows": projected_rows,
+        "row_sha256": {
+            row["row_id"]: _canonical_sha(row) for row in projected_rows
+        },
+    }
+    body = {
+        key: value for key, value in projected.items()
+        if key != "measurement_request_sha256"
+    }
+    return {**projected, "measurement_request_sha256": _canonical_sha(body)}
+
+
+def _runtime_paths(argv):
+    if (
+        len(argv) != 9
+        or tuple(argv[1::2]) != ("--request", "--model", "--group-id", "--gpu")
+        or argv[4] != "pyramid"
+        or not argv[6]
+        or not argv[8].isdigit()
+    ):
+        raise CompatibilityError
+    root = Path(os.environ["P6_HISTORY_PRIVATE_ROOT"]).resolve(strict=True)
+    round_root = Path(os.environ["P6_HISTORY_ROUND_OUTPUT_ROOT"]).resolve(strict=True)
+    request = Path(argv[2]).resolve(strict=True)
+    implementation = (root / IMPLEMENTATION_RELATIVE).resolve(strict=True)
+    implementation_cwd = (root / IMPLEMENTATION_CWD_RELATIVE).resolve(strict=True)
+    if (
+        not root.is_dir()
+        or not round_root.is_dir()
+        or not request.is_file()
+        or not request.is_relative_to(round_root)
+        or not implementation.is_file()
+        or not os.access(implementation, os.X_OK)
+        or not implementation_cwd.is_dir()
+        or not implementation.is_relative_to(implementation_cwd)
+        or not Path(__file__).resolve().is_relative_to(root)
+    ):
+        raise CompatibilityError
+    return root, round_root, request, implementation, implementation_cwd
+
+
+def _write_legacy_request(round_root, request):
+    descriptor, spelling = tempfile.mkstemp(
+        dir=round_root, prefix=".p6-legacy-source-request-", suffix=".json"
+    )
+    path = Path(spelling)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(
+                request, handle, ensure_ascii=True, allow_nan=False,
+                sort_keys=True, separators=(",", ":")
+            )
+            handle.flush()
+            os.fsync(handle.fileno())
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+    return path
+
+
+def main(argv):
+    temporary = None
+    try:
+        _, round_root, request, implementation, implementation_cwd = _runtime_paths(argv)
+        loaded = json.loads(
+            request.read_text(encoding="utf-8"),
+            object_pairs_hook=_unique_mapping,
+            parse_constant=_invalid_constant,
+        )
+        temporary = _write_legacy_request(round_root, _legacy_view(loaded))
+        child_argv = [str(implementation), "--request", str(temporary), *argv[3:]]
+        child_env = {
+            **{key: os.environ[key] for key in ENVIRONMENT_KEYS},
+            "PYTHONPATH": str(implementation_cwd),
+        }
+        completed = subprocess.run(
+            child_argv, cwd=implementation_cwd, env=child_env, shell=False, check=False
+        )
+        return completed.returncode
+    except (
+        CompatibilityError, KeyError, OSError, OverflowError, TypeError, ValueError
+    ):
+        print("history_execution_invalid", file=sys.stderr)
+        return 2
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))
+'''
 
 
 class P6SourceWrapperProfileError(ValueError):
@@ -340,17 +630,10 @@ def _resolve_destination(root: Path, relative: Path) -> Path:
 
 
 def _wrapper_bytes(implementation: Path, implementation_cwd: Path) -> bytes:
-    body = (
-        "#!/bin/sh\n"
-        "set -eu\n"
-        ': "${P6_HISTORY_PRIVATE_ROOT:?}"\n'
-        'root="$(cd "${P6_HISTORY_PRIVATE_ROOT}" && pwd -P)"\n'
-        f'implementation="${{root}}/{implementation.as_posix()}"\n'
-        f'implementation_cwd="${{root}}/{implementation_cwd.as_posix()}"\n'
-        '[ -f "$implementation" ] && [ -x "$implementation" ]\n'
-        'cd "$implementation_cwd"\n'
-        'implementation_cwd="$(pwd -P)"\n'
-        'exec "$implementation" "$@"\n'
+    body = _WRAPPER_TEMPLATE.replace(
+        "__IMPLEMENTATION_RELATIVE__", repr(implementation.as_posix())
+    ).replace(
+        "__IMPLEMENTATION_CWD_RELATIVE__", repr(implementation_cwd.as_posix())
     )
     return body.encode("utf-8")
 

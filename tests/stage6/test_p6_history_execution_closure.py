@@ -14,6 +14,7 @@ import yaml
 
 import framework.stage6.p6_history_execution_closure_v1 as closure_module
 from framework.stage6.p6_external_training_binding_v1 import (
+    external_training_binding_to_mapping,
     validate_external_training_binding,
 )
 from framework.stage6.p6_history_execution_closure_v1 import (
@@ -36,6 +37,7 @@ from framework.stage6.p6_history_training_contract_v1 import (
 from framework.stage6.p6_source_wrapper_profile_v1 import (
     render_self_contained_source_wrapper,
 )
+from tests.p6_source_wrapper_support import source_bridge_request
 from tests.stage6.test_p6_runner_template_validator import _runner_template
 
 
@@ -394,6 +396,11 @@ def test_copied_source_runs_through_wrapper_without_pythonpath(tmp_path: Path) -
     )
     round_root = fixture["staged"] / "runs/round-00"
     round_root.mkdir(parents=True)
+    request_path = round_root / "request.json"
+    binding = external_training_binding_to_mapping(fixture["external"])
+    request_path.write_text(
+        json.dumps(source_bridge_request(binding)), encoding="utf-8"
+    )
     environment = {
         "CUDA_VISIBLE_DEVICES": "17,19,23",
         "P6_HISTORY_RUN_MODE": "bound",
@@ -407,7 +414,7 @@ def test_copied_source_runs_through_wrapper_without_pythonpath(tmp_path: Path) -
         [
             str(wrapper.executable),
             "--request",
-            str(round_root / "request.json"),
+            str(request_path),
             "--model",
             "pyramid",
             "--group-id",
