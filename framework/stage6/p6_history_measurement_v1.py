@@ -127,7 +127,7 @@ def run_history_measurement_batch(
     canonical_request = projected.request
     private_root, gpu_policy = _validate_binding_runtime(binding)
     _validate_interface_gpu_policy(interface, gpu_policy)
-    paths = _resolve_round_paths(
+    paths = resolve_validated_history_round_paths(
         interface, private_root, round_output_root, canonical_request["round_index"]
     )
     run_context, source_group_ids = _plan_current_run_sources(
@@ -440,17 +440,18 @@ def _validate_interface_gpu_policy(
         raise P6HistoryMeasurementError("history_execution_invalid") from None
 
 
-def _resolve_round_paths(
+def plan_validated_history_round_paths(
     interface: Mapping[str, Any],
     private_root: Path,
-    supplied_root: str | Path,
     round_index: int,
 ) -> dict[str, Path]:
+    """Render one private round layout without requiring it to exist yet."""
     try:
-        validated_supplied_root = _validate_controller_round_root(supplied_root)
-        local_output_root = _validate_controller_round_root(
-            validated_supplied_root.parent
-        )
+        if not isinstance(private_root, Path):
+            raise ValueError
+        private_root = _validate_controller_round_root(private_root)
+        if isinstance(round_index, bool) or not isinstance(round_index, int) or round_index not in range(4):
+            raise ValueError
         round_root = _resolve_template(
             private_root,
             interface["output_layout"]["round_root_template"],
@@ -484,8 +485,6 @@ def _resolve_round_paths(
         )
         request_path = (round_root / "measurement-request.json").resolve(strict=False)
         paths = {
-            "history_root": private_root,
-            "local_output_root": local_output_root,
             "round_root": round_root,
             "measurement_request": request_path,
             "task_state": task_state,
@@ -505,6 +504,34 @@ def _resolve_round_paths(
             raise ValueError
         return paths
     except (KeyError, OSError, TypeError, ValueError):
+        raise P6HistoryMeasurementError("history_execution_invalid") from None
+
+
+def resolve_validated_history_round_paths(
+    interface: Mapping[str, Any],
+    private_root: Path,
+    supplied_public_round_root: Path,
+    round_index: int,
+) -> dict[str, Path]:
+    """Resolve the runtime public root and pair it with the planned private paths."""
+    try:
+        validated_supplied_root = _validate_controller_round_root(
+            supplied_public_round_root
+        )
+        local_output_root = _validate_controller_round_root(
+            validated_supplied_root.parent
+        )
+        planned = plan_validated_history_round_paths(
+            interface, private_root, round_index
+        )
+        return {
+            "history_root": _validate_controller_round_root(private_root),
+            "local_output_root": local_output_root,
+            **planned,
+        }
+    except P6HistoryMeasurementError:
+        raise
+    except (OSError, TypeError, ValueError):
         raise P6HistoryMeasurementError("history_execution_invalid") from None
 
 

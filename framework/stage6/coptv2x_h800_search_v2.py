@@ -25,12 +25,18 @@ from framework.stage5.single_target_search_v2 import (
     fit_online_bundle,
     freeze_initial_coldstart,
     select_task_batch,
+    validate_search_task,
     validate_task_feedback_history,
 )
 from framework.stage6.pyramid_search_space_adapter_v1 import build_pyramid_candidate_plan
 from framework.stage6.p6_history_source_materialization_v1 import (
     P6HistorySourceMaterializationError,
     project_source_materialization_request,
+)
+from framework.stage6.p6_history_recipe_profiles_v1 import SHARED_SOURCE_PATH_KEYS
+from framework.stage6.p6_source_reuse_evidence_v1 import (
+    P6SourceReuseEvidenceError,
+    create_fresh_run_context,
 )
 
 
@@ -266,7 +272,10 @@ def run_p6_coptv2x_search(
     command_runner: CommandRunner,
 ) -> P6CoptV2XRunState:
     """Run the fixed four-round local Pyramid/H800/TVM search state machine."""
+    code_revision = validate_code_revision(code_revision)
     _prepare_local_output_root(local.local_output_root)
+    if local.candidate_source_mode == "framework_stage2_search_space":
+        _require_controller_destinations_absent(local)
     _run_framework_stage1_scan(local, command_runner)
     frozen_gold, gold_graphs, capability_profiles, profile = _load_search_inputs(local)
     task = _build_search_task(contract, profile)
@@ -277,6 +286,27 @@ def run_p6_coptv2x_search(
         raise P6CoptV2XExecutionError(
             "source_registry_invalid", "source registry invalid"
         ) from None
+    if (
+        local.candidate_source_mode == "framework_stage2_search_space"
+        and _registry_uses_recipe_v2_sources(source_registry)
+    ):
+        task_contract = validate_search_task(task)
+        if framework_plan is None:
+            raise P6CoptV2XExecutionError(
+                "source_registry_invalid", "source registry invalid"
+            )
+        try:
+            create_fresh_run_context(
+                local_output_root=local.local_output_root,
+                task_contract=task_contract,
+                code_revision=code_revision,
+                candidate_plan=framework_plan,
+                source_registry=source_registry,
+            )
+        except P6SourceReuseEvidenceError as error:
+            raise P6CoptV2XExecutionError(
+                error.public_category, "history execution invalid"
+            ) from None
     online_feedback_rows: list[dict[str, Any]] = []
     measured_row_ids: set[str] = set()
     frozen_holdout_group_ids = {str(row["group_id"]) for row in frozen_gold}
@@ -339,8 +369,7 @@ def _run_framework_stage1_scan(
     try:
         if local.stage1_scan_step is None or local.stage2_search_space_path is None:
             raise P6CoptV2XContractError("framework Stage1 scan configuration is missing")
-        _validate_local_output_leaf(local.stage2_search_space_path)
-        local.stage2_search_space_path.unlink(missing_ok=True)
+        _require_local_output_absent(local.stage2_search_space_path)
         _run_step(
             local.stage1_scan_step,
             {
@@ -444,7 +473,10 @@ def _build_source_registry(
     local: LocalP6CoptV2XConfig, command_runner: CommandRunner
 ) -> tuple[Mapping[str, Any], Mapping[str, Any] | None]:
     source_registry_path = local.local_output_root / "source_registry.json"
-    _validate_local_output_leaf(source_registry_path)
+    if local.candidate_source_mode == "framework_stage2_search_space":
+        _require_local_output_absent(source_registry_path)
+    else:
+        _validate_local_output_leaf(source_registry_path)
     plan_path: Path | None = None
     plan: Mapping[str, Any] | None = None
     if local.candidate_source_mode == "framework_stage2_search_space":
@@ -453,7 +485,7 @@ def _build_source_registry(
             load_stage2_search_space(local.stage2_search_space_path)
         )
         plan_path = local.local_output_root / "pyramid_candidate_plan.json"
-        _validate_local_output_leaf(plan_path)
+        _require_local_output_absent(plan_path)
         plan_path.write_text(
             json.dumps(plan, ensure_ascii=True, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
@@ -514,6 +546,19 @@ def _validate_framework_registry_plan(
     actual = dict(actual_entries)
     if len(actual) != len(actual_entries) or actual != expected:
         raise P6CoptV2XContractError("framework registry plan identities do not match")
+
+
+def _registry_uses_recipe_v2_sources(source_registry: Mapping[str, Any]) -> bool:
+    """Limit fresh provenance metadata to the recipe-v2 materializer lane."""
+    groups = source_registry.get("groups")
+    if not isinstance(groups, list) or not groups:
+        return False
+    return all(
+        isinstance(group, Mapping)
+        and isinstance(group.get("source_contract"), Mapping)
+        and set(SHARED_SOURCE_PATH_KEYS).issubset(group["source_contract"])
+        for group in groups
+    )
 
 
 def _framework_width_identity(value: Mapping[str, Any]) -> tuple[int, ...]:
@@ -691,7 +736,9 @@ def _run_search_round(
         task=task, selected_rows=selection["selected_rows"], round_index=round_index
     )
     round_root, request_path, feedback_path = _prepare_round_output(
-        local.local_output_root, round_index
+        local.local_output_root,
+        round_index,
+        reject_existing=local.candidate_source_mode == "framework_stage2_search_space",
     )
     try:
         request = dict(project_source_materialization_request(request).request)
@@ -779,11 +826,13 @@ def _prepare_local_output_root(local_output_root: Path) -> None:
 
 
 def _prepare_round_output(
-    local_output_root: Path, round_index: int
+    local_output_root: Path, round_index: int, *, reject_existing: bool = True
 ) -> tuple[Path, Path, Path]:
     _prepare_local_output_root(local_output_root)
     round_root = local_output_root / f"round-{round_index:02d}"
-    if round_root.is_symlink() or (round_root.exists() and not round_root.is_dir()):
+    if round_root.is_symlink() or (
+        reject_existing and round_root.exists()
+    ) or (round_root.exists() and not round_root.is_dir()):
         raise P6CoptV2XExecutionError("unsafe_output", "round output is unsafe")
     try:
         round_root.mkdir(exist_ok=True)
@@ -823,6 +872,32 @@ def _write_round_failure(
 def _validate_local_output_leaf(output_path: Path) -> None:
     if output_path.is_symlink() or (output_path.exists() and not output_path.is_file()):
         raise P6CoptV2XExecutionError("unsafe_output", "local output leaf is unsafe")
+
+
+def _require_local_output_absent(output_path: Path) -> None:
+    """Refuse stale controller leaves instead of deleting or reusing them."""
+    try:
+        output_path.lstat()
+    except FileNotFoundError:
+        return
+    except OSError:
+        pass
+    raise P6CoptV2XExecutionError("unsafe_output", "local output leaf is unsafe")
+
+
+def _require_controller_destinations_absent(local: LocalP6CoptV2XConfig) -> None:
+    """Check deterministic public controller outputs before process execution."""
+    paths = [
+        local.local_output_root / "source_registry.json",
+        local.local_output_root / "pyramid_candidate_plan.json",
+        local.local_output_root / "state.json",
+        *(local.local_output_root / f"round-{index:02d}" for index in range(FIXED_ROUND_COUNT)),
+    ]
+    if local.candidate_source_mode == "framework_stage2_search_space":
+        assert local.stage2_search_space_path is not None
+        paths.append(local.stage2_search_space_path)
+    for path in paths:
+        _require_local_output_absent(path)
 
 
 def _build_search_task(
