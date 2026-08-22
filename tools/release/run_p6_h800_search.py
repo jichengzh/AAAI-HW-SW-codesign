@@ -10,8 +10,11 @@ import sys
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-if str(REPOSITORY_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPOSITORY_ROOT))
+_REPOSITORY_ROOT_ENTRY = str(REPOSITORY_ROOT)
+sys.path = [
+    _REPOSITORY_ROOT_ENTRY,
+    *(entry for entry in sys.path if entry != _REPOSITORY_ROOT_ENTRY),
+]
 
 from framework.stage6.coptv2x_h800_search_v2 import (  # noqa: E402
     P6CoptV2XContractError,

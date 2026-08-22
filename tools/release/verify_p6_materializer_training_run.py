@@ -12,23 +12,35 @@ import stat
 import sys
 from typing import Any, Literal
 
-from framework.stage5.single_target_search_v2 import validate_search_task
-from framework.stage6.coptv2x_h800_search_v2 import (
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+_REPOSITORY_ROOT_ENTRY = str(REPOSITORY_ROOT)
+sys.path = [
+    _REPOSITORY_ROOT_ENTRY,
+    *(entry for entry in sys.path if entry != _REPOSITORY_ROOT_ENTRY),
+]
+
+from framework.stage5.single_target_search_v2 import validate_search_task  # noqa: E402
+from framework.stage6.coptv2x_h800_search_v2 import (  # noqa: E402
     P6CoptV2XExecutionError,
     _build_search_task,
     _load_search_inputs,
     load_local_config,
     load_public_contract,
 )
-from framework.stage6.p6_history_binding_v1 import validate_history_execution_binding
-from framework.stage6.p6_history_feedback_validation_v1 import translate_history_feedback
-from framework.stage6.p6_history_measurement_v1 import (
+from framework.stage6.p6_history_binding_v1 import (  # noqa: E402
+    validate_history_execution_binding,
+)
+from framework.stage6.p6_history_feedback_validation_v1 import (  # noqa: E402
+    translate_history_feedback,
+)
+from framework.stage6.p6_history_measurement_v1 import (  # noqa: E402
     resolve_validated_history_round_paths,
 )
-from framework.stage6.p6_history_source_materialization_v1 import (
+from framework.stage6.p6_history_source_materialization_v1 import (  # noqa: E402
     project_source_materialization_request,
 )
-from framework.stage6.p6_source_reuse_evidence_v1 import (
+from framework.stage6.p6_source_reuse_evidence_v1 import (  # noqa: E402
     canonical_json_sha256,
     load_fresh_run_context,
     require_selected_groups_ready_current_run,

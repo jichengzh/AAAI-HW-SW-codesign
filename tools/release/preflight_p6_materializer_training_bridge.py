@@ -9,27 +9,41 @@ from pathlib import Path
 import sys
 from typing import Any, Literal, Mapping
 
-from framework.stage6.coptv2x_h800_search_v2 import (
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+_REPOSITORY_ROOT_ENTRY = str(REPOSITORY_ROOT)
+sys.path = [
+    _REPOSITORY_ROOT_ENTRY,
+    *(entry for entry in sys.path if entry != _REPOSITORY_ROOT_ENTRY),
+]
+
+from framework.stage6.coptv2x_h800_search_v2 import (  # noqa: E402
     P6CoptV2XExecutionError,
     load_local_config,
     load_public_contract,
 )
-from framework.stage6.p6_history_binding_v1 import validate_history_execution_binding
-from framework.stage6.p6_external_training_binding_v1 import (
+from framework.stage6.p6_history_binding_v1 import (  # noqa: E402
+    validate_history_execution_binding,
+)
+from framework.stage6.p6_external_training_binding_v1 import (  # noqa: E402
     external_training_binding_from_contract,
     external_training_binding_to_mapping,
     load_external_training_binding,
     validate_external_training_binding,
 )
-from framework.stage6.p6_history_measurement_v1 import plan_validated_history_round_paths
-from framework.stage6.p6_history_training_contract_v1 import (
+from framework.stage6.p6_history_measurement_v1 import (  # noqa: E402
+    plan_validated_history_round_paths,
+)
+from framework.stage6.p6_history_training_contract_v1 import (  # noqa: E402
     validate_recipe_v2_training_template,
 )
-from framework.stage6.p6_runner_template_validator_v1 import (
+from framework.stage6.p6_runner_template_validator_v1 import (  # noqa: E402
     validate_pre_provision_runner_template,
 )
-from framework.stage6.p6_source_reuse_evidence_v1 import plan_source_reuse_paths
-from framework.stage6.p6_source_wrapper_profile_v1 import (
+from framework.stage6.p6_source_reuse_evidence_v1 import (  # noqa: E402
+    plan_source_reuse_paths,
+)
+from framework.stage6.p6_source_wrapper_profile_v1 import (  # noqa: E402
     validate_self_contained_source_wrapper,
 )
 
