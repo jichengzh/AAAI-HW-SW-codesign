@@ -205,7 +205,7 @@ def main(argv: list[str] | None = None) -> int:
             local_config_path=args.local_config,
             private_binding_path=args.binding,
         )
-    except BaseException:
+    except Exception:
         sys.stderr.write("verification_failed\n")
         return 1
     sys.stdout.write(json.dumps(asdict(report), sort_keys=True) + "\n")

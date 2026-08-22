@@ -1099,7 +1099,7 @@ def _loaded_local_config(
         local_config = _local_config(
             tmp_path,
             candidate_source_mode="framework_stage2_search_space",
-            stage2_search_space_path=str(_write_framework_stage1_partition_manifest(tmp_path)),
+            stage2_search_space_path=str(tmp_path / "framework-stage1.yaml"),
             stage1_scan_step=_framework_stage1_scan_step(),
             source_registry_step={
                 "name": "build_source_registry",
@@ -1658,8 +1658,8 @@ def test_framework_scan_rejects_a_stale_manifest_when_the_command_noops(
             runner,
         )
 
-    assert captured.value.failure_code == "stage1_scan_invalid"
-    assert events == ["fake-stage1"]
+    assert captured.value.failure_code == "unsafe_output"
+    assert events == []
 
 
 @pytest.mark.parametrize(

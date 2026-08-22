@@ -75,6 +75,8 @@ def preflight_materializer_training_bridge(
     try:
         contract = load_public_contract(public_contract_path)
         local = load_local_config(local_config_path, contract)
+        if local.candidate_source_mode != "framework_stage2_search_space":
+            raise ValueError
         binding = _load_json_mapping(private_binding_path)
         interface = validate_history_execution_binding(binding)
         private_root = _private_root(binding)
@@ -148,7 +150,7 @@ def main(argv: list[str] | None = None) -> int:
             runner_template_path=args.runner_template,
             source_wrapper_profile_path=args.source_wrapper_profile,
         )
-    except BaseException:
+    except Exception:
         sys.stderr.write("preflight_failed\n")
         return 1
     sys.stdout.write(json.dumps(asdict(report), sort_keys=True) + "\n")

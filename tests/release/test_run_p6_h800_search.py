@@ -392,7 +392,7 @@ def _history_cli_fixture(
     private_root = tmp_path / "private"
     private_root.mkdir()
     paths: dict[str, Any] = _cli_fixture(private_root)
-    stage1 = _write_yaml(private_root / "stage1.yaml", {"schema": "stale-stage1"})
+    stage1 = private_root / "stage1.yaml"
     stage1_call_log = private_root / "stage1-call.log"
     stage1_adapter = _write_fake_stage1_adapter(private_root / "fake-stage1.py")
     binding_path = private_root / "p6-history-binding.json"

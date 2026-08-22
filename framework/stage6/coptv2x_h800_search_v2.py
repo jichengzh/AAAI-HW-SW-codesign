@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 import copy
 from dataclasses import dataclass
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -33,7 +34,6 @@ from framework.stage6.p6_history_source_materialization_v1 import (
     P6HistorySourceMaterializationError,
     project_source_materialization_request,
 )
-from framework.stage6.p6_history_recipe_profiles_v1 import SHARED_SOURCE_PATH_KEYS
 from framework.stage6.p6_source_reuse_evidence_v1 import (
     P6SourceReuseEvidenceError,
     create_fresh_run_context,
@@ -286,10 +286,9 @@ def run_p6_coptv2x_search(
         raise P6CoptV2XExecutionError(
             "source_registry_invalid", "source registry invalid"
         ) from None
-    if (
-        local.candidate_source_mode == "framework_stage2_search_space"
-        and _registry_uses_recipe_v2_sources(source_registry)
-    ):
+    if local.candidate_source_mode == "framework_stage2_search_space":
+        context_registry = _normalize_recipe_v2_registry_paths(source_registry)
+        _write_json(local.local_output_root / "source_registry.json", context_registry)
         task_contract = validate_search_task(task)
         if framework_plan is None:
             raise P6CoptV2XExecutionError(
@@ -301,7 +300,7 @@ def run_p6_coptv2x_search(
                 task_contract=task_contract,
                 code_revision=code_revision,
                 candidate_plan=framework_plan,
-                source_registry=source_registry,
+                source_registry=context_registry,
             )
         except P6SourceReuseEvidenceError as error:
             raise P6CoptV2XExecutionError(
@@ -548,17 +547,34 @@ def _validate_framework_registry_plan(
         raise P6CoptV2XContractError("framework registry plan identities do not match")
 
 
-def _registry_uses_recipe_v2_sources(source_registry: Mapping[str, Any]) -> bool:
-    """Limit fresh provenance metadata to the recipe-v2 materializer lane."""
-    groups = source_registry.get("groups")
-    if not isinstance(groups, list) or not groups:
-        return False
-    return all(
-        isinstance(group, Mapping)
-        and isinstance(group.get("source_contract"), Mapping)
-        and set(SHARED_SOURCE_PATH_KEYS).issubset(group["source_contract"])
-        for group in groups
-    )
+def _normalize_recipe_v2_registry_paths(
+    source_registry: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Expose recipe-v2 declared leaves to the Task 4 context freshness gate."""
+    try:
+        normalized = json.loads(json.dumps(source_registry, allow_nan=False))
+        groups = normalized["groups"]
+        if not isinstance(groups, list) or not groups:
+            raise ValueError
+        for group in groups:
+            contract = group["source_contract"]
+            paths = contract["shared_source_paths"]
+            if not isinstance(contract, dict) or not isinstance(paths, Mapping):
+                raise ValueError
+            for key in (
+                "checkpoint_path", "checkpoint_dir", "config_path", "training_done_marker",
+                "onnx_path", "onnx_report_path", "calibration_root", "calibration_npz",
+                "calibration_summary", "trt_calibration_dir", "source_done_marker",
+            ):
+                if key not in paths or key in contract:
+                    raise ValueError
+                contract[key] = paths[key]
+            group["source_contract_sha256"] = _canonical_json_sha256(contract)
+        return normalized
+    except (KeyError, TypeError, ValueError):
+        raise P6CoptV2XExecutionError(
+            "source_registry_invalid", "source registry invalid"
+        ) from None
 
 
 def _framework_width_identity(value: Mapping[str, Any]) -> tuple[int, ...]:
@@ -1114,6 +1130,12 @@ def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
         json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")),
         encoding="utf-8",
     )
+
+
+def _canonical_json_sha256(payload: Mapping[str, Any]) -> str:
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
 
 def _write_state(state: P6CoptV2XRunState, *, code_revision: str) -> None:
