@@ -170,6 +170,7 @@ def _runtime_external_and_closure(
         "training_parameters": {
             "training_mode": "finetune",
             "epochs": 1,
+            "target_epoch": 9,
             "seed": 0,
             "optimizer": "adamw",
             "learning_rate": 0.001,
@@ -177,6 +178,8 @@ def _runtime_external_and_closure(
             "dataset_split": "train",
             "checkpoint_selection": "best",
             "freeze_policy": "partial",
+            "groups": 3,
+            "width_per_group": 5,
         },
     }
     payload["execution_code_closure"] = {

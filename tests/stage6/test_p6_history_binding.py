@@ -382,9 +382,7 @@ def test_discovers_documented_history_and_returns_no_leak_projection(
     }
     assert binding["gpu_policy"]["indices"] == [17, 19, 23]
     assert set(binding["gpu_policy"]["uuid_by_index"]) == {"17", "19", "23"}
-    assert binding["source_contract_template"]["schema_version"] == (
-        "stage5_source_contract_v1"
-    )
+    assert binding["source_contract_template"]["schema_version"] == ("stage5_source_contract_v1")
     assert set(binding["local_input_paths"]) == set(LOCAL_INPUT_NAMES)
     interface = binding["execution_interface"]
     assert tuple(step["stage"] for step in interface["execution_chain"]) == (
@@ -456,24 +454,27 @@ def test_binding_discovers_only_ready_recipe_v2_template_and_validates_training(
         {
             "external_training_binding": {
                 "schema_version": "p6_external_training_binding_v1",
-            "training_required": True,
-            "training_source_kind": "selected_candidate_finetune",
-            "base_checkpoint_path": str(operator_root / "checkpoints" / "base.ckpt"),
-            "base_checkpoint_sha256": hashlib.sha256(b"base\n").hexdigest(),
-            "dataset_root": str(operator_root / "datasets" / "coptv2x"),
-            "pyramid_config_path": str(operator_root / "configs" / "pyramid.py"),
-            "pyramid_config_sha256": hashlib.sha256(b"config\n").hexdigest(),
-            "training_parameters": {
-                "training_mode": "finetune_selected_width",
-                "epochs": 2,
-                "seed": 20260821,
-                "optimizer": "adamw",
-                "learning_rate": 0.0001,
-                "batch_size": 1,
-                "dataset_split": "trainval_coptv2x",
-                "checkpoint_selection": "best_ap70",
-                "freeze_policy": "pyramid_backbone_partial",
-            },
+                "training_required": True,
+                "training_source_kind": "selected_candidate_finetune",
+                "base_checkpoint_path": str(operator_root / "checkpoints" / "base.ckpt"),
+                "base_checkpoint_sha256": hashlib.sha256(b"base\n").hexdigest(),
+                "dataset_root": str(operator_root / "datasets" / "coptv2x"),
+                "pyramid_config_path": str(operator_root / "configs" / "pyramid.py"),
+                "pyramid_config_sha256": hashlib.sha256(b"config\n").hexdigest(),
+                "training_parameters": {
+                    "training_mode": "finetune_selected_width",
+                    "epochs": 2,
+                    "target_epoch": 9,
+                    "seed": 20260821,
+                    "optimizer": "adamw",
+                    "learning_rate": 0.0001,
+                    "batch_size": 1,
+                    "dataset_split": "trainval_coptv2x",
+                    "checkpoint_selection": "best_ap70",
+                    "freeze_policy": "pyramid_backbone_partial",
+                    "groups": 3,
+                    "width_per_group": 5,
+                },
             },
             "dynamic_materialization_recipe": {
                 "schema_version": RECIPE_V2,
@@ -481,8 +482,7 @@ def test_binding_discovers_only_ready_recipe_v2_template_and_validates_training(
                 "group_id_template": "pyramid|{stage1_width}x{stage2_width}x{stage3_width}",
                 "artifact_id_template": "pyramid-{stage1_width}-{stage2_width}-{stage3_width}",
                 "shared_source_path_templates": {
-                    key: f"materialized/{{artifact_id}}/{key}"
-                    for key in SHARED_SOURCE_PATH_KEYS
+                    key: f"materialized/{{artifact_id}}/{key}" for key in SHARED_SOURCE_PATH_KEYS
                 },
             },
         }
@@ -491,9 +491,7 @@ def test_binding_discovers_only_ready_recipe_v2_template_and_validates_training(
     materializable = copy.deepcopy(ready)
     materializable["source_status"] = "materializable"
     materializable["source_contract"]["source_status"] = "materializable"
-    materializable["source_contract"]["external_training_binding"][
-        "training_required"
-    ] = False
+    materializable["source_contract"]["external_training_binding"]["training_required"] = False
     materializable["source_contract_sha256"] = _canonical_json_sha(
         materializable["source_contract"]
     )
@@ -504,9 +502,7 @@ def test_binding_discovers_only_ready_recipe_v2_template_and_validates_training(
 
     external = binding["source_contract_template"]["external_training_binding"]
     assert external["training_required"] is True
-    assert external["training_source_kind"] == (
-        "selected_candidate_finetune"
-    )
+    assert external["training_source_kind"] == ("selected_candidate_finetune")
 
 
 def test_binding_rejects_invalid_recipe_v2_training_template(tmp_path: Path) -> None:
@@ -542,8 +538,8 @@ def test_binding_preserves_private_cuda_policy_existing_order(
     history_root = _history_root(tmp_path)
     manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["environment"]["values"]["CUDA_VISIBLE_DEVICES"]["value"] = (
-        ",".join(str(index) for index in policy_indices)
+    manifest["environment"]["values"]["CUDA_VISIBLE_DEVICES"]["value"] = ",".join(
+        str(index) for index in policy_indices
     )
     _write_json(manifest_path, manifest)
     probe = _probe(_gpu_records(indices=policy_indices))
@@ -554,9 +550,7 @@ def test_binding_preserves_private_cuda_policy_existing_order(
     assert binding["gpu_policy"]["indices"] == list(policy_indices)
 
 
-@pytest.mark.parametrize(
-    "policy", ("17,17,23", "17,19", "17,19,x", "-1,19,23")
-)
+@pytest.mark.parametrize("policy", ("17,17,23", "17,19", "17,19,x", "-1,19,23"))
 def test_binding_rejects_noncanonical_private_cuda_policy(
     tmp_path: Path,
     policy: str,
@@ -602,9 +596,7 @@ def test_rejects_required_binding_descriptor_that_does_not_match_argv(
     history_root = _history_root(tmp_path)
     manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["execution_chain"][4]["required_placeholders"].remove(
-        "{finalization_barrier}"
-    )
+    manifest["execution_chain"][4]["required_placeholders"].remove("{finalization_barrier}")
     _write_json(manifest_path, manifest)
 
     with _expect_category("execution_interface"):
@@ -645,9 +637,7 @@ def test_rejects_incomplete_or_unsupported_four_row_actual_feedback_schema(
     elif mutation == "receipt_validation":
         manifest["actual_feedback"]["receipt"].pop("row_hashes_key")
     else:
-        manifest["actual_feedback"]["finalization_barrier"][
-            "source_evidence_key"
-        ] = "not a field"
+        manifest["actual_feedback"]["finalization_barrier"]["source_evidence_key"] = "not a field"
     _write_json(manifest_path, manifest)
 
     with _expect_category("execution_interface"):
@@ -676,9 +666,7 @@ def test_rejects_private_environment_path_outside_history_root(tmp_path: Path) -
     history_root = _history_root(tmp_path)
     manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["environment"]["values"]["P6_HISTORY_PRIVATE_ROOT"]["value"] = str(
-        tmp_path
-    )
+    manifest["environment"]["values"]["P6_HISTORY_PRIVATE_ROOT"]["value"] = str(tmp_path)
     _write_json(manifest_path, manifest)
 
     with _expect_category("execution_interface"):
@@ -826,9 +814,7 @@ def test_rejects_incomplete_or_escaping_private_feedback_layout(
     elif mutation == "receipt_omission":
         manifest["actual_feedback"].pop("receipt")
     else:
-        manifest["actual_feedback"]["finalization_barrier"]["path_template"] = (
-            "../barrier.json"
-        )
+        manifest["actual_feedback"]["finalization_barrier"]["path_template"] = "../barrier.json"
     _write_json(manifest_path, manifest)
 
     with _expect_category("execution_interface"):
@@ -867,9 +853,7 @@ def test_rejects_per_round_layout_template_without_exactly_one_round_id(
     elif location == "receipt":
         manifest["actual_feedback"]["receipt"]["path_template"] = template
     else:
-        manifest["actual_feedback"]["finalization_barrier"]["path_template"] = (
-            template
-        )
+        manifest["actual_feedback"]["finalization_barrier"]["path_template"] = template
     _write_json(manifest_path, manifest)
 
     with _expect_category("execution_interface"):

@@ -62,6 +62,7 @@ def _source_contract(width: list[int]) -> dict[str, Any]:
             "training_parameters": {
                 "training_mode": "finetune_selected_width",
                 "epochs": 7,
+                "target_epoch": 9,
                 "seed": 20260821,
                 "optimizer": "adamw",
                 "learning_rate": 0.0001,
@@ -69,6 +70,8 @@ def _source_contract(width: list[int]) -> dict[str, Any]:
                 "dataset_split": "trainval_coptv2x",
                 "checkpoint_selection": "best_ap70",
                 "freeze_policy": "pyramid_backbone_partial",
+                "groups": 3,
+                "width_per_group": 5,
             },
         },
         "shared_source_paths": _shared_paths("-".join(map(str, width))),
@@ -149,14 +152,8 @@ def _true_legacy_request() -> dict[str, Any]:
 
 
 def _rehash_request(request: dict[str, Any]) -> None:
-    request["row_sha256"] = {
-        row["row_id"]: _sha(row) for row in request["rows"]
-    }
-    body = {
-        key: value
-        for key, value in request.items()
-        if key != "measurement_request_sha256"
-    }
+    request["row_sha256"] = {row["row_id"]: _sha(row) for row in request["rows"]}
+    body = {key: value for key, value in request.items() if key != "measurement_request_sha256"}
     request["measurement_request_sha256"] = _sha(body)
 
 
@@ -197,6 +194,7 @@ def test_projection_flattens_shared_paths_and_recomputes_only_existing_hashes() 
         assert set(training["training_parameters"]) == {
             "training_mode",
             "epochs",
+            "target_epoch",
             "seed",
             "optimizer",
             "learning_rate",
@@ -204,12 +202,12 @@ def test_projection_flattens_shared_paths_and_recomputes_only_existing_hashes() 
             "dataset_split",
             "checkpoint_selection",
             "freeze_policy",
+            "groups",
+            "width_per_group",
         }
         assert row["source_contract_sha256"] == _sha(contract)
         assert projected.request["row_sha256"][row["row_id"]] == _sha(row)
-    assert {
-        key: first["source_contract"][key] for key in SHARED_SOURCE_PATH_KEYS
-    } == {
+    assert {key: first["source_contract"][key] for key in SHARED_SOURCE_PATH_KEYS} == {
         key: second["source_contract"][key] for key in SHARED_SOURCE_PATH_KEYS
     }
     request_body = {
@@ -220,12 +218,15 @@ def test_projection_flattens_shared_paths_and_recomputes_only_existing_hashes() 
     assert projected.request["measurement_request_sha256"] == _sha(request_body)
     assert set(projected.request) == set(original)
     assert set(projected.request["rows"][0]) == set(original["rows"][0])
-    projected.request["rows"][0]["source_contract"]["external_training_binding"]["training_parameters"][
-        "epochs"
-    ] = 99
-    assert request["rows"][0]["source_contract"]["external_training_binding"]["training_parameters"][
-        "epochs"
-    ] == 7
+    projected.request["rows"][0]["source_contract"]["external_training_binding"][
+        "training_parameters"
+    ]["epochs"] = 99
+    assert (
+        request["rows"][0]["source_contract"]["external_training_binding"]["training_parameters"][
+            "epochs"
+        ]
+        == 7
+    )
 
 
 def test_projection_preserves_complete_training_contract_and_rehashes() -> None:
@@ -239,9 +240,7 @@ def test_projection_preserves_complete_training_contract_and_rehashes() -> None:
     projected = project_source_materialization_request(request)
 
     assert request == original
-    assert request["measurement_request_sha256"] != projected.request[
-        "measurement_request_sha256"
-    ]
+    assert request["measurement_request_sha256"] != projected.request["measurement_request_sha256"]
     for row in projected.request["rows"]:
         contract = row["source_contract"]
         training = contract["external_training_binding"]
@@ -298,9 +297,9 @@ def test_projection_rejects_untrusted_training_or_shared_path_drift(
         first["shared_source_paths"].pop("source_done_marker")
         rehash_index = 0
     elif mutation == "shared_path_collision_across_groups":
-        third["shared_source_paths"]["source_done_marker"] = first[
-            "shared_source_paths"
-        ]["training_done_marker"]
+        third["shared_source_paths"]["source_done_marker"] = first["shared_source_paths"][
+            "training_done_marker"
+        ]
         rehash_index = 2
     elif mutation == "mixed_legacy_and_recipe_v2_rows":
         first.pop("shared_source_paths")
@@ -373,21 +372,15 @@ def test_projected_training_marker_pairs_are_unique_and_canonically_ordered() ->
 
     assert pairs == (
         (
-            Path(
-                "/private/synthetic/materialized/17-31-63/training_done_marker"
-            ),
+            Path("/private/synthetic/materialized/17-31-63/training_done_marker"),
             Path("/private/synthetic/materialized/17-31-63/source_done_marker"),
         ),
         (
-            Path(
-                "/private/synthetic/materialized/23-47-95/training_done_marker"
-            ),
+            Path("/private/synthetic/materialized/23-47-95/training_done_marker"),
             Path("/private/synthetic/materialized/23-47-95/source_done_marker"),
         ),
         (
-            Path(
-                "/private/synthetic/materialized/29-53-101/training_done_marker"
-            ),
+            Path("/private/synthetic/materialized/29-53-101/training_done_marker"),
             Path("/private/synthetic/materialized/29-53-101/source_done_marker"),
         ),
     )
@@ -503,9 +496,7 @@ def test_projection_sanitizes_and_rehashes_self_consistent_already_flat_request(
         "source_done_marker",
     }
     assert request == original
-    assert projected.request["measurement_request_sha256"] != request[
-        "measurement_request_sha256"
-    ]
+    assert projected.request["measurement_request_sha256"] != request["measurement_request_sha256"]
     for row in projected.request["rows"]:
         assert set(row["source_contract"]) == expected_contract_keys
         assert row["source_contract_sha256"] == _sha(row["source_contract"])
@@ -516,17 +507,13 @@ def test_projection_sanitizes_and_rehashes_self_consistent_already_flat_request(
         if key != "measurement_request_sha256"
     }
     assert projected.request["measurement_request_sha256"] == _sha(projected_body)
-    assert project_source_materialization_request(projected.request).request == (
-        projected.request
-    )
+    assert project_source_materialization_request(projected.request).request == (projected.request)
 
 
 def test_projection_rejects_lexical_alias_before_cross_group_path_ownership() -> None:
     """Catches raw-string ownership accepting two spellings of one output path."""
     request = _request()
-    alias = (
-        "/private/synthetic/materialized/17-31-63/../23-47-95/checkpoint_path"
-    )
+    alias = "/private/synthetic/materialized/17-31-63/../23-47-95/checkpoint_path"
     for row_index in (0, 1):
         contract = request["rows"][row_index]["source_contract"]
         contract["shared_source_paths"]["checkpoint_path"] = alias
@@ -679,17 +666,11 @@ def test_projection_rejects_noncanonical_static_training_path_spelling(
 def test_projection_rejects_shared_path_mismatch_or_collision(mutation: str) -> None:
     request = _request()
     if mutation == "same_group_mismatch":
-        request["rows"][1]["source_contract"]["shared_source_paths"][
-            "checkpoint_path"
-        ] += "-drift"
+        request["rows"][1]["source_contract"]["shared_source_paths"]["checkpoint_path"] += "-drift"
         _rehash_row_contract(request, 1)
     else:
-        first_path = request["rows"][0]["source_contract"]["shared_source_paths"][
-            "checkpoint_path"
-        ]
-        request["rows"][2]["source_contract"]["shared_source_paths"][
-            "checkpoint_path"
-        ] = first_path
+        first_path = request["rows"][0]["source_contract"]["shared_source_paths"]["checkpoint_path"]
+        request["rows"][2]["source_contract"]["shared_source_paths"]["checkpoint_path"] = first_path
         _rehash_row_contract(request, 2)
 
     with pytest.raises(P6HistorySourceMaterializationError) as captured:
@@ -701,7 +682,9 @@ def test_projection_rejects_shared_path_mismatch_or_collision(mutation: str) -> 
 def test_projection_rejects_same_group_static_contract_drift() -> None:
     """Catches one deduplicated group carrying conflicting private training inputs."""
     request = _request()
-    request["rows"][1]["source_contract"]["external_training_binding"]["training_parameters"]["epochs"] = 8
+    request["rows"][1]["source_contract"]["external_training_binding"]["training_parameters"][
+        "epochs"
+    ] = 8
     _rehash_row_contract(request, 1)
 
     with pytest.raises(P6HistorySourceMaterializationError) as captured:
@@ -714,8 +697,7 @@ def test_projection_strips_all_legacy_dynamic_output_aliases() -> None:
     """Catches a v2 request retaining flat or per-q recipe-v1 source truths."""
     request = _request()
     original_shared_paths = [
-        copy.deepcopy(row["source_contract"]["shared_source_paths"])
-        for row in request["rows"]
+        copy.deepcopy(row["source_contract"]["shared_source_paths"]) for row in request["rows"]
     ]
     legacy_keys = (
         "training_path",
@@ -725,9 +707,7 @@ def test_projection_strips_all_legacy_dynamic_output_aliases() -> None:
     )
     for row in request["rows"]:
         contract = row["source_contract"]
-        contract.update(
-            {key: f"/private/untrusted/legacy-flat/{key}" for key in legacy_keys}
-        )
+        contract.update({key: f"/private/untrusted/legacy-flat/{key}" for key in legacy_keys})
         contract["materialization_outputs_by_q_mode"] = {
             "fp16": {key: f"/private/untrusted/per-q/{key}" for key in legacy_keys}
         }
@@ -737,9 +717,7 @@ def test_projection_strips_all_legacy_dynamic_output_aliases() -> None:
 
     projected = project_source_materialization_request(request)
 
-    for row, shared_paths in zip(
-        projected.request["rows"], original_shared_paths, strict=True
-    ):
+    for row, shared_paths in zip(projected.request["rows"], original_shared_paths, strict=True):
         contract = row["source_contract"]
         assert "materialization_outputs_by_q_mode" not in contract
         assert "training_path" not in contract
@@ -758,9 +736,7 @@ def test_projection_rejects_registry_identity_or_shared_key_drift(mutation: str)
     elif mutation == "missing_path":
         contract["shared_source_paths"].pop("onnx_report_path")
     else:
-        contract["shared_source_paths"]["untrusted_extra_path"] = (
-            "/private/synthetic/untrusted"
-        )
+        contract["shared_source_paths"]["untrusted_extra_path"] = "/private/synthetic/untrusted"
     _rehash_row_contract(request, 0)
 
     with pytest.raises(P6HistorySourceMaterializationError) as captured:

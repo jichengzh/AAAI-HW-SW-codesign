@@ -46,6 +46,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
         "training_parameters": {
             "training_mode": "finetune",
             "epochs": 1,
+            "target_epoch": 9,
             "seed": 1,
             "optimizer": "adamw",
             "learning_rate": 0.1,
@@ -53,6 +54,8 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             "dataset_split": "train",
             "checkpoint_selection": "best",
             "freeze_policy": "none",
+            "groups": 3,
+            "width_per_group": 5,
         },
     }
     return {

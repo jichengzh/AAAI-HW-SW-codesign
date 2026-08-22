@@ -199,9 +199,7 @@ def _binding(
         "execution_interface": interface,
         "gpu_policy": {
             "indices": list(gpu_indices),
-            "uuid_by_index": {
-                str(index): f"GPU-synthetic-{index}" for index in gpu_indices
-            },
+            "uuid_by_index": {str(index): f"GPU-synthetic-{index}" for index in gpu_indices},
             "model": "h800",
             "maximum_occupancy": 0.05,
         },
@@ -312,6 +310,7 @@ def _unprojected_recipe_v2_request(local_output_root: Path) -> dict[str, Any]:
                     "training_parameters": {
                         "training_mode": "finetune_selected_width",
                         "epochs": 7,
+                        "target_epoch": 9,
                         "seed": 20260821,
                         "optimizer": "adamw",
                         "learning_rate": 0.0001,
@@ -319,23 +318,18 @@ def _unprojected_recipe_v2_request(local_output_root: Path) -> dict[str, Any]:
                         "dataset_split": "trainval_coptv2x",
                         "checkpoint_selection": "best_ap70",
                         "freeze_policy": "pyramid_backbone_partial",
+                        "groups": 3,
+                        "width_per_group": 5,
                     },
                 },
                 "shared_source_paths": {
-                    key: str(
-                        local_output_root
-                        / "materialized"
-                        / group_slug
-                        / key
-                    )
+                    key: str(local_output_root / "materialized" / group_slug / key)
                     for key in SHARED_SOURCE_PATH_KEYS
                 },
             }
         )
         row["source_contract_sha256"] = _sha(contract)
-    request["row_sha256"] = {
-        row["row_id"]: _sha(row) for row in request["rows"]
-    }
+    request["row_sha256"] = {row["row_id"]: _sha(row) for row in request["rows"]}
     _rehash_request(request)
     return request
 
@@ -350,11 +344,7 @@ def _records(
     return tuple(
         GpuRecord(
             index=index,
-            uuid=(
-                f"GPU-drift-{index}"
-                if index == drift_index
-                else f"GPU-synthetic-{index}"
-            ),
+            uuid=(f"GPU-drift-{index}" if index == drift_index else f"GPU-synthetic-{index}"),
             model_name=model,
             occupancy=occupancy,
         )
@@ -428,9 +418,7 @@ class FakeRunner:
         return Result()
 
     def _write_source_markers(self, argv: Sequence[str]) -> None:
-        matching_rows = [
-            row for row in self.request["rows"] if row["group_id"] == argv[6]
-        ]
+        matching_rows = [row for row in self.request["rows"] if row["group_id"] == argv[6]]
         if not matching_rows:
             return
         contract = matching_rows[0]["source_contract"]
@@ -440,8 +428,7 @@ class FakeRunner:
         }.issubset(contract):
             return
         markers = {
-            key: Path(contract[key])
-            for key in ("training_done_marker", "source_done_marker")
+            key: Path(contract[key]) for key in ("training_done_marker", "source_done_marker")
         }
         for key, marker in markers.items():
             if self.marker_mutation == f"missing_{key}":
@@ -671,10 +658,7 @@ def test_rendered_runtime_environment_rejects_any_key_beyond_binding_owner(
     tmp_path: Path,
 ) -> None:
     """Catches runtime environment widening after binding validation."""
-    values = {
-        key: {"kind": "literal", "value": "synthetic"}
-        for key in EXPECTED_HISTORY_ENV_KEYS
-    }
+    values = {key: {"kind": "literal", "value": "synthetic"} for key in EXPECTED_HISTORY_ENV_KEYS}
     values["PYTHONPATH"] = {"kind": "literal", "value": "/private/leak"}
 
     with pytest.raises(P6HistoryMeasurementError) as captured:
@@ -705,9 +689,7 @@ def test_measurement_revalidates_the_binding_private_policy_before_and_after_exe
     round_root.mkdir()
     request = _request()
     runner = FakeRunner(request)
-    probe = FakeProbe(
-        _records(indices=policy_indices), _records(indices=policy_indices)
-    )
+    probe = FakeProbe(_records(indices=policy_indices), _records(indices=policy_indices))
 
     run_history_measurement_batch(
         request,
@@ -731,9 +713,7 @@ def test_measurement_preserves_private_gpu_policy_existing_order(
     round_root.mkdir()
     request = _request()
     runner = FakeRunner(request)
-    probe = FakeProbe(
-        _records(indices=policy_indices), _records(indices=policy_indices)
-    )
+    probe = FakeProbe(_records(indices=policy_indices), _records(indices=policy_indices))
 
     run_history_measurement_batch(
         request,
@@ -767,9 +747,7 @@ def test_runtime_rejects_policy_that_differs_from_execution_interface_before_pro
     mismatched_indices = (211, 223, 227)
     binding["gpu_policy"] = {
         "indices": list(mismatched_indices),
-        "uuid_by_index": {
-            str(index): f"GPU-synthetic-{index}" for index in mismatched_indices
-        },
+        "uuid_by_index": {str(index): f"GPU-synthetic-{index}" for index in mismatched_indices},
         "model": "h800",
         "maximum_occupancy": 0.05,
     }
@@ -797,9 +775,7 @@ def test_runtime_rejects_reordered_policy_that_differs_from_execution_interface(
     reordered_indices = tuple(reversed(SYNTHETIC_GPU_INDICES))
     binding["gpu_policy"] = {
         "indices": list(reordered_indices),
-        "uuid_by_index": {
-            str(index): f"GPU-synthetic-{index}" for index in reordered_indices
-        },
+        "uuid_by_index": {str(index): f"GPU-synthetic-{index}" for index in reordered_indices},
         "model": "h800",
         "maximum_occupancy": 0.05,
     }
@@ -1060,9 +1036,7 @@ def test_runner_failure_never_becomes_success(tmp_path: Path, mode: str) -> None
 
 
 @pytest.mark.parametrize("mode", ["nonzero", "exception"])
-def test_source_runner_failure_stops_before_later_wrappers(
-    tmp_path: Path, mode: str
-) -> None:
+def test_source_runner_failure_stops_before_later_wrappers(tmp_path: Path, mode: str) -> None:
     """Catches source failure continuing into quantization or leaking private details."""
     private_root = tmp_path / "private"
     private_root.mkdir()
@@ -1142,9 +1116,7 @@ def test_controller_round_root_rejects_noncanonical_lexical_spelling_before_reso
     probe = FakeProbe()
 
     with pytest.raises(P6HistoryMeasurementError) as raised:
-        run_history_measurement_batch(
-            _request(), _binding(private_root), malformed, runner, probe
-        )
+        run_history_measurement_batch(_request(), _binding(private_root), malformed, runner, probe)
 
     assert raised.value.category == "history_execution_invalid"
     assert runner.calls == []
@@ -1161,13 +1133,11 @@ def test_template_resolution_rejects_preexisting_lexical_symlink_parent(
     round_root.mkdir()
     unexpected_target = private_root / "unexpected-target"
     unexpected_target.mkdir()
-    (private_root / "link-parent").symlink_to(
-        unexpected_target, target_is_directory=True
-    )
+    (private_root / "link-parent").symlink_to(unexpected_target, target_is_directory=True)
     binding = _binding(private_root)
-    binding["execution_interface"]["output_layout"]["task_state"][
-        "path_template"
-    ] = "link-parent/{round_id}/task-state.json"
+    binding["execution_interface"]["output_layout"]["task_state"]["path_template"] = (
+        "link-parent/{round_id}/task-state.json"
+    )
     request = _request()
     runner = FakeRunner(request)
     probe = FakeProbe()

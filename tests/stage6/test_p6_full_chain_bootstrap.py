@@ -426,6 +426,7 @@ def _attach_expected_recipe(
         "training_parameters": {
             "training_mode": "finetune_selected_width",
             "epochs": 2,
+            "target_epoch": 9,
             "seed": 20260821,
             "optimizer": "adamw",
             "learning_rate": 0.0001,
@@ -433,6 +434,8 @@ def _attach_expected_recipe(
             "dataset_split": "trainval_coptv2x",
             "checkpoint_selection": "best_ap70",
             "freeze_policy": "pyramid_backbone_partial",
+            "groups": 3,
+            "width_per_group": 5,
         },
     }
     _write_yaml(tmp_path / "private-inputs" / "external-training-binding.yaml", external)

@@ -26,6 +26,7 @@ REQUIRED_TRAINING_CONTRACT_KEYS: tuple[str, ...] = (
 REQUIRED_TRAINING_PARAMETER_KEYS: tuple[str, ...] = (
     "training_mode",
     "epochs",
+    "target_epoch",
     "seed",
     "optimizer",
     "learning_rate",
@@ -33,6 +34,8 @@ REQUIRED_TRAINING_PARAMETER_KEYS: tuple[str, ...] = (
     "dataset_split",
     "checkpoint_selection",
     "freeze_policy",
+    "groups",
+    "width_per_group",
 )
 STATIC_TRAINING_INPUT_PATH_KEYS: tuple[str, ...] = (
     "base_checkpoint_path",
@@ -190,6 +193,7 @@ def _require_training_parameters(contract: Mapping[str, Any]) -> None:
     if (
         not _nonempty_string(parameters["training_mode"])
         or not _positive_int(parameters["epochs"])
+        or not _positive_int(parameters["target_epoch"])
         or not _nonnegative_int(parameters["seed"])
         or not _nonempty_string(parameters["optimizer"])
         or not _positive_float(parameters["learning_rate"])
@@ -197,6 +201,8 @@ def _require_training_parameters(contract: Mapping[str, Any]) -> None:
         or not _nonempty_string(parameters["dataset_split"])
         or not _nonempty_string(parameters["checkpoint_selection"])
         or not _nonempty_string(parameters["freeze_policy"])
+        or not _positive_int(parameters["groups"])
+        or not _positive_int(parameters["width_per_group"])
     ):
         _invalid("training parameters are invalid")
 

@@ -308,9 +308,7 @@ def _closure() -> dict[str, Any]:
 def _dynamic_recipe() -> dict[str, Any]:
     outputs = {
         q_mode: {
-            f"{kind}_path_template": (
-                f"materialized/{{group_id}}/{{q_mode}}/{kind}.json"
-            )
+            f"{kind}_path_template": (f"materialized/{{group_id}}/{{q_mode}}/{kind}.json")
             for kind in ("training", "checkpoint", "onnx", "calibration")
         }
         for q_mode in ("fp16", "int8")
@@ -448,36 +446,33 @@ def _complete_training_contract(history_root: Path) -> dict[str, Any]:
     pyramid_config.write_text("# synthetic pyramid config\n", encoding="utf-8")
     return {
         "external_training_binding": {
-        "schema_version": "p6_external_training_binding_v1",
-        "training_required": True,
-        "training_source_kind": "selected_candidate_finetune",
-        "base_checkpoint_path": str(base_checkpoint),
-        "base_checkpoint_sha256": hashlib.sha256(
-            base_checkpoint.read_bytes()
-        ).hexdigest(),
-        "dataset_root": str(dataset_root),
-        "pyramid_config_path": str(pyramid_config),
-        "pyramid_config_sha256": hashlib.sha256(
-            pyramid_config.read_bytes()
-        ).hexdigest(),
-        "training_parameters": {
-            "training_mode": "finetune_selected_width",
-            "epochs": 3,
-            "seed": 20260821,
-            "optimizer": "adamw",
-            "learning_rate": 0.0001,
-            "batch_size": 1,
-            "dataset_split": "trainval_coptv2x",
-            "checkpoint_selection": "best_ap70",
-            "freeze_policy": "pyramid_backbone_partial",
-        },
+            "schema_version": "p6_external_training_binding_v1",
+            "training_required": True,
+            "training_source_kind": "selected_candidate_finetune",
+            "base_checkpoint_path": str(base_checkpoint),
+            "base_checkpoint_sha256": hashlib.sha256(base_checkpoint.read_bytes()).hexdigest(),
+            "dataset_root": str(dataset_root),
+            "pyramid_config_path": str(pyramid_config),
+            "pyramid_config_sha256": hashlib.sha256(pyramid_config.read_bytes()).hexdigest(),
+            "training_parameters": {
+                "training_mode": "finetune_selected_width",
+                "epochs": 3,
+                "target_epoch": 9,
+                "seed": 20260821,
+                "optimizer": "adamw",
+                "learning_rate": 0.0001,
+                "batch_size": 1,
+                "dataset_split": "trainval_coptv2x",
+                "checkpoint_selection": "best_ap70",
+                "freeze_policy": "pyramid_backbone_partial",
+                "groups": 3,
+                "width_per_group": 5,
+            },
         },
     }
 
 
-def _migrate_normalized_training_registry(
-    registry_path: Path, normalized_root: Path
-) -> Path:
+def _migrate_normalized_training_registry(registry_path: Path, normalized_root: Path) -> Path:
     registry = json.loads(registry_path.read_text(encoding="utf-8"))
     group = registry["groups"][0]
     contract = group["source_contract"]
@@ -505,9 +500,7 @@ def _migrate_normalized_training_registry(
     return external_path
 
 
-def _write_normalized_source_wrapper_profile(
-    path: Path, normalized_root: Path
-) -> Path:
+def _write_normalized_source_wrapper_profile(path: Path, normalized_root: Path) -> Path:
     marker = "stage5_materialize_round_sources_v1.sh"
     implementation_name = "stage5_materialize_round_sources_v1.original.sh"
     implementation = normalized_root / "source-implementation" / implementation_name
@@ -519,9 +512,7 @@ def _write_normalized_source_wrapper_profile(
             "schema_version": "p6_private_source_wrapper_profile_v1",
             "wrapper_kind": "repo_cwd_exec_v1",
             "destination_relative_path": f"toolchain/{marker}",
-            "implementation_relative_path": (
-                f"source-implementation/{implementation_name}"
-            ),
+            "implementation_relative_path": (f"source-implementation/{implementation_name}"),
             "implementation_cwd_relative_path": "source-implementation",
         },
     )
@@ -542,9 +533,7 @@ def _write_runner_template(path: Path) -> Path:
                 },
                 "execution_interface": {
                     "schema_version": "p6_history_runner_interface_v1",
-                    "controller": {
-                        "argv": ["toolchain/stage5_task_round_controller_v3.sh"]
-                    },
+                    "controller": {"argv": ["toolchain/stage5_task_round_controller_v3.sh"]},
                     "execution_chain": [
                         {
                             "stage": "source_materialization",
@@ -646,9 +635,7 @@ def _write_runner_template(path: Path) -> Path:
                     "output_layout": {
                         "round_root_template": "private-runs/{round_id}",
                         "task_state": {
-                            "path_template": (
-                                "private-runs/{round_id}/state/task-state.json"
-                            ),
+                            "path_template": ("private-runs/{round_id}/state/task-state.json"),
                             "format": "json",
                             "rows_key": "rows",
                             "row_id_key": "row_id",
@@ -673,9 +660,7 @@ def _write_runner_template(path: Path) -> Path:
                     },
                     "actual_feedback": {
                         "result": {
-                            "path_template": (
-                                "private-runs/{round_id}/actual-feedback.json"
-                            ),
+                            "path_template": ("private-runs/{round_id}/actual-feedback.json"),
                             "format": "json",
                             "rows_key": "rows",
                             "row_id_key": "row_id",
@@ -725,9 +710,7 @@ def _write_source_registry(path: Path, *, count: int) -> None:
         [16 + (index // 49) * 8, 32 + (index // 7 % 7) * 8, 64 + (index % 7) * 8]
         for index in range(count)
     ]
-    groups = [
-        _source_group(f"pyramid|{'x'.join(map(str, width))}", width) for width in widths
-    ]
+    groups = [_source_group(f"pyramid|{'x'.join(map(str, width))}", width) for width in widths]
     path.write_text(
         json.dumps({"schema_version": "stage5_candidate_source_registry_v1", "groups": groups}),
         encoding="utf-8",
@@ -742,9 +725,7 @@ def _write_source_registry_from_plan(path: Path, plan: Mapping[str, Any]) -> Non
     for width_identity, candidates in sorted(candidates_by_width.items()):
         width = list(width_identity)
         group = _source_group(f"pyramid|{'x'.join(map(str, width))}", width)
-        group["available_q_modes"] = sorted(
-            str(candidate["q_mode"]) for candidate in candidates
-        )
+        group["available_q_modes"] = sorted(str(candidate["q_mode"]) for candidate in candidates)
         group["source_point_ids_by_q_mode"] = {
             str(candidate["q_mode"]): list(candidate["source_point_ids"])
             for candidate in candidates
@@ -787,17 +768,14 @@ def _write_recipe_v2_training_registry_from_plan(
                     "training_required": True,
                     "training_source_kind": "selected_candidate_finetune",
                     "base_checkpoint_path": str(checkpoint),
-                    "base_checkpoint_sha256": hashlib.sha256(
-                        checkpoint.read_bytes()
-                    ).hexdigest(),
+                    "base_checkpoint_sha256": hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
                     "dataset_root": str(dataset),
                     "pyramid_config_path": str(config),
-                    "pyramid_config_sha256": hashlib.sha256(
-                        config.read_bytes()
-                    ).hexdigest(),
+                    "pyramid_config_sha256": hashlib.sha256(config.read_bytes()).hexdigest(),
                     "training_parameters": {
                         "training_mode": "finetune_selected_width",
                         "epochs": 2,
+                        "target_epoch": 9,
                         "seed": 20260821,
                         "optimizer": "adamw",
                         "learning_rate": 0.0001,
@@ -805,6 +783,8 @@ def _write_recipe_v2_training_registry_from_plan(
                         "dataset_split": "trainval_coptv2x",
                         "checkpoint_selection": "best_ap70",
                         "freeze_policy": "pyramid_backbone_partial",
+                        "groups": 3,
+                        "width_per_group": 5,
                     },
                 },
                 "shared_source_paths": {
@@ -962,9 +942,7 @@ def _framework_local_config_with_stage1_step(tmp_path: Path) -> LocalP6CoptV2XCo
         (tmp_path / f"{name}.json").write_text(json.dumps(payload), encoding="utf-8")
     for label in ("training-data", "model-init", "toolchain"):
         (tmp_path / label).mkdir()
-    contract = load_public_contract(
-        _write_yaml(tmp_path / "contract.yaml", _public_contract())
-    )
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
     return load_local_config(
         _write_yaml(tmp_path / "local.yaml", _framework_local_payload(tmp_path)),
         contract,
@@ -1001,9 +979,7 @@ class _FullChainCalls:
         self.requests: list[dict[str, Any]] = []
         self.measurement_count = 0
         self.plan_identities: set[tuple[tuple[int, ...], str, tuple[str, ...]]] = set()
-        self.registry_identities: set[
-            tuple[tuple[int, ...], str, tuple[str, ...]]
-        ] = set()
+        self.registry_identities: set[tuple[tuple[int, ...], str, tuple[str, ...]]] = set()
 
     def runner(self, argv: tuple[str, ...], cwd: Path) -> int:
         command = argv[0]
@@ -1205,9 +1181,7 @@ def test_local_contract_defaults_legacy_local_configuration_to_static_mode(
     del legacy_config["candidate_source_mode"]
     del legacy_config["stage2_search_space_path"]
 
-    loaded = load_local_config(
-        _write_yaml(tmp_path / "legacy.yaml", legacy_config), contract
-    )
+    loaded = load_local_config(_write_yaml(tmp_path / "legacy.yaml", legacy_config), contract)
 
     assert loaded.candidate_source_mode == "coptv2x_static_registry"
     assert loaded.stage2_search_space_path is None
@@ -1265,15 +1239,11 @@ def test_full_framework_lifecycle_uses_actual_scan_artifact_and_four_feedback_ro
     real_initial_fit = execution.fit_initial_coldstart_bundle
     real_online_fit = execution.fit_online_bundle
 
-    def recording_initial_fit(
-        rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any
-    ) -> Any:
+    def recording_initial_fit(rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any) -> Any:
         initial_fit_input_counts.append(len(rows))
         return real_initial_fit(rows, *args, **kwargs)
 
-    def recording_online_fit(
-        rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any
-    ) -> Any:
+    def recording_online_fit(rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any) -> Any:
         online_fit_input_counts.append(len(rows))
         return real_online_fit(rows, *args, **kwargs)
 
@@ -1294,9 +1264,7 @@ def test_full_framework_lifecycle_uses_actual_scan_artifact_and_four_feedback_ro
     assert len(selected) == len(set(selected)) == 16
     assert calls.registry_identities == calls.plan_identities
     plan = json.loads(
-        (local.local_output_root / "pyramid_candidate_plan.json").read_text(
-            encoding="utf-8"
-        )
+        (local.local_output_root / "pyramid_candidate_plan.json").read_text(encoding="utf-8")
     )
     registry = json.loads(
         (local.local_output_root / "source_registry.json").read_text(encoding="utf-8")
@@ -1389,9 +1357,7 @@ def test_normalized_private_root_reaches_dynamic_stage2_and_registry_without_mea
     manifest = yaml.safe_load(local.stage2_search_space_path.read_text(encoding="utf-8"))
     assert manifest["schema"] == "stage1_partition_manifest_v1"
     plan = json.loads(
-        (local.local_output_root / "pyramid_candidate_plan.json").read_text(
-            encoding="utf-8"
-        )
+        (local.local_output_root / "pyramid_candidate_plan.json").read_text(encoding="utf-8")
     )
     assert plan["schema_version"] == "p6_pyramid_candidate_plan_v2"
     assert plan["candidate_source_mode"] == "framework_stage2_search_space"
@@ -1470,24 +1436,22 @@ def test_zero_gpu_stage2_to_source_invocation_black_box(tmp_path: Path) -> None:
     template.update(_complete_training_contract(history_root))
     synthetic_gpu_indices = (17, 19, 23)
     execution_interface = copy.deepcopy(validated_template.execution_interface)
-    execution_interface["environment"]["values"]["P6_HISTORY_PRIVATE_ROOT"][
-        "value"
-    ] = str(history_root)
+    execution_interface["environment"]["values"]["P6_HISTORY_PRIVATE_ROOT"]["value"] = str(
+        history_root
+    )
     binding = {
         "schema_version": "p6_history_binding_v1",
         "target": {"model": "pyramid", "hardware": "h800", "backend": "tvm_auto"},
         "private_root": str(history_root),
         "component_paths": {
-            role: str(path)
-            for role, path in validated_template.component_paths.items()
+            role: str(path) for role, path in validated_template.component_paths.items()
         },
         "execution_interface": execution_interface,
         "source_contract_template": template,
         "gpu_policy": {
             "indices": list(synthetic_gpu_indices),
             "uuid_by_index": {
-                str(index): f"GPU-offline-{index}"
-                for index in synthetic_gpu_indices
+                str(index): f"GPU-offline-{index}" for index in synthetic_gpu_indices
             },
             "model": "h800",
             "maximum_occupancy": 0.05,
@@ -1499,22 +1463,16 @@ def test_zero_gpu_stage2_to_source_invocation_black_box(tmp_path: Path) -> None:
     registry = materialize_history_registry(plan, binding, registry_root)
 
     plan_identity = {
-        (tuple(candidate["width"]), candidate["q_mode"]): tuple(
-            candidate["source_point_ids"]
-        )
+        (tuple(candidate["width"]), candidate["q_mode"]): tuple(candidate["source_point_ids"])
         for candidate in plan["candidates"]
     }
     registry_identity = {
-        (tuple(group["width"]), q_mode): tuple(
-            group["source_point_ids_by_q_mode"][q_mode]
-        )
+        (tuple(group["width"]), q_mode): tuple(group["source_point_ids_by_q_mode"][q_mode])
         for group in registry["groups"]
         for q_mode in group["available_q_modes"]
     }
     task = _minimal_task()
-    manifest = execution.build_task_candidate_manifest(
-        registry, task=task, measured_row_ids=set()
-    )
+    manifest = execution.build_task_candidate_manifest(registry, task=task, measured_row_ids=set())
     predicted_rows = []
     for index, row in enumerate(manifest["rows"]):
         predictions = {
@@ -1593,20 +1551,16 @@ def test_zero_gpu_stage2_to_source_invocation_black_box(tmp_path: Path) -> None:
         rows_by_group.setdefault(row["group_id"], []).append(row)
     mixed_rows = rows_by_group["pyramid|17x31x63"]
     assert {row["q_mode"] for row in mixed_rows} == {"fp16", "int8"}
-    assert {
-        key: mixed_rows[0]["source_contract"][key]
-        for key in SHARED_SOURCE_PATH_KEYS
-    } == {
-        key: mixed_rows[1]["source_contract"][key]
-        for key in SHARED_SOURCE_PATH_KEYS
+    assert {key: mixed_rows[0]["source_contract"][key] for key in SHARED_SOURCE_PATH_KEYS} == {
+        key: mixed_rows[1]["source_contract"][key] for key in SHARED_SOURCE_PATH_KEYS
     }
     all_paths = [
         row_group[0]["source_contract"][key]
         for row_group in rows_by_group.values()
         for key in SHARED_SOURCE_PATH_KEYS
     ]
-    assert len(all_paths) == len(set(all_paths)) == (
-        len(rows_by_group) * len(SHARED_SOURCE_PATH_KEYS)
+    assert (
+        len(all_paths) == len(set(all_paths)) == (len(rows_by_group) * len(SHARED_SOURCE_PATH_KEYS))
     )
     assert len(runner.calls) == len(rows_by_group) == 3
     assert [call[1::2] for call in runner.calls] == [
@@ -1615,35 +1569,44 @@ def test_zero_gpu_stage2_to_source_invocation_black_box(tmp_path: Path) -> None:
     assert [call[6] for call in runner.calls] == sorted(rows_by_group)
     assert [call[8] for call in runner.calls] == ["17", "19", "23"]
     for row in projected.request["rows"]:
-        assert row["source_contract_sha256"] == hashlib.sha256(
-            json.dumps(
-                row["source_contract"],
-                ensure_ascii=True,
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode("utf-8")
-        ).hexdigest()
-        assert projected.request["row_sha256"][row["row_id"]] == hashlib.sha256(
-            json.dumps(
-                row,
-                ensure_ascii=True,
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode("utf-8")
-        ).hexdigest()
+        assert (
+            row["source_contract_sha256"]
+            == hashlib.sha256(
+                json.dumps(
+                    row["source_contract"],
+                    ensure_ascii=True,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+        )
+        assert (
+            projected.request["row_sha256"][row["row_id"]]
+            == hashlib.sha256(
+                json.dumps(
+                    row,
+                    ensure_ascii=True,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+        )
     request_body = {
         key: value
         for key, value in projected.request.items()
         if key != "measurement_request_sha256"
     }
-    assert projected.request["measurement_request_sha256"] == hashlib.sha256(
-        json.dumps(
-            request_body,
-            ensure_ascii=True,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-    ).hexdigest()
+    assert (
+        projected.request["measurement_request_sha256"]
+        == hashlib.sha256(
+            json.dumps(
+                request_body,
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+    )
     assert runner.subprocess_calls == 0
     called_executables = {Path(call[0]).name for call in runner.calls}
     assert "stage5_task_round_controller_v3.sh" not in called_executables
@@ -1779,15 +1742,11 @@ def test_run_p6_framework_mode_builds_dynamic_candidate_plan_and_runs_four_round
     real_initial_fit = execution.fit_initial_coldstart_bundle
     real_online_fit = execution.fit_online_bundle
 
-    def recording_initial_fit(
-        rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any
-    ) -> Any:
+    def recording_initial_fit(rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any) -> Any:
         initial_fit_input_counts.append(len(rows))
         return real_initial_fit(rows, *args, **kwargs)
 
-    def recording_online_fit(
-        rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any
-    ) -> Any:
+    def recording_online_fit(rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any) -> Any:
         online_fit_input_counts.append(len(rows))
         return real_online_fit(rows, *args, **kwargs)
 
@@ -1808,16 +1767,13 @@ def test_run_p6_framework_mode_builds_dynamic_candidate_plan_and_runs_four_round
             assert candidate_plan_path.name == "pyramid_candidate_plan.json"
             assert plan["schema_version"] == "p6_pyramid_candidate_plan_v2"
             assert plan["candidate_source_mode"] == "framework_stage2_search_space"
-            _write_recipe_v2_training_registry_from_plan(
-                Path(argv[3]), plan, Path(argv[3]).parent
-            )
+            _write_recipe_v2_training_registry_from_plan(Path(argv[3]), plan, Path(argv[3]).parent)
             registry = json.loads(Path(argv[3]).read_text(encoding="utf-8"))
             manifest = execution.build_task_candidate_manifest(
                 registry, task=_minimal_task(), measured_row_ids=set()
             )
             observed_manifest_candidate_identities = {
-                (tuple(row["width"]), row["q_mode"])
-                for row in manifest["rows"]
+                (tuple(row["width"]), row["q_mode"]) for row in manifest["rows"]
             }
             return 0
         request = json.loads(Path(argv[2]).read_text(encoding="utf-8"))
@@ -1843,8 +1799,7 @@ def test_run_p6_framework_mode_builds_dynamic_candidate_plan_and_runs_four_round
     assert [len(request["rows"]) for request in requests] == [4, 4, 4, 4]
     assert all(
         request["schema_version"] == "stage5_measurement_request_v2"
-        and request["required_metrics"]
-        == ["latency_ms", "energy_j", "ap30", "ap50", "ap70"]
+        and request["required_metrics"] == ["latency_ms", "energy_j", "ap30", "ap50", "ap70"]
         and request["atomic_feedback"] is True
         for request in requests
     )
@@ -1939,8 +1894,7 @@ def test_run_p6_framework_mode_rejects_v1_registry_before_measurement(
         plan = json.loads(Path(argv[4]).read_text(encoding="utf-8"))
         widths = sorted({tuple(candidate["width"]) for candidate in plan["candidates"]})
         groups = [
-            _source_group(f"pyramid|{'x'.join(map(str, width))}", list(width))
-            for width in widths
+            _source_group(f"pyramid|{'x'.join(map(str, width))}", list(width)) for width in widths
         ]
         Path(argv[3]).write_text(
             json.dumps(
@@ -1970,14 +1924,13 @@ def test_run_p6_framework_source_space_rejects_fewer_than_16_eligible_rows(
         contract=contract,
         include_stage2_search_space=True,
     )
+
     def undersized_search_space(path: Path) -> dict[str, Any]:
         del path
         search_space = _complete_framework_stage2_search_space()
         for candidate in search_space["software_candidates"]:
             candidate["software_points"] = [
-                point
-                for point in candidate["software_points"]
-                if point["quant_policy"] == "fp16"
+                point for point in candidate["software_points"] if point["quant_policy"] == "fp16"
             ]
         search_space["software_candidates"][1]["software_points"] = search_space[
             "software_candidates"
@@ -2117,15 +2070,11 @@ def test_run_p6_builds_registry_refits_gold176_and_runs_four_rounds(
     real_initial_fit = execution.fit_initial_coldstart_bundle
     real_online_fit = execution.fit_online_bundle
 
-    def recording_initial_fit(
-        rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any
-    ) -> Any:
+    def recording_initial_fit(rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any) -> Any:
         initial_fit_input_counts.append(len(rows))
         return real_initial_fit(rows, *args, **kwargs)
 
-    def recording_online_fit(
-        rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any
-    ) -> Any:
+    def recording_online_fit(rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any) -> Any:
         online_fit_input_counts.append(len(rows))
         return real_online_fit(rows, *args, **kwargs)
 
@@ -2176,9 +2125,7 @@ def test_run_p6_builds_registry_refits_gold176_and_runs_four_rounds(
         "fp16",
         "int8",
     }
-    assert {row["dispatch_key"] for request in requests for row in request["rows"]} == {
-        "tvm_auto"
-    }
+    assert {row["dispatch_key"] for request in requests for row in request["rows"]} == {"tvm_auto"}
     assert initial_fit_input_counts == [176]
     assert online_fit_input_counts == [180, 184, 188]
     assert state.local_state_path == local.local_output_root / "state.json"
@@ -2253,11 +2200,7 @@ def test_run_p6_excludes_failure_only_graph_features_from_online_fitting(
         nonlocal selection_call_count
         selection = real_select(predicted_rows, *args, **kwargs)
         failure_candidate = next(
-            (
-                row
-                for row in predicted_rows
-                if "failure_only_feature" in row["graph_features"]
-            ),
+            (row for row in predicted_rows if "failure_only_feature" in row["graph_features"]),
             None,
         )
         selected_by_id: dict[str, Mapping[str, Any]] = {}
@@ -2275,9 +2218,7 @@ def test_run_p6_excludes_failure_only_graph_features_from_online_fitting(
             "selected_rows": selected,
         }
 
-    def record_online_fit(
-        rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any
-    ) -> Any:
+    def record_online_fit(rows: Sequence[Mapping[str, Any]], *args: Any, **kwargs: Any) -> Any:
         online_fit_rows.append([dict(row) for row in rows])
         bundle = real_online_fit(rows, *args, **kwargs)
         online_bundles.append(bundle)
@@ -2338,8 +2279,14 @@ def test_run_p6_excludes_failure_only_graph_features_from_online_fitting(
     assert state.status == "completed"
     assert state.measured_candidate_count == 16
     assert [bundle.manifest["input_row_count"] for bundle in online_bundles] == [179, 183, 187]
-    assert [bundle.manifest["value_training_row_count"] for bundle in online_bundles] == [179, 183, 187]
-    assert all("graph:failure_only_feature" not in bundle.feature_names for bundle in online_bundles)
+    assert [bundle.manifest["value_training_row_count"] for bundle in online_bundles] == [
+        179,
+        183,
+        187,
+    ]
+    assert all(
+        "graph:failure_only_feature" not in bundle.feature_names for bundle in online_bundles
+    )
     assert all(
         "failure_only_feature" not in row.get("graph_features", {})
         for rows in online_fit_rows
@@ -2357,9 +2304,7 @@ def test_release_feedback_rows_detaches_nested_request_identity_context() -> Non
         }
     )
 
-    released = execution._release_feedback_rows(
-        _minimal_feedback(), request, task=_minimal_task()
-    )
+    released = execution._release_feedback_rows(_minimal_feedback(), request, task=_minimal_task())
     request["rows"][0]["graph_features"]["stable_feature"] = 9.0
     request["rows"][0]["source_contract"]["artifact_id"] = "mutated"
 
@@ -2422,7 +2367,9 @@ def test_run_p6_quarantines_invalid_feedback_batches(
         payload = {
             "schema_version": "p6_h800_coptv2x_feedback_v2",
             "measurement_request_sha256": (
-                "wrong" if mutation == "wrong_request_sha" else request["measurement_request_sha256"]
+                "wrong"
+                if mutation == "wrong_request_sha"
+                else request["measurement_request_sha256"]
             ),
             "rows": rows,
         }
@@ -2554,9 +2501,7 @@ def test_run_p6_never_selects_a_gold176_source_group(
         lambda closure: closure.update(selected_acquisition_policy="legacy-policy"),
     ],
 )
-def test_run_p6_rejects_unclosed_or_drifted_stage4_contract(
-    tmp_path: Path, mutation: Any
-) -> None:
+def test_run_p6_rejects_unclosed_or_drifted_stage4_contract(tmp_path: Path, mutation: Any) -> None:
     contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
     local = _loaded_local_config(tmp_path)
     closure_path = local.local_input_paths["closure"]
@@ -2676,9 +2621,7 @@ def test_run_p6_projection_failure_is_atomic_before_measurement_request_write(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Catches writing or measuring the original request after projection fails."""
-    contract = load_public_contract(
-        _write_yaml(tmp_path / "contract.yaml", _public_contract())
-    )
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
     local = _loaded_local_config(tmp_path)
     measurement_started = False
 
@@ -2708,16 +2651,12 @@ def test_run_p6_projection_failure_is_atomic_before_measurement_request_write(
     assert state.status == "failed"
     assert state.failure_code == "history_execution_invalid"
     assert measurement_started is False
-    assert not (
-        local.local_output_root / "round-00" / "measurement_request.json"
-    ).exists()
+    assert not (local.local_output_root / "round-00" / "measurement_request.json").exists()
 
 
 def test_round_request_write_uses_projected_training_hash_only(tmp_path: Path) -> None:
     """Catches persisting or measuring a provisional unprojected request hash."""
-    contract = load_public_contract(
-        _write_yaml(tmp_path / "contract.yaml", _public_contract())
-    )
+    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
     local = _framework_local_config_with_stage1_step(tmp_path)
     captured_requests: list[dict[str, Any]] = []
 
@@ -2730,45 +2669,43 @@ def test_round_request_write_uses_projected_training_hash_only(tmp_path: Path) -
             _write_recipe_v2_training_registry_from_plan(Path(argv[2]), plan)
         else:
             request_path = Path(argv[1])
-            captured_requests.append(
-                json.loads(request_path.read_text(encoding="utf-8"))
-            )
+            captured_requests.append(json.loads(request_path.read_text(encoding="utf-8")))
             _write_feedback_from_request(request_path, Path(argv[2]))
         return 0
 
-    state = run_p6_coptv2x_search(
-        contract, local, "rev-projected-training", runner
-    )
+    state = run_p6_coptv2x_search(contract, local, "rev-projected-training", runner)
 
     assert state.completed_rounds == 4
     assert len(captured_requests) == 4
     for request in captured_requests:
         first_row = request["rows"][0]
-        assert first_row["source_contract"]["external_training_binding"][
-            "training_required"
-        ] is True
+        assert (
+            first_row["source_contract"]["external_training_binding"]["training_required"] is True
+        )
         assert "shared_source_paths" not in first_row["source_contract"]
-        assert request["row_sha256"][first_row["row_id"]] == hashlib.sha256(
-            json.dumps(
-                first_row,
-                ensure_ascii=True,
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode("utf-8")
-        ).hexdigest()
-        body = {
-            key: value
-            for key, value in request.items()
-            if key != "measurement_request_sha256"
-        }
-        assert request["measurement_request_sha256"] == hashlib.sha256(
-            json.dumps(
-                body,
-                ensure_ascii=True,
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode("utf-8")
-        ).hexdigest()
+        assert (
+            request["row_sha256"][first_row["row_id"]]
+            == hashlib.sha256(
+                json.dumps(
+                    first_row,
+                    ensure_ascii=True,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+        )
+        body = {key: value for key, value in request.items() if key != "measurement_request_sha256"}
+        assert (
+            request["measurement_request_sha256"]
+            == hashlib.sha256(
+                json.dumps(
+                    body,
+                    ensure_ascii=True,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+        )
 
 
 def test_run_p6_rejects_symlinked_source_registry_before_adapter(
@@ -2986,7 +2923,9 @@ def test_load_local_config_requires_source_and_measurement_steps(tmp_path: Path)
     for label in ("training-data", "model-init", "toolchain"):
         (tmp_path / label).mkdir()
 
-    loaded = load_local_config(_write_yaml(tmp_path / "local.yaml", _local_config(tmp_path)), contract)
+    loaded = load_local_config(
+        _write_yaml(tmp_path / "local.yaml", _local_config(tmp_path)), contract
+    )
 
     assert isinstance(loaded, LocalP6CoptV2XConfig)
     assert loaded.source_registry_step.name == "build_source_registry"
@@ -3001,9 +2940,13 @@ def test_load_local_config_rejects_relative_asset_and_output_paths(tmp_path: Pat
     relative_asset_payload["asset_paths"]["training-data"] = "relative"
 
     with pytest.raises(P6CoptV2XContractError, match="absolute path"):
-        load_local_config(_write_yaml(tmp_path / "relative-root.yaml", relative_root_payload), contract)
+        load_local_config(
+            _write_yaml(tmp_path / "relative-root.yaml", relative_root_payload), contract
+        )
     with pytest.raises(P6CoptV2XContractError, match="absolute path"):
-        load_local_config(_write_yaml(tmp_path / "relative-asset.yaml", relative_asset_payload), contract)
+        load_local_config(
+            _write_yaml(tmp_path / "relative-asset.yaml", relative_asset_payload), contract
+        )
 
 
 @pytest.mark.parametrize(

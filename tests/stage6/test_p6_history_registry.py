@@ -40,8 +40,7 @@ def _plan(q_modes: tuple[str, ...], *, duplicate: bool = False) -> dict[str, Any
             "width": list(width),
             "q_mode": q_mode,
             "source_point_ids": [
-                f"stage{stage}-{q_mode}-w{value}"
-                for stage, value in enumerate(width, start=1)
+                f"stage{stage}-{q_mode}-w{value}" for stage, value in enumerate(width, start=1)
             ],
         }
         for width in widths
@@ -73,8 +72,7 @@ def _recipe() -> dict[str, Any]:
     output_templates = {
         q_mode: {
             name: (
-                "materialized/{group_id}/{q_mode}/"
-                f"{name.removesuffix('_path_template')}.json"
+                f"materialized/{{group_id}}/{{q_mode}}/{name.removesuffix('_path_template')}.json"
             )
             for name in (
                 "training_path_template",
@@ -88,12 +86,8 @@ def _recipe() -> dict[str, Any]:
     return {
         "schema_version": "p6_history_dynamic_materialization_recipe_v1",
         "stage_width_fields": ["stage1_width", "stage2_width", "stage3_width"],
-        "group_id_template": (
-            "pyramid|{stage1_width}x{stage2_width}x{stage3_width}"
-        ),
-        "artifact_id_template": (
-            "pyramid-{stage1_width}-{stage2_width}-{stage3_width}"
-        ),
+        "group_id_template": ("pyramid|{stage1_width}x{stage2_width}x{stage3_width}"),
+        "artifact_id_template": ("pyramid-{stage1_width}-{stage2_width}-{stage3_width}"),
         "output_path_templates_by_q_mode": output_templates,
     }
 
@@ -102,12 +96,8 @@ def _recipe_v2() -> dict[str, Any]:
     return {
         "schema_version": "p6_history_dynamic_materialization_recipe_v2",
         "stage_width_fields": ["stage1_width", "stage2_width", "stage3_width"],
-        "group_id_template": (
-            "pyramid|{stage1_width}x{stage2_width}x{stage3_width}"
-        ),
-        "artifact_id_template": (
-            "pyramid-{stage1_width}-{stage2_width}-{stage3_width}"
-        ),
+        "group_id_template": ("pyramid|{stage1_width}x{stage2_width}x{stage3_width}"),
+        "artifact_id_template": ("pyramid-{stage1_width}-{stage2_width}-{stage3_width}"),
         "shared_source_path_templates": {
             "checkpoint_path": "materialized/{artifact_id}/checkpoint/model.ckpt",
             "checkpoint_dir": "materialized/{artifact_id}/checkpoint",
@@ -140,8 +130,7 @@ def _execution_binding_fields(private_root: Path) -> dict[str, Any]:
         "finalizer": "stage5_finalize_feedback_v2.py",
     }
     components = {
-        role: _write_executable(chain_root / name)
-        for role, name in component_names.items()
+        role: _write_executable(chain_root / name) for role, name in component_names.items()
     }
     private_bin = private_root / "private-runner" / "bin"
     quantize = _write_executable(private_bin / "quantize-private")
@@ -333,9 +322,7 @@ def _binding_with_recipe_v2_training_template(private_root: Path) -> dict[str, A
                 "schema_version": "p6_external_training_binding_v1",
                 "training_required": True,
                 "training_source_kind": "selected_candidate_finetune",
-                "base_checkpoint_path": str(
-                    operator / "checkpoints" / "base.ckpt"
-                ),
+                "base_checkpoint_path": str(operator / "checkpoints" / "base.ckpt"),
                 "base_checkpoint_sha256": hashlib.sha256(b"base\n").hexdigest(),
                 "dataset_root": str(operator / "datasets" / "coptv2x"),
                 "pyramid_config_path": str(operator / "configs" / "pyramid.py"),
@@ -343,6 +330,7 @@ def _binding_with_recipe_v2_training_template(private_root: Path) -> dict[str, A
                 "training_parameters": {
                     "training_mode": "finetune_selected_width",
                     "epochs": 2,
+                    "target_epoch": 9,
                     "seed": 20260821,
                     "optimizer": "adamw",
                     "learning_rate": 0.0001,
@@ -350,6 +338,8 @@ def _binding_with_recipe_v2_training_template(private_root: Path) -> dict[str, A
                     "dataset_split": "trainval_coptv2x",
                     "checkpoint_selection": "best_ap70",
                     "freeze_policy": "pyramid_backbone_partial",
+                    "groups": 3,
+                    "width_per_group": 5,
                 },
             },
             "dynamic_materialization_recipe": _recipe_v2(),
@@ -366,9 +356,7 @@ def test_registry_rejects_unverified_execution_interface_before_write(
     if tampering == "missing":
         binding.pop("execution_interface")
     else:
-        binding["execution_interface"]["environment"]["values"].pop(
-            "CUDA_VISIBLE_DEVICES"
-        )
+        binding["execution_interface"]["environment"]["values"].pop("CUDA_VISIBLE_DEVICES")
     local_output_root = tmp_path / "private-output"
     local_output_root.mkdir()
     registry_path = local_output_root / "source_registry.json"
@@ -392,9 +380,7 @@ def _registry_identity_map(
     registry: Mapping[str, Any],
 ) -> dict[tuple[tuple[int, ...], str], tuple[str, ...]]:
     return {
-        (tuple(group["width"]), q_mode): tuple(
-            group["source_point_ids_by_q_mode"][q_mode]
-        )
+        (tuple(group["width"]), q_mode): tuple(group["source_point_ids_by_q_mode"][q_mode])
         for group in registry["groups"]
         for q_mode in group["available_q_modes"]
     }
@@ -500,17 +486,13 @@ def test_registry_v2_materializes_one_shared_bundle_per_group(
     local_output_root = tmp_path / "private-output"
     local_output_root.mkdir()
 
-    registry = materialize_history_registry(
-        _plan(q_modes), binding, local_output_root
-    )
+    registry = materialize_history_registry(_plan(q_modes), binding, local_output_root)
 
     observed_paths: set[str] = set()
     for group in registry["groups"]:
         contract = group["source_contract"]
         shared_paths = contract["shared_source_paths"]
-        assert set(shared_paths) == set(
-            _recipe_v2()["shared_source_path_templates"]
-        )
+        assert set(shared_paths) == set(_recipe_v2()["shared_source_path_templates"])
         assert all("q_mode" not in value for value in shared_paths.values())
         assert all(
             Path(value).is_relative_to(local_output_root.resolve())
@@ -543,17 +525,13 @@ def test_recipe_v2_registry_preserves_training_fields_and_rehashes_contract(
     binding = _binding_with_recipe_v2_training_template(private_root)
     local_output_root = tmp_path / "ignored-output"
     local_output_root.mkdir()
-    registry = materialize_history_registry(
-        _plan(("fp16", "int8")), binding, local_output_root
-    )
+    registry = materialize_history_registry(_plan(("fp16", "int8")), binding, local_output_root)
 
     first = registry["groups"][0]["source_contract"]
     external = first["external_training_binding"]
     assert external["training_required"] is True
     assert external["training_source_kind"] == "selected_candidate_finetune"
-    assert set(external["training_parameters"]) == set(
-        REQUIRED_TRAINING_PARAMETER_KEYS
-    )
+    assert set(external["training_parameters"]) == set(REQUIRED_TRAINING_PARAMETER_KEYS)
     operator = private_root.parent / "operator-assets"
     assert external["base_checkpoint_path"].startswith(str(operator))
     assert external["dataset_root"].startswith(str(operator))
@@ -644,9 +622,7 @@ def test_registry_rejects_unignored_repository_destination_before_write(
     local_output_root = repository / "private-output"
     local_output_root.mkdir()
     registry_path = local_output_root / "source_registry.json"
-    monkeypatch.setattr(
-        registry_module, "REPOSITORY_ROOT", repository, raising=False
-    )
+    monkeypatch.setattr(registry_module, "REPOSITORY_ROOT", repository, raising=False)
 
     try:
         with pytest.raises(P6HistoryRegistryError, match=r"^source_registry_invalid:"):
@@ -670,9 +646,7 @@ def test_registry_accepts_ignored_repository_destination(
     local_output_root = repository / "private-output"
     local_output_root.mkdir()
     registry_path = local_output_root / "source_registry.json"
-    monkeypatch.setattr(
-        registry_module, "REPOSITORY_ROOT", repository, raising=False
-    )
+    monkeypatch.setattr(registry_module, "REPOSITORY_ROOT", repository, raising=False)
 
     registry = materialize_history_registry(
         _plan(("fp16",)), _binding(tmp_path), local_output_root, registry_path
@@ -687,9 +661,7 @@ def _drop_recipe(binding: dict[str, Any]) -> None:
 
 def _drop_one_calibration_mapping(binding: dict[str, Any]) -> None:
     recipe = binding["source_contract_template"]["dynamic_materialization_recipe"]
-    recipe["output_path_templates_by_q_mode"]["int8"].pop(
-        "calibration_path_template"
-    )
+    recipe["output_path_templates_by_q_mode"]["int8"].pop("calibration_path_template")
 
 
 def _invalidate_contract(binding: dict[str, Any]) -> None:
@@ -698,9 +670,9 @@ def _invalidate_contract(binding: dict[str, Any]) -> None:
 
 def _escape_output_root(binding: dict[str, Any]) -> None:
     recipe = binding["source_contract_template"]["dynamic_materialization_recipe"]
-    recipe["output_path_templates_by_q_mode"]["fp16"][
-        "training_path_template"
-    ] = "../escaped-training.json"
+    recipe["output_path_templates_by_q_mode"]["fp16"]["training_path_template"] = (
+        "../escaped-training.json"
+    )
 
 
 def _collide_output_paths(binding: dict[str, Any]) -> None:
@@ -783,8 +755,6 @@ def test_registry_rejects_source_evidence_sha_inconsistency_before_write(
     local_output_root.mkdir()
 
     with pytest.raises(P6HistoryRegistryError, match=r"^source_registry_invalid:"):
-        materialize_history_registry(
-            _plan(("fp16",)), binding, local_output_root
-        )
+        materialize_history_registry(_plan(("fp16",)), binding, local_output_root)
 
     assert not (local_output_root / "source_registry.json").exists()

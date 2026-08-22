@@ -120,6 +120,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             "training_parameters": {
                 "training_mode": "finetune",
                 "epochs": 1,
+                "target_epoch": 9,
                 "seed": 0,
                 "optimizer": "adamw",
                 "learning_rate": 0.001,
@@ -127,6 +128,8 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
                 "dataset_split": "train",
                 "checkpoint_selection": "best",
                 "freeze_policy": "partial",
+                "groups": 3,
+                "width_per_group": 5,
             },
         },
         code_toolchain_root=code_root,
@@ -398,9 +401,7 @@ def test_copied_source_runs_through_wrapper_without_pythonpath(tmp_path: Path) -
     round_root.mkdir(parents=True)
     request_path = round_root / "request.json"
     binding = external_training_binding_to_mapping(fixture["external"])
-    request_path.write_text(
-        json.dumps(source_bridge_request(binding)), encoding="utf-8"
-    )
+    request_path.write_text(json.dumps(source_bridge_request(binding)), encoding="utf-8")
     environment = {
         "CUDA_VISIBLE_DEVICES": "17,19,23",
         "P6_HISTORY_RUN_MODE": "bound",

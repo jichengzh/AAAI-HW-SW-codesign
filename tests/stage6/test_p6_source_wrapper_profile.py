@@ -43,6 +43,7 @@ def _canonical_request() -> dict[str, Any]:
         "training_parameters": {
             "training_mode": "finetune_selected_width",
             "epochs": 8,
+            "target_epoch": 9,
             "seed": 0,
             "optimizer": "adam",
             "learning_rate": 0.002,
@@ -50,6 +51,8 @@ def _canonical_request() -> dict[str, Any]:
             "dataset_split": "trainval_coptv2x",
             "checkpoint_selection": "best_ap70",
             "freeze_policy": "pyramid_backbone_partial",
+            "groups": 3,
+            "width_per_group": 5,
         },
     }
     return source_bridge_request(binding)
@@ -61,8 +64,7 @@ def _wrapper_profile() -> dict[str, str]:
         "wrapper_kind": "repo_cwd_exec_v1",
         "destination_relative_path": f"documented-stage5-chain/{SOURCE_MARKER}",
         "implementation_relative_path": (
-            "private-relocated-history-repo/bin/"
-            "stage5_materialize_round_sources_v1.original.sh"
+            "private-relocated-history-repo/bin/stage5_materialize_round_sources_v1.original.sh"
         ),
         "implementation_cwd_relative_path": "private-relocated-history-repo",
     }
@@ -79,23 +81,17 @@ def _write_profile(path: Path, profile: dict[str, str] | None = None) -> Path:
 
 def _write_relocated_materializer(history_root: Path) -> Path:
     repository = history_root / "private-relocated-history-repo"
-    implementation = (
-        repository
-        / "bin"
-        / "stage5_materialize_round_sources_v1.original.sh"
-    )
+    implementation = repository / "bin" / "stage5_materialize_round_sources_v1.original.sh"
     implementation.parent.mkdir(parents=True, exist_ok=True)
-    (repository / "history_contract_validator.py").write_text(
-        "VALID = 'ok'\n", encoding="utf-8"
-    )
+    (repository / "history_contract_validator.py").write_text("VALID = 'ok'\n", encoding="utf-8")
     implementation.write_text(
         "#!/bin/sh\n"
         "set -eu\n"
         "pwd -P > observed-cwd.txt\n"
-        f'"{sys.executable}" -c '\
+        f'"{sys.executable}" -c '
         "'import history_contract_validator as validator; "
         "from pathlib import Path; "
-        "Path(\"sibling-import-ok.txt\").write_text(validator.VALID, encoding=\"utf-8\")'\n",
+        'Path("sibling-import-ok.txt").write_text(validator.VALID, encoding="utf-8")\'\n',
         encoding="utf-8",
     )
     implementation.chmod(0o700)
@@ -109,12 +105,8 @@ def _write_valid_template_with_generated_wrapper(
     marker = history_root / "documented-stage5-chain" / SOURCE_MARKER
     marker.unlink()
     _write_relocated_materializer(history_root)
-    profile = _write_profile(
-        tmp_path / "ignored-inputs" / "source-wrapper-profile.yaml"
-    )
-    render_self_contained_source_wrapper(
-        _wrapper_profile(), history_root=history_root
-    )
+    profile = _write_profile(tmp_path / "ignored-inputs" / "source-wrapper-profile.yaml")
+    render_self_contained_source_wrapper(_wrapper_profile(), history_root=history_root)
     validated = validate_pre_provision_runner_template(template, history_root)
     return template, history_root, profile, validated
 
@@ -133,18 +125,14 @@ def _with_source_executable(
 def test_source_wrapper_profile_accepts_marker_stage_under_private_root(
     tmp_path: Path,
 ) -> None:
-    _, history_root, profile, validated = (
-        _write_valid_template_with_generated_wrapper(tmp_path)
-    )
+    _, history_root, profile, validated = _write_valid_template_with_generated_wrapper(tmp_path)
 
     wrapper = validate_self_contained_source_wrapper(
         validated,
         source_wrapper_profile=profile,
     )
 
-    assert wrapper.executable == (
-        history_root / "documented-stage5-chain" / SOURCE_MARKER
-    )
+    assert wrapper.executable == (history_root / "documented-stage5-chain" / SOURCE_MARKER)
     assert wrapper.argv_shape == (
         "--request",
         "<absolute-private-request-json>",
@@ -161,9 +149,7 @@ def test_source_wrapper_profile_accepts_marker_stage_under_private_root(
 def test_source_wrapper_execs_relocated_implementation_from_private_cwd_with_exact_env(
     tmp_path: Path,
 ) -> None:
-    _, history_root, _, validated = _write_valid_template_with_generated_wrapper(
-        tmp_path
-    )
+    _, history_root, _, validated = _write_valid_template_with_generated_wrapper(tmp_path)
     round_root = history_root / "private-runs" / "0"
     round_root.mkdir(parents=True)
     request = round_root / "measurement-request.json"
@@ -202,12 +188,10 @@ def test_source_wrapper_execs_relocated_implementation_from_private_cwd_with_exa
     assert completed.returncode == 0, completed.stderr
     assert set(env) == set(EXPECTED_HISTORY_ENV_KEYS)
     relocated_repo = history_root / "private-relocated-history-repo"
-    assert (relocated_repo / "observed-cwd.txt").read_text(
-        encoding="utf-8"
-    ).strip() == str(relocated_repo)
-    assert (relocated_repo / "sibling-import-ok.txt").read_text(
-        encoding="utf-8"
-    ) == "ok"
+    assert (relocated_repo / "observed-cwd.txt").read_text(encoding="utf-8").strip() == str(
+        relocated_repo
+    )
+    assert (relocated_repo / "sibling-import-ok.txt").read_text(encoding="utf-8") == "ok"
 
 
 @pytest.mark.parametrize(
@@ -225,9 +209,7 @@ def test_source_wrapper_execs_relocated_implementation_from_private_cwd_with_exa
 def test_source_wrapper_profile_rejects_non_self_contained_binding_shape(
     tmp_path: Path, mutation: str
 ) -> None:
-    _, history_root, profile, validated = (
-        _write_valid_template_with_generated_wrapper(tmp_path)
-    )
+    _, history_root, profile, validated = _write_valid_template_with_generated_wrapper(tmp_path)
     marker = history_root / "documented-stage5-chain" / SOURCE_MARKER
     mutated = validated
     if mutation == "source_not_first_stage":

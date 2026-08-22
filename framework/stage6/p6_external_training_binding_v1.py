@@ -293,9 +293,12 @@ def _parameters(raw: object) -> tuple[tuple[str, ExternalTrainingParameter], ...
     if (
         not all(_trimmed_string(raw[key]) for key in five_strings)
         or not _positive_int(raw["epochs"])
+        or not _positive_int(raw["target_epoch"])
         or not _nonnegative_int(raw["seed"])
         or not _positive_number(raw["learning_rate"])
         or not _positive_int(raw["batch_size"])
+        or not _positive_int(raw["groups"])
+        or not _positive_int(raw["width_per_group"])
     ):
         _invalid()
     return tuple((key, raw[key]) for key in REQUIRED_TRAINING_PARAMETER_KEYS)

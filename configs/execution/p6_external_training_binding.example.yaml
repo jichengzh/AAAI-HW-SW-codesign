@@ -9,6 +9,7 @@ pyramid_config_sha256: null
 training_parameters:
   training_mode: null
   epochs: null
+  target_epoch: null
   seed: null
   optimizer: null
   learning_rate: null
@@ -16,3 +17,5 @@ training_parameters:
   dataset_split: null
   checkpoint_selection: null
   freeze_policy: null
+  groups: null
+  width_per_group: null

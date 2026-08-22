@@ -56,6 +56,7 @@ def _bound_contract(tmp_path: Path) -> tuple[dict[str, Any], Path, Path]:
         "training_parameters": {
             "training_mode": "finetune_selected_width",
             "epochs": 2,
+            "target_epoch": 9,
             "seed": 1,
             "optimizer": "adamw",
             "learning_rate": 0.0001,
@@ -63,6 +64,8 @@ def _bound_contract(tmp_path: Path) -> tuple[dict[str, Any], Path, Path]:
             "dataset_split": "trainval",
             "checkpoint_selection": "best",
             "freeze_policy": "partial",
+            "groups": 3,
+            "width_per_group": 5,
         },
     }
     binding = validate_external_training_binding(

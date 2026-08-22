@@ -57,6 +57,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
         "training_parameters": {
             "training_mode": "finetune_selected_width",
             "epochs": 2,
+            "target_epoch": 9,
             "seed": 0,
             "optimizer": "adamw",
             "learning_rate": 0.0001,
@@ -64,6 +65,8 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             "dataset_split": "trainval_coptv2x",
             "checkpoint_selection": "best_ap70",
             "freeze_policy": "pyramid_backbone_partial",
+            "groups": 3,
+            "width_per_group": 5,
         },
     }
     return {
@@ -101,6 +104,64 @@ def test_external_binding_accepts_unrelated_roots_and_computes_null_digests(
     assert normalized["pyramid_config_sha256"] == _sha(fixture["config"])
     assert tuple(key for key, _ in binding.training_parameters) == REQUIRED_TRAINING_PARAMETER_KEYS
     assert not binding.dataset_root.is_relative_to(fixture["code"])
+
+
+def test_external_binding_requires_structural_pruning_parameters(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    fixture["raw"]["training_parameters"].update(
+        groups=3,
+        width_per_group=5,
+    )
+
+    binding = _validate(fixture)
+
+    assert dict(binding.training_parameters)["groups"] == 3
+    assert dict(binding.training_parameters)["width_per_group"] == 5
+
+
+def test_external_binding_requires_distinct_target_epoch(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    fixture["raw"]["training_parameters"]["epochs"] = 8
+    fixture["raw"]["training_parameters"]["target_epoch"] = 9
+
+    binding = _validate(fixture)
+
+    parameters = dict(binding.training_parameters)
+    assert parameters["epochs"] == 8
+    assert parameters["target_epoch"] == 9
+
+
+@pytest.mark.parametrize("key", ("target_epoch", "groups", "width_per_group"))
+def test_external_binding_rejects_missing_structural_training_parameter(
+    tmp_path: Path, key: str
+) -> None:
+    fixture = _fixture(tmp_path)
+    fixture["raw"]["training_parameters"].pop(key)
+
+    with pytest.raises(P6ExternalTrainingBindingError):
+        _validate(fixture)
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    (
+        ("groups", True),
+        ("groups", 0),
+        ("width_per_group", False),
+        ("width_per_group", 0),
+        ("target_epoch", True),
+        ("target_epoch", 0),
+    ),
+)
+def test_external_binding_rejects_invalid_structural_pruning_parameters(
+    tmp_path: Path, key: str, value: object
+) -> None:
+    fixture = _fixture(tmp_path)
+    fixture["raw"]["training_parameters"].update(groups=3, width_per_group=5)
+    fixture["raw"]["training_parameters"][key] = value
+
+    with pytest.raises(P6ExternalTrainingBindingError):
+        _validate(fixture)
 
 
 @pytest.mark.parametrize(

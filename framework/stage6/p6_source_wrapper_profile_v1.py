@@ -87,6 +87,7 @@ BINDING_KEYS = ("schema_version", *LEGACY_TRAINING_KEYS)
 PARAMETER_KEYS = (
     "training_mode",
     "epochs",
+    "target_epoch",
     "seed",
     "optimizer",
     "learning_rate",
@@ -94,6 +95,8 @@ PARAMETER_KEYS = (
     "dataset_split",
     "checkpoint_selection",
     "freeze_policy",
+    "groups",
+    "width_per_group",
 )
 REQUEST_KEYS = (
     "schema_version", "task_id", "task_sha256", "round_index", "batch_size",
@@ -149,6 +152,9 @@ def _valid_parameters(raw):
         all(isinstance(raw[key], str) and raw[key].strip() for key in strings)
         and isinstance(raw["epochs"], int) and not isinstance(raw["epochs"], bool)
         and raw["epochs"] > 0
+        and isinstance(raw["target_epoch"], int)
+        and not isinstance(raw["target_epoch"], bool)
+        and raw["target_epoch"] > 0
         and isinstance(raw["seed"], int) and not isinstance(raw["seed"], bool)
         and raw["seed"] >= 0
         and isinstance(raw["learning_rate"], (int, float))
@@ -158,6 +164,12 @@ def _valid_parameters(raw):
         and isinstance(raw["batch_size"], int)
         and not isinstance(raw["batch_size"], bool)
         and raw["batch_size"] > 0
+        and isinstance(raw["groups"], int)
+        and not isinstance(raw["groups"], bool)
+        and raw["groups"] > 0
+        and isinstance(raw["width_per_group"], int)
+        and not isinstance(raw["width_per_group"], bool)
+        and raw["width_per_group"] > 0
     )
 
 
@@ -400,27 +412,19 @@ _UniqueKeyLoader.add_constructor(
 
 def load_source_wrapper_profile(path: Path) -> dict[str, Any]:
     """Load one absolute, non-symlinked private profile with duplicate-key checks."""
-    if (
-        not isinstance(path, Path)
-        or not path.is_absolute()
-        or _contains_symlink_component(path)
-    ):
+    if not isinstance(path, Path) or not path.is_absolute() or _contains_symlink_component(path):
         _invalid()
     try:
         resolved = path.resolve(strict=True)
         if not resolved.is_file() or resolved.stat().st_size > MAX_PROFILE_SIZE:
             _invalid()
         _validate_profile_privacy(resolved)
-        payload = yaml.load(
-            resolved.read_text(encoding="utf-8"), Loader=_UniqueKeyLoader
-        )
+        payload = yaml.load(resolved.read_text(encoding="utf-8"), Loader=_UniqueKeyLoader)
     except P6SourceWrapperProfileError:
         raise
     except (OSError, UnicodeError, ValueError, yaml.YAMLError) as error:
         raise P6SourceWrapperProfileError() from error
-    if not isinstance(payload, dict) or any(
-        not isinstance(key, str) for key in payload
-    ):
+    if not isinstance(payload, dict) or any(not isinstance(key, str) for key in payload):
         _invalid()
     return dict(payload)
 
@@ -495,9 +499,7 @@ def validate_self_contained_source_wrapper(
         _invalid()
     environment = validated_template.execution_interface.get("environment")
     values = environment.get("values") if isinstance(environment, Mapping) else None
-    if not isinstance(values, Mapping) or set(values) != set(
-        EXPECTED_HISTORY_ENV_KEYS
-    ):
+    if not isinstance(values, Mapping) or set(values) != set(EXPECTED_HISTORY_ENV_KEYS):
         _invalid()
     return _validate_rendered_wrapper(plan)
 
@@ -515,12 +517,8 @@ def _build_render_plan(
         or profile.get("wrapper_kind") != WRAPPER_KIND
     ):
         _invalid()
-    destination_relative = _validated_relative_path(
-        profile.get("destination_relative_path")
-    )
-    implementation_relative = _validated_relative_path(
-        profile.get("implementation_relative_path")
-    )
+    destination_relative = _validated_relative_path(profile.get("destination_relative_path"))
+    implementation_relative = _validated_relative_path(profile.get("implementation_relative_path"))
     implementation_cwd_relative = _validated_relative_path(
         profile.get("implementation_cwd_relative_path")
     )
@@ -533,9 +531,7 @@ def _build_render_plan(
     implementation_cwd = _resolve_existing_private_path(
         root, implementation_cwd_relative, require_directory=True
     )
-    if implementation == destination or not _is_relative_to(
-        implementation, implementation_cwd
-    ):
+    if implementation == destination or not _is_relative_to(implementation, implementation_cwd):
         _invalid()
     expected_bytes = _wrapper_bytes(
         implementation_relative,
@@ -561,22 +557,13 @@ def _validated_relative_path(raw: object) -> Path:
     ):
         _invalid()
     path = Path(raw)
-    if (
-        path.is_absolute()
-        or path == Path(".")
-        or ".." in path.parts
-        or ".git" in path.parts
-    ):
+    if path.is_absolute() or path == Path(".") or ".." in path.parts or ".git" in path.parts:
         _invalid()
     return path
 
 
 def _resolve_history_root(raw: Path) -> Path:
-    if (
-        not isinstance(raw, Path)
-        or not raw.is_absolute()
-        or _contains_symlink_component(raw)
-    ):
+    if not isinstance(raw, Path) or not raw.is_absolute() or _contains_symlink_component(raw):
         _invalid()
     try:
         root = raw.resolve(strict=True)
@@ -632,9 +619,7 @@ def _resolve_destination(root: Path, relative: Path) -> Path:
 def _wrapper_bytes(implementation: Path, implementation_cwd: Path) -> bytes:
     body = _WRAPPER_TEMPLATE.replace(
         "__IMPLEMENTATION_RELATIVE__", repr(implementation.as_posix())
-    ).replace(
-        "__IMPLEMENTATION_CWD_RELATIVE__", repr(implementation_cwd.as_posix())
-    )
+    ).replace("__IMPLEMENTATION_CWD_RELATIVE__", repr(implementation_cwd.as_posix()))
     return body.encode("utf-8")
 
 
@@ -726,8 +711,7 @@ def _git_root_for(path: Path) -> Path:
 def _contains_symlink_component(path: Path) -> bool:
     anchor = Path(path.anchor)
     return any(
-        component != anchor and component.is_symlink()
-        for component in (path, *path.parents)
+        component != anchor and component.is_symlink() for component in (path, *path.parents)
     )
 
 
