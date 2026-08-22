@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -207,6 +208,53 @@ def _downstream(runner: BundleRunner) -> tuple[str, ...]:
         for call in runner.calls
         if Path(call.argv[0]).name in names
     )
+
+
+@pytest.mark.parametrize(
+    "mutation", ("checkpoint_drift", "config_drift", "missing", "symlink", "overlap", "inode_alias")
+)
+def test_measurement_revalidates_external_binding_before_gpu(
+    tmp_path: Path, mutation: str
+) -> None:
+    request, binding, public_round = _runtime(tmp_path)
+    first_contract = request["rows"][0]["source_contract"]
+    external = first_contract["external_training_binding"]
+    checkpoint = Path(external["base_checkpoint_path"])
+    config = Path(external["pyramid_config_path"])
+    if mutation == "checkpoint_drift":
+        checkpoint.write_bytes(b"drift-after-provision")
+    elif mutation == "config_drift":
+        config.write_bytes(b"config-drift-after-provision")
+    elif mutation == "missing":
+        checkpoint.unlink()
+    elif mutation == "symlink":
+        checkpoint.unlink()
+        checkpoint.symlink_to(config)
+    elif mutation == "overlap":
+        overlapping = Path(first_contract["checkpoint_path"])
+        overlapping.parent.mkdir(parents=True, exist_ok=True)
+        overlapping.write_bytes(b"overlapping-checkpoint")
+        digest = hashlib.sha256(overlapping.read_bytes()).hexdigest()
+        for row in request["rows"]:
+            row_external = row["source_contract"]["external_training_binding"]
+            row_external["base_checkpoint_path"] = str(overlapping)
+            row_external["base_checkpoint_sha256"] = digest
+            row["source_contract_sha256"] = canonical_json_sha256(
+                row["source_contract"]
+            )
+        _rehash(request)
+    else:
+        alias = Path(first_contract["checkpoint_path"])
+        alias.parent.mkdir(parents=True, exist_ok=True)
+        os.link(checkpoint, alias)
+    probe = fixtures.FakeProbe()
+    runner = BundleRunner(request)
+
+    with pytest.raises(P6HistoryMeasurementError, match="^history_execution_invalid$"):
+        run_history_measurement_batch(request, binding, public_round, runner, probe)
+
+    assert probe.calls == []
+    assert runner.calls == []
 
 
 def _install_deletion_after_validation(

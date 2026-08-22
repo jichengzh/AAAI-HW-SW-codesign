@@ -50,21 +50,26 @@ def _source_contract(width: list[int]) -> dict[str, Any]:
             "stage2_width": width[1],
             "stage3_width": width[2],
         },
-        "training_required": True,
-        "training_source_kind": "selected_candidate_finetune",
-        "base_checkpoint_path": "/private/synthetic/base/model.ckpt",
-        "dataset_root": "/private/synthetic/dataset",
-        "pyramid_config_path": "/private/synthetic/configs/pyramid.py",
-        "training_parameters": {
-            "training_mode": "finetune_selected_width",
-            "epochs": 7,
-            "seed": 20260821,
-            "optimizer": "adamw",
-            "learning_rate": 0.0001,
-            "batch_size": 1,
-            "dataset_split": "trainval_coptv2x",
-            "checkpoint_selection": "best_ap70",
-            "freeze_policy": "pyramid_backbone_partial",
+        "external_training_binding": {
+            "schema_version": "p6_external_training_binding_v1",
+            "training_required": True,
+            "training_source_kind": "selected_candidate_finetune",
+            "base_checkpoint_path": "/etc/hosts",
+            "base_checkpoint_sha256": hashlib.sha256(Path("/etc/hosts").read_bytes()).hexdigest(),
+            "dataset_root": "/tmp",
+            "pyramid_config_path": "/etc/passwd",
+            "pyramid_config_sha256": hashlib.sha256(Path("/etc/passwd").read_bytes()).hexdigest(),
+            "training_parameters": {
+                "training_mode": "finetune_selected_width",
+                "epochs": 7,
+                "seed": 20260821,
+                "optimizer": "adamw",
+                "learning_rate": 0.0001,
+                "batch_size": 1,
+                "dataset_split": "trainval_coptv2x",
+                "checkpoint_selection": "best_ap70",
+                "freeze_policy": "pyramid_backbone_partial",
+            },
         },
         "shared_source_paths": _shared_paths("-".join(map(str, width))),
     }
@@ -132,12 +137,7 @@ def _true_legacy_request() -> dict[str, Any]:
     recipe_v2_keys = {
         "shared_source_paths",
         "stage_widths",
-        "training_required",
-        "training_source_kind",
-        "base_checkpoint_path",
-        "dataset_root",
-        "pyramid_config_path",
-        "training_parameters",
+        "external_training_binding",
     }
     for row in request["rows"]:
         contract = row["source_contract"]
@@ -189,13 +189,12 @@ def test_projection_flattens_shared_paths_and_recomputes_only_existing_hashes() 
     for row in projected.request["rows"]:
         contract = row["source_contract"]
         assert "shared_source_paths" not in contract
-        assert contract["base_checkpoint_path"] == "/private/synthetic/base/model.ckpt"
-        assert contract["training_required"] is True
-        assert contract["training_source_kind"] == "selected_candidate_finetune"
-        assert contract["pyramid_config_path"] == (
-            "/private/synthetic/configs/pyramid.py"
-        )
-        assert set(contract["training_parameters"]) == {
+        training = contract["external_training_binding"]
+        assert training["base_checkpoint_path"] == "/etc/hosts"
+        assert training["training_required"] is True
+        assert training["training_source_kind"] == "selected_candidate_finetune"
+        assert training["pyramid_config_path"] == "/etc/passwd"
+        assert set(training["training_parameters"]) == {
             "training_mode",
             "epochs",
             "seed",
@@ -221,10 +220,10 @@ def test_projection_flattens_shared_paths_and_recomputes_only_existing_hashes() 
     assert projected.request["measurement_request_sha256"] == _sha(request_body)
     assert set(projected.request) == set(original)
     assert set(projected.request["rows"][0]) == set(original["rows"][0])
-    projected.request["rows"][0]["source_contract"]["training_parameters"][
+    projected.request["rows"][0]["source_contract"]["external_training_binding"]["training_parameters"][
         "epochs"
     ] = 99
-    assert request["rows"][0]["source_contract"]["training_parameters"][
+    assert request["rows"][0]["source_contract"]["external_training_binding"]["training_parameters"][
         "epochs"
     ] == 7
 
@@ -245,15 +244,12 @@ def test_projection_preserves_complete_training_contract_and_rehashes() -> None:
     ]
     for row in projected.request["rows"]:
         contract = row["source_contract"]
-        assert contract["training_required"] is True
-        assert contract["training_source_kind"] == "selected_candidate_finetune"
-        assert contract["base_checkpoint_path"] == (
-            "/private/synthetic/base/model.ckpt"
-        )
-        assert contract["dataset_root"] == "/private/synthetic/dataset"
-        assert contract["pyramid_config_path"] == (
-            "/private/synthetic/configs/pyramid.py"
-        )
+        training = contract["external_training_binding"]
+        assert training["training_required"] is True
+        assert training["training_source_kind"] == "selected_candidate_finetune"
+        assert training["base_checkpoint_path"] == "/etc/hosts"
+        assert training["dataset_root"] == "/tmp"
+        assert training["pyramid_config_path"] == "/etc/passwd"
         assert "shared_source_paths" not in contract
         assert "training_path" not in contract
         assert row["source_contract_sha256"] == _sha(contract)
@@ -283,17 +279,18 @@ def test_projection_rejects_untrusted_training_or_shared_path_drift(
     first = request["rows"][0]["source_contract"]
     second = request["rows"][1]["source_contract"]
     third = request["rows"][2]["source_contract"]
+    second_training = second["external_training_binding"]
     rehash_index = 1
     if mutation == "same_group_training_parameters_drift":
-        second["training_parameters"]["epochs"] = 8
+        second_training["training_parameters"]["epochs"] = 8
     elif mutation == "same_group_base_checkpoint_drift":
-        second["base_checkpoint_path"] += ".drift"
+        second_training["base_checkpoint_path"] += ".drift"
     elif mutation == "same_group_dataset_drift":
-        second["dataset_root"] += "-drift"
+        second_training["dataset_root"] += "-drift"
     elif mutation == "same_group_pyramid_config_drift":
-        second["pyramid_config_path"] += ".drift"
+        second_training["pyramid_config_path"] += ".drift"
     elif mutation == "same_group_training_required_false":
-        second["training_required"] = False
+        second_training["training_required"] = False
     elif mutation == "missing_training_done_marker":
         first["shared_source_paths"].pop("training_done_marker")
         rehash_index = 0
@@ -309,7 +306,7 @@ def test_projection_rejects_untrusted_training_or_shared_path_drift(
         first.pop("shared_source_paths")
         rehash_index = 0
     else:
-        first["training_parameters"]["epochs"] = 8
+        first["external_training_binding"]["training_parameters"]["epochs"] = 8
         _rehash_request(request)
         rehash_index = -1
     if rehash_index >= 0:
@@ -342,22 +339,23 @@ def test_projection_rejects_uniformly_invalid_training_contract(
     request = _request()
     for row in request["rows"]:
         contract = row["source_contract"]
+        training = contract["external_training_binding"]
         if mutation == "training_required_false":
-            contract["training_required"] = False
+            training["training_required"] = False
         elif mutation == "missing_training_source_kind":
-            contract.pop("training_source_kind")
+            training.pop("training_source_kind")
         elif mutation == "checkpoint_reuse_source_kind":
-            contract["training_source_kind"] = "checkpoint_already_exists"
+            training["training_source_kind"] = "checkpoint_already_exists"
         elif mutation == "missing_base_checkpoint_path":
-            contract.pop("base_checkpoint_path")
+            training.pop("base_checkpoint_path")
         elif mutation == "missing_dataset_root":
-            contract.pop("dataset_root")
+            training.pop("dataset_root")
         elif mutation == "missing_pyramid_config_path":
-            contract.pop("pyramid_config_path")
+            training.pop("pyramid_config_path")
         elif mutation == "missing_training_parameter":
-            contract["training_parameters"].pop("freeze_policy")
+            training["training_parameters"].pop("freeze_policy")
         else:
-            contract["dataset_root"] = "relative/dataset"
+            training["dataset_root"] = "relative/dataset"
         row["source_contract_sha256"] = _sha(contract)
     _rehash_request(request)
 
@@ -447,7 +445,7 @@ def test_projection_rejects_invalid_already_projected_request(mutation: str) -> 
     request = dict(project_source_materialization_request(_request()).request)
     if mutation == "training_required_false":
         for row in request["rows"]:
-            row["source_contract"]["training_required"] = False
+            row["source_contract"]["external_training_binding"]["training_required"] = False
             row["source_contract_sha256"] = _sha(row["source_contract"])
     else:
         first = request["rows"][0]["source_contract"]
@@ -491,12 +489,7 @@ def test_projection_sanitizes_and_rehashes_self_consistent_already_flat_request(
         "source_evidence_sha256",
         "materialization_scope",
         "stage_widths",
-        "training_required",
-        "training_source_kind",
-        "base_checkpoint_path",
-        "dataset_root",
-        "pyramid_config_path",
-        "training_parameters",
+        "external_training_binding",
         "checkpoint_path",
         "checkpoint_dir",
         "config_path",
@@ -562,7 +555,7 @@ def test_projection_rejects_parent_components_in_every_recipe_v2_path(
     if path_key in SHARED_SOURCE_PATH_KEYS:
         contract["shared_source_paths"][path_key] = malformed
     else:
-        contract[path_key] = malformed
+        contract["external_training_binding"][path_key] = malformed
     request["rows"][2]["source_contract_sha256"] = _sha(contract)
     _rehash_request(request)
 
@@ -670,7 +663,7 @@ def test_projection_rejects_noncanonical_static_training_path_spelling(
     """Catches ambiguous absolute static paths admitted without filesystem reads."""
     request = _request()
     contract = request["rows"][2]["source_contract"]
-    contract[path_key] = malformed
+    contract["external_training_binding"][path_key] = malformed
     request["rows"][2]["source_contract_sha256"] = _sha(contract)
     _rehash_request(request)
 
@@ -708,7 +701,7 @@ def test_projection_rejects_shared_path_mismatch_or_collision(mutation: str) -> 
 def test_projection_rejects_same_group_static_contract_drift() -> None:
     """Catches one deduplicated group carrying conflicting private training inputs."""
     request = _request()
-    request["rows"][1]["source_contract"]["training_parameters"]["epochs"] = 8
+    request["rows"][1]["source_contract"]["external_training_binding"]["training_parameters"]["epochs"] = 8
     _rehash_row_contract(request, 1)
 
     with pytest.raises(P6HistorySourceMaterializationError) as captured:

@@ -437,20 +437,29 @@ def _write_normalized_history_source_map(tmp_path: Path) -> dict[str, Any]:
 
 
 def _complete_training_contract(history_root: Path) -> dict[str, Any]:
-    base_checkpoint = history_root / "base" / "model.ckpt"
-    base_checkpoint.parent.mkdir(exist_ok=True)
+    operator_root = history_root.parent / f"{history_root.name}-operator-assets"
+    base_checkpoint = operator_root / "base" / "model.ckpt"
+    base_checkpoint.parent.mkdir(parents=True, exist_ok=True)
     base_checkpoint.write_text("synthetic base\n", encoding="utf-8")
-    dataset_root = history_root / "dataset"
+    dataset_root = operator_root / "dataset"
     dataset_root.mkdir(exist_ok=True)
-    pyramid_config = history_root / "configs" / "pyramid.py"
+    pyramid_config = operator_root / "configs" / "pyramid.py"
     pyramid_config.parent.mkdir(exist_ok=True)
     pyramid_config.write_text("# synthetic pyramid config\n", encoding="utf-8")
     return {
+        "external_training_binding": {
+        "schema_version": "p6_external_training_binding_v1",
         "training_required": True,
         "training_source_kind": "selected_candidate_finetune",
         "base_checkpoint_path": str(base_checkpoint),
+        "base_checkpoint_sha256": hashlib.sha256(
+            base_checkpoint.read_bytes()
+        ).hexdigest(),
         "dataset_root": str(dataset_root),
         "pyramid_config_path": str(pyramid_config),
+        "pyramid_config_sha256": hashlib.sha256(
+            pyramid_config.read_bytes()
+        ).hexdigest(),
         "training_parameters": {
             "training_mode": "finetune_selected_width",
             "epochs": 3,
@@ -462,12 +471,13 @@ def _complete_training_contract(history_root: Path) -> dict[str, Any]:
             "checkpoint_selection": "best_ap70",
             "freeze_policy": "pyramid_backbone_partial",
         },
+        },
     }
 
 
 def _migrate_normalized_training_registry(
     registry_path: Path, normalized_root: Path
-) -> None:
+) -> Path:
     registry = json.loads(registry_path.read_text(encoding="utf-8"))
     group = registry["groups"][0]
     contract = group["source_contract"]
@@ -490,6 +500,9 @@ def _migrate_normalized_training_registry(
         ).encode("utf-8")
     ).hexdigest()
     registry_path.write_text(json.dumps(registry), encoding="utf-8")
+    external_path = normalized_root / "external-training-binding.yaml"
+    _write_yaml(external_path, contract["external_training_binding"])
+    return external_path
 
 
 def _write_normalized_source_wrapper_profile(
@@ -748,6 +761,15 @@ def _write_recipe_v2_training_registry_from_plan(
 ) -> None:
     _write_source_registry_from_plan(path, plan)
     registry = json.loads(path.read_text(encoding="utf-8"))
+    operator = path.parent.parent / "operator-assets"
+    dataset = operator / "dataset"
+    dataset.mkdir(parents=True, exist_ok=True)
+    checkpoint = operator / "base" / "model.ckpt"
+    checkpoint.parent.mkdir(parents=True, exist_ok=True)
+    checkpoint.write_bytes(b"synthetic base")
+    config = operator / "configs" / "pyramid.py"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_bytes(b"synthetic config")
     for group in registry["groups"]:
         width = group["width"]
         group_slug = "-".join(map(str, width))
@@ -760,21 +782,30 @@ def _write_recipe_v2_training_registry_from_plan(
                     "stage2_width": width[1],
                     "stage3_width": width[2],
                 },
-                "training_required": True,
-                "training_source_kind": "selected_candidate_finetune",
-                "base_checkpoint_path": "/private/synthetic/base/model.ckpt",
-                "dataset_root": "/private/synthetic/dataset",
-                "pyramid_config_path": "/private/synthetic/configs/pyramid.py",
-                "training_parameters": {
-                    "training_mode": "finetune_selected_width",
-                    "epochs": 2,
-                    "seed": 20260821,
-                    "optimizer": "adamw",
-                    "learning_rate": 0.0001,
-                    "batch_size": 1,
-                    "dataset_split": "trainval_coptv2x",
-                    "checkpoint_selection": "best_ap70",
-                    "freeze_policy": "pyramid_backbone_partial",
+                "external_training_binding": {
+                    "schema_version": "p6_external_training_binding_v1",
+                    "training_required": True,
+                    "training_source_kind": "selected_candidate_finetune",
+                    "base_checkpoint_path": str(checkpoint),
+                    "base_checkpoint_sha256": hashlib.sha256(
+                        checkpoint.read_bytes()
+                    ).hexdigest(),
+                    "dataset_root": str(dataset),
+                    "pyramid_config_path": str(config),
+                    "pyramid_config_sha256": hashlib.sha256(
+                        config.read_bytes()
+                    ).hexdigest(),
+                    "training_parameters": {
+                        "training_mode": "finetune_selected_width",
+                        "epochs": 2,
+                        "seed": 20260821,
+                        "optimizer": "adamw",
+                        "learning_rate": 0.0001,
+                        "batch_size": 1,
+                        "dataset_split": "trainval_coptv2x",
+                        "checkpoint_selection": "best_ap70",
+                        "freeze_policy": "pyramid_backbone_partial",
+                    },
                 },
                 "shared_source_paths": {
                     key: str((local_output_root or path.parent) / "materialized" / group_slug / key)
@@ -1289,7 +1320,9 @@ def test_normalized_private_root_reaches_dynamic_stage2_and_registry_without_mea
     normalized = normalize_history_inputs(
         source_map, Path(str(source_map["history_root"])), normalized_root
     )
-    _migrate_normalized_training_registry(normalized["registry"], normalized_root)
+    external_training = _migrate_normalized_training_registry(
+        normalized["registry"], normalized_root
+    )
     runner_template = _write_runner_template(normalized_root / "runner-template.yaml")
     source_wrapper_profile = _write_normalized_source_wrapper_profile(
         tmp_path / "source-wrapper-profile.yaml", normalized_root
@@ -1308,6 +1341,7 @@ def test_normalized_private_root_reaches_dynamic_stage2_and_registry_without_mea
         local_config_path,
         probe,
         source_wrapper_profile=source_wrapper_profile,
+        external_training_binding=external_training,
     )
     local = load_local_config(
         local_config_path,
@@ -2710,7 +2744,9 @@ def test_round_request_write_uses_projected_training_hash_only(tmp_path: Path) -
     assert len(captured_requests) == 4
     for request in captured_requests:
         first_row = request["rows"][0]
-        assert first_row["source_contract"]["training_required"] is True
+        assert first_row["source_contract"]["external_training_binding"][
+            "training_required"
+        ] is True
         assert "shared_source_paths" not in first_row["source_contract"]
         assert request["row_sha256"][first_row["row_id"]] == hashlib.sha256(
             json.dumps(

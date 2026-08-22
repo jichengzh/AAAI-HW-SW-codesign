@@ -313,34 +313,44 @@ def _binding(tmp_path: Path) -> dict[str, Any]:
 
 def _private_root_with_training_inputs(tmp_path: Path) -> Path:
     root = tmp_path / "synthetic-history"
-    (root / "checkpoints").mkdir(parents=True, exist_ok=True)
-    (root / "datasets" / "coptv2x").mkdir(parents=True, exist_ok=True)
-    (root / "configs").mkdir(parents=True, exist_ok=True)
-    (root / "checkpoints" / "base.ckpt").write_text("base\n", encoding="utf-8")
-    (root / "configs" / "pyramid.py").write_text("config\n", encoding="utf-8")
+    root.mkdir(parents=True, exist_ok=True)
+    operator = tmp_path / "operator-assets"
+    (operator / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (operator / "datasets" / "coptv2x").mkdir(parents=True, exist_ok=True)
+    (operator / "configs").mkdir(parents=True, exist_ok=True)
+    (operator / "checkpoints" / "base.ckpt").write_text("base\n", encoding="utf-8")
+    (operator / "configs" / "pyramid.py").write_text("config\n", encoding="utf-8")
     return root
 
 
 def _binding_with_recipe_v2_training_template(private_root: Path) -> dict[str, Any]:
     binding = _binding(private_root.parent)
     template = binding["source_contract_template"]
+    operator = private_root.parent / "operator-assets"
     template.update(
         {
-            "training_required": True,
-            "training_source_kind": "selected_candidate_finetune",
-            "base_checkpoint_path": str(private_root / "checkpoints" / "base.ckpt"),
-            "dataset_root": str(private_root / "datasets" / "coptv2x"),
-            "pyramid_config_path": str(private_root / "configs" / "pyramid.py"),
-            "training_parameters": {
-                "training_mode": "finetune_selected_width",
-                "epochs": 2,
-                "seed": 20260821,
-                "optimizer": "adamw",
-                "learning_rate": 0.0001,
-                "batch_size": 1,
-                "dataset_split": "trainval_coptv2x",
-                "checkpoint_selection": "best_ap70",
-                "freeze_policy": "pyramid_backbone_partial",
+            "external_training_binding": {
+                "schema_version": "p6_external_training_binding_v1",
+                "training_required": True,
+                "training_source_kind": "selected_candidate_finetune",
+                "base_checkpoint_path": str(
+                    operator / "checkpoints" / "base.ckpt"
+                ),
+                "base_checkpoint_sha256": hashlib.sha256(b"base\n").hexdigest(),
+                "dataset_root": str(operator / "datasets" / "coptv2x"),
+                "pyramid_config_path": str(operator / "configs" / "pyramid.py"),
+                "pyramid_config_sha256": hashlib.sha256(b"config\n").hexdigest(),
+                "training_parameters": {
+                    "training_mode": "finetune_selected_width",
+                    "epochs": 2,
+                    "seed": 20260821,
+                    "optimizer": "adamw",
+                    "learning_rate": 0.0001,
+                    "batch_size": 1,
+                    "dataset_split": "trainval_coptv2x",
+                    "checkpoint_selection": "best_ap70",
+                    "freeze_policy": "pyramid_backbone_partial",
+                },
             },
             "dynamic_materialization_recipe": _recipe_v2(),
         }
@@ -508,9 +518,10 @@ def test_registry_v2_materializes_one_shared_bundle_per_group(
         )
         assert not observed_paths.intersection(shared_paths.values())
         observed_paths.update(shared_paths.values())
-        assert contract["base_checkpoint_path"].endswith("/checkpoints/base.ckpt")
-        assert contract["dataset_root"].endswith("/datasets/coptv2x")
-        assert contract["training_parameters"]["epochs"] == 2
+        external = contract["external_training_binding"]
+        assert external["base_checkpoint_path"].endswith("/checkpoints/base.ckpt")
+        assert external["dataset_root"].endswith("/datasets/coptv2x")
+        assert external["training_parameters"]["epochs"] == 2
         assert "untrusted-self-report" not in json.dumps(shared_paths)
         assert "materialization_outputs_by_q_mode" not in contract
         assert not {
@@ -537,12 +548,16 @@ def test_recipe_v2_registry_preserves_training_fields_and_rehashes_contract(
     )
 
     first = registry["groups"][0]["source_contract"]
-    assert first["training_required"] is True
-    assert first["training_source_kind"] == "selected_candidate_finetune"
-    assert set(first["training_parameters"]) == set(REQUIRED_TRAINING_PARAMETER_KEYS)
-    assert first["base_checkpoint_path"].startswith(str(private_root))
-    assert first["dataset_root"].startswith(str(private_root))
-    assert first["pyramid_config_path"].startswith(str(private_root))
+    external = first["external_training_binding"]
+    assert external["training_required"] is True
+    assert external["training_source_kind"] == "selected_candidate_finetune"
+    assert set(external["training_parameters"]) == set(
+        REQUIRED_TRAINING_PARAMETER_KEYS
+    )
+    operator = private_root.parent / "operator-assets"
+    assert external["base_checkpoint_path"].startswith(str(operator))
+    assert external["dataset_root"].startswith(str(operator))
+    assert external["pyramid_config_path"].startswith(str(operator))
     assert registry["groups"][0]["source_contract_sha256"] == _canonical_sha(first)
 
 
@@ -553,7 +568,7 @@ def test_recipe_v2_registry_preserves_training_fields_and_rehashes_contract(
         "false_training_required",
         "checkpoint_already_exists",
         "missing_pyramid_config_path",
-        "static_path_outside_root",
+        "static_path_overlaps_code_root",
         "shared_output_outside_root",
         "shared_output_collision",
     ],
@@ -564,16 +579,19 @@ def test_recipe_v2_registry_rejects_unsafe_training_contract_before_write(
     private_root = _private_root_with_training_inputs(tmp_path)
     binding = _binding_with_recipe_v2_training_template(private_root)
     template = binding["source_contract_template"]
+    external = template["external_training_binding"]
     if mutation == "missing_training_required":
-        template.pop("training_required")
+        external.pop("training_required")
     elif mutation == "false_training_required":
-        template["training_required"] = False
+        external["training_required"] = False
     elif mutation == "checkpoint_already_exists":
-        template["training_source_kind"] = "checkpoint_already_exists"
+        external["training_source_kind"] = "checkpoint_already_exists"
     elif mutation == "missing_pyramid_config_path":
-        template.pop("pyramid_config_path")
-    elif mutation == "static_path_outside_root":
-        template["base_checkpoint_path"] = str(tmp_path / "outside.ckpt")
+        external.pop("pyramid_config_path")
+    elif mutation == "static_path_overlaps_code_root":
+        overlapping = private_root / "outside.ckpt"
+        overlapping.write_text("outside", encoding="utf-8")
+        external["base_checkpoint_path"] = str(overlapping)
     elif mutation == "shared_output_outside_root":
         template["dynamic_materialization_recipe"]["shared_source_path_templates"][
             "checkpoint_path"

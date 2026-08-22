@@ -106,7 +106,13 @@ def test_zero_gpu_dynamic_lifecycle_reuses_group_source_and_runs_all_rows(
         request = _read_json(fixture.local_output_root / f"round-{round_index:02d}/measurement_request.json")
         assert request["round_index"] == round_index
         assert len(request["rows"]) == 4
-        assert all(row["source_contract"]["training_required"] is True for row in request["rows"])
+        assert all(
+            row["source_contract"]["external_training_binding"][
+                "training_required"
+            ]
+            is True
+            for row in request["rows"]
+        )
         assert request["measurement_request_sha256"] == canonical_json_sha256({key: value for key, value in request.items() if key != "measurement_request_sha256"})
         measured_row_ids.update(row["row_id"] for row in request["rows"])
     assert len(measured_row_ids) == 16

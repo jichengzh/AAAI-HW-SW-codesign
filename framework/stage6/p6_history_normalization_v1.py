@@ -15,6 +15,18 @@ from typing import Any
 
 import yaml
 
+from framework.stage6.p6_external_training_binding_v1 import (
+    bind_external_training_contract,
+    external_training_binding_to_mapping,
+    validate_external_training_binding,
+)
+from framework.stage6.p6_history_execution_closure_v1 import (
+    copy_execution_closure,
+    render_normalized_runner_template,
+    validate_execution_closure_manifest,
+    validate_normalized_runner_closure,
+    validate_source_runner_roles,
+)
 from framework.stage6.p6_history_recipe_normalization_v1 import (
     P6HistoryNormalizationError,
     SOURCE_MAP_KEYS,
@@ -25,6 +37,12 @@ from framework.stage6.p6_history_recipe_normalization_v1 import (
     _recipe_from_v2_source_map,
     _validate_recipe,
     _validate_source_group,
+)
+from framework.stage6.p6_runner_template_validator_v1 import (
+    validate_pre_provision_runner_template,
+)
+from framework.stage6.p6_source_wrapper_profile_v1 import (
+    render_self_contained_source_wrapper,
 )
 
 
@@ -141,6 +159,11 @@ def _validate_private_source_map(
         if set(source_map) != set(SOURCE_MAP_KEYS):
             _invalid("source map contract is invalid")
     elif schema_version == SOURCE_MAP_V2_SCHEMA_VERSION:
+        if not {
+            "external_training_binding",
+            "execution_code_closure",
+        }.issubset(source_map):
+            _invalid("source map runtime binding is incomplete")
         if source_map.get("recipe_mode") not in {
             "explicit_dynamic_recipe",
             "procedural_profile",
@@ -168,21 +191,24 @@ def _validate_private_source_map(
     git_root = _git_root_for(resolved_history_root)
     if resolved_history_root != git_root:
         _invalid("history root is invalid")
+    recipe_v2_source = schema_version == SOURCE_MAP_V2_SCHEMA_VERSION
     assets = source_map.get("asset_paths")
     if not isinstance(assets, Mapping) or set(assets) != set(ASSET_LABELS):
         _invalid("asset mapping is invalid")
-    canonical_assets = {
-        label: _resolve_existing_root(assets[label], f"{label} asset")
-        for label in ASSET_LABELS
-    }
-    if len(set(canonical_assets.values())) != len(ASSET_LABELS):
-        _invalid("asset mapping paths must be unique")
-    if any(
-        not _is_relative_to(path, resolved_history_root)
-        or _git_root_for(path) != git_root
-        for path in canonical_assets.values()
-    ):
-        _invalid("asset mapping escapes history root")
+    canonical_assets: dict[str, Path] = {}
+    if not recipe_v2_source:
+        canonical_assets = {
+            label: _resolve_existing_root(assets[label], f"{label} asset")
+            for label in ASSET_LABELS
+        }
+        if len(set(canonical_assets.values())) != len(ASSET_LABELS):
+            _invalid("asset mapping paths must be unique")
+        if any(
+            not _is_relative_to(path, resolved_history_root)
+            or _git_root_for(path) != git_root
+            for path in canonical_assets.values()
+        ):
+            _invalid("asset mapping escapes history root")
     raw_inputs = source_map.get("input_sources")
     if not isinstance(raw_inputs, Mapping) or set(raw_inputs) != set(INPUT_NAMES):
         _invalid("input source mapping is invalid")
@@ -200,6 +226,37 @@ def _validate_private_source_map(
             source_map, resolved_history_root, runner_template_path
         )
     raw_source_group = copy.deepcopy(source_map.get("source_contract"))
+    external_training = None
+    execution_closure = None
+    source_runner = None
+    if recipe_v2_source:
+        if runner_template_path is None:
+            _invalid("runner template is required")
+        external_training = validate_external_training_binding(
+            source_map.get("external_training_binding"),
+            code_toolchain_root=resolved_history_root,
+            local_output_root=resolved_history_root / ".p6-normalization-output-sentinel",
+            reserved_paths=(),
+        )
+        execution_closure = validate_execution_closure_manifest(
+            source_map.get("execution_code_closure"),
+            source_history_root=resolved_history_root,
+            external_training=external_training,
+        )
+        source_runner = validate_pre_provision_runner_template(
+            runner_template_path,
+            resolved_history_root,
+            require_exact_history_environment=True,
+        )
+        validate_source_runner_roles(source_runner, execution_closure)
+        if not isinstance(raw_source_group, Mapping) or not isinstance(
+            raw_source_group.get("source_contract"), Mapping
+        ):
+            _invalid("source contract is invalid")
+        raw_source_group = copy.deepcopy(dict(raw_source_group))
+        raw_source_group["source_contract"] = bind_external_training_contract(
+            raw_source_group["source_contract"], external_training
+        )
     if derived:
         if not isinstance(raw_source_group, Mapping):
             _derivation_invalid("source contract is invalid")
@@ -230,6 +287,10 @@ def _validate_private_source_map(
         "source_contract": source_group,
         "dynamic_materialization_recipe": recipe,
     }
+    if recipe_v2_source:
+        canonical["external_training"] = external_training
+        canonical["execution_closure"] = execution_closure
+        canonical["source_runner"] = source_runner
     if derived:
         canonical["derived_recipe"] = copy.deepcopy(recipe)
     return canonical
@@ -327,6 +388,19 @@ def _initialize_private_git_root(root: Path) -> None:
         ) from error
     if completed.returncode != 0:
         _invalid("private root initialization failed")
+    try:
+        (root / ".git" / "info" / "exclude").write_text(
+            "external-training-binding.yaml\n"
+            "runner-template.yaml\n"
+            "source-wrapper-profile.yaml\n"
+            "legacy.local.yaml\n"
+            "runs/\n",
+            encoding="utf-8",
+        )
+    except OSError as error:
+        raise P6HistoryNormalizationError(
+            "history_normalization_invalid", "private root initialization failed"
+        ) from error
 
 
 def _build_registry_v1(source_group: Mapping[str, Any]) -> dict[str, Any]:
@@ -384,6 +458,7 @@ def _legacy_locator(
     private_root: Path,
     *,
     expected_recipe_path: Path | None = None,
+    recipe_v2: bool = False,
 ) -> dict[str, Any]:
     python_executable = str(Path(sys.executable).resolve(strict=True))
     locator = {
@@ -392,7 +467,9 @@ def _legacy_locator(
         "asset_paths": {
             "training-data": str(private_root / "inputs"),
             "model-init": str(paths["registry"]),
-            "toolchain": str(private_root / "toolchain"),
+            "toolchain": str(
+                private_root / ("execution-closure" if recipe_v2 else "toolchain")
+            ),
         },
         "local_input_paths": {name: str(paths[name]) for name in INPUT_NAMES},
         "candidate_source_mode": "framework_stage2_search_space",
@@ -450,6 +527,17 @@ def normalize_history_inputs(
             history_root,
             runner_template_path=runner_template_path,
         )
+        if "external_training" in canonical:
+            validate_external_training_binding(
+                external_training_binding_to_mapping(
+                    canonical["external_training"]
+                ),
+                code_toolchain_root=destination,
+                local_output_root=(
+                    destination.parent / f".{destination.name}.runtime-output"
+                ),
+                reserved_paths=(),
+            )
         staged = Path(
             tempfile.mkdtemp(
                 dir=destination.parent,
@@ -462,7 +550,60 @@ def normalize_history_inputs(
         registry_path = staged / "registry" / "candidate-source-registry.json"
         _atomic_write_json(registry_path, _build_registry_v1(canonical["source_contract"]))
         paths["registry"] = registry_path
-        _copy_private_tree(canonical["asset_paths"]["toolchain"], staged / "toolchain")
+        recipe_v2_source = "external_training" in canonical
+        if recipe_v2_source:
+            copied_roles = copy_execution_closure(
+                canonical["execution_closure"], staged_private_root=staged
+            )
+            external_path = staged / "external-training-binding.yaml"
+            _atomic_write_yaml(
+                external_path,
+                external_training_binding_to_mapping(canonical["external_training"]),
+            )
+            paths["external_training_binding"] = external_path
+            source_role = next(
+                role
+                for role in canonical["execution_closure"].roles
+                if role.role == "source_materializer"
+            )
+            source_closure_root = next(
+                root
+                for root in canonical["execution_closure"].roots
+                if root.closure_id == source_role.closure_id
+            )
+            profile = {
+                "schema_version": "p6_private_source_wrapper_profile_v1",
+                "wrapper_kind": "repo_cwd_exec_v1",
+                "destination_relative_path": (
+                    "documented-stage5-chain/"
+                    "stage5_materialize_round_sources_v1.sh"
+                ),
+                "implementation_relative_path": copied_roles[
+                    "source_materializer"
+                ].relative_to(staged).as_posix(),
+                "implementation_cwd_relative_path": source_closure_root.destination_relative_root.as_posix(),
+            }
+            profile_path = staged / "source-wrapper-profile.yaml"
+            _atomic_write_yaml(profile_path, profile)
+            render_self_contained_source_wrapper(profile, history_root=staged)
+            paths["source_wrapper_profile"] = profile_path
+            runner_payload = render_normalized_runner_template(
+                canonical["source_runner"],
+                normalized_private_root=staged,
+                copied_role_paths=copied_roles,
+            )
+            runner_path = staged / "runner-template.yaml"
+            _atomic_write_yaml(runner_path, runner_payload)
+            paths["runner_template"] = runner_path
+            validate_normalized_runner_closure(
+                runner_path,
+                normalized_private_root=staged,
+                expected_closure=canonical["execution_closure"],
+            )
+        else:
+            _copy_private_tree(
+                canonical["asset_paths"]["toolchain"], staged / "toolchain"
+            )
         if "derived_recipe" in canonical:
             derivation_path = staged / "derivation" / "recipe.json"
             _atomic_write_json(derivation_path, canonical["derived_recipe"])
@@ -478,6 +619,7 @@ def normalize_history_inputs(
                 public_paths,
                 destination,
                 expected_recipe_path=public_paths.get("derivation_recipe"),
+                recipe_v2=recipe_v2_source,
             ),
         )
         paths["legacy"] = legacy_path

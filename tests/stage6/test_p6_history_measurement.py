@@ -282,6 +282,13 @@ def _request() -> dict[str, Any]:
 
 def _unprojected_recipe_v2_request(local_output_root: Path) -> dict[str, Any]:
     request = _request()
+    operator_root = local_output_root.parent / "operator-assets"
+    dataset_root = operator_root / "dataset"
+    dataset_root.mkdir(parents=True, exist_ok=True)
+    checkpoint = operator_root / "base.ckpt"
+    config = operator_root / "pyramid.yaml"
+    checkpoint.write_bytes(b"checkpoint")
+    config.write_bytes(b"config")
     for row in request["rows"]:
         group_slug = "-".join(map(str, row["width"]))
         contract = row["source_contract"]
@@ -293,21 +300,26 @@ def _unprojected_recipe_v2_request(local_output_root: Path) -> dict[str, Any]:
                     "stage2_width": row["width"][1],
                     "stage3_width": row["width"][2],
                 },
-                "training_required": True,
-                "training_source_kind": "selected_candidate_finetune",
-                "base_checkpoint_path": "/private/synthetic/base/model.ckpt",
-                "dataset_root": "/private/synthetic/dataset",
-                "pyramid_config_path": "/private/synthetic/configs/pyramid.py",
-                "training_parameters": {
-                    "training_mode": "finetune_selected_width",
-                    "epochs": 7,
-                    "seed": 20260821,
-                    "optimizer": "adamw",
-                    "learning_rate": 0.0001,
-                    "batch_size": 1,
-                    "dataset_split": "trainval_coptv2x",
-                    "checkpoint_selection": "best_ap70",
-                    "freeze_policy": "pyramid_backbone_partial",
+                "external_training_binding": {
+                    "schema_version": "p6_external_training_binding_v1",
+                    "training_required": True,
+                    "training_source_kind": "selected_candidate_finetune",
+                    "base_checkpoint_path": str(checkpoint),
+                    "base_checkpoint_sha256": hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
+                    "dataset_root": str(dataset_root),
+                    "pyramid_config_path": str(config),
+                    "pyramid_config_sha256": hashlib.sha256(config.read_bytes()).hexdigest(),
+                    "training_parameters": {
+                        "training_mode": "finetune_selected_width",
+                        "epochs": 7,
+                        "seed": 20260821,
+                        "optimizer": "adamw",
+                        "learning_rate": 0.0001,
+                        "batch_size": 1,
+                        "dataset_split": "trainval_coptv2x",
+                        "checkpoint_selection": "best_ap70",
+                        "freeze_policy": "pyramid_backbone_partial",
+                    },
                 },
                 "shared_source_paths": {
                     key: str(

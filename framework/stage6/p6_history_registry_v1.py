@@ -396,7 +396,10 @@ def _validate_legacy_paths(
     if isinstance(value, Mapping):
         for raw_key, child in value.items():
             key = str(raw_key)
-            if key == "dynamic_materialization_recipe":
+            if key in {
+                "dynamic_materialization_recipe",
+                "external_training_binding",
+            }:
                 continue
             _validate_legacy_paths(
                 child,

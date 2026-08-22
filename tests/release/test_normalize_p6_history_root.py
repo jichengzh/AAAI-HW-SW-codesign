@@ -7,6 +7,7 @@ import subprocess
 import sys
 
 import yaml
+import pytest
 
 from tests.stage6.test_p6_history_normalization import (
     _as_v2_procedural,
@@ -209,6 +210,50 @@ def test_cli_normalizes_v2_procedural_source_with_explicit_runner_template(
     assert result.stdout == "p6_history_root_normalized\n"
     assert result.stderr == ""
     assert (private_dir / "derivation" / "recipe.json").exists()
+
+
+@pytest.mark.parametrize("suffix", ("yaml", "yml"))
+def test_cli_loads_v2_yaml_and_rejects_duplicate_keys(
+    tmp_path: Path, suffix: str
+) -> None:
+    source_map, runner = _as_v2_procedural(
+        valid_private_source_map(tmp_path), tmp_path
+    )
+    map_path = tmp_path / f"private-source-map.{suffix}"
+    map_path.write_text(yaml.safe_dump(source_map), encoding="utf-8")
+    private_dir = tmp_path / "normalized-private"
+
+    accepted = _run_cli(
+        "--source-map",
+        str(map_path),
+        "--history-root",
+        source_map["history_root"],
+        "--private-dir",
+        str(private_dir),
+        "--runner-template",
+        str(runner),
+    )
+    assert accepted.returncode == 0
+
+    private_dir.rename(tmp_path / "accepted-private")
+    map_path.write_text(
+        map_path.read_text(encoding="utf-8")
+        + "schema_version: p6_history_normalization_source_v2\n",
+        encoding="utf-8",
+    )
+    rejected = _run_cli(
+        "--source-map",
+        str(map_path),
+        "--history-root",
+        source_map["history_root"],
+        "--private-dir",
+        str(private_dir),
+        "--runner-template",
+        str(runner),
+    )
+    assert rejected.returncode == 1
+    assert rejected.stderr == "history_normalization_invalid\n"
+    assert not private_dir.exists()
 
 
 def test_cli_reports_missing_procedural_runner_without_partial_root(

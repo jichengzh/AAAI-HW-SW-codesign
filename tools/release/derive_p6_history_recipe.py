@@ -21,6 +21,10 @@ from framework.stage6.p6_history_recipe_bridge_v1 import (  # noqa: E402
     P6HistoryRecipeDerivationError,
     derive_dynamic_recipe_from_procedural_source,
 )
+from framework.stage6.p6_history_recipe_normalization_v1 import (  # noqa: E402
+    P6HistoryNormalizationError,
+    load_source_map_document,
+)
 
 
 SOURCE_MAP_V2 = "p6_history_normalization_source_v2"
@@ -41,6 +45,8 @@ PROCEDURAL_SOURCE_MAP_KEYS = frozenset(
         "recipe_mode",
         "procedural_recipe_profile",
         "procedural_recipe_source",
+        "external_training_binding",
+        "execution_code_closure",
     }
 )
 
@@ -120,23 +126,11 @@ def _private_existing_file(path: Path) -> Path:
     return resolved
 
 
-def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    payload: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in payload:
-            raise ValueError("duplicate key")
-        payload[key] = value
-    return payload
-
-
 def _load_source_map(path: Path) -> dict[str, Any]:
     try:
         resolved = _private_existing_file(path)
-        payload = json.loads(
-            resolved.read_text(encoding="utf-8"),
-            object_pairs_hook=_reject_duplicate_keys,
-        )
-    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
+        payload = load_source_map_document(resolved)
+    except (OSError, UnicodeError, ValueError, P6HistoryNormalizationError) as error:
         raise P6HistoryRecipeDerivationError("source map is unavailable") from error
     if (
         not isinstance(payload, dict)

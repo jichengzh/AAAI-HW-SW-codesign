@@ -32,27 +32,28 @@ from tools.release.preflight_p6_materializer_training_bridge import (
 )
 from tests.stage6.test_coptv2x_h800_search import (
     _OfflineGpuProbe,
-    _migrate_normalized_training_registry,
     _public_contract,
-    _write_normalized_history_source_map,
-    _write_normalized_source_wrapper_profile,
-    _write_runner_template,
     _write_yaml,
+)
+from tests.stage6.test_p6_history_normalization import (
+    _as_v2_procedural,
+    valid_private_source_map,
 )
 
 
 def _build_preflight_inputs(root: Path) -> dict[str, Path]:
-    source_map = _write_normalized_history_source_map(root)
+    source_map, source_runner = _as_v2_procedural(valid_private_source_map(root), root)
     private_root = root / "normalized-private-root"
     normalized = normalize_history_inputs(
-        source_map, Path(str(source_map["history_root"])), private_root
+        source_map,
+        Path(str(source_map["history_root"])),
+        private_root,
+        runner_template_path=source_runner,
     )
-    _migrate_normalized_training_registry(normalized["registry"], private_root)
-    runner_template = _write_runner_template(private_root / "runner-template.yaml")
-    wrapper_profile = _write_normalized_source_wrapper_profile(
-        root / "source-wrapper-profile.yaml", private_root
-    )
-    local_output_root = private_root / "provisioned"
+    runner_template = normalized["runner_template"]
+    wrapper_profile = normalized["source_wrapper_profile"]
+    external_training = normalized["external_training_binding"]
+    local_output_root = root / "provisioned"
     local_output_root.mkdir()
     binding = local_output_root / "binding.json"
     local_config = local_output_root / "local.yaml"
@@ -64,6 +65,7 @@ def _build_preflight_inputs(root: Path) -> dict[str, Path]:
         local_config,
         _OfflineGpuProbe(),
         source_wrapper_profile=wrapper_profile,
+        external_training_binding=external_training,
     )
     return {
         "public_contract_path": _write_yaml(root / "public.yaml", _public_contract()),
@@ -71,6 +73,7 @@ def _build_preflight_inputs(root: Path) -> dict[str, Path]:
         "private_binding_path": binding,
         "runner_template_path": runner_template,
         "source_wrapper_profile_path": wrapper_profile,
+        "external_training_binding_path": external_training,
     }
 
 
@@ -122,23 +125,30 @@ def _apply_preflight_mutation(inputs: dict[str, Path], mutation: str) -> None:
         _write_yaml(local_path, local)
         return
     if mutation == "old_binding_missing_training_required":
-        binding["source_contract_template"].pop("training_required")
+        binding["source_contract_template"]["external_training_binding"].pop("training_required")
         binding_path.write_text(json.dumps(binding), encoding="utf-8")
         return
     if mutation == "old_binding_false_training_required":
-        binding["source_contract_template"]["training_required"] = False
+        binding["source_contract_template"]["external_training_binding"]["training_required"] = (
+            False
+        )
         binding_path.write_text(json.dumps(binding), encoding="utf-8")
         return
     if mutation == "missing_static_training_field":
-        binding["source_contract_template"].pop("base_checkpoint_path")
+        binding["source_contract_template"]["external_training_binding"].pop("base_checkpoint_path")
         binding_path.write_text(json.dumps(binding), encoding="utf-8")
         return
     if mutation == "wrapper_not_self_contained":
-        profile = yaml.safe_load(
-            inputs["source_wrapper_profile_path"].read_text(encoding="utf-8")
-        )
+        profile = yaml.safe_load(inputs["source_wrapper_profile_path"].read_text(encoding="utf-8"))
         profile["wrapper_kind"] = "PRIVATE-PREFLIGHT-PATH"
         _write_yaml(inputs["source_wrapper_profile_path"], profile)
+        return
+    if mutation == "runner_path_argv_tail":
+        runner = yaml.safe_load(inputs["runner_template_path"].read_text(encoding="utf-8"))
+        runner["execution_interface"]["controller"]["argv"].append(
+            "/tmp/undeclared-source-tree/config.py"
+        )
+        _write_yaml(inputs["runner_template_path"], runner)
         return
     if mutation == "output_root_symlink":
         external = output_root.parent / "external-preflight-inputs"
@@ -170,9 +180,7 @@ def _apply_preflight_mutation(inputs: dict[str, Path], mutation: str) -> None:
         "public_round_root_preexists": output_root / "round-00",
     }
     if mutation in SHARED_SOURCE_PATH_KEYS:
-        recipe = binding["source_contract_template"][
-            "dynamic_materialization_recipe"
-        ]
+        recipe = binding["source_contract_template"]["dynamic_materialization_recipe"]
         width_values = dict(
             zip(
                 recipe["stage_width_fields"],
@@ -258,6 +266,7 @@ def test_preflight_accepts_regenerated_training_binding_without_process_or_gpu(
         "old_binding_false_training_required",
         "missing_static_training_field",
         "wrapper_not_self_contained",
+        "runner_path_argv_tail",
         "metadata_namespace_preexists",
         "run_context_preexists",
         "receipt_namespace_preexists",
@@ -340,6 +349,8 @@ def test_preflight_cli_emits_only_allowlisted_public_fields(
             str(preflight_inputs["runner_template_path"]),
             "--source-wrapper-profile",
             str(preflight_inputs["source_wrapper_profile_path"]),
+            "--external-training-binding",
+            str(preflight_inputs["external_training_binding_path"]),
         ]
     )
     output = capsys.readouterr()
@@ -353,8 +364,7 @@ def test_preflight_cli_redacts_private_path_and_gpu_tokens(
     preflight_inputs: dict[str, Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
     preflight_inputs["private_binding_path"] = (
-        _local_output_root(preflight_inputs)
-        / "PRIVATE-PREFLIGHT-PATH-GPU-private-preflight.json"
+        _local_output_root(preflight_inputs) / "PRIVATE-PREFLIGHT-PATH-GPU-private-preflight.json"
     )
     result = main(
         [
@@ -368,6 +378,8 @@ def test_preflight_cli_redacts_private_path_and_gpu_tokens(
             str(preflight_inputs["runner_template_path"]),
             "--source-wrapper-profile",
             str(preflight_inputs["source_wrapper_profile_path"]),
+            "--external-training-binding",
+            str(preflight_inputs["external_training_binding_path"]),
         ]
     )
     output = capsys.readouterr()

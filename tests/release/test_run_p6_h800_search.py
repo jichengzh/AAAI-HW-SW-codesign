@@ -399,14 +399,14 @@ def _history_cli_fixture(
     binding = _synthetic_history_binding(private_root)
     profile = get_recipe_profile(PROFILE_V1)
     assert profile is not None
-    binding_private_root = Path(binding["private_root"])
-    base_checkpoint = binding_private_root / "base" / "model.ckpt"
-    base_checkpoint.parent.mkdir()
+    operator_root = tmp_path / "operator-assets"
+    base_checkpoint = operator_root / "base" / "model.ckpt"
+    base_checkpoint.parent.mkdir(parents=True)
     base_checkpoint.write_text("synthetic base checkpoint\n", encoding="utf-8")
-    dataset_root = binding_private_root / "dataset"
-    dataset_root.mkdir()
-    pyramid_config = binding_private_root / "configs" / "pyramid.py"
-    pyramid_config.parent.mkdir()
+    dataset_root = operator_root / "dataset"
+    dataset_root.mkdir(parents=True)
+    pyramid_config = operator_root / "configs" / "pyramid.py"
+    pyramid_config.parent.mkdir(parents=True)
     pyramid_config.write_text("# synthetic pyramid config\n", encoding="utf-8")
     source_contract = binding["source_contract_template"]
     source_contract.update(
@@ -420,21 +420,30 @@ def _history_cli_fixture(
                     profile.shared_source_path_templates
                 ),
             },
-            "training_required": True,
-            "training_source_kind": "selected_candidate_finetune",
-            "base_checkpoint_path": str(base_checkpoint),
-            "dataset_root": str(dataset_root),
-            "pyramid_config_path": str(pyramid_config),
-            "training_parameters": {
-                "training_mode": "finetune_selected_width",
-                "epochs": 3,
-                "seed": 20260821,
-                "optimizer": "adamw",
-                "learning_rate": 0.0001,
-                "batch_size": 1,
-                "dataset_split": "trainval_coptv2x",
-                "checkpoint_selection": "best_ap70",
-                "freeze_policy": "pyramid_backbone_partial",
+            "external_training_binding": {
+                "schema_version": "p6_external_training_binding_v1",
+                "training_required": True,
+                "training_source_kind": "selected_candidate_finetune",
+                "base_checkpoint_path": str(base_checkpoint),
+                "base_checkpoint_sha256": hashlib.sha256(
+                    base_checkpoint.read_bytes()
+                ).hexdigest(),
+                "dataset_root": str(dataset_root),
+                "pyramid_config_path": str(pyramid_config),
+                "pyramid_config_sha256": hashlib.sha256(
+                    pyramid_config.read_bytes()
+                ).hexdigest(),
+                "training_parameters": {
+                    "training_mode": "finetune_selected_width",
+                    "epochs": 3,
+                    "seed": 20260821,
+                    "optimizer": "adamw",
+                    "learning_rate": 0.0001,
+                    "batch_size": 1,
+                    "dataset_split": "trainval_coptv2x",
+                    "checkpoint_selection": "best_ap70",
+                    "freeze_policy": "pyramid_backbone_partial",
+                },
             },
         }
     )

@@ -96,12 +96,17 @@ def validate_projected_training_contract(
 ) -> dict[str, Any]:
     """Return a detached projected contract after lexical-only validation."""
     canonical = _detached_mapping(contract)
-    _require_training_required_true(canonical)
-    _require_training_source_kind(canonical)
-    _require_training_parameters(canonical)
+    try:
+        from framework.stage6.p6_external_training_binding_v1 import (
+            external_training_binding_from_contract,
+        )
+
+        external = external_training_binding_from_contract(canonical)
+    except (TypeError, ValueError):
+        _invalid("external training binding is invalid")
     _validate_group_identity(canonical, group_id)
     _validate_stage_widths(canonical)
-    _require_lexical_absolute_paths(canonical, STATIC_TRAINING_INPUT_PATH_KEYS)
+    _require_lexical_absolute_paths(external, STATIC_TRAINING_INPUT_PATH_KEYS)
     _require_lexical_absolute_paths(
         canonical,
         ("training_done_marker", "source_done_marker"),

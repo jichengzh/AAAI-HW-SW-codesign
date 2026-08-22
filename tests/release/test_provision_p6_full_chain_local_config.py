@@ -355,32 +355,43 @@ def _attach_expected_recipe(
     expected_recipe: dict[str, Any],
 ) -> Path:
     root = tmp_path / "private-history"
-    (root / "checkpoints").mkdir(exist_ok=True)
-    (root / "datasets" / "coptv2x").mkdir(parents=True, exist_ok=True)
-    (root / "configs").mkdir(exist_ok=True)
-    (root / "checkpoints" / "base.ckpt").write_text("base\n", encoding="utf-8")
-    (root / "configs" / "pyramid.py").write_text("config\n", encoding="utf-8")
+    operator = tmp_path / "operator-assets"
+    dataset = operator / "datasets" / "coptv2x"
+    stable = operator / "stable"
+    dataset.mkdir(parents=True, exist_ok=True)
+    stable.mkdir(parents=True, exist_ok=True)
+    checkpoint = stable / "base.ckpt"
+    config = stable / "pyramid.py"
+    checkpoint.write_text("base\n", encoding="utf-8")
+    config.write_text("config\n", encoding="utf-8")
+    external = {
+        "schema_version": "p6_external_training_binding_v1",
+        "training_required": True,
+        "training_source_kind": "selected_candidate_finetune",
+        "base_checkpoint_path": str(checkpoint),
+        "base_checkpoint_sha256": hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
+        "dataset_root": str(dataset),
+        "pyramid_config_path": str(config),
+        "pyramid_config_sha256": hashlib.sha256(config.read_bytes()).hexdigest(),
+        "training_parameters": {
+            "training_mode": "finetune_selected_width",
+            "epochs": 2,
+            "seed": 20260821,
+            "optimizer": "adamw",
+            "learning_rate": 0.0001,
+            "batch_size": 1,
+            "dataset_split": "trainval_coptv2x",
+            "checkpoint_selection": "best_ap70",
+            "freeze_policy": "pyramid_backbone_partial",
+        },
+    }
+    _write_yaml(tmp_path / "private-inputs" / "external-training-binding.yaml", external)
     registry_path = root / "registry" / "candidate_source_registry.json"
     registry = json.loads(registry_path.read_text(encoding="utf-8"))
     contract = registry["groups"][0]["source_contract"]
     contract.update(
         {
-            "training_required": True,
-            "training_source_kind": "selected_candidate_finetune",
-            "base_checkpoint_path": str(root / "checkpoints" / "base.ckpt"),
-            "dataset_root": str(root / "datasets" / "coptv2x"),
-            "pyramid_config_path": str(root / "configs" / "pyramid.py"),
-            "training_parameters": {
-                "training_mode": "finetune_selected_width",
-                "epochs": 2,
-                "seed": 20260821,
-                "optimizer": "adamw",
-                "learning_rate": 0.0001,
-                "batch_size": 1,
-                "dataset_split": "trainval_coptv2x",
-                "checkpoint_selection": "best_ap70",
-                "freeze_policy": "pyramid_backbone_partial",
-            },
+            "external_training_binding": copy.deepcopy(external),
             "dynamic_materialization_recipe": copy.deepcopy(actual_recipe),
         }
     )
@@ -558,7 +569,9 @@ def test_cli_enforces_matching_normalized_recipe_before_writing_pair(
     )
 
     result = _run_cli(
-        tmp_path, *args, "--source-wrapper-profile", str(profile)
+        tmp_path, *args, "--source-wrapper-profile", str(profile),
+        "--external-training-binding",
+        str(tmp_path / "private-inputs" / "external-training-binding.yaml"),
     )
 
     assert result.returncode == 0
@@ -581,7 +594,9 @@ def test_cli_rejects_normalized_recipe_drift_without_pair(tmp_path: Path) -> Non
     )
 
     result = _run_cli(
-        tmp_path, *args, "--source-wrapper-profile", str(profile)
+        tmp_path, *args, "--source-wrapper-profile", str(profile),
+        "--external-training-binding",
+        str(tmp_path / "private-inputs" / "external-training-binding.yaml"),
     )
 
     assert result.returncode == 1
@@ -634,7 +649,9 @@ def test_cli_does_not_overwrite_differing_source_marker_or_write_pair(
     marker.chmod(0o700)
 
     result = _run_cli(
-        tmp_path, *args, "--source-wrapper-profile", str(profile)
+        tmp_path, *args, "--source-wrapper-profile", str(profile),
+        "--external-training-binding",
+        str(tmp_path / "private-inputs" / "external-training-binding.yaml"),
     )
 
     assert result.returncode == 1

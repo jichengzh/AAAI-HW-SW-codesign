@@ -442,22 +442,27 @@ def test_binding_discovers_only_ready_recipe_v2_template_and_validates_training(
     tmp_path: Path,
 ) -> None:
     history_root = _history_root(tmp_path)
-    (history_root / "checkpoints").mkdir()
-    (history_root / "datasets" / "coptv2x").mkdir(parents=True)
-    (history_root / "configs").mkdir()
-    (history_root / "checkpoints" / "base.ckpt").write_text("base\n", encoding="utf-8")
-    (history_root / "configs" / "pyramid.py").write_text("config\n", encoding="utf-8")
+    operator_root = tmp_path / "operator-assets"
+    (operator_root / "checkpoints").mkdir(parents=True)
+    (operator_root / "datasets" / "coptv2x").mkdir(parents=True)
+    (operator_root / "configs").mkdir()
+    (operator_root / "checkpoints" / "base.ckpt").write_text("base\n", encoding="utf-8")
+    (operator_root / "configs" / "pyramid.py").write_text("config\n", encoding="utf-8")
     registry_path = history_root / "registry" / "candidate_source_registry.json"
     registry = json.loads(registry_path.read_text(encoding="utf-8"))
     ready = registry["groups"][0]
     template = ready["source_contract"]
     template.update(
         {
+            "external_training_binding": {
+                "schema_version": "p6_external_training_binding_v1",
             "training_required": True,
             "training_source_kind": "selected_candidate_finetune",
-            "base_checkpoint_path": str(history_root / "checkpoints" / "base.ckpt"),
-            "dataset_root": str(history_root / "datasets" / "coptv2x"),
-            "pyramid_config_path": str(history_root / "configs" / "pyramid.py"),
+            "base_checkpoint_path": str(operator_root / "checkpoints" / "base.ckpt"),
+            "base_checkpoint_sha256": hashlib.sha256(b"base\n").hexdigest(),
+            "dataset_root": str(operator_root / "datasets" / "coptv2x"),
+            "pyramid_config_path": str(operator_root / "configs" / "pyramid.py"),
+            "pyramid_config_sha256": hashlib.sha256(b"config\n").hexdigest(),
             "training_parameters": {
                 "training_mode": "finetune_selected_width",
                 "epochs": 2,
@@ -468,6 +473,7 @@ def test_binding_discovers_only_ready_recipe_v2_template_and_validates_training(
                 "dataset_split": "trainval_coptv2x",
                 "checkpoint_selection": "best_ap70",
                 "freeze_policy": "pyramid_backbone_partial",
+            },
             },
             "dynamic_materialization_recipe": {
                 "schema_version": RECIPE_V2,
@@ -485,7 +491,9 @@ def test_binding_discovers_only_ready_recipe_v2_template_and_validates_training(
     materializable = copy.deepcopy(ready)
     materializable["source_status"] = "materializable"
     materializable["source_contract"]["source_status"] = "materializable"
-    materializable["source_contract"]["training_required"] = False
+    materializable["source_contract"]["external_training_binding"][
+        "training_required"
+    ] = False
     materializable["source_contract_sha256"] = _canonical_json_sha(
         materializable["source_contract"]
     )
@@ -494,8 +502,9 @@ def test_binding_discovers_only_ready_recipe_v2_template_and_validates_training(
 
     binding = discover_history_binding(history_root, _probe())
 
-    assert binding["source_contract_template"]["training_required"] is True
-    assert binding["source_contract_template"]["training_source_kind"] == (
+    external = binding["source_contract_template"]["external_training_binding"]
+    assert external["training_required"] is True
+    assert external["training_source_kind"] == (
         "selected_candidate_finetune"
     )
 

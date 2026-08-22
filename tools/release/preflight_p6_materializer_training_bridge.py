@@ -15,6 +15,12 @@ from framework.stage6.coptv2x_h800_search_v2 import (
     load_public_contract,
 )
 from framework.stage6.p6_history_binding_v1 import validate_history_execution_binding
+from framework.stage6.p6_external_training_binding_v1 import (
+    external_training_binding_from_contract,
+    external_training_binding_to_mapping,
+    load_external_training_binding,
+    validate_external_training_binding,
+)
 from framework.stage6.p6_history_measurement_v1 import plan_validated_history_round_paths
 from framework.stage6.p6_history_training_contract_v1 import (
     validate_recipe_v2_training_template,
@@ -70,6 +76,7 @@ def preflight_materializer_training_bridge(
     private_binding_path: Path,
     runner_template_path: Path,
     source_wrapper_profile_path: Path,
+    external_training_binding_path: Path,
 ) -> P6MaterializerPreflightReport:
     """Validate only static inputs and deterministic absent destinations."""
     try:
@@ -93,6 +100,33 @@ def preflight_materializer_training_bridge(
             runner_template, source_wrapper_profile=source_wrapper_profile_path
         )
         reuse_paths = plan_source_reuse_paths(local.local_output_root)
+        reserved_paths: list[Path] = [
+            private_binding_path,
+            local_config_path,
+            reuse_paths.metadata_root,
+            reuse_paths.run_context,
+            reuse_paths.receipt_root,
+            local.local_output_root / "materialized",
+            local.local_output_root / "source_registry.json",
+            local.local_output_root / "pyramid_candidate_plan.json",
+            local.local_output_root / "state.json",
+        ]
+        for round_index in range(4):
+            reserved_paths.extend(
+                plan_validated_history_round_paths(
+                    interface, private_root, round_index
+                ).values()
+            )
+        external = validate_external_training_binding(
+            load_external_training_binding(external_training_binding_path),
+            code_toolchain_root=private_root,
+            local_output_root=local.local_output_root,
+            reserved_paths=reserved_paths,
+        )
+        if external_training_binding_to_mapping(
+            external
+        ) != external_training_binding_from_contract(validated_template):
+            raise ValueError
         for path in (
             reuse_paths.metadata_root,
             reuse_paths.run_context,
@@ -122,7 +156,7 @@ def preflight_materializer_training_bridge(
             status="accepted",
             validated_round_count=4,
             wrapper_marker=marker,
-            training_required=validated_template["training_required"] is True,
+            training_required=external.training_required,
             historical_process_launch_count=0,
             gpu_probe_count=0,
         )
@@ -141,6 +175,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--binding", type=Path, required=True)
     parser.add_argument("--runner-template", type=Path, required=True)
     parser.add_argument("--source-wrapper-profile", type=Path, required=True)
+    parser.add_argument("--external-training-binding", type=Path, required=True)
     try:
         args = parser.parse_args(argv)
         report = preflight_materializer_training_bridge(
@@ -149,6 +184,7 @@ def main(argv: list[str] | None = None) -> int:
             private_binding_path=args.binding,
             runner_template_path=args.runner_template,
             source_wrapper_profile_path=args.source_wrapper_profile,
+            external_training_binding_path=args.external_training_binding,
         )
     except Exception:
         sys.stderr.write("preflight_failed\n")

@@ -178,9 +178,7 @@ def _runner_template() -> dict[str, Any]:
         },
         "execution_interface": {
             "schema_version": "p6_history_runner_interface_v1",
-            "controller": {
-                "argv": [f"documented-stage5-chain/{MARKERS['controller']}"]
-            },
+            "controller": {"argv": [f"documented-stage5-chain/{MARKERS['controller']}"]},
             "execution_chain": [
                 {
                     "stage": "source_materialization",
@@ -359,15 +357,9 @@ def _legacy_locator(root: Path, inputs: Mapping[str, Path]) -> dict[str, Any]:
         "asset_paths": {
             "training-data": str(root / "inputs"),
             "model-init": str(inputs["registry"]),
-            "toolchain": str(
-                root
-                / "documented-stage5-chain"
-                / MARKERS["performance_plan"]
-            ),
+            "toolchain": str(root / "documented-stage5-chain" / MARKERS["performance_plan"]),
         },
-        "local_input_paths": {
-            name: str(inputs[name]) for name in LOCAL_INPUT_NAMES
-        },
+        "local_input_paths": {name: str(inputs[name]) for name in LOCAL_INPUT_NAMES},
         "source_registry_step": {
             "name": "build_source_registry",
             "argv": [
@@ -413,40 +405,49 @@ def _attach_expected_recipe(
     expected_recipe: Mapping[str, Any],
 ) -> Path:
     root = tmp_path / "source"
-    (root / "checkpoints").mkdir(exist_ok=True)
-    (root / "datasets" / "coptv2x").mkdir(parents=True, exist_ok=True)
-    (root / "configs").mkdir(exist_ok=True)
-    (root / "checkpoints" / "base.ckpt").write_text("base\n", encoding="utf-8")
-    (root / "configs" / "pyramid.py").write_text("config\n", encoding="utf-8")
+    operator = tmp_path / "operator-assets"
+    dataset = operator / "datasets" / "coptv2x"
+    stable = operator / "stable"
+    dataset.mkdir(parents=True, exist_ok=True)
+    stable.mkdir(parents=True, exist_ok=True)
+    checkpoint = stable / "base.ckpt"
+    config = stable / "pyramid.py"
+    checkpoint.write_text("base\n", encoding="utf-8")
+    config.write_text("config\n", encoding="utf-8")
+    external = {
+        "schema_version": "p6_external_training_binding_v1",
+        "training_required": True,
+        "training_source_kind": "selected_candidate_finetune",
+        "base_checkpoint_path": str(checkpoint),
+        "base_checkpoint_sha256": hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
+        "dataset_root": str(dataset),
+        "pyramid_config_path": str(config),
+        "pyramid_config_sha256": hashlib.sha256(config.read_bytes()).hexdigest(),
+        "training_parameters": {
+            "training_mode": "finetune_selected_width",
+            "epochs": 2,
+            "seed": 20260821,
+            "optimizer": "adamw",
+            "learning_rate": 0.0001,
+            "batch_size": 1,
+            "dataset_split": "trainval_coptv2x",
+            "checkpoint_selection": "best_ap70",
+            "freeze_policy": "pyramid_backbone_partial",
+        },
+    }
+    _write_yaml(tmp_path / "private-inputs" / "external-training-binding.yaml", external)
     registry_path = root / "registry" / "candidate_source_registry.json"
     registry = json.loads(registry_path.read_text(encoding="utf-8"))
     contract = registry["groups"][0]["source_contract"]
     contract.update(
         {
-            "training_required": True,
-            "training_source_kind": "selected_candidate_finetune",
-            "base_checkpoint_path": str(root / "checkpoints" / "base.ckpt"),
-            "dataset_root": str(root / "datasets" / "coptv2x"),
-            "pyramid_config_path": str(root / "configs" / "pyramid.py"),
-            "training_parameters": {
-                "training_mode": "finetune_selected_width",
-                "epochs": 2,
-                "seed": 20260821,
-                "optimizer": "adamw",
-                "learning_rate": 0.0001,
-                "batch_size": 1,
-                "dataset_split": "trainval_coptv2x",
-                "checkpoint_selection": "best_ap70",
-                "freeze_policy": "pyramid_backbone_partial",
-            },
+            "external_training_binding": copy.deepcopy(external),
             "dynamic_materialization_recipe": copy.deepcopy(dict(actual_recipe)),
         }
     )
     registry["groups"][0]["source_contract_sha256"] = _canonical_json_sha(contract)
     _write_json(registry_path, registry)
-    expected_path = _write_json(
-        root / "derivation" / "recipe.json", expected_recipe
-    )
+    expected_path = _write_json(root / "derivation" / "recipe.json", expected_recipe)
     legacy = yaml.safe_load(legacy_config.read_text(encoding="utf-8"))
     legacy["history_recipe_derivation_path"] = str(expected_path)
     _write_yaml(legacy_config, legacy)
@@ -462,12 +463,9 @@ def _attach_expected_recipe(
     profile_payload = {
         "schema_version": "p6_private_source_wrapper_profile_v1",
         "wrapper_kind": "repo_cwd_exec_v1",
-        "destination_relative_path": (
-            f"documented-stage5-chain/{MARKERS['source_materializer']}"
-        ),
+        "destination_relative_path": (f"documented-stage5-chain/{MARKERS['source_materializer']}"),
         "implementation_relative_path": (
-            "private-relocated-history-repo/bin/"
-            "stage5_materialize_round_sources_v1.original.sh"
+            "private-relocated-history-repo/bin/stage5_materialize_round_sources_v1.original.sh"
         ),
         "implementation_cwd_relative_path": "private-relocated-history-repo",
     }
@@ -479,27 +477,21 @@ def _attach_expected_recipe(
     return profile_path
 
 
-def _write_invalid_private_inputs(
-    tmp_path: Path, mutation: str
-) -> tuple[Path, Path, Path]:
+def _write_invalid_private_inputs(tmp_path: Path, mutation: str) -> tuple[Path, Path, Path]:
     legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
     legacy_payload = yaml.safe_load(legacy_config.read_text(encoding="utf-8"))
     template_payload = yaml.safe_load(template.read_text(encoding="utf-8"))
     if mutation == "two_common_roots":
         second_root = tmp_path / "second-source"
         second_inputs = _initialize_source_root(second_root)
-        legacy_payload["local_input_paths"]["closure"] = str(
-            second_inputs["closure"]
-        )
+        legacy_payload["local_input_paths"]["closure"] = str(second_inputs["closure"])
         _write_yaml(legacy_config, legacy_payload)
     elif mutation == "missing_stage":
         template_payload["execution_interface"]["execution_chain"].pop(2)
         _write_yaml(template, template_payload)
     elif mutation == "escape":
         _write_executable(tmp_path / "escape-bin")
-        template_payload["execution_interface"]["execution_chain"][1]["argv"][
-            0
-        ] = "../escape-bin"
+        template_payload["execution_interface"]["execution_chain"][1]["argv"][0] = "../escape-bin"
         _write_yaml(template, template_payload)
     elif mutation == "bad_template":
         template_payload["schema_version"] = "p6_history_runner_template_v0"
@@ -540,15 +532,13 @@ def test_materialize_full_chain_binding_renders_dynamic_config(
     local = load_local_config(output_root / "local.yaml", _public_contract(tmp_path))
     config = yaml.safe_load((output_root / "local.yaml").read_text(encoding="utf-8"))
     assert binding["schema_version"] == "p6_history_binding_v1"
-    assert tuple(
-        step["stage"] for step in binding["execution_interface"]["execution_chain"]
-    ) == STAGES
+    assert (
+        tuple(step["stage"] for step in binding["execution_interface"]["execution_chain"]) == STAGES
+    )
     assert local.candidate_source_mode == "framework_stage2_search_space"
     assert local.stage1_scan_step is not None
     assert local.stage1_scan_step.name == "build_stage1_partition"
-    assert config["stage2_search_space_path"] == str(
-        output_root / "stage1_partition_manifest.json"
-    )
+    assert config["stage2_search_space_path"] == str(output_root / "stage1_partition_manifest.json")
     assert set(config["stage1_scan_step"]["argv"]) >= {
         "{stage1_partition_manifest}",
         "{local_output_root}",
@@ -585,11 +575,50 @@ def test_materialize_accepts_matching_normalized_recipe_before_pair_write(
         output_root / "local.yaml",
         _gpu_probe(),
         source_wrapper_profile=profile,
+        external_training_binding=(tmp_path / "private-inputs" / "external-training-binding.yaml"),
     )
 
     assert binding["source_contract_template"]["dynamic_materialization_recipe"] == recipe
     assert (output_root / "binding.json").exists()
     assert (output_root / "local.yaml").exists()
+
+
+def test_materialize_rejects_runner_path_argv_tail_before_probe_or_pair_write(
+    tmp_path: Path,
+) -> None:
+    legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
+    recipe = _recipe_v2()
+    profile = _attach_expected_recipe(
+        tmp_path,
+        legacy_config,
+        actual_recipe=recipe,
+        expected_recipe=recipe,
+    )
+    payload = _template_payload(template)
+    payload["execution_interface"]["controller"]["argv"].append(
+        "/tmp/undeclared-source-tree/config.py"
+    )
+    _write_yaml(template, payload)
+    probe = _gpu_probe()
+
+    with pytest.raises(FullChainBootstrapError) as captured:
+        materialize_full_chain_binding(
+            legacy_config,
+            template,
+            output_root,
+            output_root / "binding.json",
+            output_root / "local.yaml",
+            probe,
+            source_wrapper_profile=profile,
+            external_training_binding=(
+                tmp_path / "private-inputs" / "external-training-binding.yaml"
+            ),
+        )
+
+    assert captured.value.category == "execution_interface_unavailable"
+    assert probe.calls == []
+    assert not (output_root / "binding.json").exists()
+    assert not (output_root / "local.yaml").exists()
 
 
 def test_materialize_rejects_recipe_drift_before_pair_write(
@@ -599,9 +628,7 @@ def test_materialize_rejects_recipe_drift_before_pair_write(
     legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
     actual = _recipe_v2()
     expected = copy.deepcopy(actual)
-    expected["artifact_id_template"] = (
-        "pyramid-drift-{stage1_width}-{stage2_width}-{stage3_width}"
-    )
+    expected["artifact_id_template"] = "pyramid-drift-{stage1_width}-{stage2_width}-{stage3_width}"
     profile = _attach_expected_recipe(
         tmp_path,
         legacy_config,
@@ -626,6 +653,9 @@ def test_materialize_rejects_recipe_drift_before_pair_write(
             output_root / "local.yaml",
             _gpu_probe(),
             source_wrapper_profile=profile,
+            external_training_binding=(
+                tmp_path / "private-inputs" / "external-training-binding.yaml"
+            ),
         )
 
     assert not (output_root / "binding.json").exists()
@@ -672,12 +702,7 @@ def test_materialize_rejects_differing_wrapper_marker_without_probe_or_pair_writ
         actual_recipe=recipe,
         expected_recipe=recipe,
     )
-    marker = (
-        tmp_path
-        / "source"
-        / "documented-stage5-chain"
-        / MARKERS["source_materializer"]
-    )
+    marker = tmp_path / "source" / "documented-stage5-chain" / MARKERS["source_materializer"]
     marker.write_text("#!/bin/sh\nexit 91\n", encoding="utf-8")
     marker.chmod(0o700)
     probe = _gpu_probe()
@@ -691,6 +716,9 @@ def test_materialize_rejects_differing_wrapper_marker_without_probe_or_pair_writ
             output_root / "local.yaml",
             probe,
             source_wrapper_profile=profile,
+            external_training_binding=(
+                tmp_path / "private-inputs" / "external-training-binding.yaml"
+            ),
         )
 
     assert captured.value.category == "history_execution_invalid"
@@ -756,8 +784,7 @@ def test_materialize_uses_template_component_paths_when_history_has_archived_dup
 
     assert binding["status"] == "validated"
     assert binding["component_paths"] == {
-        role: str(root / "documented-stage5-chain" / marker)
-        for role, marker in MARKERS.items()
+        role: str(root / "documented-stage5-chain" / marker) for role, marker in MARKERS.items()
     }
 
 
@@ -846,9 +873,7 @@ def test_materialize_rejects_relative_symlink_parent_quantization_path_without_p
     legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
     root = tmp_path / "source"
     payload = _template_payload(template)
-    (root / "linked-runner").symlink_to(
-        root / "private-runner", target_is_directory=True
-    )
+    (root / "linked-runner").symlink_to(root / "private-runner", target_is_directory=True)
     payload["execution_interface"]["execution_chain"][1]["argv"][0] = (
         "linked-runner/bin/quantize-private"
     )
@@ -906,9 +931,7 @@ def test_bootstrap_rejects_symlinked_repository_template_parent_before_probe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Catches treating a repository symlink escape as an external template."""
-    legacy_config, external_template, output_root = _write_valid_private_inputs(
-        tmp_path
-    )
+    legacy_config, external_template, output_root = _write_valid_private_inputs(tmp_path)
     repository = tmp_path / "template-repository"
     repository.mkdir()
     subprocess.run(["git", "init", "-q", str(repository)], check=True)
@@ -983,9 +1006,7 @@ def test_bootstrap_accepts_private_runner_template_locations(
 def test_bootstrap_rejects_untrusted_or_ambiguous_private_inputs(
     tmp_path: Path, mutation: str
 ) -> None:
-    legacy_config, template, output_root = _write_invalid_private_inputs(
-        tmp_path, mutation
-    )
+    legacy_config, template, output_root = _write_invalid_private_inputs(tmp_path, mutation)
 
     with pytest.raises(FullChainBootstrapError):
         materialize_full_chain_binding(

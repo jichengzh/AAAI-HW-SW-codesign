@@ -15,6 +15,13 @@ from typing import Any
 
 import yaml
 
+from framework.stage6.p6_external_training_binding_v1 import (
+    P6ExternalTrainingBindingError,
+    external_training_binding_from_contract,
+    external_training_binding_to_mapping,
+    load_external_training_binding,
+    validate_external_training_binding,
+)
 from framework.stage6.coptv2x_h800_search_v2 import (
     P6CoptV2XContractError,
     load_local_config,
@@ -135,6 +142,7 @@ def materialize_full_chain_binding(
     gpu_probe: GpuProbe,
     *,
     source_wrapper_profile: Path | None = None,
+    external_training_binding: Path | None = None,
 ) -> dict[str, Any]:
     """Validate private inputs and atomically materialize one binding/config pair."""
     output_root, binding_path, config_path = _resolve_private_outputs(
@@ -165,10 +173,28 @@ def materialize_full_chain_binding(
     recipe_v2 = (
         isinstance(recipe, Mapping) and recipe.get("schema_version") == RECIPE_V2
     )
-    if recipe_v2 and source_wrapper_profile is None:
+    if recipe_v2 and (
+        source_wrapper_profile is None or external_training_binding is None
+    ):
         raise FullChainBootstrapError(
-            "history_execution_invalid", "source wrapper profile is required"
+            "history_execution_invalid", "recipe-v2 private inputs are required"
         )
+    if recipe_v2:
+        try:
+            validated_external = validate_external_training_binding(
+                load_external_training_binding(external_training_binding),
+                code_toolchain_root=root,
+                local_output_root=output_root,
+                reserved_paths=(binding_path, config_path),
+            )
+            if external_training_binding_to_mapping(
+                validated_external
+            ) != external_training_binding_from_contract(source_contract):
+                raise P6ExternalTrainingBindingError()
+        except P6ExternalTrainingBindingError as error:
+            raise FullChainBootstrapError(
+                error.category, "external training binding is invalid"
+            ) from error
     if source_wrapper_profile is not None:
         try:
             profile = load_source_wrapper_profile(source_wrapper_profile)

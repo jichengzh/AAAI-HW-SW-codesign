@@ -8,10 +8,13 @@ import sys
 from typing import Any
 
 import yaml
+import pytest
 
-from framework.stage6.p6_history_recipe_profiles_v1 import PROFILE_V1, RECIPE_V2
-from tests.stage6.test_p6_history_recipe_bridge import MARKERS, _runner_template
-from tests.stage6.test_p6_history_normalization import valid_private_source_map
+from framework.stage6.p6_history_recipe_profiles_v1 import RECIPE_V2
+from tests.stage6.test_p6_history_normalization import (
+    _as_v2_procedural,
+    valid_private_source_map,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -31,37 +34,10 @@ def _write_executable(path: Path) -> None:
 
 
 def _private_derivation_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
-    source_map = valid_private_source_map(tmp_path)
-    source_map["schema_version"] = "p6_history_normalization_source_v2"
-    source_map["recipe_mode"] = "procedural_profile"
-    source_map["procedural_recipe_profile"] = PROFILE_V1
-    source_map["procedural_recipe_source"] = {
-        "role_refs": [
-            "controller",
-            "source_materializer",
-            "performance_plan",
-            "finalizer",
-        ]
-    }
-    source_map.pop("dynamic_materialization_recipe")
-    source_map["source_contract"]["source_contract"].pop(
-        "dynamic_materialization_recipe"
+    source_map, runner_template = _as_v2_procedural(
+        valid_private_source_map(tmp_path), tmp_path
     )
     history_root = Path(source_map["history_root"])
-    for marker in MARKERS.values():
-        _write_executable(history_root / "documented-stage5-chain" / marker)
-    for name in (
-        "scan-private",
-        "quantize-private",
-        "measure-ap-private",
-        "activate-private",
-    ):
-        _write_executable(history_root / "private-runner" / "bin" / name)
-    runner_template = tmp_path / "private-inputs" / "runner-template.yaml"
-    runner_template.parent.mkdir(parents=True, exist_ok=True)
-    runner_template.write_text(
-        yaml.safe_dump(_runner_template(), sort_keys=False), encoding="utf-8"
-    )
     source_map_path = _write_json(
         tmp_path / "private-inputs" / "source-map.json", source_map
     )
@@ -101,6 +77,47 @@ def test_cli_derives_recipe_to_absolute_private_output_without_private_echo(
     recipe = json.loads(recipe_json.read_text(encoding="utf-8"))
     assert recipe["schema_version"] == RECIPE_V2
     assert str(tmp_path) not in recipe_json.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("suffix", ("yaml", "yml"))
+def test_cli_loads_yaml_and_rejects_duplicate_keys(
+    tmp_path: Path, suffix: str
+) -> None:
+    source_map, runner_template = _as_v2_procedural(
+        valid_private_source_map(tmp_path), tmp_path
+    )
+    source_path = tmp_path / "private-inputs" / f"source-map.{suffix}"
+    source_path.write_text(yaml.safe_dump(source_map), encoding="utf-8")
+    recipe_path = tmp_path / "private-output" / "recipe.json"
+    recipe_path.parent.mkdir()
+
+    accepted = _run_cli(
+        "--source-map",
+        str(source_path),
+        "--runner-template",
+        str(runner_template),
+        "--recipe-json",
+        str(recipe_path),
+    )
+    assert accepted.returncode == 0
+
+    recipe_path.unlink()
+    source_path.write_text(
+        source_path.read_text(encoding="utf-8")
+        + "schema_version: p6_history_normalization_source_v2\n",
+        encoding="utf-8",
+    )
+    rejected = _run_cli(
+        "--source-map",
+        str(source_path),
+        "--runner-template",
+        str(runner_template),
+        "--recipe-json",
+        str(recipe_path),
+    )
+    assert rejected.returncode == 1
+    assert rejected.stderr == "history_recipe_derivation_invalid\n"
+    assert not recipe_path.exists()
 
 
 def test_cli_redacts_derivation_failure_and_preserves_existing_output(

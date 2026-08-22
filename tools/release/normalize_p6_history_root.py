@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
-import json
 from pathlib import Path
 import subprocess
 import sys
@@ -17,6 +16,9 @@ if str(REPOSITORY_ROOT) not in sys.path:
 from framework.stage6.p6_history_normalization_v1 import (  # noqa: E402
     P6HistoryNormalizationError,
     normalize_history_inputs,
+)
+from framework.stage6.p6_history_recipe_normalization_v1 import (  # noqa: E402
+    load_source_map_document,
 )
 
 
@@ -105,8 +107,8 @@ def _validate_private_source_map_path(path: Path) -> Path:
 def _load_source_map(path: Path) -> dict[str, object]:
     try:
         resolved = _validate_private_source_map_path(path)
-        payload = json.loads(resolved.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        payload = load_source_map_document(resolved)
+    except (OSError, UnicodeError, P6HistoryNormalizationError) as error:
         raise P6HistoryNormalizationError(
             "history_normalization_invalid", "source map is unavailable"
         ) from error

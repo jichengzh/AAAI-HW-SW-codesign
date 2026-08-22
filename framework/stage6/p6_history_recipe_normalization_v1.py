@@ -10,6 +10,8 @@ from pathlib import Path, PureWindowsPath
 import string
 from typing import Any
 
+import yaml
+
 from framework.stage5.production_search_v1 import validate_source_contract
 from framework.stage6.p6_history_recipe_bridge_v1 import (
     P6HistoryRecipeDerivationError,
@@ -52,6 +54,8 @@ SOURCE_MAP_COMMON_KEYS = frozenset(
         "source_contract",
         "history_root",
         "recipe_mode",
+        "external_training_binding",
+        "execution_code_closure",
     }
 )
 SOURCE_MAP_V2_EXPLICIT_KEYS = SOURCE_MAP_COMMON_KEYS | {
@@ -107,6 +111,45 @@ class P6HistoryNormalizationError(ValueError):
         self.category = category
         self.detail = detail
         super().__init__(f"{category}: {detail}")
+
+
+class _UniqueSourceMapLoader(yaml.SafeLoader):
+    pass
+
+
+def _construct_unique_source_mapping(
+    loader: _UniqueSourceMapLoader,
+    node: yaml.MappingNode,
+    deep: bool = False,
+) -> dict[Any, Any]:
+    result: dict[Any, Any] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in result:
+            raise yaml.YAMLError("duplicate key")
+        result[key] = loader.construct_object(value_node, deep=deep)
+    return result
+
+
+_UniqueSourceMapLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+    _construct_unique_source_mapping,
+)
+
+
+def load_source_map_document(path: Path) -> dict[str, Any]:
+    """Load JSON or YAML through one duplicate-key rejecting safe loader."""
+    try:
+        payload = yaml.load(path.read_text(encoding="utf-8"), Loader=_UniqueSourceMapLoader)
+    except (OSError, TypeError, UnicodeError, yaml.YAMLError) as error:
+        raise P6HistoryNormalizationError(
+            "history_normalization_invalid", "source map is unavailable"
+        ) from error
+    if not isinstance(payload, dict) or any(
+        not isinstance(key, str) for key in payload
+    ):
+        _invalid("source map is invalid")
+    return copy.deepcopy(payload)
 
 
 def _invalid(detail: str) -> None:

@@ -17,9 +17,7 @@ from framework.stage6.p6_history_binding_v1 import EXPECTED_HISTORY_ENV_KEYS
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 RUNNER_TEMPLATE_SCHEMA_VERSION = "p6_history_runner_template_v1"
-RUNNER_TEMPLATE_KEYS = frozenset(
-    {"schema_version", "stage1_scan", "execution_interface"}
-)
+RUNNER_TEMPLATE_KEYS = frozenset({"schema_version", "stage1_scan", "execution_interface"})
 EXECUTION_INTERFACE_KEYS = frozenset(
     {
         "schema_version",
@@ -69,6 +67,9 @@ class ValidatedRunnerTemplate:
     component_paths: Mapping[str, Path]
     execution_interface: Mapping[str, Any]
     stage_argv: Mapping[str, tuple[str, ...]]
+    stage1_name: str
+    stage1_argv: tuple[str, ...]
+    activation_argv: tuple[str, ...]
 
 
 class _UniqueKeyLoader(yaml.SafeLoader):
@@ -107,25 +108,48 @@ def validate_pre_provision_runner_template(
     payload = _load_runner_template(runner_template_path)
     stage1_scan = payload["stage1_scan"]
     interface = payload["execution_interface"]
-    _validate_stage1_scan(stage1_scan, root)
+    stage1_name, stage1_argv = _validate_stage1_scan(stage1_scan, root)
     component_paths, canonical_interface, stage_argv = _validate_interface(
         interface,
         root,
         require_exact_history_environment=require_exact_history_environment,
     )
+    if require_exact_history_environment:
+        _validate_exact_history_argv_tails(stage1_argv, canonical_interface)
     return ValidatedRunnerTemplate(
         history_root=root,
         component_paths=copy.deepcopy(component_paths),
         execution_interface=copy.deepcopy(canonical_interface),
         stage_argv=copy.deepcopy(stage_argv),
+        stage1_name=stage1_name,
+        stage1_argv=stage1_argv,
+        activation_argv=tuple(canonical_interface["environment"]["activation_argv"]),
     )
+
+
+def _validate_exact_history_argv_tails(
+    stage1_argv: tuple[str, ...], interface: Mapping[str, Any]
+) -> None:
+    argv_groups = (
+        stage1_argv,
+        tuple(interface["controller"]["argv"]),
+        *(tuple(entry["argv"]) for entry in interface["execution_chain"]),
+        tuple(interface["environment"]["activation_argv"]),
+    )
+    if any(
+        Path(token).is_absolute() or "/" in token or "\\" in token
+        for argv in argv_groups
+        for token in argv[1:]
+    ):
+        raise RunnerTemplateValidationError(
+            "execution_interface_unavailable",
+            "execution interface argv is invalid",
+        )
 
 
 def _resolve_history_root(raw: Path) -> Path:
     if not isinstance(raw, Path) or not raw.is_absolute() or _contains_symlink_component(raw):
-        raise RunnerTemplateValidationError(
-            "history_root_ambiguous", "history root is invalid"
-        )
+        raise RunnerTemplateValidationError("history_root_ambiguous", "history root is invalid")
     try:
         root = raw.resolve(strict=True)
     except OSError as error:
@@ -140,11 +164,7 @@ def _resolve_history_root(raw: Path) -> Path:
 
 
 def _validate_runner_template_privacy(path: Path) -> None:
-    if (
-        not isinstance(path, Path)
-        or not path.is_absolute()
-        or _contains_symlink_component(path)
-    ):
+    if not isinstance(path, Path) or not path.is_absolute() or _contains_symlink_component(path):
         raise RunnerTemplateValidationError(
             "execution_interface_unavailable", "runner template path is invalid"
         )
@@ -181,9 +201,7 @@ def _load_runner_template(path: Path) -> dict[str, Any]:
     try:
         if not path.is_file() or path.stat().st_size > MAX_PRIVATE_INPUT_SIZE:
             raise OSError
-        payload = yaml.load(
-            path.read_text(encoding="utf-8"), Loader=_UniqueKeyLoader
-        )
+        payload = yaml.load(path.read_text(encoding="utf-8"), Loader=_UniqueKeyLoader)
     except (OSError, UnicodeError, ValueError, yaml.YAMLError) as error:
         raise RunnerTemplateValidationError(
             "execution_interface_unavailable", "runner template is unavailable"
@@ -204,12 +222,17 @@ def _load_runner_template(path: Path) -> dict[str, Any]:
     return copy.deepcopy(payload)
 
 
-def _validate_stage1_scan(raw: object, root: Path) -> None:
+def _validate_stage1_scan(raw: object, root: Path) -> tuple[str, tuple[str, ...]]:
     if not isinstance(raw, Mapping) or set(raw) != {"name", "argv"}:
         raise RunnerTemplateValidationError(
             "execution_interface_unavailable", "Stage1 scan step is invalid"
         )
-    _validate_argv(raw.get("argv"), root)
+    name = raw.get("name")
+    if not isinstance(name, str) or not name:
+        raise RunnerTemplateValidationError(
+            "execution_interface_unavailable", "Stage1 scan step is invalid"
+        )
+    return name, tuple(_validate_argv(raw.get("argv"), root))
 
 
 def _validate_interface(
@@ -229,9 +252,7 @@ def _validate_interface(
         raise RunnerTemplateValidationError(
             "execution_interface_unavailable", "execution interface is invalid"
         )
-    if not isinstance(environment, Mapping) or not isinstance(
-        environment.get("values"), Mapping
-    ):
+    if not isinstance(environment, Mapping) or not isinstance(environment.get("values"), Mapping):
         raise RunnerTemplateValidationError(
             "execution_interface_unavailable", "execution interface is invalid"
         )
@@ -241,9 +262,7 @@ def _validate_interface(
         raise RunnerTemplateValidationError(
             "execution_interface_unavailable", "execution interface is invalid"
         )
-    controller_path = _validate_component_argv(
-        controller, COMPONENT_MARKERS["controller"], root
-    )
+    controller_path = _validate_component_argv(controller, COMPONENT_MARKERS["controller"], root)
     controller_argv = _validate_argv(controller.get("argv"), root)
     component_paths = {"controller": controller_path}
     if len(chain) != len(EXECUTION_STAGES):
@@ -262,13 +281,9 @@ def _validate_interface(
         if role is None:
             argv = _validate_argv(entry.get("argv"), root)
             if expected_stage in {"quantization", "ap"}:
-                _validate_private_only_stage_executable(
-                    argv[0], private_stage_executables
-                )
+                _validate_private_only_stage_executable(argv[0], private_stage_executables)
         else:
-            component = _validate_component_argv(
-                entry, COMPONENT_MARKERS[role], root
-            )
+            component = _validate_component_argv(entry, COMPONENT_MARKERS[role], root)
             component_paths[role] = component
             argv = _validate_argv(entry.get("argv"), root)
         canonical_entry = copy.deepcopy(dict(entry))
@@ -305,24 +320,24 @@ def _validate_component_argv(raw: object, marker: str, root: Path) -> Path:
 
 
 def _validate_argv(raw: object, root: Path) -> list[str]:
-    if not isinstance(raw, list) or not raw or any(
-        not isinstance(token, str)
-        or not token
-        or any(shell_token in token for shell_token in SHELL_TOKENS)
-        for token in raw
+    if (
+        not isinstance(raw, list)
+        or not raw
+        or any(
+            not isinstance(token, str)
+            or not token
+            or any(shell_token in token for shell_token in SHELL_TOKENS)
+            for token in raw
+        )
     ):
         raise RunnerTemplateValidationError(
             "execution_interface_unavailable", "execution interface argv is invalid"
         )
-    executable = _resolve_private_executable(
-        raw[0], root, "execution_interface_unavailable"
-    )
+    executable = _resolve_private_executable(raw[0], root, "execution_interface_unavailable")
     return [str(executable), *raw[1:]]
 
 
-def _validate_private_only_stage_executable(
-    executable: str, seen: set[Path]
-) -> None:
+def _validate_private_only_stage_executable(executable: str, seen: set[Path]) -> None:
     path = Path(executable)
     if path.name in COMPONENT_MARKERS.values() or path in seen:
         raise RunnerTemplateValidationError(
@@ -341,7 +356,9 @@ def _resolve_private_executable(raw: str, root: Path, category: str) -> Path:
     try:
         resolved = candidate.resolve(strict=True)
     except OSError as error:
-        raise RunnerTemplateValidationError(category, "template executable is unavailable") from error
+        raise RunnerTemplateValidationError(
+            category, "template executable is unavailable"
+        ) from error
     if (
         not resolved.is_absolute()
         or not _is_relative_to(resolved, root)
@@ -370,9 +387,7 @@ def _git_root_for(path: Path) -> Path:
         ) from error
     lines = completed.stdout.splitlines()
     if completed.returncode != 0 or len(lines) != 1 or not lines[0]:
-        raise RunnerTemplateValidationError(
-            "history_root_ambiguous", "Git root resolution failed"
-        )
+        raise RunnerTemplateValidationError("history_root_ambiguous", "Git root resolution failed")
     try:
         return Path(lines[0]).resolve(strict=True)
     except OSError as error:
@@ -384,8 +399,7 @@ def _git_root_for(path: Path) -> Path:
 def _contains_symlink_component(path: Path) -> bool:
     anchor = Path(path.anchor)
     return any(
-        component != anchor and component.is_symlink()
-        for component in (path, *path.parents)
+        component != anchor and component.is_symlink() for component in (path, *path.parents)
     )
 
 

@@ -15,6 +15,12 @@ from typing import Any, Protocol
 
 from framework.stage5.genome_contract_v1 import validate_structure_identity
 from framework.stage5.production_search_v1 import validate_source_contract
+from framework.stage6.p6_external_training_binding_v1 import (
+    P6ExternalTrainingBindingError,
+    external_training_binding_from_contract,
+    external_training_binding_to_mapping,
+    validate_external_training_binding,
+)
 from framework.stage6.p6_history_binding_v1 import (
     ALLOWED_NORMALIZED_H800_MODELS,
     EXPECTED_HISTORY_ENV_KEYS,
@@ -34,6 +40,7 @@ from framework.stage6.p6_history_source_materialization_v1 import (
     project_source_materialization_request,
     run_source_invocations,
 )
+from framework.stage6.p6_history_recipe_profiles_v1 import SHARED_SOURCE_PATH_KEYS
 from framework.stage6.p6_source_reuse_evidence_v1 import (
     P6FreshRunContext,
     P6SourceReuseEvidenceError,
@@ -130,6 +137,12 @@ def run_history_measurement_batch(
     paths = resolve_validated_history_round_paths(
         interface, private_root, round_output_root, canonical_request["round_index"]
     )
+    if requires_current_run_source_evidence(canonical_request):
+        _revalidate_projected_external_training(
+            canonical_request,
+            private_root=private_root,
+            paths=paths,
+        )
     run_context, source_group_ids = _plan_current_run_sources(
         canonical_request,
         projected.ordered_group_ids,
@@ -185,6 +198,39 @@ def run_history_measurement_batch(
         _execute(stage["argv"], substitutions, runner, paths, environment)
     _validate_gpu(gpu_probe, gpu_policy)
     return _translate_feedback(canonical_request, interface, paths, private_root)
+
+
+def _revalidate_projected_external_training(
+    request: Mapping[str, Any],
+    *,
+    private_root: Path,
+    paths: Mapping[str, Path],
+) -> None:
+    """Revalidate exact external bytes/paths before context, GPU, or execution."""
+    try:
+        raw_bindings = tuple(
+            external_training_binding_from_contract(row["source_contract"])
+            for row in request["rows"]
+        )
+        if not raw_bindings or any(
+            binding != raw_bindings[0] for binding in raw_bindings[1:]
+        ):
+            raise ValueError
+        shared_paths = tuple(
+            Path(row["source_contract"][key])
+            for row in request["rows"]
+            for key in SHARED_SOURCE_PATH_KEYS
+        )
+        validated = validate_external_training_binding(
+            raw_bindings[0],
+            code_toolchain_root=private_root,
+            local_output_root=paths["local_output_root"],
+            reserved_paths=(*paths.values(), *shared_paths),
+        )
+        if external_training_binding_to_mapping(validated) != raw_bindings[0]:
+            raise ValueError
+    except (KeyError, TypeError, ValueError, P6ExternalTrainingBindingError):
+        raise P6HistoryMeasurementError("history_execution_invalid") from None
 
 
 def _plan_current_run_sources(request: Mapping[str, Any],

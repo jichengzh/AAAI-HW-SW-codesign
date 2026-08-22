@@ -54,9 +54,7 @@ def _runner_template() -> dict[str, Any]:
         },
         "execution_interface": {
             "schema_version": "p6_history_runner_interface_v1",
-            "controller": {
-                "argv": [f"documented-stage5-chain/{MARKERS['controller']}"]
-            },
+            "controller": {"argv": [f"documented-stage5-chain/{MARKERS['controller']}"]},
             "execution_chain": [
                 {
                     "stage": "source_materialization",
@@ -167,8 +165,7 @@ def test_validator_returns_private_copy_for_exact_template(
         validated.execution_interface["environment"]["values"]  # type: ignore[index]
     ) == set(EXPECTED_HISTORY_ENV_KEYS)
     assert validated.component_paths == {
-        role: history_root / "documented-stage5-chain" / marker
-        for role, marker in MARKERS.items()
+        role: history_root / "documented-stage5-chain" / marker for role, marker in MARKERS.items()
     }
     validated.execution_interface["controller"]["argv"][0] = "changed-only-in-return"  # type: ignore[index]
     assert _template_payload(template)["execution_interface"]["controller"]["argv"] == [
@@ -177,9 +174,7 @@ def test_validator_returns_private_copy_for_exact_template(
 
 
 @pytest.mark.parametrize("mutation", ["missing", "extra"])
-def test_validator_rejects_environment_key_set_drift(
-    tmp_path: Path, mutation: str
-) -> None:
+def test_validator_rejects_environment_key_set_drift(tmp_path: Path, mutation: str) -> None:
     """Catches provisioning and runtime using different environment-key sets."""
     template, history_root = _write_valid_template(tmp_path)
     payload = _template_payload(template)
@@ -188,6 +183,36 @@ def test_validator_rejects_environment_key_set_drift(
         values.pop("P6_HISTORY_TASK_STATE")
     else:
         values["PYTHONPATH"] = {"kind": "literal", "value": "private"}
+    _write_yaml(template, payload)
+
+    with pytest.raises(validator.RunnerTemplateValidationError) as captured:
+        validator.validate_pre_provision_runner_template(
+            template,
+            history_root,
+            require_exact_history_environment=True,
+        )
+
+    assert captured.value.category == "execution_interface_unavailable"
+
+
+@pytest.mark.parametrize(
+    "argv_location",
+    ("stage1", "controller", "chain", "activation"),
+)
+def test_exact_history_validator_rejects_path_bearing_argv_tails(
+    tmp_path: Path, argv_location: str
+) -> None:
+    template, history_root = _write_valid_template(tmp_path)
+    payload = _template_payload(template)
+    if argv_location == "stage1":
+        argv = payload["stage1_scan"]["argv"]
+    elif argv_location == "controller":
+        argv = payload["execution_interface"]["controller"]["argv"]
+    elif argv_location == "chain":
+        argv = payload["execution_interface"]["execution_chain"][0]["argv"]
+    else:
+        argv = payload["execution_interface"]["environment"]["activation_argv"]
+    argv.append("/tmp/undeclared-source-tree/config.py")
     _write_yaml(template, payload)
 
     with pytest.raises(validator.RunnerTemplateValidationError) as captured:
@@ -209,17 +234,13 @@ def test_validator_allows_narrow_environment_for_non_provision_recipe_parsing(
     payload["execution_interface"]["environment"]["values"] = {}
     _write_yaml(template, payload)
 
-    validated = validator.validate_pre_provision_runner_template(
-        template, history_root
-    )
+    validated = validator.validate_pre_provision_runner_template(template, history_root)
 
     assert validated.execution_interface["environment"]["values"] == {}  # type: ignore[index]
 
 
 @pytest.mark.parametrize("mutation", ["missing", "extra", "duplicate"])
-def test_validator_rejects_noncanonical_execution_stage_set(
-    tmp_path: Path, mutation: str
-) -> None:
+def test_validator_rejects_noncanonical_execution_stage_set(tmp_path: Path, mutation: str) -> None:
     """Catches a missing, extra, or duplicate execution stage being accepted."""
     template, history_root = _write_valid_template(tmp_path)
     payload = _template_payload(template)
@@ -275,9 +296,7 @@ def test_validator_rejects_nonunique_or_documented_private_only_stages(
     payload = _template_payload(template)
     chain = payload["execution_interface"]["execution_chain"]
     if mutation == "public_marker":
-        chain[1]["argv"][0] = (
-            f"documented-stage5-chain/{MARKERS['source_materializer']}"
-        )
+        chain[1]["argv"][0] = f"documented-stage5-chain/{MARKERS['source_materializer']}"
     else:
         chain[3]["argv"][0] = chain[1]["argv"][0]
     _write_yaml(template, payload)
@@ -289,9 +308,7 @@ def test_validator_rejects_nonunique_or_documented_private_only_stages(
 
 
 @pytest.mark.parametrize("mutation", ["outside_root", "symlink", "non_executable"])
-def test_validator_rejects_unsafe_stage_executable_paths(
-    tmp_path: Path, mutation: str
-) -> None:
+def test_validator_rejects_unsafe_stage_executable_paths(tmp_path: Path, mutation: str) -> None:
     """Catches an escaped, linked, or non-executable stage argv0."""
     template, history_root = _write_valid_template(tmp_path)
     payload = _template_payload(template)
