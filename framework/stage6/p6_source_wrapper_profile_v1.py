@@ -234,10 +234,7 @@ def _build_render_plan(
     implementation_cwd_relative = _validated_relative_path(
         profile.get("implementation_cwd_relative_path")
     )
-    if (
-        destination_relative.name != SOURCE_MARKER_BASENAME
-        or implementation_relative.name == SOURCE_MARKER_BASENAME
-    ):
+    if destination_relative.name != SOURCE_MARKER_BASENAME:
         _invalid()
     destination = _resolve_destination(root, destination_relative)
     implementation = _resolve_existing_private_path(
@@ -246,7 +243,9 @@ def _build_render_plan(
     implementation_cwd = _resolve_existing_private_path(
         root, implementation_cwd_relative, require_directory=True
     )
-    if not _is_relative_to(implementation, implementation_cwd):
+    if implementation == destination or not _is_relative_to(
+        implementation, implementation_cwd
+    ):
         _invalid()
     expected_bytes = _wrapper_bytes(
         implementation_relative,

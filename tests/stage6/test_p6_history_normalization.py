@@ -130,7 +130,7 @@ def _runtime_external_and_closure(
     role_names = {
         "stage1_scan": "scan",
         "controller": "stage5_task_round_controller_v3.sh",
-        "source_materializer": "source.py",
+        "source_materializer": "stage5_materialize_round_sources_v1.sh",
         "quantization": "quantize",
         "performance": "stage5_build_performance_plan_v2.py",
         "ap": "ap",
@@ -140,7 +140,7 @@ def _runtime_external_and_closure(
     role_files = {role: closure_root / name for role, name in role_names.items()}
     for role, path in role_files.items():
         body = (
-            "#!/usr/bin/env python3\nimport sibling\n"
+            "#!/bin/sh\nset -eu\nprintf copied > normalized-wrapper-executed.txt\n"
             if role == "source_materializer"
             else "#!/bin/sh\nexit 0\n"
         )
@@ -656,6 +656,30 @@ def test_v2_normalizer_keeps_training_external_and_writes_all_role_runner(
     )
     assert checkpoint.read_bytes() not in {path.read_bytes() for path in copied_files}
     assert config.read_bytes() not in {path.read_bytes() for path in copied_files}
+    profile = yaml.safe_load(paths["source_wrapper_profile"].read_text())
+    destination = private_dir / profile["destination_relative_path"]
+    implementation = private_dir / profile["implementation_relative_path"]
+    assert destination.name == implementation.name == MARKERS["source_materializer"]
+    assert destination.resolve() != implementation.resolve()
+    environment = {
+        "CUDA_VISIBLE_DEVICES": "17,19,23",
+        "P6_HISTORY_RUN_MODE": "bound",
+        "P6_HISTORY_PRIVATE_ROOT": str(private_dir),
+        "P6_HISTORY_TASK_STATE": str(private_dir / "task-state.json"),
+        "P6_HISTORY_ROUND_OUTPUT_ROOT": str(private_dir / "round-00"),
+    }
+    completed = subprocess.run(
+        [str(destination)],
+        cwd=private_dir,
+        env=environment,
+        shell=False,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert set(environment) == set(EXPECTED_HISTORY_ENV_KEYS)
+    assert (implementation.parent / "normalized-wrapper-executed.txt").read_text() == "copied"
 
 
 @pytest.mark.parametrize("missing_key", ("external_training_binding", "execution_code_closure"))

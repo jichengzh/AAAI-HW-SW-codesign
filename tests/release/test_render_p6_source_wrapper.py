@@ -130,10 +130,6 @@ def test_renderer_writes_deterministic_self_contained_wrapper_from_private_profi
         ("implementation_shell_token", "private-repo/bin/source;unsafe.sh"),
         ("implementation_cwd_parent_escape", "../private-repo"),
         ("implementation_cwd_shell_token", "private-repo/$(unsafe)"),
-        (
-            "raw_marker_implementation_path",
-            "private-relocated-history-repo/bin/stage5_materialize_round_sources_v1.sh",
-        ),
     ],
 )
 def test_renderer_rejects_unsafe_private_wrapper_profile_paths(
@@ -153,7 +149,6 @@ def test_renderer_rejects_unsafe_private_wrapper_profile_paths(
         "implementation_shell_token": "implementation_relative_path",
         "implementation_cwd_parent_escape": "implementation_cwd_relative_path",
         "implementation_cwd_shell_token": "implementation_cwd_relative_path",
-        "raw_marker_implementation_path": "implementation_relative_path",
     }[mutation]
     profile[key] = value
 
@@ -165,6 +160,24 @@ def test_renderer_rejects_unsafe_private_wrapper_profile_paths(
     assert not (
         history_root / "documented-stage5-chain" / SOURCE_MARKER
     ).exists()
+
+
+def test_renderer_rejects_implementation_at_exact_wrapper_destination(
+    tmp_path: Path,
+) -> None:
+    history_root = _private_git_root(tmp_path)
+    marker = history_root / "documented-stage5-chain" / SOURCE_MARKER
+    marker.parent.mkdir(parents=True)
+    marker.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    marker.chmod(0o700)
+    profile = _profile()
+    profile["implementation_relative_path"] = profile["destination_relative_path"]
+    profile["implementation_cwd_relative_path"] = "documented-stage5-chain"
+
+    with pytest.raises(P6SourceWrapperProfileError) as captured:
+        render_self_contained_source_wrapper(profile, history_root=history_root)
+
+    assert captured.value.category == "history_execution_invalid"
 
 
 @pytest.mark.parametrize(
