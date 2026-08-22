@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
 from typing import Any, Callable
 
@@ -208,6 +209,165 @@ def test_closure_digest_sorts_complete_posix_relative_paths_before_copy_recheck(
             source_history_root=fixture["source_root"],
             external_training=fixture["external"],
         )
+
+
+def test_closure_copies_read_only_directories_and_restores_exact_modes(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    source_root = fixture["closure_root"]
+    nested = source_root / "read-only" / "nested"
+    nested.mkdir(parents=True)
+    payload = nested / "payload.txt"
+    payload.write_text("immutable\n", encoding="utf-8")
+    payload.chmod(0o440)
+    nested.chmod(0o550)
+    nested.parent.chmod(0o500)
+    source_root.chmod(0o500)
+    fixture["manifest"]["roots"][0]["sha256"] = _tree_sha(source_root)
+    source_modes = {
+        path.relative_to(source_root).as_posix(): stat.S_IMODE(path.lstat().st_mode)
+        for path in (source_root, nested.parent, nested, payload)
+    }
+
+    try:
+        validated = validate_execution_closure_manifest(
+            fixture["manifest"],
+            source_history_root=fixture["source_root"],
+            external_training=fixture["external"],
+        )
+        copied = copy_execution_closure(validated, staged_private_root=fixture["staged"])
+        copied_root = copied["source_materializer"].parent
+        copied_modes = {
+            path.relative_to(copied_root).as_posix(): stat.S_IMODE(path.lstat().st_mode)
+            for path in (
+                copied_root,
+                copied_root / "read-only",
+                copied_root / "read-only/nested",
+                copied_root / "read-only/nested/payload.txt",
+            )
+        }
+
+        assert copied_modes == source_modes
+        assert _tree_sha(copied_root) == fixture["manifest"]["roots"][0]["sha256"]
+        assert payload.read_bytes() == (copied_root / "read-only/nested/payload.txt").read_bytes()
+        assert {
+            path.relative_to(source_root).as_posix(): stat.S_IMODE(path.lstat().st_mode)
+            for path in (source_root, nested.parent, nested, payload)
+        } == source_modes
+    finally:
+        for path in (
+            fixture["staged"] / "execution-closure/history/read-only/nested",
+            fixture["staged"] / "execution-closure/history/read-only",
+            fixture["staged"] / "execution-closure/history",
+            nested,
+            nested.parent,
+            source_root,
+        ):
+            if path.exists():
+                path.chmod(0o700)
+
+
+def test_read_only_closure_copy_failure_cleans_temporary_without_publish(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = _fixture(tmp_path)
+    source_root = fixture["closure_root"]
+    nested = source_root / "read-only"
+    nested.mkdir()
+    (nested / "payload.txt").write_text("immutable\n", encoding="utf-8")
+    nested.chmod(0o500)
+    source_root.chmod(0o500)
+    fixture["manifest"]["roots"][0]["sha256"] = _tree_sha(source_root)
+    validated = validate_execution_closure_manifest(
+        fixture["manifest"],
+        source_history_root=fixture["source_root"],
+        external_training=fixture["external"],
+    )
+    real_digest = closure_module._tree_digest
+
+    def reject_copied_digest(root: Path) -> str:
+        if root.is_relative_to(fixture["staged"]):
+            return "0" * 64
+        return real_digest(root)
+
+    monkeypatch.setattr(closure_module, "_tree_digest", reject_copied_digest)
+    try:
+        with pytest.raises(P6ExecutionClosureError):
+            copy_execution_closure(validated, staged_private_root=fixture["staged"])
+        assert not (fixture["staged"] / "execution-closure").exists()
+        assert not tuple(fixture["staged"].glob(".execution-closure.*.tmp"))
+        assert stat.S_IMODE(source_root.lstat().st_mode) == 0o500
+        assert stat.S_IMODE(nested.lstat().st_mode) == 0o500
+    finally:
+        nested.chmod(0o700)
+        source_root.chmod(0o700)
+
+
+def test_closure_copy_has_no_fallible_validation_after_atomic_publish(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = _fixture(tmp_path)
+    validated = validate_execution_closure_manifest(
+        fixture["manifest"],
+        source_history_root=fixture["source_root"],
+        external_training=fixture["external"],
+    )
+    calls: list[Path] = []
+
+    def pre_publish_checks_only(path: Path) -> bool:
+        calls.append(path)
+        return len(calls) <= len(EXECUTION_CLOSURE_ROLES)
+
+    monkeypatch.setattr(closure_module, "_single_link_executable", pre_publish_checks_only)
+
+    copied = copy_execution_closure(validated, staged_private_root=fixture["staged"])
+
+    assert len(calls) == len(EXECUTION_CLOSURE_ROLES)
+    assert set(copied) == set(EXECUTION_CLOSURE_ROLES)
+    assert (fixture["staged"] / "execution-closure").is_dir()
+
+
+def test_closure_copy_is_owner_writable_during_restrictive_umask(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    fixture["manifest"]["roots"][0]["destination_relative_root"] = (
+        "execution-closure/nested/history"
+    )
+    validated = validate_execution_closure_manifest(
+        fixture["manifest"],
+        source_history_root=fixture["source_root"],
+        external_training=fixture["external"],
+    )
+    previous_umask = os.umask(0o777)
+    try:
+        copied = copy_execution_closure(validated, staged_private_root=fixture["staged"])
+    finally:
+        os.umask(previous_umask)
+
+    assert set(copied) == set(EXECUTION_CLOSURE_ROLES)
+    assert all(path.is_file() for path in copied.values())
+    assert stat.S_IMODE((fixture["staged"] / "execution-closure/nested").lstat().st_mode) == 0o700
+
+
+def test_temporary_cleanup_unlocks_directories_top_down(tmp_path: Path) -> None:
+    temporary = tmp_path / ".execution-closure.locked.tmp"
+    locked = temporary / "owner-inaccessible" / "nested"
+    locked.mkdir(parents=True)
+    (locked / "payload.txt").write_text("temporary\n", encoding="utf-8")
+    locked.chmod(0o000)
+    locked.parent.chmod(0o000)
+
+    try:
+        closure_module._remove_temporary_tree(temporary)
+        assert not temporary.exists()
+    finally:
+        for path in (temporary, locked.parent, locked):
+            try:
+                path.chmod(0o700)
+            except FileNotFoundError:
+                pass
 
 
 def test_copied_source_runs_through_wrapper_without_pythonpath(tmp_path: Path) -> None:

@@ -127,6 +127,7 @@ def copy_execution_closure(
         if destination_root.exists() or destination_root.is_symlink():
             _invalid()
         temporary = Path(tempfile.mkdtemp(dir=root, prefix=".execution-closure.", suffix=".tmp"))
+        temporary.chmod(0o700)
         copied_roots: dict[str, Path] = {}
         for declared in closure.roots:
             relative = declared.destination_relative_root.relative_to("execution-closure")
@@ -143,11 +144,9 @@ def copy_execution_closure(
             not _single_link_executable(path) for path in copied_roles.values()
         ):
             _invalid()
+        published = _expected_normalized_role_paths(closure, root)
         os.replace(temporary, destination_root)
         temporary = None
-        published = _expected_normalized_role_paths(closure, root)
-        if any(not _single_link_executable(path) for path in published.values()):
-            _invalid()
         return published
     except P6ExecutionClosureError:
         raise
@@ -155,7 +154,7 @@ def copy_execution_closure(
         _invalid()
     finally:
         if temporary is not None:
-            shutil.rmtree(temporary, ignore_errors=True)
+            _remove_temporary_tree(temporary)
 
 
 def render_normalized_runner_template(
@@ -422,19 +421,57 @@ def _local_import_modules(base: Path, name: str) -> tuple[Path, ...]:
 
 
 def _copy_tree(source: Path, destination: Path) -> None:
-    destination.mkdir(parents=True, mode=0o700)
+    _mkdir_owner_writable(destination)
+    directory_modes = [(destination, stat.S_IMODE(source.lstat().st_mode))]
     for entry in _walk(source):
         relative = entry.relative_to(source)
         target = destination / relative
         info = entry.lstat()
         if stat.S_ISDIR(info.st_mode):
-            target.mkdir(mode=stat.S_IMODE(info.st_mode))
+            source_mode = stat.S_IMODE(info.st_mode)
+            target.mkdir(mode=source_mode | 0o700)
+            target.chmod(source_mode | 0o700)
+            directory_modes.append((target, source_mode))
         elif stat.S_ISREG(info.st_mode) and info.st_nlink == 1:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(entry, target, follow_symlinks=False)
             os.chmod(target, stat.S_IMODE(info.st_mode), follow_symlinks=False)
         else:
             _invalid()
+    for directory, source_mode in reversed(directory_modes):
+        os.chmod(directory, source_mode, follow_symlinks=False)
+
+
+def _mkdir_owner_writable(destination: Path) -> None:
+    missing: list[Path] = []
+    cursor = destination
+    while not cursor.exists():
+        missing.append(cursor)
+        cursor = cursor.parent
+    for directory in reversed(missing):
+        directory.mkdir(mode=0o700)
+        directory.chmod(0o700)
+
+
+def _remove_temporary_tree(root: Path) -> None:
+    _make_tree_owner_writable(root)
+    shutil.rmtree(root, ignore_errors=True)
+
+
+def _make_tree_owner_writable(root: Path) -> None:
+    try:
+        info = root.lstat()
+        if not stat.S_ISDIR(info.st_mode):
+            return
+        root.chmod(stat.S_IMODE(info.st_mode) | 0o700)
+        with os.scandir(root) as iterator:
+            directories = tuple(
+                Path(entry.path) for entry in iterator if entry.is_dir(follow_symlinks=False)
+            )
+    except OSError:
+        return
+    for directory in directories:
+        _make_tree_owner_writable(directory)
 
 
 def _tree_digest(root: Path) -> str:
