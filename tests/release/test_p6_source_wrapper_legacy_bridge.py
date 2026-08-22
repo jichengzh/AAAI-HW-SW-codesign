@@ -25,10 +25,14 @@ LEGACY_TRAINING_KEYS = (
     "training_source_kind",
     "dataset_root",
     "base_checkpoint_path",
+    "base_checkpoint_dir",
     "base_checkpoint_sha256",
     "pyramid_config_path",
     "pyramid_config_sha256",
     "training_parameters",
+    "training_epoches",
+    "groups",
+    "width_per_group",
 )
 
 
@@ -76,6 +80,7 @@ def _external_binding(tmp_path: Path) -> dict[str, Any]:
         "training_parameters": {
             "training_mode": "finetune_selected_width",
             "epochs": 8,
+            "target_epoch": 31,
             "seed": 0,
             "optimizer": "adam",
             "learning_rate": 0.002,
@@ -83,6 +88,8 @@ def _external_binding(tmp_path: Path) -> dict[str, Any]:
             "dataset_split": "trainval_coptv2x",
             "checkpoint_selection": "best_ap70",
             "freeze_policy": "pyramid_backbone_partial",
+            "groups": 3,
+            "width_per_group": 5,
         },
     }
 
@@ -123,7 +130,7 @@ def _write_relocated_materializer(
         f"legacy_keys = {LEGACY_TRAINING_KEYS!r}\n"
         "for row in request['rows']:\n"
         "    contract = row['source_contract']\n"
-        "    assert set(legacy_keys).issubset(contract)\n"
+        "    assert set(contract) == set(legacy_keys)\n"
         "    assert 'external_training_binding' not in contract\n"
         "    assert row['source_contract_sha256'] == sha(contract)\n"
         "    assert request['row_sha256'][row['row_id']] == sha(row)\n"
@@ -232,11 +239,20 @@ def test_wrapper_projects_nested_training_for_relocated_implementation(
     assert observed["pythonpath"] == str(
         history_root / "private-relocated-history-repo"
     )
+    binding = canonical["rows"][0]["source_contract"]["external_training_binding"]
     assert observed["training"] == {
-        key: canonical["rows"][0]["source_contract"]["external_training_binding"][
-            key
-        ]
-        for key in LEGACY_TRAINING_KEYS
+        "training_required": True,
+        "training_source_kind": "selected_candidate_finetune",
+        "dataset_root": str(tmp_path / "operator-assets" / "dataset"),
+        "base_checkpoint_path": str(tmp_path / "operator-assets" / "base.ckpt"),
+        "base_checkpoint_dir": str(tmp_path / "operator-assets"),
+        "base_checkpoint_sha256": "a" * 64,
+        "pyramid_config_path": str(tmp_path / "operator-assets" / "pyramid.yaml"),
+        "pyramid_config_sha256": "b" * 64,
+        "training_parameters": binding["training_parameters"],
+        "training_epoches": 31,
+        "groups": 3,
+        "width_per_group": 5,
     }
     assert not tuple(round_root.glob(".p6-legacy-source-request-*.json"))
     assert canonical == _canonical_request(tmp_path)

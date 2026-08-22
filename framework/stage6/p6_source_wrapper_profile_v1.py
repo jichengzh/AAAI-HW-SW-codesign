@@ -73,7 +73,7 @@ ENVIRONMENT_KEYS = (
     "P6_HISTORY_TASK_STATE",
     "P6_HISTORY_ROUND_OUTPUT_ROOT",
 )
-LEGACY_TRAINING_KEYS = (
+BINDING_TRAINING_KEYS = (
     "training_required",
     "training_source_kind",
     "dataset_root",
@@ -83,7 +83,14 @@ LEGACY_TRAINING_KEYS = (
     "pyramid_config_sha256",
     "training_parameters",
 )
-BINDING_KEYS = ("schema_version", *LEGACY_TRAINING_KEYS)
+LEGACY_TRAINING_KEYS = (
+    *BINDING_TRAINING_KEYS,
+    "base_checkpoint_dir",
+    "training_epoches",
+    "groups",
+    "width_per_group",
+)
+BINDING_KEYS = ("schema_version", *BINDING_TRAINING_KEYS)
 PARAMETER_KEYS = (
     "training_mode",
     "epochs",
@@ -192,7 +199,14 @@ def _validated_binding(raw):
         or not _valid_parameters(raw["training_parameters"])
     ):
         raise CompatibilityError
-    return {key: copy.deepcopy(raw[key]) for key in LEGACY_TRAINING_KEYS}
+    parameters = raw["training_parameters"]
+    return {
+        **{key: copy.deepcopy(raw[key]) for key in BINDING_TRAINING_KEYS},
+        "base_checkpoint_dir": str(Path(raw["base_checkpoint_path"]).parent),
+        "training_epoches": parameters["target_epoch"],
+        "groups": parameters["groups"],
+        "width_per_group": parameters["width_per_group"],
+    }
 
 
 def _legacy_row(row):

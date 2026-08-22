@@ -436,6 +436,7 @@ def _history_cli_fixture(
                 "training_parameters": {
                     "training_mode": "finetune_selected_width",
                     "epochs": 3,
+                    "target_epoch": 31,
                     "seed": 20260821,
                     "optimizer": "adamw",
                     "learning_rate": 0.0001,
@@ -443,6 +444,8 @@ def _history_cli_fixture(
                     "dataset_split": "trainval_coptv2x",
                     "checkpoint_selection": "best_ap70",
                     "freeze_policy": "pyramid_backbone_partial",
+                    "groups": 3,
+                    "width_per_group": 5,
                 },
             },
         }
