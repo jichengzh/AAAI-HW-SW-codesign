@@ -442,6 +442,13 @@ def _history_cli_fixture(
         source_contract["dynamic_materialization_recipe"][
             "shared_source_path_templates"
         ].pop("calibration_npz")
+    source_materializer = _write_fake_source_materializer(
+        Path(binding["private_root"])
+        / "fixture-bin"
+        / "stage5_materialize_round_sources_v1.sh"
+    )
+    binding["component_paths"]["source_materializer"] = source_materializer
+    binding["execution_interface"]["execution_chain"][0]["argv"][0] = source_materializer
     binding_path.write_text(json.dumps(binding), encoding="utf-8")
     local = yaml.safe_load(paths["local"].read_text(encoding="utf-8"))
     local.update({"candidate_source_mode": "framework_stage2_search_space",
@@ -470,6 +477,51 @@ def _history_cli_fixture(
                   "stage1_call_log": stage1_call_log,
                   "env": {**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"}})
     return paths
+
+
+def _write_fake_source_materializer(path: Path) -> str:
+    """Materialize the complete recipe-v2 bundle for one first-use group only."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"""#!{sys.executable}
+from __future__ import annotations
+import json
+import os
+from pathlib import Path
+import sys
+
+request_path = Path(sys.argv[sys.argv.index("--request") + 1])
+group_id = sys.argv[sys.argv.index("--group-id") + 1]
+request = json.loads(request_path.read_text(encoding="utf-8"))
+row = next(row for row in request["rows"] if row["group_id"] == group_id)
+contract = row["source_contract"]
+paths = contract.get("shared_source_paths", contract)
+directory_keys = {{"checkpoint_dir", "calibration_root", "trt_calibration_dir"}}
+for key in (
+    "checkpoint_path", "checkpoint_dir", "config_path", "training_done_marker",
+    "onnx_path", "onnx_report_path", "calibration_root", "calibration_npz",
+    "calibration_summary", "trt_calibration_dir", "source_done_marker",
+):
+    target = Path(paths[key])
+    if key in directory_keys:
+        target.mkdir(parents=True, exist_ok=True)
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(f"fixture:{{key}}:{{group_id}}\\n", encoding="utf-8")
+stage_log = Path(os.environ["P6_HISTORY_ROUND_OUTPUT_ROOT"]) / "executed-stages.log"
+with stage_log.open("a", encoding="utf-8") as handle:
+    handle.write(json.dumps(dict(
+        stage="stage5_materialize_round_sources_v1.sh",
+        argv=sys.argv[1:],
+        cwd=str(Path.cwd()),
+        round_output_root=os.environ["P6_HISTORY_ROUND_OUTPUT_ROOT"],
+        task_state=os.environ["P6_HISTORY_TASK_STATE"],
+    ), sort_keys=True) + "\\n")
+""",
+        encoding="utf-8",
+    )
+    path.chmod(0o700)
+    return str(path)
 
 def _run_cli(
     paths: Mapping[str, Path],
@@ -581,6 +633,7 @@ def test_cli_runs_full_framework_lifecycle_through_provisioned_history_binding(
     assert [len(request["rows"]) for request in requests] == [4, 4, 4, 4]
     selected = [row["row_id"] for request in requests for row in request["rows"]]
     assert len(selected) == len(set(selected)) == 16
+    materialized_groups: set[str] = set()
     for request in requests:
         round_index = request["round_index"]
         history_root = (
@@ -598,9 +651,12 @@ def test_cli_runs_full_framework_lifecycle_through_provisioned_history_binding(
             .splitlines()
         ]
         expected_groups = sorted({row["group_id"] for row in request["rows"]})
+        first_use_groups = [
+            group_id for group_id in expected_groups if group_id not in materialized_groups
+        ]
         assert [record["stage"] for record in stage_records] == [
-            "activate-private",
-            *(["stage5_materialize_round_sources_v1.sh"] * len(expected_groups)),
+                "activate-private",
+                *(["stage5_materialize_round_sources_v1.sh"] * len(first_use_groups)),
             "quantize-private",
             "stage5_build_performance_plan_v2.py",
             "measure-ap-private",
@@ -624,8 +680,9 @@ def test_cli_runs_full_framework_lifecycle_through_provisioned_history_binding(
                 "--gpu",
                 str(policy_indices[index % len(policy_indices)]),
             ]
-            for index, group_id in enumerate(expected_groups)
+            for index, group_id in enumerate(first_use_groups)
         ]
+        materialized_groups.update(expected_groups)
     assert not any(
         artifact.name == "private-runs"
         for artifact in paths["output_root"].rglob("*")
