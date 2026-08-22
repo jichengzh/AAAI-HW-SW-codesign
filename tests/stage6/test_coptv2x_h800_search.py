@@ -744,7 +744,7 @@ def _write_source_registry_from_plan(path: Path, plan: Mapping[str, Any]) -> Non
 
 
 def _write_recipe_v2_training_registry_from_plan(
-    path: Path, plan: Mapping[str, Any]
+    path: Path, plan: Mapping[str, Any], local_output_root: Path | None = None
 ) -> None:
     _write_source_registry_from_plan(path, plan)
     registry = json.loads(path.read_text(encoding="utf-8"))
@@ -777,7 +777,7 @@ def _write_recipe_v2_training_registry_from_plan(
                     "freeze_policy": "pyramid_backbone_partial",
                 },
                 "shared_source_paths": {
-                    key: f"/private/synthetic/materialized/{group_slug}/{key}"
+                    key: str((local_output_root or path.parent) / "materialized" / group_slug / key)
                     for key in SHARED_SOURCE_PATH_KEYS
                 },
             }
@@ -879,7 +879,7 @@ def _write_real_stage1_manifest(path: Path) -> Path:
 
 def _write_framework_registry(path: Path) -> None:
     plan = json.loads((path.parent / "pyramid_candidate_plan.json").read_text(encoding="utf-8"))
-    _write_source_registry_from_plan(path, plan)
+    _write_recipe_v2_training_registry_from_plan(path, plan, path.parent)
 
 
 def _framework_stage1_scan_step() -> dict[str, Any]:
@@ -994,7 +994,9 @@ class _FullChainCalls:
             if self.static_registry:
                 _write_source_registry(registry_path, count=343)
             else:
-                _write_source_registry_from_plan(registry_path, plan)
+                _write_recipe_v2_training_registry_from_plan(
+                    registry_path, plan, registry_path.parent
+                )
                 registry = json.loads(registry_path.read_text(encoding="utf-8"))
                 self.registry_identities = {
                     (
@@ -1772,7 +1774,9 @@ def test_run_p6_framework_mode_builds_dynamic_candidate_plan_and_runs_four_round
             assert candidate_plan_path.name == "pyramid_candidate_plan.json"
             assert plan["schema_version"] == "p6_pyramid_candidate_plan_v2"
             assert plan["candidate_source_mode"] == "framework_stage2_search_space"
-            _write_source_registry_from_plan(Path(argv[3]), plan)
+            _write_recipe_v2_training_registry_from_plan(
+                Path(argv[3]), plan, Path(argv[3]).parent
+            )
             registry = json.loads(Path(argv[3]).read_text(encoding="utf-8"))
             manifest = execution.build_task_candidate_manifest(
                 registry, task=_minimal_task(), measured_row_ids=set()
