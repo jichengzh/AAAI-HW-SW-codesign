@@ -22,7 +22,10 @@ from framework.stage6.p6_source_wrapper_profile_v1 import (
     render_self_contained_source_wrapper,
     validate_self_contained_source_wrapper,
 )
-from tests.p6_source_wrapper_support import source_bridge_request
+from tests.p6_source_wrapper_support import (
+    source_bridge_output_paths,
+    source_bridge_request,
+)
 from tests.stage6.test_p6_runner_template_validator import _write_valid_template
 
 
@@ -30,7 +33,7 @@ SOURCE_MARKER = "stage5_materialize_round_sources_v1.sh"
 SOURCE_STAGE_TAIL = ("{measurement_request}", "{round_output_root}")
 
 
-def _canonical_request() -> dict[str, Any]:
+def _canonical_request(output_root: Path) -> dict[str, Any]:
     binding = {
         "schema_version": "p6_external_training_binding_v1",
         "training_required": True,
@@ -55,7 +58,12 @@ def _canonical_request() -> dict[str, Any]:
             "width_per_group": 5,
         },
     }
-    return source_bridge_request(binding)
+    return source_bridge_request(
+        binding,
+        source_contract_fields=source_bridge_output_paths(
+            output_root / "materialized" / "pyramid-16-32-64"
+        ),
+    )
 
 
 def _wrapper_profile() -> dict[str, str]:
@@ -85,13 +93,19 @@ def _write_relocated_materializer(history_root: Path) -> Path:
     implementation.parent.mkdir(parents=True, exist_ok=True)
     (repository / "history_contract_validator.py").write_text("VALID = 'ok'\n", encoding="utf-8")
     implementation.write_text(
-        "#!/bin/sh\n"
-        "set -eu\n"
-        "pwd -P > observed-cwd.txt\n"
-        f'"{sys.executable}" -c '
-        "'import history_contract_validator as validator; "
-        "from pathlib import Path; "
-        'Path("sibling-import-ok.txt").write_text(validator.VALID, encoding="utf-8")\'\n',
+        f"#!{sys.executable}\n"
+        "import json\n"
+        "from pathlib import Path\n"
+        "import sys\n"
+        "import history_contract_validator as validator\n"
+        "Path('observed-cwd.txt').write_text(str(Path.cwd()), encoding='utf-8')\n"
+        "Path('sibling-import-ok.txt').write_text(validator.VALID, encoding='utf-8')\n"
+        "request = json.loads(Path(sys.argv[2]).read_text(encoding='utf-8'))\n"
+        "contract = request['rows'][0]['source_contract']\n"
+        "config = Path(contract['checkpoint_dir']) / 'config.yaml'\n"
+        "assert Path(contract['config_path']) == config\n"
+        "config.parent.mkdir(parents=True, exist_ok=True)\n"
+        "config.write_text('fixture:config_path\\n', encoding='utf-8')\n",
         encoding="utf-8",
     )
     implementation.chmod(0o700)
@@ -153,7 +167,10 @@ def test_source_wrapper_execs_relocated_implementation_from_private_cwd_with_exa
     round_root = history_root / "private-runs" / "0"
     round_root.mkdir(parents=True)
     request = round_root / "measurement-request.json"
-    request.write_text(json.dumps(_canonical_request()), encoding="utf-8")
+    request.write_text(
+        json.dumps(_canonical_request(history_root / "private-output")),
+        encoding="utf-8",
+    )
     task_state = round_root / "state" / "task-state.json"
     task_state.parent.mkdir()
     task_state.write_text("{}", encoding="utf-8")

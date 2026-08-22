@@ -5,12 +5,20 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from pathlib import Path
 from typing import Any, Mapping
 
 
-def source_bridge_request(binding: Mapping[str, Any]) -> dict[str, Any]:
+def source_bridge_request(
+    binding: Mapping[str, Any],
+    *,
+    source_contract_fields: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """Build a minimal hash-consistent request with one nested training binding."""
-    contract = {"external_training_binding": copy.deepcopy(dict(binding))}
+    contract = {
+        **copy.deepcopy(dict(source_contract_fields or {})),
+        "external_training_binding": copy.deepcopy(dict(binding)),
+    }
     task_sha = "d" * 64
     row = {
         "schema_version": "stage5_candidate_row_v2",
@@ -56,6 +64,31 @@ def source_bridge_request(binding: Mapping[str, Any]) -> dict[str, Any]:
         "row_sha256": {"row-0": _sha(row)},
     }
     return {**body, "measurement_request_sha256": _sha(body)}
+
+
+def source_bridge_output_paths(
+    artifact: Path, *, config_at_checkpoint: bool = False
+) -> dict[str, str]:
+    """Return the complete eleven-path recipe-v2 output fixture."""
+    checkpoint = artifact / "checkpoint"
+    config = (
+        checkpoint / "config.yaml"
+        if config_at_checkpoint
+        else artifact / "config" / "source-config.json"
+    )
+    return {
+        "checkpoint_path": str(checkpoint / "model.ckpt"),
+        "checkpoint_dir": str(checkpoint),
+        "config_path": str(config),
+        "training_done_marker": str(artifact / "markers" / "training.done"),
+        "onnx_path": str(artifact / "onnx" / "model.onnx"),
+        "onnx_report_path": str(artifact / "onnx" / "report.json"),
+        "calibration_root": str(artifact / "calibration"),
+        "calibration_npz": str(artifact / "calibration" / "cache.npz"),
+        "calibration_summary": str(artifact / "calibration" / "summary.json"),
+        "trt_calibration_dir": str(artifact / "trt-calibration"),
+        "source_done_marker": str(artifact / "markers" / "source.done"),
+    }
 
 
 def _sha(payload: Any) -> str:

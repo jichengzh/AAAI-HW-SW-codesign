@@ -16,7 +16,10 @@ from framework.stage6.p6_history_binding_v1 import EXPECTED_HISTORY_ENV_KEYS
 from framework.stage6.p6_source_wrapper_profile_v1 import (
     render_self_contained_source_wrapper,
 )
-from tests.p6_source_wrapper_support import source_bridge_request
+from tests.p6_source_wrapper_support import (
+    source_bridge_output_paths,
+    source_bridge_request,
+)
 
 
 SOURCE_MARKER = "stage5_materialize_round_sources_v1.sh"
@@ -34,6 +37,23 @@ LEGACY_TRAINING_KEYS = (
     "groups",
     "width_per_group",
 )
+OUTPUT_PATH_KEYS = (
+    "checkpoint_path",
+    "checkpoint_dir",
+    "config_path",
+    "training_done_marker",
+    "onnx_path",
+    "onnx_report_path",
+    "calibration_root",
+    "calibration_npz",
+    "calibration_summary",
+    "trt_calibration_dir",
+    "source_done_marker",
+)
+DIRECTORY_OUTPUT_KEYS = frozenset(
+    {"checkpoint_dir", "calibration_root", "trt_calibration_dir"}
+)
+GENERATED_CONFIG = b"fixture:config_path\n"
 
 
 def _sha(payload: Any) -> str:
@@ -94,8 +114,16 @@ def _external_binding(tmp_path: Path) -> dict[str, Any]:
     }
 
 
-def _canonical_request(tmp_path: Path) -> dict[str, Any]:
-    return source_bridge_request(_external_binding(tmp_path))
+def _canonical_request(
+    tmp_path: Path, *, config_at_checkpoint: bool = False
+) -> dict[str, Any]:
+    artifact = tmp_path / "private-output" / "materialized" / "pyramid-16-32-64"
+    return source_bridge_request(
+        _external_binding(tmp_path),
+        source_contract_fields=source_bridge_output_paths(
+            artifact, config_at_checkpoint=config_at_checkpoint
+        ),
+    )
 
 
 def _write_relocated_materializer(
@@ -128,9 +156,11 @@ def _write_relocated_materializer(
         "request_path = Path(sys.argv[sys.argv.index('--request') + 1])\n"
         "request = json.loads(request_path.read_text(encoding='utf-8'))\n"
         f"legacy_keys = {LEGACY_TRAINING_KEYS!r}\n"
+        f"output_keys = {OUTPUT_PATH_KEYS!r}\n"
+        f"directory_keys = {tuple(sorted(DIRECTORY_OUTPUT_KEYS))!r}\n"
         "for row in request['rows']:\n"
         "    contract = row['source_contract']\n"
-        "    assert set(contract) == set(legacy_keys)\n"
+        "    assert set(contract) == set(legacy_keys) | set(output_keys)\n"
         "    assert 'external_training_binding' not in contract\n"
         "    assert row['model'] == 'pyramid'\n"
         "    assert isinstance(row['width'], list) and row['width']\n"
@@ -144,6 +174,16 @@ def _write_relocated_materializer(
         "    }\n"
         "    assert row['source_evidence_sha256'] == sha(evidence)\n"
         "    assert request['row_sha256'][row['row_id']] == sha(row)\n"
+        "    expected_config = Path(contract['checkpoint_dir']) / 'config.yaml'\n"
+        "    assert Path(contract['config_path']) == expected_config\n"
+        "    for key in output_keys:\n"
+        "        target = Path(contract[key])\n"
+        "        if key in directory_keys:\n"
+        "            target.mkdir(parents=True, exist_ok=True)\n"
+        "        else:\n"
+        "            target.parent.mkdir(parents=True, exist_ok=True)\n"
+        "            target.write_bytes(b'fixture:' + key.encode() + b'\\n')\n"
+        "    assert expected_config.is_file() and expected_config.stat().st_size > 0\n"
         "body = {key: value for key, value in request.items() "
         "if key != 'measurement_request_sha256'}\n"
         "assert request['measurement_request_sha256'] == sha(body)\n"
@@ -154,6 +194,8 @@ def _write_relocated_materializer(
         "    'pythonpath': os.environ.get('PYTHONPATH'),\n"
         "    'training': {key: request['rows'][0]['source_contract'][key] "
         "for key in legacy_keys},\n"
+        "    'contract': request['rows'][0]['source_contract'],\n"
+        "    'config_path': request['rows'][0]['source_contract']['config_path'],\n"
         "    'materialization_kind': request['rows'][0]['materialization_kind'],\n"
         "    'source_evidence_sha256': request['rows'][0]['source_evidence_sha256'],\n"
         "}\n"
@@ -221,8 +263,10 @@ def _run_wrapper(
     )
 
 
+@pytest.mark.parametrize("config_at_checkpoint", (False, True))
 def test_wrapper_projects_nested_training_for_relocated_implementation(
     tmp_path: Path,
+    config_at_checkpoint: bool,
 ) -> None:
     history_root = _private_git_root(tmp_path)
     _write_relocated_materializer(history_root)
@@ -231,7 +275,9 @@ def test_wrapper_projects_nested_training_for_relocated_implementation(
     ).executable
     round_root = history_root / "private-runs" / "0"
     round_root.mkdir(parents=True)
-    canonical = _canonical_request(tmp_path)
+    canonical = _canonical_request(
+        tmp_path, config_at_checkpoint=config_at_checkpoint
+    )
     request_path = round_root / "measurement-request.json"
     original_bytes = (json.dumps(canonical, sort_keys=True) + "\n").encode("utf-8")
     request_path.write_bytes(original_bytes)
@@ -266,7 +312,7 @@ def test_wrapper_projects_nested_training_for_relocated_implementation(
         "groups": 3,
         "width_per_group": 5,
     }
-    legacy_contract = observed["training"]
+    legacy_contract = observed["contract"]
     assert observed["materialization_kind"] == "pyramid_prepare_train_export"
     assert observed["source_evidence_sha256"] == _sha(
         {
@@ -275,8 +321,126 @@ def test_wrapper_projects_nested_training_for_relocated_implementation(
             "contract": legacy_contract,
         }
     )
+    canonical_contract = canonical["rows"][0]["source_contract"]
+    expected_legacy_config = Path(canonical_contract["checkpoint_dir"]) / "config.yaml"
+    assert observed["config_path"] == str(expected_legacy_config)
+    for key in OUTPUT_PATH_KEYS:
+        output = Path(canonical_contract[key])
+        if key in DIRECTORY_OUTPUT_KEYS:
+            assert output.is_dir()
+        else:
+            assert output.is_file() and output.stat().st_size > 0
     assert not tuple(round_root.glob(".p6-legacy-source-request-*.json"))
-    assert canonical == _canonical_request(tmp_path)
+    assert canonical == _canonical_request(
+        tmp_path, config_at_checkpoint=config_at_checkpoint
+    )
+
+
+def test_wrapper_accepts_same_group_mixed_q_rows_with_one_config_pair(
+    tmp_path: Path,
+) -> None:
+    history_root = _private_git_root(tmp_path)
+    _write_relocated_materializer(history_root)
+    wrapper = render_self_contained_source_wrapper(
+        _profile(), history_root=history_root
+    ).executable
+    round_root = history_root / "private-runs" / "0"
+    round_root.mkdir(parents=True)
+    canonical = _canonical_request(tmp_path)
+    int8 = copy.deepcopy(canonical["rows"][0])
+    int8.update(
+        row_id="row-1",
+        manifest_job_id="row-1",
+        genome=[16, 32, 64, "int8"],
+        strategy_id="q=int8",
+        q_mode="int8",
+    )
+    canonical["rows"].append(int8)
+    canonical["batch_size"] = 2
+    _rehash_request(canonical)
+    request_path = round_root / "measurement-request.json"
+    original_bytes = json.dumps(canonical, sort_keys=True).encode("utf-8")
+    request_path.write_bytes(original_bytes)
+
+    completed = _run_wrapper(
+        wrapper,
+        request_path,
+        round_root,
+        _runtime_env(history_root, round_root),
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert request_path.read_bytes() == original_bytes
+    assert not tuple(round_root.glob(".p6-legacy-source-request-*.json"))
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    (("onnx_path", None), ("calibration_npz", "relative/cache.npz")),
+)
+def test_wrapper_rejects_incomplete_or_noncanonical_output_paths_before_child(
+    tmp_path: Path,
+    key: str,
+    value: str | None,
+) -> None:
+    history_root = _private_git_root(tmp_path)
+    _write_relocated_materializer(history_root)
+    wrapper = render_self_contained_source_wrapper(
+        _profile(), history_root=history_root
+    ).executable
+    round_root = history_root / "private-runs" / "0"
+    round_root.mkdir(parents=True)
+    canonical = _canonical_request(tmp_path)
+    contract = canonical["rows"][0]["source_contract"]
+    if value is None:
+        contract.pop(key)
+    else:
+        contract[key] = value
+    _rehash_request(canonical)
+    request_path = round_root / "measurement-request.json"
+    request_path.write_text(json.dumps(canonical), encoding="utf-8")
+
+    completed = _run_wrapper(
+        wrapper,
+        request_path,
+        round_root,
+        _runtime_env(history_root, round_root),
+    )
+
+    assert completed.returncode == 2
+    assert completed.stderr == "history_execution_invalid\n"
+    assert not (round_root / "implementation-observed.json").exists()
+    assert not tuple(round_root.glob(".p6-legacy-source-request-*.json"))
+
+
+def test_wrapper_rejects_legacy_config_collision_with_another_output_before_child(
+    tmp_path: Path,
+) -> None:
+    history_root = _private_git_root(tmp_path)
+    _write_relocated_materializer(history_root)
+    wrapper = render_self_contained_source_wrapper(
+        _profile(), history_root=history_root
+    ).executable
+    round_root = history_root / "private-runs" / "0"
+    round_root.mkdir(parents=True)
+    canonical = _canonical_request(tmp_path)
+    contract = canonical["rows"][0]["source_contract"]
+    contract["onnx_path"] = str(Path(contract["checkpoint_dir"]) / "config.yaml")
+    _rehash_request(canonical)
+    request_path = round_root / "measurement-request.json"
+    request_path.write_text(json.dumps(canonical), encoding="utf-8")
+
+    completed = _run_wrapper(
+        wrapper,
+        request_path,
+        round_root,
+        _runtime_env(history_root, round_root),
+    )
+
+    assert completed.returncode == 2
+    assert completed.stderr == "history_execution_invalid\n"
+    assert not (round_root / "implementation-observed.json").exists()
+    assert not tuple(round_root.glob(".p6-legacy-source-request-*.json"))
 
 
 def _mutate_missing_binding(request: dict[str, Any]) -> None:
@@ -527,6 +691,107 @@ def test_wrapper_rejects_overflowing_json_number_before_implementation(
     assert not tuple(round_root.glob(".p6-legacy-source-request-*.json"))
 
 
+@pytest.mark.parametrize(
+    ("existing", "expected_returncode"),
+    ((GENERATED_CONFIG, 0), (b"operator-conflict\n", 2)),
+)
+def test_wrapper_preserves_matching_config_and_rejects_conflict(
+    tmp_path: Path,
+    existing: bytes,
+    expected_returncode: int,
+) -> None:
+    history_root = _private_git_root(tmp_path)
+    _write_relocated_materializer(history_root)
+    wrapper = render_self_contained_source_wrapper(
+        _profile(), history_root=history_root
+    ).executable
+    round_root = history_root / "private-runs" / "0"
+    round_root.mkdir(parents=True)
+    canonical = _canonical_request(tmp_path)
+    canonical_config = Path(canonical["rows"][0]["source_contract"]["config_path"])
+    canonical_config.parent.mkdir(parents=True)
+    canonical_config.write_bytes(existing)
+    request_path = round_root / "measurement-request.json"
+    original_bytes = json.dumps(canonical, sort_keys=True).encode("utf-8")
+    request_path.write_bytes(original_bytes)
+
+    completed = _run_wrapper(
+        wrapper,
+        request_path,
+        round_root,
+        _runtime_env(history_root, round_root),
+    )
+
+    assert completed.returncode == expected_returncode
+    assert canonical_config.read_bytes() == existing
+    assert (round_root / "implementation-observed.json").is_file()
+    assert request_path.read_bytes() == original_bytes
+    assert not tuple(round_root.glob(".p6-legacy-source-request-*.json"))
+
+
+def test_wrapper_rejects_preexisting_same_path_config_before_child(
+    tmp_path: Path,
+) -> None:
+    history_root = _private_git_root(tmp_path)
+    _write_relocated_materializer(history_root)
+    wrapper = render_self_contained_source_wrapper(
+        _profile(), history_root=history_root
+    ).executable
+    round_root = history_root / "private-runs" / "0"
+    round_root.mkdir(parents=True)
+    canonical = _canonical_request(tmp_path, config_at_checkpoint=True)
+    config = Path(canonical["rows"][0]["source_contract"]["config_path"])
+    config.parent.mkdir(parents=True)
+    config.write_bytes(b"operator-conflict\n")
+    request_path = round_root / "measurement-request.json"
+    request_path.write_text(json.dumps(canonical), encoding="utf-8")
+
+    completed = _run_wrapper(
+        wrapper,
+        request_path,
+        round_root,
+        _runtime_env(history_root, round_root),
+    )
+
+    assert completed.returncode == 2
+    assert config.read_bytes() == b"operator-conflict\n"
+    assert not (round_root / "implementation-observed.json").exists()
+    assert not tuple(round_root.glob(".p6-legacy-source-request-*.json"))
+
+
+def test_wrapper_rejects_config_path_outside_checkpoint_artifact_before_child(
+    tmp_path: Path,
+) -> None:
+    history_root = _private_git_root(tmp_path)
+    _write_relocated_materializer(history_root)
+    wrapper = render_self_contained_source_wrapper(
+        _profile(), history_root=history_root
+    ).executable
+    round_root = history_root / "private-runs" / "0"
+    round_root.mkdir(parents=True)
+    canonical = _canonical_request(tmp_path)
+    canonical["rows"][0]["source_contract"]["config_path"] = str(
+        tmp_path / "outside-artifact" / "source-config.json"
+    )
+    _rehash_request(canonical)
+    request_path = round_root / "measurement-request.json"
+    original_bytes = json.dumps(canonical, sort_keys=True).encode("utf-8")
+    request_path.write_bytes(original_bytes)
+
+    completed = _run_wrapper(
+        wrapper,
+        request_path,
+        round_root,
+        _runtime_env(history_root, round_root),
+    )
+
+    assert completed.returncode == 2
+    assert completed.stderr == "history_execution_invalid\n"
+    assert not (round_root / "implementation-observed.json").exists()
+    assert request_path.read_bytes() == original_bytes
+    assert not tuple(round_root.glob(".p6-legacy-source-request-*.json"))
+
+
 def test_wrapper_propagates_implementation_failure_and_cleans_legacy_view(
     tmp_path: Path,
 ) -> None:
@@ -554,5 +819,8 @@ def test_wrapper_propagates_implementation_failure_and_cleans_legacy_view(
         (round_root / "implementation-observed.json").read_text(encoding="utf-8")
     )
     assert not Path(observed["request_path"]).exists()
+    contract = canonical["rows"][0]["source_contract"]
+    assert (Path(contract["checkpoint_dir"]) / "config.yaml").is_file()
+    assert not Path(contract["config_path"]).exists()
     assert request_path.read_bytes() == original_bytes
     assert not tuple(round_root.glob(".p6-legacy-source-request-*.json"))

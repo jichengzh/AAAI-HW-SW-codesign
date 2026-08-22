@@ -91,34 +91,18 @@ LEGACY_TRAINING_KEYS = (
     "width_per_group",
 )
 BINDING_KEYS = ("schema_version", *BINDING_TRAINING_KEYS)
-PARAMETER_KEYS = (
-    "training_mode",
-    "epochs",
-    "target_epoch",
-    "seed",
-    "optimizer",
-    "learning_rate",
-    "batch_size",
-    "dataset_split",
-    "checkpoint_selection",
-    "freeze_policy",
-    "groups",
-    "width_per_group",
-)
-REQUEST_KEYS = (
-    "schema_version", "task_id", "task_sha256", "round_index", "batch_size",
-    "sample_budget", "required_metrics", "atomic_feedback",
-    "real_h800_measurement_required", "row_sha256", "rows",
-    "measurement_request_sha256",
-)
-ROW_KEYS = (
-    "schema_version", "task_id", "task_sha256", "row_id", "manifest_job_id",
-    "group_id", "model", "width", "width_schema", "structure_widths", "genome",
-    "strategy_id", "q_mode", "hardware_id", "capability_profile_id",
-    "capability_digest", "dispatch_key", "source_status", "materialization_kind",
-    "source_evidence_kind", "source_contract", "source_contract_sha256",
-    "source_evidence_sha256", "graph_features",
-)
+PARAMETER_KEYS = tuple("""training_mode epochs target_epoch seed optimizer learning_rate
+batch_size dataset_split checkpoint_selection freeze_policy groups width_per_group""".split())
+REQUEST_KEYS = tuple("""schema_version task_id task_sha256 round_index batch_size sample_budget
+required_metrics atomic_feedback real_h800_measurement_required row_sha256 rows
+measurement_request_sha256""".split())
+ROW_KEYS = tuple("""schema_version task_id task_sha256 row_id manifest_job_id group_id model width
+width_schema structure_widths genome strategy_id q_mode hardware_id capability_profile_id
+capability_digest dispatch_key source_status materialization_kind source_evidence_kind
+source_contract source_contract_sha256 source_evidence_sha256 graph_features""".split())
+OUTPUT_PATH_KEYS = tuple("""checkpoint_path checkpoint_dir config_path training_done_marker
+onnx_path onnx_report_path calibration_root calibration_npz calibration_summary
+trt_calibration_dir source_done_marker""".split())
 CANONICAL_MATERIALIZATION_KIND = "local_pyramid_tvm"
 LEGACY_MATERIALIZATION_KIND = "pyramid_prepare_train_export"
 IMPLEMENTATION_RELATIVE = __IMPLEMENTATION_RELATIVE__
@@ -211,6 +195,29 @@ def _validated_binding(raw):
     }
 
 
+def _canonical_output_path(raw):
+    if not isinstance(raw, str) or not raw:
+        raise CompatibilityError
+    path = Path(raw)
+    if not path.is_absolute() or str(path) != raw or ".." in path.parts:
+        raise CompatibilityError
+    return path
+
+def _config_paths(row):
+    contract = row["source_contract"]
+    paths = tuple(_canonical_output_path(contract.get(key)) for key in OUTPUT_PATH_KEYS)
+    if len(set(paths)) != len(OUTPUT_PATH_KEYS):
+        raise CompatibilityError
+    checkpoint = paths[OUTPUT_PATH_KEYS.index("checkpoint_dir")]
+    canonical = paths[OUTPUT_PATH_KEYS.index("config_path")]
+    legacy = checkpoint / "config.yaml"
+    if (
+        not canonical.is_relative_to(checkpoint.parent)
+        or legacy != canonical and legacy in paths
+    ):
+        raise CompatibilityError
+    return legacy, canonical
+
 def _legacy_row(row):
     contract = row.get("source_contract") if isinstance(row, dict) else None
     width = row.get("width") if isinstance(row, dict) else None
@@ -226,9 +233,11 @@ def _legacy_row(row):
         or set(contract).intersection(LEGACY_TRAINING_KEYS)
     ):
         raise CompatibilityError
+    legacy_config, _ = _config_paths(row)
     legacy_contract = {
         **{key: value for key, value in contract.items() if key != "external_training_binding"},
         **_validated_binding(contract.get("external_training_binding")),
+        "config_path": str(legacy_config),
     }
     evidence = {
         "kind": LEGACY_MATERIALIZATION_KIND,
@@ -242,7 +251,6 @@ def _legacy_row(row):
         "source_contract_sha256": _canonical_sha(legacy_contract),
         "source_evidence_sha256": _canonical_sha(evidence),
     }
-
 
 def _validated_request_rows(request):
     if not isinstance(request, dict) or set(request) != set(REQUEST_KEYS):
@@ -277,8 +285,7 @@ def _validated_request_rows(request):
         raise CompatibilityError
     return rows
 
-
-def _legacy_view(request):
+def _legacy_view(request, group_id):
     rows = _validated_request_rows(request)
     bindings = tuple(
         row.get("source_contract", {}).get("external_training_binding")
@@ -289,6 +296,11 @@ def _legacy_view(request):
     if any(binding != bindings[0] for binding in bindings[1:]):
         raise CompatibilityError
     projected_rows = [_legacy_row(row) for row in rows]
+    selected = frozenset(
+        _config_paths(row) for row in rows if row.get("group_id") == group_id
+    )
+    if len(selected) != 1:
+        raise CompatibilityError
     projected = {
         **copy.deepcopy(request),
         "rows": projected_rows,
@@ -300,8 +312,7 @@ def _legacy_view(request):
         key: value for key, value in projected.items()
         if key != "measurement_request_sha256"
     }
-    return {**projected, "measurement_request_sha256": _canonical_sha(body)}
-
+    return {**projected, "measurement_request_sha256": _canonical_sha(body)}, next(iter(selected))
 
 def _runtime_paths(argv):
     if (
@@ -331,7 +342,6 @@ def _runtime_paths(argv):
         raise CompatibilityError
     return root, round_root, request, implementation, implementation_cwd
 
-
 def _write_legacy_request(round_root, request):
     descriptor, spelling = tempfile.mkstemp(
         dir=round_root, prefix=".p6-legacy-source-request-", suffix=".json"
@@ -339,16 +349,44 @@ def _write_legacy_request(round_root, request):
     path = Path(spelling)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(
-                request, handle, ensure_ascii=True, allow_nan=False,
-                sort_keys=True, separators=(",", ":")
-            )
+            json.dump(request, handle, ensure_ascii=True, allow_nan=False,
+                      sort_keys=True, separators=(",", ":"))
             handle.flush()
             os.fsync(handle.fileno())
     except BaseException:
         path.unlink(missing_ok=True)
         raise
     return path
+
+def _publish_config(source, destination):
+    content = source.read_bytes() if source.is_file() else b""
+    if not content:
+        raise CompatibilityError
+    if source == destination:
+        return
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        if not destination.is_file() or destination.read_bytes() != content:
+            raise CompatibilityError
+        return
+    descriptor, spelling = tempfile.mkstemp(dir=destination.parent, prefix=".p6-config-")
+    temporary = Path(spelling)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.link(temporary, destination)
+        except FileExistsError:
+            if not destination.is_file() or destination.read_bytes() != content:
+                raise CompatibilityError
+    finally:
+        temporary.unlink(missing_ok=True)
+
+def _preflight_config(source, destination):
+    if source == destination and destination.exists():
+        raise CompatibilityError
 
 
 def main(argv):
@@ -360,19 +398,20 @@ def main(argv):
             object_pairs_hook=_unique_mapping,
             parse_constant=_invalid_constant,
         )
-        temporary = _write_legacy_request(round_root, _legacy_view(loaded))
+        legacy, config_paths = _legacy_view(loaded, argv[6])
+        _preflight_config(*config_paths)
+        temporary = _write_legacy_request(round_root, legacy)
         child_argv = [str(implementation), "--request", str(temporary), *argv[3:]]
         child_env = {
             **{key: os.environ[key] for key in ENVIRONMENT_KEYS},
             "PYTHONPATH": str(implementation_cwd),
         }
-        completed = subprocess.run(
-            child_argv, cwd=implementation_cwd, env=child_env, shell=False, check=False
-        )
+        completed = subprocess.run(child_argv, cwd=implementation_cwd, env=child_env,
+                                   shell=False, check=False)
+        if completed.returncode == 0:
+            _publish_config(*config_paths)
         return completed.returncode
-    except (
-        CompatibilityError, KeyError, OSError, OverflowError, TypeError, ValueError
-    ):
+    except (CompatibilityError, KeyError, OSError, OverflowError, TypeError, ValueError):
         print("history_execution_invalid", file=sys.stderr)
         return 2
     finally:

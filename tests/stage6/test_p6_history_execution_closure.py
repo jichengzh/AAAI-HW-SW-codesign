@@ -37,7 +37,7 @@ from framework.stage6.p6_history_training_contract_v1 import (
 from framework.stage6.p6_source_wrapper_profile_v1 import (
     render_self_contained_source_wrapper,
 )
-from tests.p6_source_wrapper_support import source_bridge_request
+from tests.p6_source_wrapper_support import source_bridge_output_paths, source_bridge_request
 from tests.stage6.test_p6_runner_template_validator import _runner_template
 
 
@@ -81,7 +81,19 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
     closure_root = source_root / "repo"
     source = _write_executable(
         closure_root / "source.py",
-        "#!/usr/bin/env python3\nimport sibling\nassert sibling.VALUE == 'ok'\n",
+        """#!/usr/bin/env python3
+import json
+from pathlib import Path
+import sibling
+import sys
+
+assert sibling.VALUE == "ok"
+request = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+row = request["rows"][0]["source_contract"]
+config = Path(row["config_path"])
+config.parent.mkdir(parents=True, exist_ok=True)
+config.write_text("fixture:config_path\\n", encoding="utf-8")
+""",
     )
     source_marker = _write_executable(
         source_root / "documented-stage5-chain/stage5_materialize_round_sources_v1.sh"
@@ -401,7 +413,11 @@ def test_copied_source_runs_through_wrapper_without_pythonpath(tmp_path: Path) -
     round_root.mkdir(parents=True)
     request_path = round_root / "request.json"
     binding = external_training_binding_to_mapping(fixture["external"])
-    request_path.write_text(json.dumps(source_bridge_request(binding)), encoding="utf-8")
+    output_paths = source_bridge_output_paths(round_root / "materialized/pyramid-16-32-64")
+    request_path.write_text(
+        json.dumps(source_bridge_request(binding, source_contract_fields=output_paths)),
+        encoding="utf-8",
+    )
     environment = {
         "CUDA_VISIBLE_DEVICES": "17,19,23",
         "P6_HISTORY_RUN_MODE": "bound",

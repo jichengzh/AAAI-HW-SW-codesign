@@ -17,7 +17,7 @@ from framework.stage6.p6_history_normalization_v1 import (
 from framework.stage6.p6_history_binding_v1 import EXPECTED_HISTORY_ENV_KEYS
 from framework.stage6.p6_history_execution_closure_v1 import EXECUTION_CLOSURE_ROLES
 from framework.stage6.p6_history_recipe_profiles_v1 import PROFILE_V1
-from tests.p6_source_wrapper_support import source_bridge_request
+from tests.p6_source_wrapper_support import source_bridge_output_paths, source_bridge_request
 from tests.stage6.test_p6_history_recipe_bridge import (
     MARKERS,
     _runner_template,
@@ -141,7 +141,17 @@ def _runtime_external_and_closure(
     role_files = {role: closure_root / name for role, name in role_names.items()}
     for role, path in role_files.items():
         body = (
-            "#!/bin/sh\nset -eu\nprintf copied > normalized-wrapper-executed.txt\n"
+            """#!/usr/bin/env python3
+import json
+from pathlib import Path
+import sys
+
+request = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+config = Path(request["rows"][0]["source_contract"]["config_path"])
+config.parent.mkdir(parents=True, exist_ok=True)
+config.write_text("fixture:config_path\\n", encoding="utf-8")
+Path("normalized-wrapper-executed.txt").write_text("copied", encoding="utf-8")
+"""
             if role == "source_materializer"
             else "#!/bin/sh\nexit 0\n"
         )
@@ -675,7 +685,11 @@ def test_v2_normalizer_keeps_training_external_and_writes_all_role_runner(
     round_root = Path(environment["P6_HISTORY_ROUND_OUTPUT_ROOT"])
     round_root.mkdir()
     request = round_root / "measurement-request.json"
-    request.write_text(json.dumps(source_bridge_request(external)), encoding="utf-8")
+    output_paths = source_bridge_output_paths(round_root / "materialized/pyramid-16-32-64")
+    request.write_text(
+        json.dumps(source_bridge_request(external, source_contract_fields=output_paths)),
+        encoding="utf-8",
+    )
     completed = subprocess.run(
         [
             str(destination),
