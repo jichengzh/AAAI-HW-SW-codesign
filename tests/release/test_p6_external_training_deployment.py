@@ -5,8 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 from typing import Any, Mapping, Sequence
 
 import pytest
@@ -38,6 +41,9 @@ from framework.stage6.p6_history_registry_v1 import materialize_history_registry
 from framework.stage6.p6_history_source_materialization_v1 import (
     project_source_materialization_request,
 )
+from framework.stage6.p6_runner_template_validator_v1 import (
+    validate_pre_provision_runner_template,
+)
 from framework.stage6.p6_source_reuse_evidence_v1 import create_fresh_run_context
 from tests.release.p6_source_reuse_lifecycle_fixture import _stage1_manifest
 from tests.stage6.test_coptv2x_h800_search import (
@@ -54,6 +60,10 @@ from tests.stage6.test_p6_history_normalization import (
 from tools.release.derive_p6_history_recipe import main as derive_recipe_main
 from tools.release.preflight_p6_materializer_training_bridge import (
     preflight_materializer_training_bridge,
+)
+from tools.release.render_p6_stage1_launcher import (
+    P6Stage1LauncherRenderError,
+    render_stage1_launcher,
 )
 
 
@@ -275,6 +285,73 @@ def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
         )
         + "\n",
         encoding="utf-8",
+    )
+
+
+def _write_synthetic_real_stage1_launcher(
+    root: Path,
+    *,
+    schema_key: str = "schema",
+    hardware_via_symlink: bool = False,
+) -> Path:
+    private_bin = root / "private-runner" / "bin"
+    private_bin.mkdir(parents=True, exist_ok=True)
+    mapper = private_bin / "stage1-map-real-private.py"
+    mapper.write_text(
+        f"""#!{sys.executable}
+import argparse
+import json
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--hardware", required=True)
+parser.add_argument("--output", required=True)
+parser.add_argument("--device", required=True)
+parser.add_argument("--stage1-repo-root", required=True)
+parser.add_argument("--heal-root", required=True)
+parser.add_argument("--heal-checkpoint-root", required=True)
+args = parser.parse_args()
+assert args.device == "cuda:0"
+
+
+def run_real_stage1_scan(*, output_path: Path) -> None:
+    output_path.write_text(
+        json.dumps(
+            {{
+                {schema_key!r}: "stage1_partition_manifest_v1",
+                "stage": "stage1_partition",
+                "model": "pyramid_lidar",
+                "scan_status": "ok",
+            }}
+        ),
+        encoding="utf-8",
+    )
+
+
+run_real_stage1_scan(output_path=Path(args.output))
+""",
+        encoding="utf-8",
+    )
+    mapper.chmod(0o700)
+    public_code = root / "public-code"
+    if hardware_via_symlink:
+        hardware_root = root / "outside-hardware"
+        hardware = hardware_root / "hardware" / "h800.yaml"
+        hardware.parent.mkdir(parents=True)
+        public_code.mkdir()
+        (public_code / "configs").symlink_to(hardware_root, target_is_directory=True)
+    else:
+        hardware = public_code / "configs" / "hardware" / "h800.yaml"
+        hardware.parent.mkdir(parents=True)
+    hardware.write_text("name: NVIDIA H800\n", encoding="utf-8")
+    (root / "dependency-overlay").mkdir()
+    for name in ("heal", "checkpoints"):
+        (root / name).mkdir()
+    return render_stage1_launcher(
+        output_path=private_bin / "stage1-launch-real-private.sh",
+        tooling_python=Path(sys.executable).resolve(strict=True),
+        heal_root=root / "heal",
+        heal_checkpoint_root=root / "checkpoints",
     )
 
 
@@ -515,3 +592,111 @@ def test_private_token_is_redacted_before_mocked_gpu_boundary(
     assert captured.value.failure_code == "history_execution_invalid"
     assert PRIVATE_TOKEN not in str(captured.value)
     _assert_mocked_boundary_untouched(fixture)
+
+
+def test_real_stage1_launcher_accepts_mapper_schema_without_external_execution(
+    tmp_path: Path,
+) -> None:
+    fixture_root = tmp_path / "fixture"
+    source_map, runner_path = _as_v2_procedural(
+        valid_private_source_map(fixture_root), fixture_root
+    )
+    history_root = Path(source_map["history_root"])
+    launcher = _write_synthetic_real_stage1_launcher(history_root)
+    runner_payload = yaml.safe_load(runner_path.read_text(encoding="utf-8"))
+    runner_payload["stage1_scan"]["argv"][0] = str(launcher)
+    runner_path.write_text(
+        yaml.safe_dump(runner_payload, sort_keys=False), encoding="utf-8"
+    )
+    validated = validate_pre_provision_runner_template(
+        runner_path,
+        history_root,
+        require_exact_history_environment=True,
+    )
+    output_root = tmp_path / "output"
+    output_root.mkdir()
+    manifest = output_root / "stage1_partition_manifest.json"
+    rendered_argv = [
+        validated.stage1_argv[0],
+        str(manifest),
+        str(output_root),
+    ]
+
+    completed = subprocess.run(
+        rendered_argv,
+        cwd=tmp_path,
+        env={"PATH": os.environ["PATH"]},
+        shell=False,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert validated.stage1_argv[1:] == (
+        "{stage1_partition_manifest}",
+        "{local_output_root}",
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(manifest.read_text(encoding="utf-8")) == {
+        "schema": "stage1_partition_manifest_v1",
+        "stage": "stage1_partition",
+        "model": "pyramid_lidar",
+        "scan_status": "ok",
+    }
+
+
+def test_real_stage1_launcher_rejects_schema_version_when_python_is_optimized(
+    tmp_path: Path,
+) -> None:
+    launcher = _write_synthetic_real_stage1_launcher(
+        tmp_path / "history", schema_key="schema_version"
+    )
+    output_root = tmp_path / "output"
+    output_root.mkdir()
+    manifest = output_root / "stage1_partition_manifest.json"
+
+    completed = subprocess.run(
+        [str(launcher), str(manifest), str(output_root)],
+        cwd=tmp_path,
+        env={"PATH": os.environ["PATH"], "PYTHONOPTIMIZE": "1"},
+        shell=False,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert completed.returncode != 0
+
+
+def test_real_stage1_launcher_rejects_manifest_outside_local_output_root(
+    tmp_path: Path,
+) -> None:
+    launcher = _write_synthetic_real_stage1_launcher(tmp_path / "history")
+    output_root = tmp_path / "output"
+    output_root.mkdir()
+    outside_manifest = output_root / ".." / "outside.json"
+
+    completed = subprocess.run(
+        [str(launcher), str(outside_manifest), str(output_root)],
+        cwd=tmp_path,
+        env={"PATH": os.environ["PATH"]},
+        shell=False,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert completed.returncode != 0
+    assert not (tmp_path / "outside.json").exists()
+
+
+def test_stage1_launcher_renderer_rejects_symlinked_hardware_component(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(P6Stage1LauncherRenderError):
+        _write_synthetic_real_stage1_launcher(
+            tmp_path / "history", hardware_via_symlink=True
+        )
