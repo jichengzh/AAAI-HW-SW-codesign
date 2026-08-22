@@ -313,23 +313,82 @@ def _validate_module_imports(module: Path, closure_root: Path, visited: frozense
     next_visited = visited | {module}
     tree = ast.parse(module.read_text(encoding="utf-8"))
     for node in ast.walk(tree):
-        for name, relative_level in _import_names(node):
+        for name, relative_level, imported_members in _import_names(node):
             base = _import_base(module, closure_root, relative_level)
             local_modules = _local_import_modules(base, name)
             if local_modules:
                 for local in local_modules:
                     _validate_module_imports(local, closure_root, next_visited)
+                _validate_imported_members(
+                    local_modules[-1],
+                    imported_members,
+                    closure_root,
+                    next_visited,
+                )
             elif relative_level or name.split(".", 1)[0] not in _APPROVED_SYSTEM_IMPORTS:
                 _invalid()
 
 
-def _import_names(node: ast.AST) -> tuple[tuple[str, int], ...]:
+def _import_names(node: ast.AST) -> tuple[tuple[str, int, tuple[str, ...]], ...]:
     if isinstance(node, ast.Import):
-        return tuple((alias.name, 0) for alias in node.names)
+        return tuple((alias.name, 0, ()) for alias in node.names)
     if isinstance(node, ast.ImportFrom):
-        names = (node.module,) if node.module else tuple(alias.name for alias in node.names)
-        return tuple((name, node.level) for name in names)
+        if node.module:
+            return (
+                (
+                    node.module,
+                    node.level,
+                    tuple(alias.name for alias in node.names),
+                ),
+            )
+        return tuple((alias.name, node.level, ()) for alias in node.names)
     return ()
+
+
+def _validate_imported_members(
+    module: Path,
+    members: tuple[str, ...],
+    closure_root: Path,
+    visited: frozenset[Path],
+) -> None:
+    if not members:
+        return
+    exported = _module_bound_names(module)
+    for member in members:
+        if member == "*" or member in exported:
+            continue
+        if module.name != "__init__.py":
+            _invalid()
+        submodules = _local_import_modules(module.parent, member)
+        if not submodules:
+            _invalid()
+        for submodule in submodules:
+            _validate_module_imports(submodule, closure_root, visited)
+
+
+def _module_bound_names(module: Path) -> frozenset[str]:
+    tree = ast.parse(module.read_text(encoding="utf-8"))
+    names: set[str] = set()
+    for statement in tree.body:
+        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(statement.name)
+        elif isinstance(statement, ast.Assign):
+            targets = statement.targets
+            names.update(_assignment_names(targets))
+        elif isinstance(statement, ast.AnnAssign) and statement.value is not None:
+            targets = (statement.target,)
+            names.update(_assignment_names(targets))
+        elif isinstance(statement, ast.Import):
+            names.update(alias.asname or alias.name.split(".", 1)[0] for alias in statement.names)
+        elif isinstance(statement, ast.ImportFrom):
+            names.update(alias.asname or alias.name for alias in statement.names)
+    return frozenset(names)
+
+
+def _assignment_names(targets: tuple[ast.expr, ...] | list[ast.expr]) -> set[str]:
+    return {
+        node.id for target in targets for node in ast.walk(target) if isinstance(node, ast.Name)
+    }
 
 
 def _import_base(module: Path, closure_root: Path, relative_level: int) -> Path:

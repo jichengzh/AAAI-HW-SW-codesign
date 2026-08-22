@@ -336,6 +336,79 @@ def test_closure_rejects_missing_dotted_import_module(tmp_path: Path, body: str)
         )
 
 
+def test_closure_rejects_missing_from_package_submodule(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    closure_root = fixture["closure_root"]
+    (closure_root / "sibling.py").unlink()
+    package = closure_root / "sibling"
+    package.mkdir()
+    (package / "__init__.py").write_text("VALUE = 'ok'\n", encoding="utf-8")
+    (closure_root / "source.py").write_text("from sibling import missing\n", encoding="utf-8")
+    fixture["manifest"]["roots"][0]["sha256"] = _tree_sha(closure_root)
+
+    with pytest.raises(P6ExecutionClosureError):
+        validate_execution_closure_manifest(
+            fixture["manifest"],
+            source_history_root=fixture["source_root"],
+            external_training=fixture["external"],
+        )
+
+
+@pytest.mark.parametrize("member", ("missing", "VALUE"))
+def test_closure_accepts_package_submodule_or_exported_symbol(tmp_path: Path, member: str) -> None:
+    fixture = _fixture(tmp_path)
+    closure_root = fixture["closure_root"]
+    (closure_root / "sibling.py").unlink()
+    package = closure_root / "sibling"
+    package.mkdir()
+    (package / "__init__.py").write_text("VALUE = 'ok'\n", encoding="utf-8")
+    if member == "missing":
+        (package / "missing.py").write_text("READY = True\n", encoding="utf-8")
+    (closure_root / "source.py").write_text(f"from sibling import {member}\n", encoding="utf-8")
+    fixture["manifest"]["roots"][0]["sha256"] = _tree_sha(closure_root)
+
+    validate_execution_closure_manifest(
+        fixture["manifest"],
+        source_history_root=fixture["source_root"],
+        external_training=fixture["external"],
+    )
+
+
+@pytest.mark.parametrize(
+    "module_body",
+    ("VALUE = 'ok'\n", "missing: int\n", "missing += 1\n"),
+)
+def test_closure_rejects_unbound_plain_module_member(tmp_path: Path, module_body: str) -> None:
+    fixture = _fixture(tmp_path)
+    closure_root = fixture["closure_root"]
+    (closure_root / "sibling.py").write_text(module_body, encoding="utf-8")
+    (closure_root / "source.py").write_text("from sibling import missing\n", encoding="utf-8")
+    fixture["manifest"]["roots"][0]["sha256"] = _tree_sha(closure_root)
+
+    with pytest.raises(P6ExecutionClosureError):
+        validate_execution_closure_manifest(
+            fixture["manifest"],
+            source_history_root=fixture["source_root"],
+            external_training=fixture["external"],
+        )
+
+
+def test_closure_accepts_initialized_annotated_plain_module_member(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    closure_root = fixture["closure_root"]
+    (closure_root / "sibling.py").write_text("missing: int = 1\n", encoding="utf-8")
+    (closure_root / "source.py").write_text("from sibling import missing\n", encoding="utf-8")
+    fixture["manifest"]["roots"][0]["sha256"] = _tree_sha(closure_root)
+
+    validate_execution_closure_manifest(
+        fixture["manifest"],
+        source_history_root=fixture["source_root"],
+        external_training=fixture["external"],
+    )
+
+
 def test_closure_accepts_parent_relative_import_inside_declared_root(
     tmp_path: Path,
 ) -> None:
