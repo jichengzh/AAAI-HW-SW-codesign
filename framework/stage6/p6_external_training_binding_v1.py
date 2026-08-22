@@ -97,24 +97,11 @@ def validate_external_training_binding(
 ) -> P6ExternalTrainingBinding:
     """Validate external immutable inputs and return only canonical detached state."""
     try:
-        if not isinstance(raw, Mapping) or set(raw) != _REQUIRED_KEYS:
-            _invalid()
-        if (
-            type(raw.get("schema_version")) is not str
-            or raw.get("schema_version") != _SCHEMA_VERSION
-            or raw.get("training_required") is not True
-            or type(raw.get("training_source_kind")) is not str
-            or raw.get("training_source_kind") != _SOURCE_KIND
-        ):
-            _invalid()
         code_root = _canonical_boundary_root(code_toolchain_root)
         output_root = _canonical_boundary_root(local_output_root)
-        dataset = _external_path(raw["dataset_root"], directory=True)
-        checkpoint = _external_path(raw["base_checkpoint_path"], directory=False)
-        config = _external_path(raw["pyramid_config_path"], directory=False)
-        parameters = _parameters(raw["training_parameters"])
-        checkpoint_digest = _digest(checkpoint, raw["base_checkpoint_sha256"])
-        config_digest = _digest(config, raw["pyramid_config_sha256"])
+        dataset, checkpoint, checkpoint_digest, config, config_digest, parameters = (
+            _validated_binding_values(raw, require_computed_digests=False)
+        )
         reserved = tuple(_canonical_planned_path(path) for path in reserved_paths)
         external = (dataset, checkpoint, config)
         boundaries = (code_root, output_root, *reserved)
@@ -182,9 +169,22 @@ def external_training_binding_from_contract(contract: Mapping[str, Any]) -> Mapp
     if not isinstance(contract, Mapping) or set(contract).intersection(_FLAT_KEYS):
         _invalid()
     binding = contract.get("external_training_binding")
-    if not isinstance(binding, Mapping) or set(binding) != _REQUIRED_KEYS:
+    if not isinstance(binding, Mapping):
         _invalid()
-    return copy.deepcopy(dict(binding))
+    dataset, checkpoint, checkpoint_digest, config, config_digest, parameters = (
+        _validated_binding_values(binding, require_computed_digests=True)
+    )
+    return {
+        "schema_version": _SCHEMA_VERSION,
+        "training_required": True,
+        "training_source_kind": _SOURCE_KIND,
+        "dataset_root": str(dataset),
+        "base_checkpoint_path": str(checkpoint),
+        "base_checkpoint_sha256": checkpoint_digest,
+        "pyramid_config_path": str(config),
+        "pyramid_config_sha256": config_digest,
+        "training_parameters": dict(parameters),
+    }
 
 
 def public_safe_external_training_projection(binding: Mapping[str, Any]) -> dict[str, Any]:
@@ -240,6 +240,46 @@ def _external_path(raw: object, *, directory: bool) -> Path:
     return resolved
 
 
+def _validated_binding_values(
+    raw: Mapping[str, Any], *, require_computed_digests: bool
+) -> tuple[
+    Path,
+    Path,
+    str,
+    Path,
+    str,
+    tuple[tuple[str, ExternalTrainingParameter], ...],
+]:
+    """Validate the complete private binding shape once for both boundaries."""
+    if not isinstance(raw, Mapping) or set(raw) != _REQUIRED_KEYS:
+        _invalid()
+    if (
+        type(raw.get("schema_version")) is not str
+        or raw.get("schema_version") != _SCHEMA_VERSION
+        or raw.get("training_required") is not True
+        or type(raw.get("training_source_kind")) is not str
+        or raw.get("training_source_kind") != _SOURCE_KIND
+    ):
+        _invalid()
+    dataset = _external_path(raw["dataset_root"], directory=True)
+    checkpoint = _external_path(raw["base_checkpoint_path"], directory=False)
+    config = _external_path(raw["pyramid_config_path"], directory=False)
+    if checkpoint == config:
+        _invalid()
+    parameters = _parameters(raw["training_parameters"])
+    checkpoint_digest = _digest(
+        checkpoint,
+        raw["base_checkpoint_sha256"],
+        require_computed=require_computed_digests,
+    )
+    config_digest = _digest(
+        config,
+        raw["pyramid_config_sha256"],
+        require_computed=require_computed_digests,
+    )
+    return dataset, checkpoint, checkpoint_digest, config, config_digest, parameters
+
+
 def _parameters(raw: object) -> tuple[tuple[str, ExternalTrainingParameter], ...]:
     if not isinstance(raw, Mapping) or set(raw) != set(REQUIRED_TRAINING_PARAMETER_KEYS):
         _invalid()
@@ -261,11 +301,14 @@ def _parameters(raw: object) -> tuple[tuple[str, ExternalTrainingParameter], ...
     return tuple((key, raw[key]) for key in REQUIRED_TRAINING_PARAMETER_KEYS)
 
 
-def _digest(path: Path, supplied: object) -> str:
-    if supplied is not None and (
-        not isinstance(supplied, str)
-        or len(supplied) != 64
-        or any(character not in "0123456789abcdef" for character in supplied)
+def _digest(path: Path, supplied: object, *, require_computed: bool) -> str:
+    if (require_computed and not isinstance(supplied, str)) or (
+        supplied is not None
+        and (
+            not isinstance(supplied, str)
+            or len(supplied) != 64
+            or any(character not in "0123456789abcdef" for character in supplied)
+        )
     ):
         _invalid()
     digest = hashlib.sha256()
@@ -327,8 +370,9 @@ def _reject_symlink_components(path: Path, *, allow_missing: bool = False) -> No
 
 def _require_ignored_if_in_git(path: Path, *, allow_public_example: bool) -> None:
     try:
+        probe = path if path.is_dir() else path.parent
         completed = subprocess.run(
-            ("git", "-C", str(path.parent), "rev-parse", "--show-toplevel"),
+            ("git", "-C", str(probe), "rev-parse", "--show-toplevel"),
             capture_output=True,
             check=False,
             text=True,
