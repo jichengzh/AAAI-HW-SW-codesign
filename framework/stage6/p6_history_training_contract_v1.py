@@ -65,10 +65,7 @@ def validate_recipe_v2_training_template(
     """Return a detached recipe-v2 template after validating static inputs."""
     contract = _detached_mapping(template)
     _require_recipe_v2(contract)
-    _require_training_required_true(contract)
-    _require_training_source_kind(contract)
-    _require_training_parameters(contract)
-    _validate_static_training_paths(contract, private_root)
+    _require_external_training_binding(contract, code_toolchain_root=private_root)
     return contract
 
 
@@ -81,10 +78,11 @@ def validate_recipe_v2_group_training_contract(
 ) -> dict[str, Any]:
     """Return a detached materialized contract after validating private paths."""
     canonical = _detached_mapping(contract)
-    _require_training_required_true(canonical)
-    _require_training_source_kind(canonical)
-    _require_training_parameters(canonical)
-    _validate_static_training_paths(canonical, private_root)
+    _require_external_training_binding(
+        canonical,
+        code_toolchain_root=private_root,
+        local_output_root=local_output_root,
+    )
     _validate_group_identity(canonical, group_id)
     _validate_stage_widths(canonical)
     _validate_shared_source_paths(canonical, local_output_root)
@@ -115,10 +113,41 @@ def public_safe_contract_projection(contract: Mapping[str, Any]) -> dict[str, An
     """Project only fixed public contract labels; never copy private training data."""
     canonical = _detached_mapping(contract)
     return {
-        key: copy.deepcopy(canonical[key])
-        for key in _PUBLIC_SAFE_CONTRACT_KEYS
-        if key in canonical
+        key: copy.deepcopy(canonical[key]) for key in _PUBLIC_SAFE_CONTRACT_KEYS if key in canonical
     }
+
+
+def _require_external_training_binding(
+    contract: Mapping[str, Any],
+    *,
+    code_toolchain_root: Path,
+    local_output_root: Path | None = None,
+) -> None:
+    """Require Task 7's sole detached source of external training inputs."""
+    try:
+        from framework.stage6.p6_external_training_binding_v1 import (
+            external_training_binding_from_contract,
+        )
+
+        binding = external_training_binding_from_contract(contract)
+        code_root = _resolve_root(code_toolchain_root, "code toolchain root")
+        roots = (
+            (code_root,)
+            if local_output_root is None
+            else (
+                code_root,
+                _resolve_root(local_output_root, "local output root"),
+            )
+        )
+        for key in STATIC_TRAINING_INPUT_PATH_KEYS:
+            raw_path = binding.get(key)
+            if not isinstance(raw_path, str) or any(
+                _is_relative_to(Path(raw_path), root) or _is_relative_to(root, Path(raw_path))
+                for root in roots
+            ):
+                _invalid("external training binding is invalid")
+    except (TypeError, ValueError):
+        _invalid("external training binding is invalid")
 
 
 def _detached_mapping(raw: Mapping[str, Any]) -> dict[str, Any]:
@@ -205,9 +234,7 @@ def _validate_shared_source_paths(contract: Mapping[str, Any], local_output_root
         _invalid("shared training outputs are invalid")
 
 
-def _require_lexical_absolute_paths(
-    contract: Mapping[str, Any], keys: Sequence[str]
-) -> None:
+def _require_lexical_absolute_paths(contract: Mapping[str, Any], keys: Sequence[str]) -> None:
     for key in keys:
         raw_path = contract.get(key)
         if (
@@ -221,10 +248,7 @@ def _require_lexical_absolute_paths(
         if (
             not path.is_absolute()
             or components[0]
-            or any(
-                component in {"", ".", ".."}
-                for component in components[1:]
-            )
+            or any(component in {"", ".", ".."} for component in components[1:])
             or str(path) != raw_path
         ):
             _invalid("training path is invalid")

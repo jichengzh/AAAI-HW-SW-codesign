@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import warnings
@@ -65,7 +66,9 @@ def anonymous_repo(tmp_path: Path) -> Path:
 def test_anonymous_allowlist_uses_file_recursive_patterns() -> None:
     entries = {
         line.strip()
-        for line in (BUILDER.parent / "anonymous_allowlist.txt").read_text(encoding="utf-8").splitlines()
+        for line in (BUILDER.parent / "anonymous_allowlist.txt")
+        .read_text(encoding="utf-8")
+        .splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     }
 
@@ -160,9 +163,10 @@ def test_builder_emits_only_anonymous_allowlisted_deterministic_files(
     assert second_result.returncode == 0, second_result.stderr
     first_archive = first / ARCHIVE_NAME
     second_archive = second / ARCHIVE_NAME
-    assert hashlib.sha256(first_archive.read_bytes()).hexdigest() == hashlib.sha256(
-        second_archive.read_bytes()
-    ).hexdigest()
+    assert (
+        hashlib.sha256(first_archive.read_bytes()).hexdigest()
+        == hashlib.sha256(second_archive.read_bytes()).hexdigest()
+    )
     assert (first / f"{ARCHIVE_NAME}.sha256").read_text(encoding="ascii").strip() == (
         f"{hashlib.sha256(first_archive.read_bytes()).hexdigest()}  {ARCHIVE_NAME}"
     )
@@ -210,9 +214,9 @@ def test_builder_keeps_p6_public_contracts_but_excludes_local_execution_material
     """The P6 archive boundary keeps runner metadata public without local execution state."""
     entries = {
         line.strip()
-        for line in (BUILDER.parent / "anonymous_allowlist.txt").read_text(
-            encoding="utf-8"
-        ).splitlines()
+        for line in (BUILDER.parent / "anonymous_allowlist.txt")
+        .read_text(encoding="utf-8")
+        .splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     }
     assert {"framework/**/*", "tools/release/**/*", "configs/**/*"} <= entries
@@ -249,13 +253,52 @@ def test_builder_keeps_p6_public_contracts_but_excludes_local_execution_material
     assert "results/p6-h800-search/sentinel-raw.log" not in names
 
 
+def test_archive_allows_only_null_external_training_example(
+    anonymous_repo: Path, tmp_path: Path
+) -> None:
+    """The public binding skeleton cannot disclose executable external inputs."""
+    example_name = "configs/execution/p6_external_training_binding.example.yaml"
+    _write(
+        anonymous_repo / example_name,
+        "schema_version: p6_external_training_binding_v1\n"
+        "training_required: true\n"
+        "training_source_kind: selected_candidate_finetune\n"
+        "dataset_root: null\nbase_checkpoint_path: null\nbase_checkpoint_sha256: null\n"
+        "pyramid_config_path: null\npyramid_config_sha256: null\ntraining_parameters:\n"
+        "  training_mode: null\n  epochs: null\n  seed: null\n  optimizer: null\n"
+        "  learning_rate: null\n  batch_size: null\n  dataset_split: null\n"
+        "  checkpoint_selection: null\n  freeze_policy: null\n",
+    )
+    result = _run_builder(anonymous_repo, tmp_path / "output")
+
+    assert result.returncode == 0, result.stderr
+    with zipfile.ZipFile(tmp_path / "output" / ARCHIVE_NAME) as archive:
+        names = set(archive.namelist())
+        payload = archive.read(example_name).decode("utf-8")
+    assert example_name in names
+    assert {
+        name for name in names if name.startswith("configs/execution/p6_external_training_binding")
+    } == {example_name}
+    assert "/" not in "".join(
+        line for line in payload.splitlines() if ": " in line and "null" not in line
+    )
+    assert not re.search(r"\b[0-9a-f]{64}\b", payload)
+    assert "PRIVATE-EXTERNAL-TOKEN" not in payload
+    assert all(
+        "null" in line
+        or ":" not in line
+        or line.startswith(
+            ("schema_version", "training_required", "training_source_kind", "training_parameters")
+        )
+        for line in payload.splitlines()
+    )
+
+
 def test_p6_handoff_check_skips_from_anonymous_archive(
     anonymous_repo: Path, tmp_path: Path
 ) -> None:
     """The public release ledger check must not require excluded docs in the reviewer ZIP."""
-    source = (REPOSITORY_ROOT / "tests/release/test_project_handoff.py").read_text(
-        encoding="utf-8"
-    )
+    source = (REPOSITORY_ROOT / "tests/release/test_project_handoff.py").read_text(encoding="utf-8")
     _write(anonymous_repo / "tests/release/test_project_handoff.py", source)
     _write(anonymous_repo / "README.anonymous.md", "# Anonymous AAAI Submission\n")
     output = tmp_path / "output"
@@ -284,7 +327,9 @@ def test_p6_handoff_check_skips_from_anonymous_archive(
     assert "failed" not in completed.stdout.lower()
 
 
-def test_builder_allows_only_the_anonymous_ci_hidden_path(anonymous_repo: Path, tmp_path: Path) -> None:
+def test_builder_allows_only_the_anonymous_ci_hidden_path(
+    anonymous_repo: Path, tmp_path: Path
+) -> None:
     """The anonymous CI file is allowed, while other hidden paths remain excluded."""
     _write(anonymous_repo / ".env", "not selected\n")
     _write(anonymous_repo / ".github/ISSUE_TEMPLATE/bug.yml", "not selected\n")
@@ -299,7 +344,9 @@ def test_builder_allows_only_the_anonymous_ci_hidden_path(anonymous_repo: Path, 
     assert ".github/ISSUE_TEMPLATE/bug.yml" not in names
 
 
-@pytest.mark.parametrize("kind", ["local_path", "owner_url", "email", "ipv4", "token", "filename", "large"])
+@pytest.mark.parametrize(
+    "kind", ["local_path", "owner_url", "email", "ipv4", "token", "filename", "large"]
+)
 def test_builder_rejects_identity_and_size_leaks_without_echoing_them(
     anonymous_repo: Path, tmp_path: Path, kind: str
 ) -> None:
@@ -385,7 +432,9 @@ def test_verifier_rechecks_real_archive_and_sidecars(anonymous_repo: Path, tmp_p
     assert "verified" in result.stdout.lower()
 
 
-def test_builder_excludes_cache_products_and_rejects_unknown_binary(anonymous_repo: Path, tmp_path: Path) -> None:
+def test_builder_excludes_cache_products_and_rejects_unknown_binary(
+    anonymous_repo: Path, tmp_path: Path
+) -> None:
     """Broad allowlist globs must never admit local caches or opaque binaries."""
     cached = anonymous_repo / "framework/__pycache__/module.pyc"
     cached.parent.mkdir(parents=True)
@@ -393,7 +442,9 @@ def test_builder_excludes_cache_products_and_rejects_unknown_binary(anonymous_re
     output = tmp_path / "output"
     assert _run_builder(anonymous_repo, output).returncode == 0
     with zipfile.ZipFile(output / ARCHIVE_NAME) as archive:
-        assert not any("__pycache__" in name or name.endswith(".pyc") for name in archive.namelist())
+        assert not any(
+            "__pycache__" in name or name.endswith(".pyc") for name in archive.namelist()
+        )
 
     (anonymous_repo / "framework/opaque.bin").write_bytes(b"\xff\xfe\x00")
     rejected = _run_builder(anonymous_repo, tmp_path / "binary-output")
@@ -410,10 +461,14 @@ def test_builder_excludes_model_directories_with_case_insensitive_policy(
     output = tmp_path / "output"
     assert _run_builder(anonymous_repo, output).returncode == 0
     with zipfile.ZipFile(output / ARCHIVE_NAME) as archive:
-        assert not any(member.casefold().startswith("framework/models/") for member in archive.namelist())
+        assert not any(
+            member.casefold().startswith("framework/models/") for member in archive.namelist()
+        )
 
 
-def test_verifier_requires_complete_sidecar_and_manifest(anonymous_repo: Path, tmp_path: Path) -> None:
+def test_verifier_requires_complete_sidecar_and_manifest(
+    anonymous_repo: Path, tmp_path: Path
+) -> None:
     """A standalone ZIP cannot establish its expected member set or integrity."""
     output = tmp_path / "output"
     assert _run_builder(anonymous_repo, output).returncode == 0
@@ -426,7 +481,10 @@ def test_verifier_requires_complete_sidecar_and_manifest(anonymous_repo: Path, t
     assert _run_verifier(clean_output / ARCHIVE_NAME).returncode != 0
 
 
-@pytest.mark.parametrize("first,second", [("README.md", "readme.md"), ("framework/caf\u00e9.py", "framework/cafe\u0301.py")])
+@pytest.mark.parametrize(
+    "first,second",
+    [("README.md", "readme.md"), ("framework/caf\u00e9.py", "framework/cafe\u0301.py")],
+)
 def test_verifier_rejects_platform_normalized_member_collisions(
     anonymous_repo: Path, tmp_path: Path, first: str, second: str
 ) -> None:
@@ -514,9 +572,21 @@ def _write_bad_archive(path: Path, kind: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "kind", ["absolute", "traversal", "backslash", "duplicate", "symlink", "members", "total_size", "ratio"]
+    "kind",
+    [
+        "absolute",
+        "traversal",
+        "backslash",
+        "duplicate",
+        "symlink",
+        "members",
+        "total_size",
+        "ratio",
+    ],
 )
-def test_verifier_fails_closed_before_extracting_malicious_members(tmp_path: Path, kind: str) -> None:
+def test_verifier_fails_closed_before_extracting_malicious_members(
+    tmp_path: Path, kind: str
+) -> None:
     """Archive path, link, duplicate, and bomb checks must precede extraction."""
     archive = tmp_path / f"{kind}.zip"
     _write_bad_archive(archive, kind)
