@@ -329,19 +329,16 @@ def _parameters_to_mapping(
 
 def _config_base_stage_widths(path: Path) -> tuple[int, int, int]:
     try:
-        loaded = yaml.load(path.read_bytes().decode("utf-8"), Loader=_UniqueKeyLoader)
-        if not isinstance(loaded, Mapping):
+        root = yaml.compose(path.read_bytes().decode("utf-8"), Loader=yaml.BaseLoader)
+        if root is None:
             _invalid()
-        model = loaded.get("model")
-        if not isinstance(model, Mapping):
-            _invalid()
-        args = model.get("args")
-        if not isinstance(args, Mapping):
-            _invalid()
-        backbone = args.get("fusion_backbone")
-        if not isinstance(backbone, Mapping):
-            _invalid()
-        return _base_stage_widths(backbone.get("num_filters"))
+        references = _node_reference_counts(root)
+        _validate_document_nodes(root)
+        model = _mapping_value(root, "model", references)
+        args = _mapping_value(model, "args", references)
+        backbone = _mapping_value(args, "fusion_backbone", references)
+        filters = _mapping_value(backbone, "num_filters", references)
+        return _node_positive_widths(filters, references)
     except P6ExternalTrainingBindingError:
         raise
     except (OSError, UnicodeDecodeError, yaml.YAMLError, TypeError, ValueError):
@@ -352,6 +349,135 @@ def _base_stage_widths(raw: object) -> tuple[int, int, int]:
     if type(raw) is not list or len(raw) != 3 or not all(_positive_int(value) for value in raw):
         _invalid()
     return (raw[0], raw[1], raw[2])
+
+
+def _node_reference_counts(root: yaml.nodes.Node) -> dict[int, int]:
+    references: dict[int, int] = {}
+
+    def visit(node: yaml.nodes.Node) -> None:
+        identity = id(node)
+        references[identity] = references.get(identity, 0) + 1
+        if references[identity] > 1:
+            return
+        if isinstance(node, yaml.nodes.MappingNode):
+            for key, value in node.value:
+                visit(key)
+                visit(value)
+        elif isinstance(node, yaml.nodes.SequenceNode):
+            for value in node.value:
+                visit(value)
+
+    visit(root)
+    return references
+
+
+def _validate_document_nodes(root: yaml.nodes.Node) -> None:
+    visited: set[int] = set()
+
+    def visit(node: yaml.nodes.Node) -> None:
+        if id(node) in visited:
+            return
+        visited.add(id(node))
+        if isinstance(node, yaml.nodes.MappingNode):
+            _validate_mapping_keys(node)
+            for key, value in node.value:
+                visit(key)
+                visit(value)
+        elif isinstance(node, yaml.nodes.SequenceNode):
+            if node.tag == "tag:yaml.org,2002:python/object/apply:collections.OrderedDict":
+                _validate_ordered_dict_pairs(node)
+            for value in node.value:
+                visit(value)
+
+    visit(root)
+
+
+def _validate_mapping_keys(node: yaml.nodes.MappingNode) -> None:
+    if node.tag != "tag:yaml.org,2002:map":
+        return
+    keys: set[str] = set()
+    for key, _ in node.value:
+        if not _canonical_string_node(key):
+            continue
+        if key.value in keys:
+            _invalid()
+        keys.add(key.value)
+
+
+def _validate_ordered_dict_pairs(node: yaml.nodes.SequenceNode) -> None:
+    if len(node.value) != 1 or not isinstance(node.value[0], yaml.nodes.SequenceNode):
+        _invalid()
+    pairs = node.value[0]
+    if pairs.tag != "tag:yaml.org,2002:seq":
+        _invalid()
+    keys: set[str] = set()
+    for pair in pairs.value:
+        if (
+            not isinstance(pair, yaml.nodes.SequenceNode)
+            or pair.tag != "tag:yaml.org,2002:seq"
+            or len(pair.value) != 2
+            or not _canonical_string_node(pair.value[0])
+        ):
+            _invalid()
+        key = pair.value[0].value
+        if key in keys:
+            _invalid()
+        keys.add(key)
+
+
+def _mapping_value(
+    node: yaml.nodes.Node, key: str, references: Mapping[int, int]
+) -> yaml.nodes.Node:
+    if (
+        not isinstance(node, yaml.nodes.MappingNode)
+        or node.tag != "tag:yaml.org,2002:map"
+        or references.get(id(node)) != 1
+    ):
+        _invalid()
+    matches = [
+        value
+        for candidate, value in node.value
+        if _canonical_string_node(candidate) and candidate.value == key
+    ]
+    if len(matches) != 1 or references.get(id(matches[0])) != 1:
+        _invalid()
+    return matches[0]
+
+
+def _node_positive_widths(
+    node: yaml.nodes.Node, references: Mapping[int, int]
+) -> tuple[int, int, int]:
+    if (
+        not isinstance(node, yaml.nodes.SequenceNode)
+        or node.tag != "tag:yaml.org,2002:seq"
+        or references.get(id(node)) != 1
+        or len(node.value) != 3
+    ):
+        _invalid()
+    widths: list[int] = []
+    for value in node.value:
+        if (
+            not isinstance(value, yaml.nodes.ScalarNode)
+            or value.tag != "tag:yaml.org,2002:str"
+            or references.get(id(value)) != 1
+            or not value.value.isascii()
+            or not value.value.isdecimal()
+            or value.value.startswith("0")
+        ):
+            _invalid()
+        width = int(value.value)
+        if width <= 0:
+            _invalid()
+        widths.append(width)
+    return (widths[0], widths[1], widths[2])
+
+
+def _canonical_string_node(node: yaml.nodes.Node) -> bool:
+    return (
+        isinstance(node, yaml.nodes.ScalarNode)
+        and node.tag == "tag:yaml.org,2002:str"
+        and bool(node.value)
+    )
 
 
 def _digest(path: Path, supplied: object, *, require_computed: bool) -> str:

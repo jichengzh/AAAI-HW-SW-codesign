@@ -152,6 +152,57 @@ def test_external_binding_requires_explicit_prune_base_stage_widths(tmp_path: Pa
     ] == [3, 5, 7]
 
 
+def test_external_binding_reads_base_widths_without_constructing_legacy_noise(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    fixture["config"].write_text(
+        "model:\n"
+        "  args:\n"
+        "    noise_setting: !!python/object/apply:collections.OrderedDict\n"
+        "      - - [alpha, 1]\n"
+        "        - [beta, true]\n"
+        "    numpy_noise: !!python/object/apply:numpy.core.multiarray._reconstruct\n"
+        "      - ignored\n"
+        "    fusion_backbone:\n"
+        "      num_filters: [3, 5, 7]\n",
+        encoding="utf-8",
+    )
+
+    binding = _validate(fixture)
+
+    assert dict(binding.training_parameters)["base_stage_widths"] == (3, 5, 7)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        "model:\n  args:\n    fusion_backbone: !!python/object/apply:unsafe\n"
+        "      - [num_filters, [3, 5, 7]]\n",
+        "defaults: &filters [3, 5, 7]\nmodel:\n  args:\n"
+        "    fusion_backbone:\n      num_filters: *filters\n",
+        "model:\n  args:\n    fusion_backbone:\n      num_filters: [3, 5, 7]\n"
+        "model:\n  args: {}\n",
+        "model:\n  args:\n"
+        "    noise: !!python/object/apply:collections.OrderedDict\n"
+        "      - - [alpha, 1]\n        - [alpha, 2]\n"
+        "    fusion_backbone:\n      num_filters: [3, 5, 7]\n",
+        "model:\n  args:\n"
+        "    noise: !!python/object/apply:collections.OrderedDict\n"
+        "      - [alpha, 1]\n"
+        "    fusion_backbone:\n      num_filters: [3, 5, 7]\n",
+    ),
+)
+def test_external_binding_rejects_unsafe_or_ambiguous_pyramid_nodes(
+    tmp_path: Path, payload: str
+) -> None:
+    fixture = _fixture(tmp_path)
+    fixture["config"].write_text(payload, encoding="utf-8")
+
+    with pytest.raises(P6ExternalTrainingBindingError):
+        _validate(fixture)
+
+
 @pytest.mark.parametrize("value", ((3, 5, 7), [True, 5, 7], [3, 5]))
 def test_external_binding_rejects_noncanonical_prune_base_stage_widths(
     tmp_path: Path, value: object
