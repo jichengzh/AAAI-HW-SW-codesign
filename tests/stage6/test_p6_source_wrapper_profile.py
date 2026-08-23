@@ -66,8 +66,8 @@ def _canonical_request(output_root: Path) -> dict[str, Any]:
     )
 
 
-def _wrapper_profile() -> dict[str, str]:
-    return {
+def _wrapper_profile(project_python: Path | None = None) -> dict[str, str]:
+    profile = {
         "schema_version": "p6_private_source_wrapper_profile_v1",
         "wrapper_kind": "repo_cwd_exec_v1",
         "destination_relative_path": f"documented-stage5-chain/{SOURCE_MARKER}",
@@ -75,6 +75,13 @@ def _wrapper_profile() -> dict[str, str]:
             "private-relocated-history-repo/bin/stage5_materialize_round_sources_v1.original.sh"
         ),
         "implementation_cwd_relative_path": "private-relocated-history-repo",
+    }
+    if project_python is None:
+        return profile
+    return {
+        **profile,
+        "schema_version": "p6_private_source_wrapper_profile_v2",
+        "project_python": str(project_python),
     }
 
 
@@ -112,15 +119,30 @@ def _write_relocated_materializer(history_root: Path) -> Path:
     return implementation
 
 
+def _write_project_python(tmp_path: Path) -> Path:
+    executable = tmp_path / "project-env/bin/python3.9"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("#!/bin/sh\nexec /usr/bin/python3 \"$@\"\n", encoding="utf-8")
+    executable.chmod(0o700)
+    (executable.parent / "python").symlink_to(executable.name)
+    return executable
+
+
 def _write_valid_template_with_generated_wrapper(
     tmp_path: Path,
+    *,
+    legacy_v1: bool = False,
 ) -> tuple[Path, Path, Path, ValidatedRunnerTemplate]:
     template, history_root = _write_valid_template(tmp_path)
     marker = history_root / "documented-stage5-chain" / SOURCE_MARKER
     marker.unlink()
     _write_relocated_materializer(history_root)
-    profile = _write_profile(tmp_path / "ignored-inputs" / "source-wrapper-profile.yaml")
-    render_self_contained_source_wrapper(_wrapper_profile(), history_root=history_root)
+    project_python = None if legacy_v1 else _write_project_python(tmp_path)
+    payload = _wrapper_profile(project_python)
+    profile = _write_profile(
+        tmp_path / "ignored-inputs" / "source-wrapper-profile.yaml", payload
+    )
+    render_self_contained_source_wrapper(payload, history_root=history_root)
     validated = validate_pre_provision_runner_template(template, history_root)
     return template, history_root, profile, validated
 
@@ -158,6 +180,44 @@ def test_source_wrapper_profile_accepts_marker_stage_under_private_root(
         "<validated-binding-gpu-index>",
     )
     assert wrapper.marker_basename == SOURCE_MARKER
+
+
+def test_training_runtime_rejects_legacy_v1_source_wrapper_profile(
+    tmp_path: Path,
+) -> None:
+    _, _, profile, validated = _write_valid_template_with_generated_wrapper(
+        tmp_path, legacy_v1=True
+    )
+
+    with pytest.raises(P6SourceWrapperProfileError) as captured:
+        validate_self_contained_source_wrapper(
+            validated,
+            source_wrapper_profile=profile,
+        )
+
+    assert captured.value.category == "history_execution_invalid"
+
+
+def test_training_runtime_rejects_project_python_launcher_drift(
+    tmp_path: Path,
+) -> None:
+    _, _, profile, validated = _write_valid_template_with_generated_wrapper(tmp_path)
+    payload = yaml.safe_load(profile.read_text(encoding="utf-8"))
+    project_python = Path(payload["project_python"])
+    alternate = project_python.parent / "alternate-python"
+    alternate.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    alternate.chmod(0o700)
+    launcher = project_python.parent / "python"
+    launcher.unlink()
+    launcher.symlink_to(alternate.name)
+
+    with pytest.raises(P6SourceWrapperProfileError) as captured:
+        validate_self_contained_source_wrapper(
+            validated,
+            source_wrapper_profile=profile,
+        )
+
+    assert captured.value.category == "history_execution_invalid"
 
 
 def test_source_wrapper_execs_relocated_implementation_from_private_cwd_with_exact_env(

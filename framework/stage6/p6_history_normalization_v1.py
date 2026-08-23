@@ -42,6 +42,7 @@ from framework.stage6.p6_runner_template_validator_v1 import (
     validate_pre_provision_runner_template,
 )
 from framework.stage6.p6_source_wrapper_profile_v1 import (
+    extract_project_python_from_source,
     render_self_contained_source_wrapper,
 )
 
@@ -229,6 +230,7 @@ def _validate_private_source_map(
     external_training = None
     execution_closure = None
     source_runner = None
+    project_python = None
     if recipe_v2_source:
         if runner_template_path is None:
             _invalid("runner template is required")
@@ -249,6 +251,17 @@ def _validate_private_source_map(
             require_exact_history_environment=True,
         )
         validate_source_runner_roles(source_runner, execution_closure)
+        source_role = next(
+            role for role in execution_closure.roles if role.role == "source_materializer"
+        )
+        source_root = next(
+            root
+            for root in execution_closure.roots
+            if root.closure_id == source_role.closure_id
+        )
+        project_python = extract_project_python_from_source(
+            source_root.source_root / source_role.entrypoint_relative_path
+        )
         if not isinstance(raw_source_group, Mapping) or not isinstance(
             raw_source_group.get("source_contract"), Mapping
         ):
@@ -291,6 +304,7 @@ def _validate_private_source_map(
         canonical["external_training"] = external_training
         canonical["execution_closure"] = execution_closure
         canonical["source_runner"] = source_runner
+        canonical["project_python"] = project_python
     if derived:
         canonical["derived_recipe"] = copy.deepcopy(recipe)
     return canonical
@@ -572,7 +586,7 @@ def normalize_history_inputs(
                 if root.closure_id == source_role.closure_id
             )
             profile = {
-                "schema_version": "p6_private_source_wrapper_profile_v1",
+                "schema_version": "p6_private_source_wrapper_profile_v2",
                 "wrapper_kind": "repo_cwd_exec_v1",
                 "destination_relative_path": (
                     "documented-stage5-chain/"
@@ -582,6 +596,7 @@ def normalize_history_inputs(
                     "source_materializer"
                 ].relative_to(staged).as_posix(),
                 "implementation_cwd_relative_path": source_closure_root.destination_relative_root.as_posix(),
+                "project_python": str(canonical["project_python"]),
             }
             profile_path = staged / "source-wrapper-profile.yaml"
             _atomic_write_yaml(profile_path, profile)

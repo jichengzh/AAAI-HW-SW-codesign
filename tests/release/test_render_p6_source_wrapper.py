@@ -64,6 +64,74 @@ def _write_relocated_materializer(history_root: Path) -> Path:
     return implementation
 
 
+def _write_project_python(tmp_path: Path) -> Path:
+    executable = tmp_path / "project-env/bin/python3.9"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("#!/bin/sh\nexec /usr/bin/python3 \"$@\"\n", encoding="utf-8")
+    executable.chmod(0o700)
+    (executable.parent / "python").symlink_to(executable.name)
+    return executable
+
+
+def test_renderer_accepts_v2_profile_with_explicit_project_python(
+    tmp_path: Path,
+) -> None:
+    history_root = _private_git_root(tmp_path)
+    _write_relocated_materializer(history_root)
+    project_python = _write_project_python(tmp_path)
+    profile = {
+        **_profile(),
+        "schema_version": "p6_private_source_wrapper_profile_v2",
+        "project_python": str(project_python),
+    }
+
+    wrapper = render_self_contained_source_wrapper(profile, history_root=history_root)
+
+    body = wrapper.executable.read_text(encoding="utf-8")
+    assert repr(str(project_python)) in body
+    compile(body, str(wrapper.executable), "exec")
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("missing", "relative", "symlink", "not_executable", "launcher_mismatch"),
+)
+def test_renderer_rejects_invalid_v2_project_python(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    history_root = _private_git_root(tmp_path)
+    _write_relocated_materializer(history_root)
+    project_python = _write_project_python(tmp_path)
+    profile = {
+        **_profile(),
+        "schema_version": "p6_private_source_wrapper_profile_v2",
+        "project_python": str(project_python),
+    }
+    if mutation == "missing":
+        profile.pop("project_python")
+    elif mutation == "relative":
+        profile["project_python"] = "project-env/bin/python"
+    elif mutation == "symlink":
+        alias = project_python.parent / "python-link"
+        alias.symlink_to(project_python.name)
+        profile["project_python"] = str(alias)
+    elif mutation == "not_executable":
+        project_python.chmod(0o600)
+    else:
+        alternate = project_python.parent / "alternate"
+        alternate.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        alternate.chmod(0o700)
+        launcher = project_python.parent / "python"
+        launcher.unlink()
+        launcher.symlink_to(alternate.name)
+
+    with pytest.raises(P6SourceWrapperProfileError) as captured:
+        render_self_contained_source_wrapper(profile, history_root=history_root)
+
+    assert captured.value.category == "history_execution_invalid"
+
+
 def test_renderer_writes_deterministic_self_contained_wrapper_from_private_profile(
     tmp_path: Path,
 ) -> None:

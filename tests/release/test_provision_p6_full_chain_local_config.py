@@ -17,6 +17,7 @@ from framework.stage6.coptv2x_h800_search_v2 import (
     load_public_contract,
 )
 from tools.release import provision_p6_history_local_config as provision_cli
+from tests.p6_source_wrapper_support import write_test_project_python
 from tests.stage6.test_p6_history_normalization import _recipe_v2
 
 
@@ -420,10 +421,11 @@ def _attach_expected_recipe(
     )
     _write_executable(implementation)
     (root / "documented-stage5-chain" / MARKERS["source_materializer"]).unlink()
+    project_python = write_test_project_python(tmp_path)
     return _write_yaml(
         tmp_path / "private-inputs" / "source-wrapper-profile.yaml",
         {
-            "schema_version": "p6_private_source_wrapper_profile_v1",
+            "schema_version": "p6_private_source_wrapper_profile_v2",
             "wrapper_kind": "repo_cwd_exec_v1",
             "destination_relative_path": (
                 f"documented-stage5-chain/{MARKERS['source_materializer']}"
@@ -433,6 +435,7 @@ def _attach_expected_recipe(
                 "stage5_materialize_round_sources_v1.original.sh"
             ),
             "implementation_cwd_relative_path": "private-relocated-history-repo",
+            "project_python": str(project_python),
         },
     )
 

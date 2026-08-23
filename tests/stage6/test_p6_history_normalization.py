@@ -139,9 +139,20 @@ def _runtime_external_and_closure(
         "activation": "activate",
     }
     role_files = {role: closure_root / name for role, name in role_names.items()}
+    project_python = tmp_path / "project-env/bin/python3.9"
+    project_python.parent.mkdir(parents=True, exist_ok=True)
+    project_python.write_text(
+        "#!/bin/sh\nexec /usr/bin/python3 \"$@\"\n", encoding="utf-8"
+    )
+    project_python.chmod(0o700)
+    launcher = project_python.parent / "python"
+    if not launcher.exists():
+        launcher.symlink_to(project_python.name)
     for role, path in role_files.items():
         body = (
-            """#!/usr/bin/env python3
+            f"""#!/bin/sh
+PY=${{PY:-{project_python}}}
+exec "$PY" - "$@" <<'PYCODE'
 import json
 from pathlib import Path
 import sys
@@ -151,6 +162,7 @@ config = Path(request["rows"][0]["source_contract"]["config_path"])
 config.parent.mkdir(parents=True, exist_ok=True)
 config.write_text("fixture:config_path\\n", encoding="utf-8")
 Path("normalized-wrapper-executed.txt").write_text("copied", encoding="utf-8")
+PYCODE
 """
             if role == "source_materializer"
             else "#!/bin/sh\nexit 0\n"

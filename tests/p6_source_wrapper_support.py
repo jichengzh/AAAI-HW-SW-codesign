@@ -9,6 +9,20 @@ from pathlib import Path
 from typing import Any, Mapping
 
 
+def write_test_project_python(root: Path) -> Path:
+    """Create a canonical project interpreter plus its bare-python launcher."""
+    executable = root / "project-env/bin/python3.9"
+    executable.parent.mkdir(parents=True, exist_ok=True)
+    executable.write_text(
+        "#!/bin/sh\nexec /usr/bin/python3 \"$@\"\n", encoding="utf-8"
+    )
+    executable.chmod(0o700)
+    launcher = executable.parent / "python"
+    if not launcher.exists():
+        launcher.symlink_to(executable.name)
+    return executable
+
+
 def source_bridge_request(
     binding: Mapping[str, Any],
     *,

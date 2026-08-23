@@ -42,6 +42,7 @@ from framework.stage6.p6_history_source_materialization_v1 import (
     project_source_materialization_request,
     run_source_invocations,
 )
+from tests.p6_source_wrapper_support import write_test_project_python
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -506,14 +507,16 @@ def _write_normalized_source_wrapper_profile(path: Path, normalized_root: Path) 
     implementation = normalized_root / "source-implementation" / implementation_name
     _write_executable(implementation)
     (normalized_root / "toolchain" / marker).unlink()
+    project_python = write_test_project_python(path.parent)
     return _write_yaml(
         path,
         {
-            "schema_version": "p6_private_source_wrapper_profile_v1",
+            "schema_version": "p6_private_source_wrapper_profile_v2",
             "wrapper_kind": "repo_cwd_exec_v1",
             "destination_relative_path": f"toolchain/{marker}",
             "implementation_relative_path": (f"source-implementation/{implementation_name}"),
             "implementation_cwd_relative_path": "source-implementation",
+            "project_python": str(project_python),
         },
     )
 
