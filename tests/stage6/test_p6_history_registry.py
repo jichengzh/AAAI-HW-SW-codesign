@@ -68,6 +68,36 @@ def _plan(q_modes: tuple[str, ...], *, duplicate: bool = False) -> dict[str, Any
     }
 
 
+def _plan_for_widths(
+    widths: tuple[tuple[int, int, int], ...],
+    q_modes: tuple[str, ...],
+) -> dict[str, Any]:
+    candidates = [
+        {
+            "width": list(width),
+            "q_mode": q_mode,
+            "source_point_ids": [
+                f"synthetic-s{stage}-{q_mode}-w{value}"
+                for stage, value in enumerate(width, start=1)
+            ],
+        }
+        for width in widths
+        for q_mode in q_modes
+    ]
+    candidates.sort(key=lambda row: (tuple(row["width"]), row["q_mode"]))
+    return {
+        "schema_version": "p6_pyramid_candidate_plan_v2",
+        "source_schema": "stage2_search_space_v1",
+        "target_model": "pyramid",
+        "hardware_target": "h800",
+        "execution_backend": "tvm_auto",
+        "candidate_source_mode": "framework_stage2_search_space",
+        "structure_count": len(widths),
+        "candidate_count": len(candidates),
+        "candidates": candidates,
+    }
+
+
 def _recipe() -> dict[str, Any]:
     output_templates = {
         q_mode: {
@@ -354,6 +384,20 @@ def _binding_with_recipe_v2_training_template(private_root: Path) -> dict[str, A
     return binding
 
 
+def _bind_synthetic_prune_caps(
+    binding: dict[str, Any], caps: tuple[int, int, int]
+) -> None:
+    external = binding["source_contract_template"]["external_training_binding"]
+    config = Path(external["pyramid_config_path"])
+    config.write_text(
+        "model:\n  args:\n    fusion_backbone:\n"
+        f"      num_filters: {list(caps)!r}\n",
+        encoding="utf-8",
+    )
+    external["pyramid_config_sha256"] = hashlib.sha256(config.read_bytes()).hexdigest()
+    external["training_parameters"]["base_stage_widths"] = list(caps)
+
+
 @pytest.mark.parametrize("tampering", ["missing", "environment_field"])
 def test_registry_rejects_unverified_execution_interface_before_write(
     tmp_path: Path, tampering: str
@@ -416,6 +460,59 @@ def test_registry_materializes_every_dynamic_identity_without_pruning(
     assert json.loads((local_output_root / "source_registry.json").read_text()) == registry
     assert plan == original_plan
     assert binding == original_binding
+
+
+def test_recipe_v2_registry_preserves_all_identities_and_marks_over_cap_diagnostic(
+    tmp_path: Path,
+) -> None:
+    widths = tuple((index, 1, 1) for index in range(1, 64))
+    plan = _plan_for_widths(widths, ("fp16", "int8"))
+    private_root = _private_root_with_training_inputs(tmp_path)
+    binding = _binding_with_recipe_v2_training_template(private_root)
+    _bind_synthetic_prune_caps(binding, (9, 1, 1))
+    expected_external = copy.deepcopy(
+        binding["source_contract_template"]["external_training_binding"]
+    )
+    local_output_root = tmp_path / "private-output"
+    local_output_root.mkdir()
+
+    registry = materialize_history_registry(plan, binding, local_output_root)
+
+    assert _registry_identity_map(registry) == _plan_identity_map(plan)
+    ready = [group for group in registry["groups"] if group["source_status"] == "ready"]
+    diagnostic = [
+        group for group in registry["groups"] if group["source_status"] == "unavailable"
+    ]
+    assert sum(len(group["available_q_modes"]) for group in ready) == 18
+    assert sum(len(group["available_q_modes"]) for group in diagnostic) == 108
+    for group in registry["groups"]:
+        contract = group["source_contract"]
+        assert contract["source_status"] == group["source_status"]
+        assert contract["external_training_binding"] == expected_external
+        assert validate_source_contract(group) == contract
+
+
+def test_recipe_v2_registry_accepts_equal_cap_for_fp16_only_plan(
+    tmp_path: Path,
+) -> None:
+    plan = _plan_for_widths(((9, 1, 1), (10, 1, 1)), ("fp16",))
+    private_root = _private_root_with_training_inputs(tmp_path)
+    binding = _binding_with_recipe_v2_training_template(private_root)
+    _bind_synthetic_prune_caps(binding, (9, 1, 1))
+    local_output_root = tmp_path / "private-output"
+    local_output_root.mkdir()
+
+    registry = materialize_history_registry(plan, binding, local_output_root)
+
+    assert _registry_identity_map(registry) == _plan_identity_map(plan)
+    assert [group["available_q_modes"] for group in registry["groups"]] == [
+        ["fp16"],
+        ["fp16"],
+    ]
+    assert [group["source_status"] for group in registry["groups"]] == [
+        "ready",
+        "unavailable",
+    ]
 
 
 def test_registry_binds_all_authoritative_output_paths_beneath_local_root(

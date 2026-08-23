@@ -655,7 +655,9 @@ def _validate_p6_source_space(
         or candidate_count != len(candidates)
     ):
         raise P6CoptV2XContractError("framework candidate count is invalid")
-    _validate_framework_manifest_identities(manifest, framework_plan)
+    _validate_framework_manifest_identities(
+        manifest, framework_plan, source_registry
+    )
     eligible_row_count = manifest.get("eligible_row_count")
     if (
         isinstance(eligible_row_count, bool)
@@ -666,13 +668,19 @@ def _validate_p6_source_space(
 
 
 def _validate_framework_manifest_identities(
-    manifest: Mapping[str, Any], plan: Mapping[str, Any]
+    manifest: Mapping[str, Any],
+    plan: Mapping[str, Any],
+    source_registry: Mapping[str, Any],
 ) -> None:
-    """Ensure Stage5 expands precisely the q-mode genomes declared by the plan."""
+    """Require Stage5 rows to equal the materializable registry-plan subset."""
     rows = manifest.get("rows")
     if not isinstance(rows, list):
         raise P6CoptV2XContractError("framework manifest identities are invalid")
-    expected = set(_framework_plan_candidate_mapping(plan))
+    plan_identities = set(_framework_plan_candidate_mapping(plan))
+    expected_entries = _framework_materializable_registry_identities(source_registry)
+    expected = set(expected_entries)
+    if len(expected) != len(expected_entries) or not expected <= plan_identities:
+        raise P6CoptV2XContractError("framework manifest identities are invalid")
     actual_entries: list[tuple[tuple[int, ...], str]] = []
     for row in rows:
         if not isinstance(row, Mapping) or row.get("q_mode") not in {"fp16", "int8"}:
@@ -681,6 +689,31 @@ def _validate_framework_manifest_identities(
     actual = set(actual_entries)
     if len(actual) != len(actual_entries) or actual != expected:
         raise P6CoptV2XContractError("framework manifest identities do not match")
+
+
+def _framework_materializable_registry_identities(
+    source_registry: Mapping[str, Any],
+) -> list[tuple[tuple[int, ...], str]]:
+    groups = source_registry.get("groups")
+    if not isinstance(groups, list):
+        raise P6CoptV2XContractError("framework manifest identities are invalid")
+    identities: list[tuple[tuple[int, ...], str]] = []
+    for group in groups:
+        if not isinstance(group, Mapping):
+            raise P6CoptV2XContractError("framework manifest identities are invalid")
+        source_status = group.get("source_status")
+        if source_status not in {"ready", "materializable", "unavailable"}:
+            raise P6CoptV2XContractError(
+                "framework registry source status is invalid"
+            )
+        if source_status == "unavailable":
+            continue
+        q_modes = group.get("available_q_modes")
+        if not isinstance(q_modes, list):
+            raise P6CoptV2XContractError("framework manifest identities are invalid")
+        width = _framework_width_identity(group)
+        identities.extend((width, str(q_mode)) for q_mode in q_modes)
+    return identities
 
 
 def _validate_closure(closure: object) -> None:

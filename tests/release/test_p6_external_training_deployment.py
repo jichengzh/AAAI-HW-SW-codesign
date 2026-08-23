@@ -361,13 +361,16 @@ def _regenerated_deployment_fixture(root: Path) -> _RegeneratedDeploymentFixture
         valid_private_source_map(source_root), source_root
     )
     external = source_map["external_training_binding"]
+    synthetic_caps = (128, 128, 128)
+    external["training_parameters"]["base_stage_widths"] = list(synthetic_caps)
     dataset_file = Path(external["dataset_root"]) / "fixture-record.bin"
     dataset_file.write_bytes(b"SYNTHETIC-EXTERNAL-DATASET-RECORD-UNIQUE")
     Path(external["base_checkpoint_path"]).write_bytes(
         b"SYNTHETIC-EXTERNAL-CHECKPOINT-UNIQUE"
     )
     Path(external["pyramid_config_path"]).write_text(
-        "model:\n  args:\n    fusion_backbone:\n      num_filters: [3, 5, 7]\n",
+        "model:\n  args:\n    fusion_backbone:\n"
+        f"      num_filters: {list(synthetic_caps)!r}\n",
         encoding="utf-8",
     )
     source_map_path = root / "ignored-source-map.yaml"

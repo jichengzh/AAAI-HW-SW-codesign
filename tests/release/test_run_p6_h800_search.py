@@ -407,8 +407,10 @@ def _history_cli_fixture(
     dataset_root.mkdir(parents=True)
     pyramid_config = operator_root / "configs" / "pyramid.py"
     pyramid_config.parent.mkdir(parents=True)
+    synthetic_caps = (128, 128, 128)
     pyramid_config.write_text(
-        "model:\n  args:\n    fusion_backbone:\n      num_filters: [3, 5, 7]\n",
+        "model:\n  args:\n    fusion_backbone:\n"
+        f"      num_filters: {list(synthetic_caps)!r}\n",
         encoding="utf-8",
     )
     source_contract = binding["source_contract_template"]
@@ -449,7 +451,7 @@ def _history_cli_fixture(
                     "freeze_policy": "pyramid_backbone_partial",
                     "groups": 3,
                     "width_per_group": 5,
-                    "base_stage_widths": [3, 5, 7],
+                    "base_stage_widths": list(synthetic_caps),
                 },
             },
         }

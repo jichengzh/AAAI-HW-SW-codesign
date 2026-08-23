@@ -435,7 +435,11 @@ def _write_normalized_history_source_map(tmp_path: Path) -> dict[str, Any]:
     }
 
 
-def _complete_training_contract(history_root: Path) -> dict[str, Any]:
+def _complete_training_contract(
+    history_root: Path,
+    *,
+    base_stage_widths: tuple[int, int, int] = (128, 128, 128),
+) -> dict[str, Any]:
     operator_root = history_root.parent / f"{history_root.name}-operator-assets"
     base_checkpoint = operator_root / "base" / "model.ckpt"
     base_checkpoint.parent.mkdir(parents=True, exist_ok=True)
@@ -445,7 +449,8 @@ def _complete_training_contract(history_root: Path) -> dict[str, Any]:
     pyramid_config = operator_root / "configs" / "pyramid.py"
     pyramid_config.parent.mkdir(exist_ok=True)
     pyramid_config.write_text(
-        "model:\n  args:\n    fusion_backbone:\n      num_filters: [3, 5, 7]\n",
+        "model:\n  args:\n    fusion_backbone:\n"
+        f"      num_filters: {list(base_stage_widths)!r}\n",
         encoding="utf-8",
     )
     return {
@@ -471,7 +476,7 @@ def _complete_training_contract(history_root: Path) -> dict[str, Any]:
                 "freeze_policy": "pyramid_backbone_partial",
                 "groups": 3,
                 "width_per_group": 5,
-                "base_stage_widths": [3, 5, 7],
+                "base_stage_widths": list(base_stage_widths),
             },
         },
     }
@@ -724,7 +729,11 @@ def _write_source_registry(path: Path, *, count: int) -> None:
     )
 
 
-def _write_source_registry_from_plan(path: Path, plan: Mapping[str, Any]) -> None:
+def _source_registry_from_plan(
+    plan: Mapping[str, Any],
+    *,
+    materializable_widths: frozenset[tuple[int, ...]] | None = None,
+) -> dict[str, Any]:
     candidates_by_width: dict[tuple[int, ...], list[Mapping[str, Any]]] = {}
     for candidate in plan["candidates"]:
         candidates_by_width.setdefault(tuple(candidate["width"]), []).append(candidate)
@@ -737,17 +746,47 @@ def _write_source_registry_from_plan(path: Path, plan: Mapping[str, Any]) -> Non
             str(candidate["q_mode"]): list(candidate["source_point_ids"])
             for candidate in candidates
         }
+        if materializable_widths is not None and width_identity not in materializable_widths:
+            group["source_status"] = "unavailable"
+            group["source_contract"]["source_status"] = "unavailable"
+            group["source_contract_sha256"] = hashlib.sha256(
+                json.dumps(
+                    group["source_contract"],
+                    ensure_ascii=True,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
         groups.append(group)
+    return {"schema_version": "stage5_candidate_source_registry_v2", "groups": groups}
+
+
+def _write_source_registry_from_plan(
+    path: Path,
+    plan: Mapping[str, Any],
+    *,
+    materializable_widths: frozenset[tuple[int, ...]] | None = None,
+) -> None:
     path.write_text(
-        json.dumps({"schema_version": "stage5_candidate_source_registry_v2", "groups": groups}),
+        json.dumps(
+            _source_registry_from_plan(
+                plan, materializable_widths=materializable_widths
+            )
+        ),
         encoding="utf-8",
     )
 
 
 def _write_recipe_v2_training_registry_from_plan(
-    path: Path, plan: Mapping[str, Any], local_output_root: Path | None = None
+    path: Path,
+    plan: Mapping[str, Any],
+    local_output_root: Path | None = None,
+    *,
+    materializable_widths: frozenset[tuple[int, ...]] | None = None,
 ) -> None:
-    _write_source_registry_from_plan(path, plan)
+    _write_source_registry_from_plan(
+        path, plan, materializable_widths=materializable_widths
+    )
     registry = json.loads(path.read_text(encoding="utf-8"))
     operator = path.parent.parent / "operator-assets"
     dataset = operator / "dataset"
@@ -813,6 +852,37 @@ def _write_recipe_v2_training_registry_from_plan(
             ).encode("utf-8")
         ).hexdigest()
     path.write_text(json.dumps(registry), encoding="utf-8")
+
+
+def _synthetic_framework_plan(
+    structure_count: int = 63,
+    q_modes: tuple[str, ...] = ("fp16", "int8"),
+) -> dict[str, Any]:
+    widths = tuple((index, 1, 1) for index in range(1, structure_count + 1))
+    candidates = [
+        {
+            "width": list(width),
+            "q_mode": q_mode,
+            "source_point_ids": [
+                f"synthetic-s{stage}-{q_mode}-w{value}"
+                for stage, value in enumerate(width, start=1)
+            ],
+        }
+        for width in widths
+        for q_mode in q_modes
+    ]
+    candidates.sort(key=lambda row: (tuple(row["width"]), row["q_mode"]))
+    return {
+        "schema_version": "p6_pyramid_candidate_plan_v2",
+        "source_schema": "stage2_search_space_v1",
+        "target_model": "pyramid",
+        "hardware_target": "h800",
+        "execution_backend": "tvm_auto",
+        "candidate_source_mode": "framework_stage2_search_space",
+        "structure_count": structure_count,
+        "candidate_count": len(candidates),
+        "candidates": candidates,
+    }
 
 
 def _complete_framework_stage2_search_space() -> dict[str, Any]:
@@ -1085,6 +1155,177 @@ def _minimal_task() -> execution.SearchTask:
         hardware_id="h800",
         capability_profile=_profile(),
     )
+
+
+def _predicted_manifest_rows(manifest: Mapping[str, Any]) -> list[dict[str, Any]]:
+    predicted = []
+    for index, row in enumerate(manifest["rows"]):
+        values = {
+            "latency_ms": 1.0 + index,
+            "energy_j": 0.2 + index / 10,
+            "ap70": 0.8 - index / 100,
+        }
+        predicted.append(
+            {
+                **copy.deepcopy(row),
+                "predictions": values,
+                "prediction_intervals": {
+                    key: {
+                        "lower": value - 0.1,
+                        "median": value,
+                        "upper": value + 0.1,
+                    }
+                    for key, value in values.items()
+                },
+            }
+        )
+    return predicted
+
+
+def test_framework_controller_uses_only_materializable_registry_subset(
+    tmp_path: Path,
+) -> None:
+    plan = _synthetic_framework_plan()
+    ready_widths = frozenset((index, 1, 1) for index in range(1, 10))
+    registry_path = tmp_path / "private-registry/source_registry.json"
+    registry_path.parent.mkdir()
+    _write_recipe_v2_training_registry_from_plan(
+        registry_path,
+        plan,
+        tmp_path / "private-output",
+        materializable_widths=ready_widths,
+    )
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    task = _minimal_task()
+
+    execution._validate_framework_registry_plan(registry, plan)
+    manifest = execution.build_task_candidate_manifest(
+        registry, task=task, measured_row_ids=set()
+    )
+    execution._validate_p6_source_space(registry, task, framework_plan=plan)
+
+    assert len(registry["groups"]) == 63
+    assert manifest["eligible_row_count"] == 18
+    assert len(manifest["excluded"]) == 54
+    assert {
+        tuple(row["width"]) for row in manifest["rows"]
+    } == ready_widths
+    selection = execution.select_task_batch(
+        _predicted_manifest_rows(manifest),
+        measured_rows=[],
+        measured_graph_features=[],
+        task=task,
+    )
+    request = execution.build_measurement_request(
+        task=task,
+        selected_rows=selection["selected_rows"],
+        round_index=0,
+    )
+    assert all(tuple(row["width"]) in ready_widths for row in request["rows"])
+    projected = project_source_materialization_request(request)
+    projected_path = tmp_path / "projected-request.json"
+    projected_path.write_text(json.dumps(projected.request), encoding="utf-8")
+    source_materializer = _write_executable(tmp_path / "source-materializer")
+    invocations = build_source_invocations(
+        projected_path,
+        projected.ordered_group_ids,
+        source_materializer=source_materializer,
+        validated_gpu_policy={
+            "indices": [101, 103, 107],
+            "uuid_by_index": {
+                "101": "GPU-synthetic-101",
+                "103": "GPU-synthetic-103",
+                "107": "GPU-synthetic-107",
+            },
+            "model": "h800",
+            "maximum_occupancy": 0.05,
+        },
+    )
+
+    class RecordingRunner:
+        def __init__(self) -> None:
+            self.group_ids: list[str] = []
+
+        def run(
+            self,
+            argv: Sequence[str],
+            *,
+            cwd: Path,
+            env: Mapping[str, str],
+            shell: bool,
+        ) -> subprocess.CompletedProcess[str]:
+            del cwd, env
+            assert shell is False
+            self.group_ids.append(str(argv[6]))
+            return subprocess.CompletedProcess(argv, 0)
+
+    runner = RecordingRunner()
+    run_source_invocations(
+        invocations,
+        runner=runner,
+        cwd=tmp_path,
+        env={"P6_OFFLINE_GATE": "synthetic"},
+    )
+    assert runner.group_ids
+    assert all(
+        tuple(map(int, group_id.removeprefix("pyramid|").split("x"))) in ready_widths
+        for group_id in runner.group_ids
+    )
+
+
+def test_framework_controller_rejects_ready_subset_below_sample_budget(
+    tmp_path: Path,
+) -> None:
+    plan = _synthetic_framework_plan()
+    ready_widths = frozenset((index, 1, 1) for index in range(1, 8))
+    registry_path = tmp_path / "private-registry/source_registry.json"
+    registry_path.parent.mkdir()
+    _write_source_registry_from_plan(
+        registry_path,
+        plan,
+        materializable_widths=ready_widths,
+    )
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+
+    with pytest.raises(
+        P6CoptV2XContractError, match="framework source space is below the sample budget"
+    ):
+        execution._validate_p6_source_space(
+            registry, _minimal_task(), framework_plan=plan
+        )
+
+
+@pytest.mark.parametrize("invalid_status", ("diagnostic", "blocked"))
+def test_framework_controller_rejects_unknown_nonmaterializable_status(
+    tmp_path: Path,
+    invalid_status: str,
+) -> None:
+    del tmp_path
+    plan = _synthetic_framework_plan()
+    ready_widths = frozenset((index, 1, 1) for index in range(1, 10))
+    registry = _source_registry_from_plan(
+        plan, materializable_widths=ready_widths
+    )
+    mutated = next(
+        group for group in registry["groups"] if group["source_status"] == "unavailable"
+    )
+    mutated["source_status"] = invalid_status
+    mutated["source_contract"]["source_status"] = invalid_status
+    mutated["source_contract_sha256"] = hashlib.sha256(
+        json.dumps(
+            mutated["source_contract"],
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+    with pytest.raises(
+        P6CoptV2XContractError, match="framework registry source status is invalid"
+    ):
+        execution._validate_p6_source_space(
+            registry, _minimal_task(), framework_plan=plan
+        )
 
 
 def _loaded_local_config(

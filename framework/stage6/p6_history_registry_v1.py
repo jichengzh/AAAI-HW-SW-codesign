@@ -556,6 +556,7 @@ def _materialize_groups(
     observed_outputs = {registry_output_path}
     groups: list[dict[str, Any]] = []
     recipe_version = recipe["schema_version"]
+    base_stage_widths = _recipe_v2_base_stage_widths(template, recipe_version)
     for width, provenance_by_q_mode in sorted(by_width.items()):
         width_values = dict(zip(STAGE_WIDTH_FIELDS, width, strict=True))
         expected_group_id = canonical_group_id("pyramid", width)
@@ -617,6 +618,11 @@ def _materialize_groups(
                 "model": "pyramid",
                 "width": list(width),
                 "artifact_id": artifact_id,
+                "source_status": _source_status_for_width(
+                    width,
+                    str(template["source_status"]),
+                    base_stage_widths,
+                ),
                 "stage_widths": width_values,
                 **(
                     {"materialization_outputs_by_q_mode": outputs_by_q_mode}
@@ -669,6 +675,29 @@ def _materialize_groups(
             ) from error
         groups.append(group)
     return groups
+
+
+def _recipe_v2_base_stage_widths(
+    template: Mapping[str, Any], recipe_version: str
+) -> tuple[int, int, int] | None:
+    if recipe_version != RECIPE_V2:
+        return None
+    external = template["external_training_binding"]
+    parameters = external["training_parameters"]
+    widths = parameters["base_stage_widths"]
+    return (widths[0], widths[1], widths[2])
+
+
+def _source_status_for_width(
+    width: tuple[int, int, int],
+    materializable_status: str,
+    base_stage_widths: tuple[int, int, int] | None,
+) -> str:
+    if base_stage_widths is None or all(
+        value <= cap for value, cap in zip(width, base_stage_widths, strict=True)
+    ):
+        return materializable_status
+    return "unavailable"
 
 
 def _registry_identity_map(
