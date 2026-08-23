@@ -56,6 +56,7 @@ def _canonical_request(output_root: Path) -> dict[str, Any]:
             "freeze_policy": "pyramid_backbone_partial",
             "groups": 3,
             "width_per_group": 5,
+            "base_stage_widths": [3, 5, 7],
         },
     }
     return source_bridge_request(

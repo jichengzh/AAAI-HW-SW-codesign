@@ -33,7 +33,10 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
     checkpoint = stable / "base.ckpt"
     config = stable / "pyramid.py"
     checkpoint.write_bytes(b"checkpoint")
-    config.write_bytes(b"config")
+    config.write_text(
+        "model:\n  args:\n    fusion_backbone:\n      num_filters: [3, 5, 7]\n",
+        encoding="utf-8",
+    )
     raw = {
         "schema_version": "p6_external_training_binding_v1",
         "training_required": True,
@@ -56,6 +59,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             "freeze_policy": "none",
             "groups": 3,
             "width_per_group": 5,
+            "base_stage_widths": [3, 5, 7],
         },
     }
     return {
@@ -107,6 +111,7 @@ def _contract(fixture: dict[str, Any]) -> dict[str, Any]:
         "bool_seed",
         "bool_learning_rate",
         "zero_batch_size",
+        "base_width_bool",
     ),
 )
 def test_nested_binding_rejects_semantically_invalid_normalized_values(
@@ -127,6 +132,8 @@ def test_nested_binding_rejects_semantically_invalid_normalized_values(
         nested["training_parameters"]["seed"] = True
     elif mutation == "bool_learning_rate":
         nested["training_parameters"]["learning_rate"] = True
+    elif mutation == "base_width_bool":
+        nested["training_parameters"]["base_stage_widths"] = [True, 5, 7]
     else:
         nested["training_parameters"]["batch_size"] = 0
 

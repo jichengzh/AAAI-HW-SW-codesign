@@ -44,7 +44,10 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
     checkpoint = stable / "base.ckpt"
     config = stable / "pyramid.py"
     checkpoint.write_bytes(b"checkpoint\x00")
-    config.write_bytes(b"config\n")
+    config.write_text(
+        "model:\n  args:\n    fusion_backbone:\n      num_filters: [3, 5, 7]\n",
+        encoding="utf-8",
+    )
     raw = {
         "schema_version": "p6_external_training_binding_v1",
         "training_required": True,
@@ -67,6 +70,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             "freeze_policy": "pyramid_backbone_partial",
             "groups": 3,
             "width_per_group": 5,
+            "base_stage_widths": [3, 5, 7],
         },
     }
     return {
@@ -129,6 +133,68 @@ def test_external_binding_requires_distinct_target_epoch(tmp_path: Path) -> None
     parameters = dict(binding.training_parameters)
     assert parameters["epochs"] == 8
     assert parameters["target_epoch"] == 9
+
+
+def test_external_binding_requires_explicit_prune_base_stage_widths(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    fixture["config"].write_text(
+        "model:\n  args:\n    fusion_backbone:\n      num_filters: [3, 5, 7]\n",
+        encoding="utf-8",
+    )
+    fixture["raw"]["training_parameters"]["base_stage_widths"] = [3, 5, 7]
+
+    binding = _validate(fixture)
+
+    parameters = dict(binding.training_parameters)
+    assert parameters["base_stage_widths"] == (3, 5, 7)
+    assert external_training_binding_to_mapping(binding)["training_parameters"][
+        "base_stage_widths"
+    ] == [3, 5, 7]
+
+
+@pytest.mark.parametrize("value", ((3, 5, 7), [True, 5, 7], [3, 5]))
+def test_external_binding_rejects_noncanonical_prune_base_stage_widths(
+    tmp_path: Path, value: object
+) -> None:
+    fixture = _fixture(tmp_path)
+    fixture["raw"]["training_parameters"]["base_stage_widths"] = value
+
+    with pytest.raises(P6ExternalTrainingBindingError):
+        _validate(fixture)
+
+
+def test_external_binding_rejects_missing_prune_base_stage_widths(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    fixture["raw"]["training_parameters"].pop("base_stage_widths")
+
+    with pytest.raises(P6ExternalTrainingBindingError):
+        _validate(fixture)
+
+
+def test_external_binding_rejects_prune_base_widths_not_matching_config(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    fixture["raw"]["training_parameters"]["base_stage_widths"] = [3, 5, 9]
+
+    with pytest.raises(P6ExternalTrainingBindingError):
+        _validate(fixture)
+
+
+def test_external_binding_rejects_malformed_pyramid_config(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    fixture["config"].write_text("model: [\n", encoding="utf-8")
+
+    with pytest.raises(P6ExternalTrainingBindingError):
+        _validate(fixture)
+
+
+def test_prune_base_widths_are_distinct_from_candidate_widths(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path)
+    candidate_stage_widths = (11, 13, 17)
+
+    binding = _validate(fixture)
+
+    assert dict(binding.training_parameters)["base_stage_widths"] == (3, 5, 7)
+    assert dict(binding.training_parameters)["base_stage_widths"] != candidate_stage_widths
 
 
 @pytest.mark.parametrize("key", ("target_epoch", "groups", "width_per_group"))
@@ -302,7 +368,10 @@ def test_external_binding_requires_ignored_assets_inside_git_worktree(tmp_path: 
     checkpoint = assets / "base.ckpt"
     checkpoint.write_bytes(b"x")
     config = assets / "config.py"
-    config.write_bytes(b"x")
+    config.write_text(
+        "model:\n  args:\n    fusion_backbone:\n      num_filters: [3, 5, 7]\n",
+        encoding="utf-8",
+    )
     fixture["raw"].update(
         dataset_root=str(dataset),
         base_checkpoint_path=str(checkpoint),

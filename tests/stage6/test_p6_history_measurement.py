@@ -286,7 +286,10 @@ def _unprojected_recipe_v2_request(local_output_root: Path) -> dict[str, Any]:
     checkpoint = operator_root / "base.ckpt"
     config = operator_root / "pyramid.yaml"
     checkpoint.write_bytes(b"checkpoint")
-    config.write_bytes(b"config")
+    config.write_text(
+        "model:\n  args:\n    fusion_backbone:\n      num_filters: [3, 5, 7]\n",
+        encoding="utf-8",
+    )
     for row in request["rows"]:
         group_slug = "-".join(map(str, row["width"]))
         contract = row["source_contract"]
@@ -320,6 +323,7 @@ def _unprojected_recipe_v2_request(local_output_root: Path) -> dict[str, Any]:
                         "freeze_policy": "pyramid_backbone_partial",
                         "groups": 3,
                         "width_per_group": 5,
+                        "base_stage_widths": [3, 5, 7],
                     },
                 },
                 "shared_source_paths": {

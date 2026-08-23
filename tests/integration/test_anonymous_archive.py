@@ -265,9 +265,10 @@ def test_archive_allows_only_null_external_training_example(
         "training_source_kind: selected_candidate_finetune\n"
         "dataset_root: null\nbase_checkpoint_path: null\nbase_checkpoint_sha256: null\n"
         "pyramid_config_path: null\npyramid_config_sha256: null\ntraining_parameters:\n"
-        "  training_mode: null\n  epochs: null\n  seed: null\n  optimizer: null\n"
+        "  training_mode: null\n  epochs: null\n  target_epoch: null\n  seed: null\n  optimizer: null\n"
         "  learning_rate: null\n  batch_size: null\n  dataset_split: null\n"
-        "  checkpoint_selection: null\n  freeze_policy: null\n",
+        "  checkpoint_selection: null\n  freeze_policy: null\n  groups: null\n"
+        "  width_per_group: null\n  base_stage_widths: null\n",
     )
     result = _run_builder(anonymous_repo, tmp_path / "output")
 

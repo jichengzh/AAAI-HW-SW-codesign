@@ -18,7 +18,7 @@ import yaml
 from framework.stage6.p6_history_training_contract_v1 import REQUIRED_TRAINING_PARAMETER_KEYS
 
 
-ExternalTrainingParameter: TypeAlias = str | int | float
+ExternalTrainingParameter: TypeAlias = str | int | float | tuple[int, int, int]
 _SCHEMA_VERSION = "p6_external_training_binding_v1"
 _SOURCE_KIND = "selected_candidate_finetune"
 _PATH_KEYS = ("dataset_root", "base_checkpoint_path", "pyramid_config_path")
@@ -147,7 +147,7 @@ def external_training_binding_to_mapping(binding: P6ExternalTrainingBinding) -> 
         "base_checkpoint_sha256": binding.base_checkpoint_sha256,
         "pyramid_config_path": str(binding.pyramid_config_path),
         "pyramid_config_sha256": binding.pyramid_config_sha256,
-        "training_parameters": dict(binding.training_parameters),
+        "training_parameters": _parameters_to_mapping(binding.training_parameters),
     }
 
 
@@ -183,7 +183,7 @@ def external_training_binding_from_contract(contract: Mapping[str, Any]) -> Mapp
         "base_checkpoint_sha256": checkpoint_digest,
         "pyramid_config_path": str(config),
         "pyramid_config_sha256": config_digest,
-        "training_parameters": dict(parameters),
+        "training_parameters": _parameters_to_mapping(parameters),
     }
 
 
@@ -266,7 +266,6 @@ def _validated_binding_values(
     config = _external_path(raw["pyramid_config_path"], directory=False)
     if checkpoint == config:
         _invalid()
-    parameters = _parameters(raw["training_parameters"])
     checkpoint_digest = _digest(
         checkpoint,
         raw["base_checkpoint_sha256"],
@@ -277,10 +276,16 @@ def _validated_binding_values(
         raw["pyramid_config_sha256"],
         require_computed=require_computed_digests,
     )
+    parameters = _parameters(
+        raw["training_parameters"],
+        config_base_stage_widths=_config_base_stage_widths(config),
+    )
     return dataset, checkpoint, checkpoint_digest, config, config_digest, parameters
 
 
-def _parameters(raw: object) -> tuple[tuple[str, ExternalTrainingParameter], ...]:
+def _parameters(
+    raw: object, *, config_base_stage_widths: tuple[int, int, int]
+) -> tuple[tuple[str, ExternalTrainingParameter], ...]:
     if not isinstance(raw, Mapping) or set(raw) != set(REQUIRED_TRAINING_PARAMETER_KEYS):
         _invalid()
     five_strings = (
@@ -301,7 +306,52 @@ def _parameters(raw: object) -> tuple[tuple[str, ExternalTrainingParameter], ...
         or not _positive_int(raw["width_per_group"])
     ):
         _invalid()
-    return tuple((key, raw[key]) for key in REQUIRED_TRAINING_PARAMETER_KEYS)
+    base_stage_widths = _base_stage_widths(raw["base_stage_widths"])
+    if base_stage_widths != config_base_stage_widths:
+        _invalid()
+    return tuple(
+        (
+            key,
+            base_stage_widths if key == "base_stage_widths" else raw[key],
+        )
+        for key in REQUIRED_TRAINING_PARAMETER_KEYS
+    )
+
+
+def _parameters_to_mapping(
+    parameters: tuple[tuple[str, ExternalTrainingParameter], ...]
+) -> dict[str, ExternalTrainingParameter | list[int]]:
+    return {
+        key: list(value) if key == "base_stage_widths" else value
+        for key, value in parameters
+    }
+
+
+def _config_base_stage_widths(path: Path) -> tuple[int, int, int]:
+    try:
+        loaded = yaml.load(path.read_bytes().decode("utf-8"), Loader=_UniqueKeyLoader)
+        if not isinstance(loaded, Mapping):
+            _invalid()
+        model = loaded.get("model")
+        if not isinstance(model, Mapping):
+            _invalid()
+        args = model.get("args")
+        if not isinstance(args, Mapping):
+            _invalid()
+        backbone = args.get("fusion_backbone")
+        if not isinstance(backbone, Mapping):
+            _invalid()
+        return _base_stage_widths(backbone.get("num_filters"))
+    except P6ExternalTrainingBindingError:
+        raise
+    except (OSError, UnicodeDecodeError, yaml.YAMLError, TypeError, ValueError):
+        _invalid()
+
+
+def _base_stage_widths(raw: object) -> tuple[int, int, int]:
+    if type(raw) is not list or len(raw) != 3 or not all(_positive_int(value) for value in raw):
+        _invalid()
+    return (raw[0], raw[1], raw[2])
 
 
 def _digest(path: Path, supplied: object, *, require_computed: bool) -> str:

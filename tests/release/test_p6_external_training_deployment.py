@@ -366,8 +366,9 @@ def _regenerated_deployment_fixture(root: Path) -> _RegeneratedDeploymentFixture
     Path(external["base_checkpoint_path"]).write_bytes(
         b"SYNTHETIC-EXTERNAL-CHECKPOINT-UNIQUE"
     )
-    Path(external["pyramid_config_path"]).write_bytes(
-        b"SYNTHETIC-EXTERNAL-PYRAMID-CONFIG-UNIQUE"
+    Path(external["pyramid_config_path"]).write_text(
+        "model:\n  args:\n    fusion_backbone:\n      num_filters: [3, 5, 7]\n",
+        encoding="utf-8",
     )
     source_map_path = root / "ignored-source-map.yaml"
     source_map_path.write_text(

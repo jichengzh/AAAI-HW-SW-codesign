@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 from pathlib import Path
+import tempfile
 from typing import Any
 
 import pytest
@@ -13,6 +14,14 @@ from framework.stage6.p6_history_source_materialization_v1 import (
     P6HistorySourceMaterializationError,
     project_source_materialization_request,
     validate_projected_training_marker_pairs,
+)
+
+
+_SYNTHETIC_CONFIG_DIRECTORY = tempfile.TemporaryDirectory(prefix="p6-task7-pyramid-")
+_SYNTHETIC_PYRAMID_CONFIG = Path(_SYNTHETIC_CONFIG_DIRECTORY.name) / "pyramid.yaml"
+_SYNTHETIC_PYRAMID_CONFIG.write_text(
+    "model:\n  args:\n    fusion_backbone:\n      num_filters: [3, 5, 7]\n",
+    encoding="utf-8",
 )
 
 
@@ -57,8 +66,10 @@ def _source_contract(width: list[int]) -> dict[str, Any]:
             "base_checkpoint_path": "/etc/hosts",
             "base_checkpoint_sha256": hashlib.sha256(Path("/etc/hosts").read_bytes()).hexdigest(),
             "dataset_root": "/tmp",
-            "pyramid_config_path": "/etc/passwd",
-            "pyramid_config_sha256": hashlib.sha256(Path("/etc/passwd").read_bytes()).hexdigest(),
+            "pyramid_config_path": str(_SYNTHETIC_PYRAMID_CONFIG),
+            "pyramid_config_sha256": hashlib.sha256(
+                _SYNTHETIC_PYRAMID_CONFIG.read_bytes()
+            ).hexdigest(),
             "training_parameters": {
                 "training_mode": "finetune_selected_width",
                 "epochs": 7,
@@ -72,6 +83,7 @@ def _source_contract(width: list[int]) -> dict[str, Any]:
                 "freeze_policy": "pyramid_backbone_partial",
                 "groups": 3,
                 "width_per_group": 5,
+                "base_stage_widths": [3, 5, 7],
             },
         },
         "shared_source_paths": _shared_paths("-".join(map(str, width))),
@@ -190,7 +202,7 @@ def test_projection_flattens_shared_paths_and_recomputes_only_existing_hashes() 
         assert training["base_checkpoint_path"] == "/etc/hosts"
         assert training["training_required"] is True
         assert training["training_source_kind"] == "selected_candidate_finetune"
-        assert training["pyramid_config_path"] == "/etc/passwd"
+        assert training["pyramid_config_path"] == str(_SYNTHETIC_PYRAMID_CONFIG)
         assert set(training["training_parameters"]) == {
             "training_mode",
             "epochs",
@@ -204,6 +216,7 @@ def test_projection_flattens_shared_paths_and_recomputes_only_existing_hashes() 
             "freeze_policy",
             "groups",
             "width_per_group",
+            "base_stage_widths",
         }
         assert row["source_contract_sha256"] == _sha(contract)
         assert projected.request["row_sha256"][row["row_id"]] == _sha(row)
@@ -248,7 +261,7 @@ def test_projection_preserves_complete_training_contract_and_rehashes() -> None:
         assert training["training_source_kind"] == "selected_candidate_finetune"
         assert training["base_checkpoint_path"] == "/etc/hosts"
         assert training["dataset_root"] == "/tmp"
-        assert training["pyramid_config_path"] == "/etc/passwd"
+        assert training["pyramid_config_path"] == str(_SYNTHETIC_PYRAMID_CONFIG)
         assert "shared_source_paths" not in contract
         assert "training_path" not in contract
         assert row["source_contract_sha256"] == _sha(contract)

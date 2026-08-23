@@ -43,7 +43,10 @@ def _bound_contract(tmp_path: Path) -> tuple[dict[str, Any], Path, Path]:
     checkpoint = assets / "base.ckpt"
     checkpoint.write_bytes(b"checkpoint")
     config = assets / "pyramid.py"
-    config.write_bytes(b"config")
+    config.write_text(
+        "model:\n  args:\n    fusion_backbone:\n      num_filters: [3, 5, 7]\n",
+        encoding="utf-8",
+    )
     raw = {
         "schema_version": "p6_external_training_binding_v1",
         "training_required": True,
@@ -66,6 +69,7 @@ def _bound_contract(tmp_path: Path) -> tuple[dict[str, Any], Path, Path]:
             "freeze_policy": "partial",
             "groups": 3,
             "width_per_group": 5,
+            "base_stage_widths": [3, 5, 7],
         },
     }
     binding = validate_external_training_binding(

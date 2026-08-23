@@ -118,7 +118,10 @@ config.write_text("fixture:config_path\\n", encoding="utf-8")
     checkpoint = stable / "base.ckpt"
     config = stable / "pyramid.yaml"
     checkpoint.write_bytes(b"checkpoint")
-    config.write_bytes(b"config")
+    config.write_text(
+        "model:\n  args:\n    fusion_backbone:\n      num_filters: [3, 5, 7]\n",
+        encoding="utf-8",
+    )
     external = validate_external_training_binding(
         {
             "schema_version": "p6_external_training_binding_v1",
@@ -142,6 +145,7 @@ config.write_text("fixture:config_path\\n", encoding="utf-8")
                 "freeze_policy": "partial",
                 "groups": 3,
                 "width_per_group": 5,
+                "base_stage_widths": [3, 5, 7],
             },
         },
         code_toolchain_root=code_root,
@@ -780,17 +784,9 @@ def test_projected_training_contract_uses_nested_binding_only(tmp_path: Path) ->
             "stage2_width": 32,
             "stage3_width": 64,
         },
-        "external_training_binding": {
-            "schema_version": fixture["external"].schema_version,
-            "training_required": True,
-            "training_source_kind": "selected_candidate_finetune",
-            "dataset_root": str(fixture["external"].dataset_root),
-            "base_checkpoint_path": str(fixture["external"].base_checkpoint_path),
-            "base_checkpoint_sha256": fixture["external"].base_checkpoint_sha256,
-            "pyramid_config_path": str(fixture["external"].pyramid_config_path),
-            "pyramid_config_sha256": fixture["external"].pyramid_config_sha256,
-            "training_parameters": dict(fixture["external"].training_parameters),
-        },
+        "external_training_binding": external_training_binding_to_mapping(
+            fixture["external"]
+        ),
         **{key: str(tmp_path / "output" / key) for key in SHARED_SOURCE_PATH_KEYS},
     }
 

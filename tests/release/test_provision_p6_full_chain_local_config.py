@@ -364,7 +364,10 @@ def _attach_expected_recipe(
     checkpoint = stable / "base.ckpt"
     config = stable / "pyramid.py"
     checkpoint.write_text("base\n", encoding="utf-8")
-    config.write_text("config\n", encoding="utf-8")
+    config.write_text(
+        "model:\n  args:\n    fusion_backbone:\n      num_filters: [3, 5, 7]\n",
+        encoding="utf-8",
+    )
     external = {
         "schema_version": "p6_external_training_binding_v1",
         "training_required": True,
@@ -387,6 +390,7 @@ def _attach_expected_recipe(
             "freeze_policy": "pyramid_backbone_partial",
             "groups": 3,
             "width_per_group": 5,
+            "base_stage_widths": [3, 5, 7],
         },
     }
     _write_yaml(tmp_path / "private-inputs" / "external-training-binding.yaml", external)

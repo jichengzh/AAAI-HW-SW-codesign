@@ -179,7 +179,10 @@ PYCODE
     checkpoint = stable / "base.ckpt"
     config = stable / "pyramid.yaml"
     checkpoint.write_bytes(b"checkpoint")
-    config.write_bytes(b"config")
+    config.write_text(
+        "model:\n  args:\n    fusion_backbone:\n      num_filters: [3, 5, 7]\n",
+        encoding="utf-8",
+    )
     payload["external_training_binding"] = {
         "schema_version": "p6_external_training_binding_v1",
         "training_required": True,
@@ -202,6 +205,7 @@ PYCODE
             "freeze_policy": "partial",
             "groups": 3,
             "width_per_group": 5,
+            "base_stage_widths": [3, 5, 7],
         },
     }
     payload["execution_code_closure"] = {

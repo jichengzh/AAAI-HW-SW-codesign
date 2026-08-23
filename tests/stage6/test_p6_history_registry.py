@@ -308,7 +308,10 @@ def _private_root_with_training_inputs(tmp_path: Path) -> Path:
     (operator / "datasets" / "coptv2x").mkdir(parents=True, exist_ok=True)
     (operator / "configs").mkdir(parents=True, exist_ok=True)
     (operator / "checkpoints" / "base.ckpt").write_text("base\n", encoding="utf-8")
-    (operator / "configs" / "pyramid.py").write_text("config\n", encoding="utf-8")
+    (operator / "configs" / "pyramid.py").write_text(
+        "model:\n  args:\n    fusion_backbone:\n      num_filters: [3, 5, 7]\n",
+        encoding="utf-8",
+    )
     return root
 
 
@@ -326,7 +329,9 @@ def _binding_with_recipe_v2_training_template(private_root: Path) -> dict[str, A
                 "base_checkpoint_sha256": hashlib.sha256(b"base\n").hexdigest(),
                 "dataset_root": str(operator / "datasets" / "coptv2x"),
                 "pyramid_config_path": str(operator / "configs" / "pyramid.py"),
-                "pyramid_config_sha256": hashlib.sha256(b"config\n").hexdigest(),
+                "pyramid_config_sha256": hashlib.sha256(
+                    (operator / "configs" / "pyramid.py").read_bytes()
+                ).hexdigest(),
                 "training_parameters": {
                     "training_mode": "finetune_selected_width",
                     "epochs": 2,
@@ -340,6 +345,7 @@ def _binding_with_recipe_v2_training_template(private_root: Path) -> dict[str, A
                     "freeze_policy": "pyramid_backbone_partial",
                     "groups": 3,
                     "width_per_group": 5,
+                    "base_stage_widths": [3, 5, 7],
                 },
             },
             "dynamic_materialization_recipe": _recipe_v2(),

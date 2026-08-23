@@ -445,7 +445,10 @@ def test_binding_discovers_only_ready_recipe_v2_template_and_validates_training(
     (operator_root / "datasets" / "coptv2x").mkdir(parents=True)
     (operator_root / "configs").mkdir()
     (operator_root / "checkpoints" / "base.ckpt").write_text("base\n", encoding="utf-8")
-    (operator_root / "configs" / "pyramid.py").write_text("config\n", encoding="utf-8")
+    (operator_root / "configs" / "pyramid.py").write_text(
+        "model:\n  args:\n    fusion_backbone:\n      num_filters: [3, 5, 7]\n",
+        encoding="utf-8",
+    )
     registry_path = history_root / "registry" / "candidate_source_registry.json"
     registry = json.loads(registry_path.read_text(encoding="utf-8"))
     ready = registry["groups"][0]
@@ -460,7 +463,9 @@ def test_binding_discovers_only_ready_recipe_v2_template_and_validates_training(
                 "base_checkpoint_sha256": hashlib.sha256(b"base\n").hexdigest(),
                 "dataset_root": str(operator_root / "datasets" / "coptv2x"),
                 "pyramid_config_path": str(operator_root / "configs" / "pyramid.py"),
-                "pyramid_config_sha256": hashlib.sha256(b"config\n").hexdigest(),
+                "pyramid_config_sha256": hashlib.sha256(
+                    (operator_root / "configs" / "pyramid.py").read_bytes()
+                ).hexdigest(),
                 "training_parameters": {
                     "training_mode": "finetune_selected_width",
                     "epochs": 2,
@@ -474,6 +479,7 @@ def test_binding_discovers_only_ready_recipe_v2_template_and_validates_training(
                     "freeze_policy": "pyramid_backbone_partial",
                     "groups": 3,
                     "width_per_group": 5,
+                    "base_stage_widths": [3, 5, 7],
                 },
             },
             "dynamic_materialization_recipe": {

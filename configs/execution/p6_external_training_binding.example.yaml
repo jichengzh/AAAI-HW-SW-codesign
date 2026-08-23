@@ -19,3 +19,4 @@ training_parameters:
   freeze_policy: null
   groups: null
   width_per_group: null
+  base_stage_widths: null

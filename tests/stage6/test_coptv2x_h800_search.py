@@ -444,7 +444,10 @@ def _complete_training_contract(history_root: Path) -> dict[str, Any]:
     dataset_root.mkdir(exist_ok=True)
     pyramid_config = operator_root / "configs" / "pyramid.py"
     pyramid_config.parent.mkdir(exist_ok=True)
-    pyramid_config.write_text("# synthetic pyramid config\n", encoding="utf-8")
+    pyramid_config.write_text(
+        "model:\n  args:\n    fusion_backbone:\n      num_filters: [3, 5, 7]\n",
+        encoding="utf-8",
+    )
     return {
         "external_training_binding": {
             "schema_version": "p6_external_training_binding_v1",
@@ -468,6 +471,7 @@ def _complete_training_contract(history_root: Path) -> dict[str, Any]:
                 "freeze_policy": "pyramid_backbone_partial",
                 "groups": 3,
                 "width_per_group": 5,
+                "base_stage_widths": [3, 5, 7],
             },
         },
     }
@@ -753,7 +757,10 @@ def _write_recipe_v2_training_registry_from_plan(
     checkpoint.write_bytes(b"synthetic base")
     config = operator / "configs" / "pyramid.py"
     config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_bytes(b"synthetic config")
+    config.write_text(
+        "model:\n  args:\n    fusion_backbone:\n      num_filters: [3, 5, 7]\n",
+        encoding="utf-8",
+    )
     for group in registry["groups"]:
         width = group["width"]
         group_slug = "-".join(map(str, width))
@@ -788,6 +795,7 @@ def _write_recipe_v2_training_registry_from_plan(
                         "freeze_policy": "pyramid_backbone_partial",
                         "groups": 3,
                         "width_per_group": 5,
+                        "base_stage_widths": [3, 5, 7],
                     },
                 },
                 "shared_source_paths": {

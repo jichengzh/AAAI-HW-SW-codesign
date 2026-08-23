@@ -45,7 +45,8 @@ LEGACY_TRAINING_KEYS = (
 )
 BINDING_KEYS = ("schema_version", *BINDING_TRAINING_KEYS)
 PARAMETER_KEYS = tuple("""training_mode epochs target_epoch seed optimizer learning_rate
-batch_size dataset_split checkpoint_selection freeze_policy groups width_per_group""".split())
+batch_size dataset_split checkpoint_selection freeze_policy groups width_per_group
+base_stage_widths""".split())
 REQUEST_KEYS = tuple("""schema_version task_id task_sha256 round_index batch_size sample_budget
 required_metrics atomic_feedback real_h800_measurement_required row_sha256 rows
 measurement_request_sha256""".split())
@@ -116,6 +117,12 @@ def _valid_parameters(raw):
         and isinstance(raw["width_per_group"], int)
         and not isinstance(raw["width_per_group"], bool)
         and raw["width_per_group"] > 0
+        and type(raw["base_stage_widths"]) is list
+        and len(raw["base_stage_widths"]) == 3
+        and all(
+            isinstance(value, int) and not isinstance(value, bool) and value > 0
+            for value in raw["base_stage_widths"]
+        )
     )
 
 

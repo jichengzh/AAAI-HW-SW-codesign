@@ -36,6 +36,7 @@ REQUIRED_TRAINING_PARAMETER_KEYS: tuple[str, ...] = (
     "freeze_policy",
     "groups",
     "width_per_group",
+    "base_stage_widths",
 )
 STATIC_TRAINING_INPUT_PATH_KEYS: tuple[str, ...] = (
     "base_checkpoint_path",
@@ -203,8 +204,13 @@ def _require_training_parameters(contract: Mapping[str, Any]) -> None:
         or not _nonempty_string(parameters["freeze_policy"])
         or not _positive_int(parameters["groups"])
         or not _positive_int(parameters["width_per_group"])
+        or not _three_positive_ints(parameters["base_stage_widths"])
     ):
         _invalid("training parameters are invalid")
+
+
+def _three_positive_ints(value: object) -> bool:
+    return type(value) is list and len(value) == 3 and all(_positive_int(item) for item in value)
 
 
 def _validate_static_training_paths(contract: Mapping[str, Any], private_root: Path) -> None:
