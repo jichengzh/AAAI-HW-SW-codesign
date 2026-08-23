@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -157,6 +158,13 @@ class BundleRunner(fixtures.FakeRunner):
             os.utime(source, ns=(request_mtime + 2, request_mtime + 2))
         if self.bundle_mutation == "reversed_markers":
             os.utime(training, ns=(request_mtime + 3, request_mtime + 3))
+        elif self.bundle_mutation == "equal_markers_after_rollback":
+            os.utime(training, ns=(request_mtime - 1, request_mtime - 1))
+            os.utime(source, ns=(request_mtime - 1, request_mtime - 1))
+        elif self.bundle_mutation == "future_marker_rollback":
+            future = time.time_ns() + 1_000_000_000_000
+            os.utime(training, ns=(future + 2, future + 2))
+            os.utime(source, ns=(future + 1, future + 1))
         if self.bundle_mutation == "wrapper_receipt":
             receipt = receipt_path_for_group(
                 plan_source_reuse_paths(Path(contract["checkpoint_path"]).parents[2]),
@@ -341,6 +349,30 @@ def test_first_use_publishes_receipts_after_sorted_source_calls(tmp_path: Path) 
     assert all("PYTHONPATH" not in call.env and call.shell is False for call in source_calls)
     paths = plan_source_reuse_paths(public_round.parent)
     assert all(receipt_path_for_group(paths, group_id).is_file() for group_id in group_ids)
+    assert len(feedback["rows"]) == 4
+    assert _downstream(runner) == (
+        "quantize",
+        "stage5_build_performance_plan_v2.py",
+        "measure-ap",
+        "stage5_finalize_feedback_v2.py",
+    )
+
+
+@pytest.mark.parametrize(
+    "wall_clock_pattern",
+    ("reversed_markers", "equal_markers_after_rollback", "future_marker_rollback"),
+)
+def test_measurement_continues_after_valid_bundle_with_wall_clock_rollback(
+    tmp_path: Path,
+    wall_clock_pattern: str,
+) -> None:
+    request, binding, public_round = _runtime(tmp_path)
+    runner = BundleRunner(request, bundle_mutation=wall_clock_pattern)
+
+    feedback = run_history_measurement_batch(
+        request, binding, public_round, runner, fixtures.FakeProbe()
+    )
+
     assert len(feedback["rows"]) == 4
     assert _downstream(runner) == (
         "quantize",
@@ -692,7 +724,7 @@ def test_tamper_between_publication_and_downstream_gate_stops_all_stages(
 
 @pytest.mark.parametrize(
     "mutation",
-    ("wrapper_receipt", "missing_checkpoint_path", "missing_training_done_marker", "reversed_markers"),
+    ("wrapper_receipt", "missing_checkpoint_path", "missing_training_done_marker"),
 )
 def test_invalid_first_use_bundle_stops_every_downstream_stage(
     tmp_path: Path, mutation: str

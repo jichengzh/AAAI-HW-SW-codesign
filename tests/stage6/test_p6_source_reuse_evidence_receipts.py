@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -196,6 +197,22 @@ def _publish(fixture: Fixture) -> P6GroupSourceReceipt:
     )
 
 
+def _set_wall_clock_pattern(fixture: Fixture, pattern: str) -> None:
+    contract = fixture.request["rows"][0]["source_contract"]
+    request = fixture.private_root / "private-runs/0/measurement-request.json"
+    training = Path(contract["training_done_marker"])
+    source = Path(contract["source_done_marker"])
+    if pattern == "reversed":
+        mtimes = (3_000_000_000, 2_000_000_000, 1_000_000_000)
+    elif pattern == "equal_after_rollback":
+        mtimes = (2_000_000_000, 1_000_000_000, 1_000_000_000)
+    else:
+        future = time.time_ns() + 1_000_000_000_000
+        mtimes = (future, future + 2, future + 1)
+    for path, mtime in zip((request, training, source), mtimes, strict=True):
+        os.utime(path, ns=(mtime, mtime))
+
+
 def _install_mtime_race(
     monkeypatch: pytest.MonkeyPatch,
     target: Path,
@@ -302,6 +319,25 @@ def test_first_use_publishes_adapter_receipt_and_reclassifies_ready(
     assert first_use_group_ids(
         classify_selected_group_sources(**fixture.classification_kwargs)
     ) == ()
+    assert require_selected_groups_ready_current_run(
+        **fixture.classification_kwargs
+    ) == (receipt,)
+
+
+@pytest.mark.parametrize(
+    "wall_clock_pattern", ("reversed", "equal_after_rollback", "future_rollback")
+)
+def test_publication_accepts_valid_bundle_independent_of_cross_file_wall_clock(
+    tmp_path: Path,
+    wall_clock_pattern: str,
+) -> None:
+    fixture = _fresh_fixture(tmp_path)
+    _write_complete_bundle(fixture)
+    _set_wall_clock_pattern(fixture, wall_clock_pattern)
+
+    receipt = _publish(fixture)
+
+    assert _receipt_path(fixture).is_file()
     assert require_selected_groups_ready_current_run(
         **fixture.classification_kwargs
     ) == (receipt,)

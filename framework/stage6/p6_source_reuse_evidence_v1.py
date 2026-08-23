@@ -758,12 +758,10 @@ def validate_and_publish_group_receipt(
             _fail()
         _, confirmed_path, request_identity = _producer_request(
             provisional, consumer_round=producer_round, interface=interface, private_root=private_root)
-        timed_identities = (request_identity, *(item[1] for item in marker_data))
         bindings = (*artifact_bindings, (confirmed_path, request_identity),
             *((outputs[key], item[1]) for key, item in zip(SOURCE_MARKER_KEYS, marker_data, strict=True)))
         if (confirmed_path != request_path
-            or tuple(_identity(path.lstat()) for path, _ in bindings) != tuple(item for _, item in bindings)
-            or not timed_identities[0][5] <= timed_identities[1][5] <= timed_identities[2][5]):
+            or tuple(_identity(path.lstat()) for path, _ in bindings) != tuple(item for _, item in bindings)):
             _fail()
     except (OSError, RuntimeError, P6SourceReuseEvidenceError):
         _fail()
