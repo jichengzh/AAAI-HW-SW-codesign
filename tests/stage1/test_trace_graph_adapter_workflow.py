@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import torch
 import torch.nn as nn
 import pytest
+import yaml
 
 from framework.stage1.adapters import (
     MaterializerParameterSource,
@@ -17,6 +20,11 @@ from framework.stage1.adapters import (
 )
 from framework.stage1.graph_scan import _output_shapes, _resolve_profile, scan
 from framework.stage1.hardware_scan import HwCapability
+from framework.stage1.structural_axes import (
+    build_structural_axis_inputs,
+    derive_structural_axes,
+)
+from framework.stage1.structural_axis_digest import scanner_structural_axes_digest
 from framework.stage1_bridge import load_stage2_search_space
 from framework.stage1.trace_plan import (
     BoundaryValidator,
@@ -111,6 +119,44 @@ def _formal_evidence() -> tuple[dict, dict]:
         {"model": {"backbone": {"width": 32}}},
         {"digest": "c" * 64, "module_widths": {"backbone.0": 32}},
     )
+
+
+_PAPER_FIXTURES = Path("tests/fixtures/paper_spaces")
+
+
+def _paper_scanner_evidence(name: str) -> dict:
+    path = _PAPER_FIXTURES / f"{name}_scanner_evidence.yaml"
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def _paper_axis_bundle(name: str, evidence: dict | None = None):
+    evidence = evidence or _paper_scanner_evidence(name)
+    adapter = get_adapter(evidence["model"])
+    loaded_config = evidence["loaded_config"]
+    sources = adapter.materializer_parameter_sources(loaded_config)
+    module_widths = evidence["checkpoint_evidence"]["module_widths"]
+    trace_modules = {
+        path: nn.Conv2d(1, width, 1) for path, width in module_widths.items()
+    }
+    net = nn.Module()
+    context = TraceContext(
+        net=net,
+        example_inputs=(torch.ones(1, 1, 1, 1),),
+        full_model=net,
+        loaded_config=loaded_config,
+        checkpoint_evidence=evidence["checkpoint_evidence"],
+        materializer_sources=sources,
+        trace_modules=trace_modules,
+        dataflow_relations=tuple(evidence["dataflow_relations"]),
+    )
+    scenario = ScanScenario(**evidence["scan_scenario"])
+    inputs = build_structural_axis_inputs(
+        trace_context=context,
+        prune_groups=evidence["prune_groups"],
+        scenario=scenario,
+        group_manifest=evidence["source_provenance"],
+    )
+    return evidence, inputs, derive_structural_axes({"structural_axis_inputs": inputs})
 
 
 def test_trace_detector_and_generated_wrapper_preserve_dense_head_interface() -> None:
@@ -275,7 +321,11 @@ def test_scan_scenario_drives_backend_and_compression_q_sources(tmp_path) -> Non
         backend_precisions=("FP16",),
         compression_modes=("fp16", "int8"),
         graph_quant_unit_policy={"backbone": ("FP16", "INT8"), "heads": ("FP16",)},
-        alignment={"default_round_to": 32, "default_min_width": 32},
+        alignment={
+            "default_round_to": 32,
+            "default_max_rate_numerator": 3,
+            "default_max_rate_denominator": 4,
+        },
     )
     loaded_config, checkpoint = _formal_evidence()
     manifest = scan(
@@ -296,7 +346,10 @@ def test_scan_scenario_drives_backend_and_compression_q_sources(tmp_path) -> Non
     assert manifest["scanner_structural_axes"]
     assert len(manifest["scanner_structural_axes_digest"]) == 64
     assert manifest["scanner_structural_axes"][0]["provenance"]["input_digest"] == (
-        manifest["scanner_structural_axes_digest"]
+        manifest["formal_scan"]["structural_axis_inputs_digest"]
+    )
+    assert manifest["scanner_structural_axes_digest"] == (
+        scanner_structural_axes_digest(manifest["scanner_structural_axes"])
     )
     assert "structural_axis_inputs" not in manifest
     assert load_stage2_search_space(path)["formal_q_modes"] == ["fp16"]

@@ -1,0 +1,142 @@
+schema: paper_scanner_evidence_v1
+model: fcooper
+source_provenance:
+  scan_manifest_digest: 028da18fdad67102d07b3271be221990c560e7fcabade5f67587b304209b4434
+  source_group_count: 24
+  declared_relevant_group_ids: [g0, g1, g10, g11, g12, g13, g14, g15, g16, g17, g18, g19, g2, g20, g21, g22, g23, g3, g4, g5, g6, g7, g8, g9]
+  relevant_groups_digest: 83f32fcefd3e267899a0a83683f67c9cf2f91084b09015cb08574a859d309a0e
+  purification: relative_module_ids_and_materializer_bound_relations_only
+loaded_config:
+  model:
+    args:
+      m1:
+        backbone_args:
+          num_filters: [64, 128, 256]
+          num_upsample_filter: [128, 128, 128]
+        shrink_header: {dim: [256], input_dim: 384}
+      in_head: 256
+checkpoint_evidence:
+  digest: 9ba4786726c71b226ee9ee9561ea82bfe92a21909ddad7653896dd34fb06d0c0
+  module_widths:
+    body.shrinker_m1.layers.0.double_conv.2: 256
+    body.shrinker_m1.layers.0.double_conv.0: 256
+    body.backbone_m1.deblocks.2.0: 128
+    body.backbone_m1.blocks.2.25: 256
+    body.backbone_m1.blocks.2.22: 256
+    body.backbone_m1.blocks.2.19: 256
+    body.backbone_m1.blocks.2.16: 256
+    body.backbone_m1.blocks.2.13: 256
+    body.backbone_m1.blocks.2.10: 256
+    body.backbone_m1.blocks.2.7: 256
+    body.backbone_m1.blocks.2.4: 256
+    body.backbone_m1.blocks.2.1: 256
+    body.backbone_m1.blocks.1.16: 128
+    body.backbone_m1.blocks.1.13: 128
+    body.backbone_m1.blocks.1.10: 128
+    body.backbone_m1.blocks.1.7: 128
+    body.backbone_m1.blocks.1.4: 128
+    body.backbone_m1.blocks.1.1: 128
+    body.backbone_m1.blocks.0.10: 64
+    body.backbone_m1.blocks.0.7: 64
+    body.backbone_m1.blocks.0.4: 64
+    body.backbone_m1.blocks.0.1: 64
+    body.backbone_m1.deblocks.1.0: 128
+    body.backbone_m1.deblocks.0.0: 128
+prune_groups:
+  - {group_id: g0, root_layer: body.shrinker_m1.layers.0.double_conv.2, cur_width: 256, max_rate: 0.875}
+  - {group_id: g1, root_layer: body.shrinker_m1.layers.0.double_conv.0, cur_width: 256, max_rate: 0.875}
+  - {group_id: g2, root_layer: body.backbone_m1.deblocks.2.0, cur_width: 128, max_rate: 0.75}
+  - {group_id: g3, root_layer: body.backbone_m1.blocks.2.25, cur_width: 256, max_rate: 0.875}
+  - {group_id: g4, root_layer: body.backbone_m1.blocks.2.22, cur_width: 256, max_rate: 0.875}
+  - {group_id: g5, root_layer: body.backbone_m1.blocks.2.19, cur_width: 256, max_rate: 0.875}
+  - {group_id: g6, root_layer: body.backbone_m1.blocks.2.16, cur_width: 256, max_rate: 0.875}
+  - {group_id: g7, root_layer: body.backbone_m1.blocks.2.13, cur_width: 256, max_rate: 0.875}
+  - {group_id: g8, root_layer: body.backbone_m1.blocks.2.10, cur_width: 256, max_rate: 0.875}
+  - {group_id: g9, root_layer: body.backbone_m1.blocks.2.7, cur_width: 256, max_rate: 0.875}
+  - {group_id: g10, root_layer: body.backbone_m1.blocks.2.4, cur_width: 256, max_rate: 0.875}
+  - {group_id: g11, root_layer: body.backbone_m1.blocks.2.1, cur_width: 256, max_rate: 0.875}
+  - {group_id: g12, root_layer: body.backbone_m1.blocks.1.16, cur_width: 128, max_rate: 0.75}
+  - {group_id: g13, root_layer: body.backbone_m1.blocks.1.13, cur_width: 128, max_rate: 0.75}
+  - {group_id: g14, root_layer: body.backbone_m1.blocks.1.10, cur_width: 128, max_rate: 0.75}
+  - {group_id: g15, root_layer: body.backbone_m1.blocks.1.7, cur_width: 128, max_rate: 0.75}
+  - {group_id: g16, root_layer: body.backbone_m1.blocks.1.4, cur_width: 128, max_rate: 0.75}
+  - {group_id: g17, root_layer: body.backbone_m1.blocks.1.1, cur_width: 128, max_rate: 0.75}
+  - {group_id: g18, root_layer: body.backbone_m1.blocks.0.10, cur_width: 64, max_rate: 0.5}
+  - {group_id: g19, root_layer: body.backbone_m1.blocks.0.7, cur_width: 64, max_rate: 0.5}
+  - {group_id: g20, root_layer: body.backbone_m1.blocks.0.4, cur_width: 64, max_rate: 0.5}
+  - {group_id: g21, root_layer: body.backbone_m1.blocks.0.1, cur_width: 64, max_rate: 0.5}
+  - {group_id: g22, root_layer: body.backbone_m1.deblocks.1.0, cur_width: 128, max_rate: 0.75}
+  - {group_id: g23, root_layer: body.backbone_m1.deblocks.0.0, cur_width: 128, max_rate: 0.75}
+dataflow_relations:
+  - canonical_axis_id: backbone.s0
+    module_root_selector: body.backbone_m1.blocks.0.1
+    declared_member_group_ids: [g21, g18, g19, g20]
+    member_relations_digest: 38137ff3fd33234979c2dffc057d168c9e17e32ae6c328dbfa0b4c5065cf2086
+    member_relations:
+      - {group_id: g21, role: output}
+      - {group_id: g18, role: internal}
+      - {group_id: g19, role: internal}
+      - {group_id: g20, role: internal}
+  - canonical_axis_id: backbone.s1
+    module_root_selector: body.backbone_m1.blocks.1.1
+    declared_member_group_ids: [g17, g12, g13, g14, g15, g16]
+    member_relations_digest: 6a8587e4324da5bb7ffb804c39a3965272e5f7ef4191c911ace64fbd240e5483
+    member_relations:
+      - {group_id: g17, role: output}
+      - {group_id: g12, role: internal}
+      - {group_id: g13, role: internal}
+      - {group_id: g14, role: internal}
+      - {group_id: g15, role: internal}
+      - {group_id: g16, role: internal}
+  - canonical_axis_id: backbone.s2
+    module_root_selector: body.backbone_m1.blocks.2.1
+    declared_member_group_ids: [g11, g3, g4, g5, g6, g7, g8, g9, g10]
+    member_relations_digest: 8da0591493b6fbc8b7d37ec793257cc8d9371ab2e8b7522aca5d6db2e98259e4
+    member_relations:
+      - {group_id: g11, role: output}
+      - {group_id: g3, role: internal}
+      - {group_id: g4, role: internal}
+      - {group_id: g5, role: internal}
+      - {group_id: g6, role: internal}
+      - {group_id: g7, role: internal}
+      - {group_id: g8, role: internal}
+      - {group_id: g9, role: internal}
+      - {group_id: g10, role: internal}
+  - canonical_axis_id: neck.deblock
+    module_root_selector: body.backbone_m1.deblocks.0.0
+    independent_interface: true
+    declared_member_group_ids: [g23, g2, g22]
+    member_relations_digest: ded46aa77f7e63d1aca9c5d79697b852562556a3afa24801cebf83a166e0c598
+    member_relations:
+      - {group_id: g23, role: neck_interface}
+      - {group_id: g2, role: neck_interface}
+      - {group_id: g22, role: neck_interface}
+  - canonical_axis_id: neck.output
+    module_root_selector: body.shrinker_m1.layers.0.double_conv.2
+    independent_interface: true
+    declared_member_group_ids: [g0, g1]
+    member_relations_digest: 50063472f99286b2b0e6e389752350d15fe4616f5579ce29b87ca1c841e1153b
+    member_relations:
+      - {group_id: g0, role: neck_interface}
+      - {group_id: g1, role: internal}
+scan_scenario:
+  hardware_precisions: [FP16, INT8]
+  backend_precisions: [FP16, INT8]
+  compression_modes: [fp16, int8]
+  graph_quant_unit_policy: {all: [FP16, INT8]}
+  alignment:
+    default_round_to: 32
+    default_hardware_alignment: 32
+    default_max_rate_numerator: 3
+    default_max_rate_denominator: 4
+    backbone.s0.max_rate_numerator: 1
+    backbone.s0.max_rate_denominator: 2
+    backbone.s2.max_rate_numerator: 7
+    backbone.s2.max_rate_denominator: 8
+diagnostics:
+  probe_anchors:
+    backbone.s0: [32, 64]
+    backbone.s1: [32, 96, 128]
+    backbone.s2: [32, 160, 256]
+    neck.deblock: [32, 96, 128]
+    neck.output: [64, 160, 256]

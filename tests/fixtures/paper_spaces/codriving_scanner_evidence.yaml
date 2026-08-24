@@ -1,0 +1,121 @@
+schema: paper_scanner_evidence_v1
+model: codriving
+source_provenance:
+  scan_manifest_digest: f9c4b6663b760f97098d2cbd296658706b01c12d0be339978398a1af918593e1
+  source_group_count: 20
+  declared_relevant_group_ids: [g0, g1, g10, g11, g12, g13, g14, g15, g16, g17, g18, g19, g2, g3, g4, g5, g6, g7, g8, g9]
+  relevant_groups_digest: 75228704423744890deecef6294f2dffe3ab9f5d850927fa296d064fefc36a64
+  purification: relative_module_ids_and_materializer_bound_relations_only
+loaded_config:
+  model:
+    args:
+      base_bev_backbone: {num_filters: [64, 128, 256]}
+      shrink_header: {dim: [128]}
+checkpoint_evidence:
+  digest: f53047434e7336e09857f86ef9a92b55a194f60b0e284fe8f295bb89f87241ee
+  module_widths:
+    shrink_conv.layers.0.double_conv.2: 128
+    shrink_conv.layers.0.double_conv.0: 128
+    backbone.deblocks.2.0: 128
+    backbone.resnet.layer2.0.downsample.0: 256
+    backbone.resnet.layer1.0.downsample.0: 128
+    backbone.resnet.layer0.0.downsample.0: 64
+    backbone.resnet.layer0.0.conv1: 64
+    backbone.resnet.layer0.1.conv1: 64
+    backbone.resnet.layer0.2.conv1: 64
+    backbone.resnet.layer1.0.conv1: 128
+    backbone.resnet.layer1.1.conv1: 128
+    backbone.resnet.layer1.2.conv1: 128
+    backbone.resnet.layer1.3.conv1: 128
+    backbone.resnet.layer2.0.conv1: 256
+    backbone.resnet.layer2.1.conv1: 256
+    backbone.resnet.layer2.2.conv1: 256
+    backbone.resnet.layer2.3.conv1: 256
+    backbone.resnet.layer2.4.conv1: 256
+    backbone.deblocks.1.0: 128
+    backbone.deblocks.0.0: 128
+prune_groups:
+  - {group_id: g0, root_layer: shrink_conv.layers.0.double_conv.2, cur_width: 128, max_rate: 0.75}
+  - {group_id: g1, root_layer: shrink_conv.layers.0.double_conv.0, cur_width: 128, max_rate: 0.75}
+  - {group_id: g2, root_layer: backbone.deblocks.2.0, cur_width: 128, max_rate: 0.75}
+  - {group_id: g3, root_layer: backbone.resnet.layer2.0.downsample.0, cur_width: 256, max_rate: 0.875}
+  - {group_id: g4, root_layer: backbone.resnet.layer1.0.downsample.0, cur_width: 128, max_rate: 0.75}
+  - {group_id: g5, root_layer: backbone.resnet.layer0.0.downsample.0, cur_width: 64, max_rate: 0.5}
+  - {group_id: g6, root_layer: backbone.resnet.layer0.0.conv1, cur_width: 64, max_rate: 0.5}
+  - {group_id: g7, root_layer: backbone.resnet.layer0.1.conv1, cur_width: 64, max_rate: 0.5}
+  - {group_id: g8, root_layer: backbone.resnet.layer0.2.conv1, cur_width: 64, max_rate: 0.5}
+  - {group_id: g9, root_layer: backbone.resnet.layer1.0.conv1, cur_width: 128, max_rate: 0.75}
+  - {group_id: g10, root_layer: backbone.resnet.layer1.1.conv1, cur_width: 128, max_rate: 0.75}
+  - {group_id: g11, root_layer: backbone.resnet.layer1.2.conv1, cur_width: 128, max_rate: 0.75}
+  - {group_id: g12, root_layer: backbone.resnet.layer1.3.conv1, cur_width: 128, max_rate: 0.75}
+  - {group_id: g13, root_layer: backbone.resnet.layer2.0.conv1, cur_width: 256, max_rate: 0.875}
+  - {group_id: g14, root_layer: backbone.resnet.layer2.1.conv1, cur_width: 256, max_rate: 0.875}
+  - {group_id: g15, root_layer: backbone.resnet.layer2.2.conv1, cur_width: 256, max_rate: 0.875}
+  - {group_id: g16, root_layer: backbone.resnet.layer2.3.conv1, cur_width: 256, max_rate: 0.875}
+  - {group_id: g17, root_layer: backbone.resnet.layer2.4.conv1, cur_width: 256, max_rate: 0.875}
+  - {group_id: g18, root_layer: backbone.deblocks.1.0, cur_width: 128, max_rate: 0.75}
+  - {group_id: g19, root_layer: backbone.deblocks.0.0, cur_width: 128, max_rate: 0.75}
+dataflow_relations:
+  - canonical_axis_id: backbone.s0
+    module_root_selector: backbone.resnet.layer0.0.downsample.0
+    declared_member_group_ids: [g5, g6, g7, g8]
+    member_relations_digest: fb8aeb407e356072bd4147d8d26ebdd25d302133320e339bd69b881d91f2e389
+    member_relations:
+      - {group_id: g5, role: output}
+      - {group_id: g6, role: internal}
+      - {group_id: g7, role: internal}
+      - {group_id: g8, role: internal}
+  - canonical_axis_id: backbone.s1
+    module_root_selector: backbone.resnet.layer1.0.downsample.0
+    declared_member_group_ids: [g4, g9, g10, g11, g12]
+    member_relations_digest: 5667601a5317d4ac9d335e9f08387aee8166cbba97ce5a62a21a9a7dcb5314ca
+    member_relations:
+      - {group_id: g4, role: output}
+      - {group_id: g9, role: internal}
+      - {group_id: g10, role: internal}
+      - {group_id: g11, role: internal}
+      - {group_id: g12, role: internal}
+  - canonical_axis_id: backbone.s2
+    module_root_selector: backbone.resnet.layer2.0.downsample.0
+    declared_member_group_ids: [g3, g13, g14, g15, g16, g17]
+    member_relations_digest: db8ce2e1243e7ba253af698a9cd43772f612e7c47ee6841b3649071e7d03ef00
+    member_relations:
+      - {group_id: g3, role: output}
+      - {group_id: g13, role: internal}
+      - {group_id: g14, role: internal}
+      - {group_id: g15, role: internal}
+      - {group_id: g16, role: internal}
+      - {group_id: g17, role: internal}
+  - canonical_axis_id: neck.output
+    module_root_selector: shrink_conv.layers.0.double_conv.2
+    axis_kind: fixed_derived
+    derived_from: backbone.s2
+    declared_member_group_ids: [g0, g1, g2, g18, g19]
+    member_relations_digest: 83d03f4ca5dfdf84b9e4ee9101f239a404ca287ad8a7dcd476bb53e2c9b9012a
+    member_relations:
+      - {group_id: g0, role: output}
+      - {group_id: g1, role: derived_neck}
+      - {group_id: g2, role: derived_neck}
+      - {group_id: g18, role: derived_neck}
+      - {group_id: g19, role: derived_neck}
+scan_scenario:
+  hardware_precisions: [FP16, INT8]
+  backend_precisions: [FP16, INT8]
+  compression_modes: [fp16, int8]
+  graph_quant_unit_policy: {all: [FP16, INT8]}
+  alignment:
+    default_round_to: 8
+    default_hardware_alignment: 8
+    default_max_rate_numerator: 3
+    default_max_rate_denominator: 4
+    backbone.s1.round_to: 16
+    backbone.s1.hardware_alignment: 16
+    backbone.s2.round_to: 32
+    backbone.s2.hardware_alignment: 32
+    neck.output.round_to: 32
+    neck.output.hardware_alignment: 32
+diagnostics:
+  probe_anchors:
+    backbone.s0: [16, 40, 64]
+    backbone.s1: [32, 80, 128]
+    backbone.s2: [64, 160, 256]

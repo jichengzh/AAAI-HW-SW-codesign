@@ -17,6 +17,11 @@ from framework.stage1.structural_axes import (
     build_structural_axis_inputs,
     derive_structural_axes,
 )
+from framework.stage1.structural_axis_contract import (
+    scanner_group_manifest,
+    scanner_scenario_payload,
+)
+from framework.stage1.structural_axis_digest import scanner_structural_axes_digest
 
 
 def validate_formal_request(
@@ -63,6 +68,11 @@ def formal_axis_payload(
         trace_context=context,
         prune_groups=prune_groups,
         scenario=scenario,
+        group_manifest=scanner_group_manifest(
+            prune_groups,
+            scanner_scenario_payload(scenario),
+            context.dataflow_relations,
+        ),
     )
     axes = [
         axis_to_scanner_dict(axis, inputs)
@@ -102,7 +112,7 @@ def _axis_manifest_payload(
 ) -> dict[str, Any]:
     return {
         "scanner_structural_axes": axes,
-        "scanner_structural_axes_digest": inputs["digest"],
+        "scanner_structural_axes_digest": scanner_structural_axes_digest(axes),
         "formal_scan": {
             "status": "derived",
             "structural_axis_inputs_digest": inputs["digest"],

@@ -10,15 +10,16 @@ import yaml
 
 from framework.stage1.adapters import ScanScenario
 from framework.stage1.graph_scan import scan
+from framework.stage1.structural_axis_digest import (
+    SCANNER_AXIS_PROVENANCE_SOURCE,
+    scanner_structural_axes_digest,
+)
 from framework.stage1_bridge import SpaceSpec, load_stage2_search_space
 from tests.stage1.test_trace_graph_adapter_workflow import (
     _ToyAdapter,
     _formal_evidence,
     _hardware,
 )
-
-
-SCANNER_DIGEST = "a" * 64
 
 
 def _manifest(*, int8_buildable_align: int = 64) -> dict:
@@ -59,7 +60,7 @@ def _manifest(*, int8_buildable_align: int = 64) -> dict:
     payload["scanner_structural_axes"] = [
         _paper_axis("pyramid_group", 64, [16, 32, 48, 64])
     ]
-    payload["scanner_structural_axes_digest"] = SCANNER_DIGEST
+    _seal_scanner_axes(payload)
     return payload
 
 
@@ -71,6 +72,7 @@ def _write_manifest(path: Path, payload: dict) -> Path:
 def _paper_axis(axis_id: str, base_width: int, legal_widths: list[int]) -> dict:
     return {
         "axis_id": axis_id,
+        "dense_stage": None,
         "axis_kind": "free",
         "base_width": base_width,
         "legal_widths": legal_widths,
@@ -85,8 +87,14 @@ def _paper_axis(axis_id: str, base_width: int, legal_widths: list[int]) -> dict:
             }
         ],
         "round_to": 8,
-        "provenance": {"source": "scanner_contract_test"},
+        "provenance": {"source": SCANNER_AXIS_PROVENANCE_SOURCE},
     }
+
+
+def _seal_scanner_axes(manifest: dict) -> None:
+    manifest["scanner_structural_axes_digest"] = scanner_structural_axes_digest(
+        manifest["scanner_structural_axes"]
+    )
 
 
 def _legacy_search_group_with_widths() -> dict:
@@ -116,7 +124,7 @@ def _paper_manifest(model: str, axes: list[list[int]]) -> dict:
                 "member_groups": [group_id],
             }
         )
-    return {
+    manifest = {
         "schema": "stage1_partition_manifest_v1",
         "model": model,
         "scan_status": "ok",
@@ -130,11 +138,12 @@ def _paper_manifest(model: str, axes: list[list[int]]) -> dict:
         "compression_modes": ["fp16", "int8"],
         "quant_units": [{"id": "all", "legal_precisions": ["FP16", "INT8"]}],
         "scanner_structural_axes": scanner_axes,
-        "scanner_structural_axes_digest": SCANNER_DIGEST,
         "view_b1_search_groups": [],
         "view_b2_quant_units": units,
         "view_d_routing_segments": {"segments": [{"device": "gpu", "n_nodes": 1}]},
     }
+    _seal_scanner_axes(manifest)
+    return manifest
 
 
 def test_load_stage2_search_space_rejects_missing_manifest_path(tmp_path: Path) -> None:
@@ -223,7 +232,11 @@ def test_stage2_loader_accepts_schema_tagged_real_scan_manifest(tmp_path: Path) 
             "backbone": ("FP16", "INT8"),
             "heads": ("FP16", "INT8"),
         },
-        alignment={"default_round_to": 32, "default_min_width": 32},
+        alignment={
+            "default_round_to": 32,
+            "default_max_rate_numerator": 3,
+            "default_max_rate_denominator": 4,
+        },
     )
     loaded_config, checkpoint = _formal_evidence()
     manifest = scan(
@@ -240,7 +253,10 @@ def test_stage2_loader_accepts_schema_tagged_real_scan_manifest(tmp_path: Path) 
     search_space = load_stage2_search_space(path)
     assert search_space["schema"] == "stage2_search_space_v1"
     assert search_space["structural_axes"][0]["provenance"]["input_digest"] == (
-        manifest["scanner_structural_axes_digest"]
+        manifest["formal_scan"]["structural_axis_inputs_digest"]
+    )
+    assert manifest["scanner_structural_axes_digest"] == (
+        scanner_structural_axes_digest(manifest["scanner_structural_axes"])
     )
 
 
@@ -316,7 +332,7 @@ def test_formal_q_modes_require_backend_support_config_and_graph_units(tmp_path:
     manifest["scanner_structural_axes"] = [
         _paper_axis("stage1", 64, [16, 24, 32, 40, 48, 56, 64])
     ]
-    manifest["scanner_structural_axes_digest"] = SCANNER_DIGEST
+    _seal_scanner_axes(manifest)
     path = _write_manifest(tmp_path / "backend-fp16.yaml", manifest)
 
     assert load_stage2_search_space(path)["formal_q_modes"] == ["fp16"]
@@ -336,7 +352,7 @@ def test_formal_q_modes_fail_when_intersection_is_empty(tmp_path: Path) -> None:
     manifest["scanner_structural_axes"] = [
         _paper_axis("stage1", 64, [16, 24, 32, 40, 48, 56, 64])
     ]
-    manifest["scanner_structural_axes_digest"] = SCANNER_DIGEST
+    _seal_scanner_axes(manifest)
     path = _write_manifest(tmp_path / "empty-q.yaml", manifest)
 
     with pytest.raises(ValueError, match="formal q modes"):
@@ -386,6 +402,29 @@ def test_stage2_search_space_rejects_noncanonical_scanner_digest(tmp_path: Path)
     path = _write_manifest(tmp_path / "bad-digest.yaml", manifest)
 
     with pytest.raises(ValueError, match="provenance digest"):
+        load_stage2_search_space(path)
+
+
+def test_stage2_rejects_handwritten_axes_with_fake_digest_and_source(
+    tmp_path: Path,
+) -> None:
+    manifest = _manifest()
+    manifest["scanner_structural_axes_digest"] = "a" * 64
+    manifest["scanner_structural_axes"][0]["provenance"]["source"] = "handwritten"
+    path = _write_manifest(tmp_path / "fake-axis-authority.yaml", manifest)
+
+    with pytest.raises(ValueError, match="provenance.source|canonical scanner structural axes"):
+        load_stage2_search_space(path)
+
+
+def test_stage2_rejects_axis_tamper_without_updated_canonical_digest(
+    tmp_path: Path,
+) -> None:
+    manifest = _manifest()
+    manifest["scanner_structural_axes"][0]["dense_stage"] = "tampered"
+    path = _write_manifest(tmp_path / "tampered-axis.yaml", manifest)
+
+    with pytest.raises(ValueError, match="canonical scanner structural axes"):
         load_stage2_search_space(path)
 
 
@@ -463,6 +502,8 @@ def test_stage2_search_space_canonicalizes_scanner_axis_input_order(tmp_path: Pa
         _paper_axis("stage2", 128, [32, 64, 96, 128])
     )
     reversed_input["scanner_structural_axes"].reverse()
+    _seal_scanner_axes(first)
+    _seal_scanner_axes(reversed_input)
 
     ordered_space = load_stage2_search_space(
         _write_manifest(tmp_path / "ordered.yaml", first)

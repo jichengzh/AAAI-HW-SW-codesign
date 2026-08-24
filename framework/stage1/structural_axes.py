@@ -3,11 +3,31 @@
 from __future__ import annotations
 
 import fnmatch
-import hashlib
-import json
 import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Mapping, Sequence
+
+from framework.stage1.structural_axis_contract import (
+    axis_provenance, canonical_source_dataflow_relations,
+    formal_scanner_evidence_payload,
+    require_free_interface_proof, scanner_digest_sources,
+    scanner_scenario_payload, seal_scanner_inputs,
+    validate_axis_provenance, validate_dataflow_relations,
+    validated_base_widths, validated_materializer_bindings,
+    validated_retained_groups, validate_scanner_inputs,
+)
+from framework.stage1.structural_axis_bindings import resolved_binding_authority
+from framework.stage1.structural_axis_digest import (
+    SCANNER_AXIS_PROVENANCE_SOURCE, canonical_digest, immutable_mapping,
+    mutable_mapping,
+)
+from framework.stage1.structural_axis_members import (
+    ResolvedAxisMember, require_independent_interface,
+    resolve_axis_members, validate_derived_references, validate_group_manifest,
+)
+from framework.stage1.structural_axis_widths import (
+    derive_legal_widths, scenario_axis_constraint, validated_width_policy,
+)
 
 if TYPE_CHECKING:
     from framework.stage1.adapters import ScanScenario, TraceContext
@@ -34,11 +54,17 @@ class StructuralAxis:
     round_to: int
     provenance: Mapping[str, object]
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "provenance", immutable_mapping(self.provenance))
+
 
 @dataclass(frozen=True)
 class StructuralAxisBundle:
     axes: tuple[StructuralAxis, ...]
     diagnostics: Mapping[str, object]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "diagnostics", immutable_mapping(self.diagnostics))
 
     @property
     def free_axes(self) -> tuple[StructuralAxis, ...]:
@@ -59,6 +85,7 @@ class _ResolvedMaterializerSource:
     group: Mapping[str, Any]
     relation: Mapping[str, Any]
     role: str
+    members: tuple[ResolvedAxisMember, ...]
 
 
 def build_structural_axis_inputs(
@@ -66,41 +93,100 @@ def build_structural_axis_inputs(
     trace_context: "TraceContext",
     prune_groups: Sequence[Mapping[str, Any]],
     scenario: "ScanScenario",
+    group_manifest: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Resolve adapter selectors into scanner-owned structural-axis evidence."""
 
     sources = tuple(trace_context.materializer_sources)
-    if not sources:
-        raise ValueError("at least one adapter materializer binding is required")
     _validate_materializer_sources(sources)
     groups = _normalized_depgraph_groups(prune_groups)
-    checkpoint_digest, checkpoint_widths = _checkpoint_width_evidence(
-        trace_context.checkpoint_evidence
+    scenario_evidence = scanner_scenario_payload(scenario)
+    source_relations = canonical_source_dataflow_relations(
+        trace_context.dataflow_relations
     )
+    group_provenance = validate_group_manifest(
+        groups, group_manifest, scenario_evidence, source_relations
+    )
+    checkpoint_digest, checkpoint_widths = _checkpoint_width_evidence(
+        trace_context.checkpoint_evidence)
     resolved = tuple(
         _resolve_materializer_source(source, trace_context, groups, checkpoint_widths)
         for source in sources
     )
     _reject_duplicate_physical_axes(resolved)
-    payload: dict[str, Any] = {
-        "prune_groups": [_resolved_prune_group(item) for item in resolved],
-        "dataflow_relations": [_resolved_relation(item) for item in resolved],
-        "materializer_bindings": [_resolved_binding(item) for item in resolved],
-        "base_widths": [_resolved_base_width(item) for item in resolved],
+    return seal_scanner_inputs(
+        _scanner_input_payload(
+            trace_context, groups, resolved, scenario_evidence,
+            group_manifest or {}, group_provenance, checkpoint_digest,
+            source_relations,
+        )
+    )
+
+
+def _scanner_input_payload(
+    trace_context: "TraceContext",
+    groups: Sequence[Mapping[str, Any]],
+    resolved: Sequence[_ResolvedMaterializerSource],
+    scenario_evidence: Mapping[str, Any],
+    group_manifest: Mapping[str, Any],
+    group_provenance: Mapping[str, str],
+    checkpoint_digest: str,
+    source_relations: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    scenario_digest = canonical_digest(scenario_evidence)
+    config_digest = canonical_digest(trace_context.loaded_config)
+    authority_sources, derived_relations, bindings = resolved_binding_authority(
+        resolved
+    )
+    base_widths = _base_width_authority(resolved, authority_sources, bindings)
+    base_provenance = {
+        "source": "trace_context.config_checkpoint_depgraph",
+        "config_digest": config_digest,
+        "checkpoint_digest": checkpoint_digest,
+    }
+    scanner_evidence = formal_scanner_evidence_payload(
+        groups, group_manifest, scenario_evidence, authority_sources,
+        bindings, base_widths, base_provenance,
+    )
+    return {
+        "prune_groups": [dict(group) for group in groups],
+        "source_dataflow_relations": authority_sources,
+        "dataflow_relations": derived_relations,
+        "materializer_bindings": bindings,
+        "base_widths": base_widths,
         "backend_constraints": [
-            _axis_constraint(item.source.axis_id, scenario.alignment, item.group)
+            scenario_axis_constraint(item.source.axis_id, scenario_evidence)
             for item in resolved
         ],
+        "scanner_evidence": scanner_evidence,
         "provenance": {
-            "source": "stage1.graph_scan.build_structural_axis_inputs",
+            "source": SCANNER_AXIS_PROVENANCE_SOURCE,
             "checkpoint_digest": checkpoint_digest,
-            "config_digest": _sha256_json(trace_context.loaded_config),
+            "config_digest": config_digest,
             "selectors": [_resolved_provenance(item) for item in resolved],
-            "scenario_digest": _sha256_json(_scenario_payload(scenario)),
+            "scenario_digest": scenario_digest,
+            "digest_sources": scanner_digest_sources(),
+            **group_provenance,
+            "scan_manifest_digest": canonical_digest(scanner_evidence),
         },
     }
-    payload["digest"] = _sha256_json(payload)
-    return payload
+
+
+def _base_width_authority(
+    resolved: Sequence[_ResolvedMaterializerSource],
+    sources: Sequence[Mapping[str, Any]],
+    bindings: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    source_by_axis = {row["canonical_axis_id"]: row for row in sources}
+    binding_by_group = {row["b1_group_id"]: row for row in bindings}
+    return [
+        _resolved_base_width(
+            item,
+            source_by_axis[item.source.axis_id],
+            binding_by_group[item.group["group_id"]],
+        )
+        for item in resolved
+    ]
 
 
 def _resolve_materializer_source(
@@ -109,12 +195,8 @@ def _resolve_materializer_source(
     groups: Sequence[Mapping[str, Any]],
     checkpoint_widths: Mapping[str, Any],
 ) -> _ResolvedMaterializerSource:
-    config_path, base_width = _resolve_config_base(
-        context.loaded_config, source.config_selector
-    )
-    module_path, module = _resolve_trace_module(
-        context.trace_modules, source.module_root_selector
-    )
+    config_path, base_width = _resolve_config_base(context.loaded_config, source.config_selector)
+    module_path, module = _resolve_trace_module(context.trace_modules, source.module_root_selector)
     module_width = _module_width(module, source.mutation_kind)
     checkpoint_width = _checkpoint_module_width(checkpoint_widths, module_path)
     group = _matching_depgraph_group(groups, module_path)
@@ -129,6 +211,20 @@ def _resolve_materializer_source(
     relation = _matching_dataflow_relation(
         context.dataflow_relations, source.axis_id, module_path, group["group_id"]
     )
+    require_independent_interface(source, relation)
+    role = _materializer_role(source.allowed_roles)
+    members = resolve_axis_members(
+        relation=relation,
+        groups=groups,
+        trace_modules=context.trace_modules,
+        checkpoint_widths=checkpoint_widths,
+        canonical_group=group,
+        mutation_kind=source.mutation_kind,
+        canonical_role=role,
+        boundary_selectors=tuple(
+            item.module_root_selector for item in context.materializer_sources
+        ),
+    )
     return _ResolvedMaterializerSource(
         source=source,
         config_path=config_path,
@@ -137,54 +233,27 @@ def _resolve_materializer_source(
         depgraph_width=depgraph_width,
         group=group,
         relation=relation,
-        role=_materializer_role(source.allowed_roles),
+        role=role,
+        members=members,
     )
 
 
-def _resolved_prune_group(item: _ResolvedMaterializerSource) -> dict[str, Any]:
-    return {
-        "id": item.group["group_id"],
-        "module_path": item.module_path,
-        "cur_width": item.depgraph_width,
-        "dataflow_group_id": item.source.axis_id,
-    }
-
-
-def _resolved_relation(item: _ResolvedMaterializerSource) -> dict[str, Any]:
-    axis_kind = str(item.relation.get("axis_kind") or "free")
-    return {
-        "group_id": item.source.axis_id,
-        "canonical_axis_id": item.source.axis_id,
-        **({"axis_kind": axis_kind} if axis_kind != "free" else {}),
-    }
-
-
-def _resolved_binding(item: _ResolvedMaterializerSource) -> dict[str, Any]:
-    binding = {
-        "b1_group_id": item.group["group_id"],
-        "axis_id": item.source.axis_id,
-        "param": item.config_path,
-        "role": item.role,
-        "axis_kind": str(item.relation.get("axis_kind") or "free"),
-        "write_targets": [
-            {
-                "selector": target.selector,
-                "transform": target.transform,
-                "reference_selector": target.reference_selector,
-            }
-            for target in item.source.write_targets
-        ],
-    }
-    if item.relation.get("derived_from") is not None:
-        binding["derived_from"] = str(item.relation["derived_from"])
-    return binding
-
-
-def _resolved_base_width(item: _ResolvedMaterializerSource) -> dict[str, Any]:
+def _resolved_base_width(
+    item: _ResolvedMaterializerSource,
+    source: Mapping[str, Any],
+    binding: Mapping[str, Any],
+) -> dict[str, Any]:
     return {
         "axis_id": item.source.axis_id,
         "width": item.base_width,
         "config_path": item.config_path,
+        "config_width": item.base_width,
+        "checkpoint_module_path": item.module_path,
+        "checkpoint_width": item.base_width,
+        "canonical_group_id": item.group["group_id"],
+        "canonical_group_width": item.depgraph_width,
+        "source_relation_digest": canonical_digest(source),
+        "materializer_binding_digest": binding["materializer_binding_digest"],
     }
 
 
@@ -202,6 +271,8 @@ def _resolved_provenance(item: _ResolvedMaterializerSource) -> dict[str, Any]:
 
 
 def _validate_materializer_sources(sources: Sequence[Any]) -> None:
+    if not sources:
+        raise ValueError("at least one adapter materializer binding is required")
     seen: set[str] = set()
     for source in sources:
         axis_id = _text(source.axis_id, "materializer axis_id")
@@ -413,100 +484,36 @@ def _materializer_role(roles: Sequence[str]) -> str:
     return normalized[0]
 
 
-def _axis_constraint(
-    axis_id: str,
-    alignment: Mapping[str, int],
-    group: Mapping[str, Any],
-) -> dict[str, Any]:
-    round_to = alignment.get(
-        f"{axis_id}.round_to",
-        alignment.get("default_round_to"),
-    )
-    min_width = alignment.get(
-        f"{axis_id}.min_width",
-        alignment.get("default_min_width"),
-    )
-    if round_to is None or min_width is None:
-        raise ValueError(
-            f"explicit alignment round_to and min_width are required for axis {axis_id}"
-        )
-    resolved_round_to = _positive_int(round_to, f"{axis_id} round_to")
-    resolved_min_width = _positive_int(min_width, f"{axis_id} min_width")
-    group_round_to = group.get("round_to_default")
-    if group_round_to is not None and resolved_round_to % _positive_int(
-        group_round_to, "DepGraph round_to_default"
-    ) != 0:
-        raise ValueError(
-            f"scenario alignment conflicts with DepGraph alignment for axis {axis_id}"
-        )
-    return {
-        "axis_id": axis_id,
-        "round_to": resolved_round_to,
-        "min_width": resolved_min_width,
-    }
-
-
-def _scenario_payload(scenario: "ScanScenario") -> dict[str, Any]:
-    return {
-        "hardware_precisions": list(scenario.hardware_precisions),
-        "backend_precisions": list(scenario.backend_precisions),
-        "compression_modes": list(scenario.compression_modes),
-        "graph_quant_unit_policy": {
-            key: list(value)
-            for key, value in sorted(scenario.graph_quant_unit_policy.items())
-        },
-        "alignment": dict(sorted(scenario.alignment.items())),
-    }
-
-
-def _sha256_json(value: Any) -> str:
-    primitive = _canonical_json_primitive(value)
-    encoded = json.dumps(
-        primitive,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
-
-
-def _canonical_json_primitive(value: Any, path: str = "$") -> Any:
-    if isinstance(value, Mapping):
-        normalized = {}
-        for key, child in value.items():
-            if not isinstance(key, str):
-                raise TypeError(f"{path} mapping keys must be strings")
-            normalized[key] = _canonical_json_primitive(child, f"{path}.{key}")
-        return normalized
-    if isinstance(value, (list, tuple)):
-        return [
-            _canonical_json_primitive(child, f"{path}[{index}]")
-            for index, child in enumerate(value)
-        ]
-    if value is None or isinstance(value, (str, bool, int)):
-        return value
-    if isinstance(value, float) and math.isfinite(value):
-        return value
-    raise TypeError(f"{path} must contain only JSON primitive values")
-
-
 def derive_structural_axes(raw_scan: Mapping[str, Any]) -> StructuralAxisBundle:
     inputs = raw_scan.get("structural_axis_inputs")
     if not isinstance(inputs, Mapping):
         raise ValueError("structural_axis_inputs are required")
-    prune_groups = _by_id(_required_list(inputs, "prune_groups"), "id")
-    dataflow = _dataflow_axes(_required_list(inputs, "dataflow_relations"))
-    base_widths = _width_map(_required_base_widths(inputs), "base_widths")
+    scanner_provenance = validate_scanner_inputs(inputs)
+    retained_groups = validated_retained_groups(inputs)
+    prune_groups = _retained_groups_by_id(retained_groups)
+    binding_rows = validated_materializer_bindings(inputs)
+    relation_rows = _required_list(inputs, "dataflow_relations")
+    source_relations = _required_list(inputs, "source_dataflow_relations")
+    scanner_evidence = inputs["scanner_evidence"]
+    validate_dataflow_relations(
+        relation_rows, source_relations, retained_groups
+    )
+    dataflow = _dataflow_axes(relation_rows)
+    base_rows = validated_base_widths(inputs, retained_groups, binding_rows)
+    base_widths = _width_map(list(base_rows), "base_widths")
     constraints = _constraint_map(_required_backend_constraints(inputs))
-    bindings = _required_list(inputs, "materializer_bindings")
+    bindings = list(binding_rows)
+    scenario_evidence = scanner_evidence["scenario"]
 
     axis_bindings = _bindings_by_axis(bindings)
     axes = [
         _derive_axis(axis_id, axis_bindings, dataflow, base_widths,
-                     constraints, prune_groups)
+                     constraints, prune_groups, relation_rows,
+                     scanner_provenance, str(inputs["scanner_input_digest"]),
+                     scenario_evidence)
         for axis_id in _ordered_axis_ids(dataflow, axis_bindings)
     ]
+    validate_derived_references(axes)
     return StructuralAxisBundle(axes=tuple(axes), diagnostics={"axis_count": len(axes)})
 
 
@@ -529,13 +536,25 @@ def _derive_axis(
     base_widths: Mapping[str, int],
     constraints: Mapping[str, Mapping[str, Any]],
     prune_groups: Mapping[str, Mapping[str, Any]],
+    relation_rows: Sequence[Mapping[str, Any]],
+    scanner_provenance: Mapping[str, Any],
+    scanner_input_digest: str,
+    scenario_evidence: Mapping[str, Any],
 ) -> StructuralAxis:
     bindings = axis_bindings.get(axis_id, [])
     base_width = _required_axis_value(base_widths, axis_id, "canonical base width")
     constraint = _required_axis_value(constraints, axis_id, "backend constraint")
     round_to = _positive_int(constraint.get("round_to"), "round_to")
-    min_width = _positive_int(constraint.get("min_width"), "min_width")
-    legal_widths = _legal_widths(base_width, round_to, min_width)
+    hardware_alignment = _positive_int(
+        constraint.get("hardware_alignment", round_to), "hardware_alignment"
+    )
+    policy = validated_width_policy(constraint, axis_id, scenario_evidence)
+    round_to, legal_widths = derive_legal_widths(
+        base_width=base_width,
+        policy=policy,
+        round_to=round_to,
+        hardware_alignment=hardware_alignment,
+    )
     members = tuple(
         _member_binding(binding, prune_groups, base_width, legal_widths)
         for binding in bindings
@@ -543,8 +562,11 @@ def _derive_axis(
     if not members:
         raise ValueError(f"structural axis {axis_id} has no member bindings")
     axis_kind = _axis_kind(axis_id, bindings)
-    provenance = _axis_provenance(axis_id, axis_kind, bindings,
-                                  dataflow.get(axis_id, ()))
+    if axis_kind == "free":
+        require_free_interface_proof(axis_id, bindings, relation_rows)
+    provenance = axis_provenance(axis_id, axis_kind, bindings,
+                                 dataflow.get(axis_id, ()), scanner_provenance,
+                                 scanner_input_digest)
     return StructuralAxis(
         axis_id=axis_id,
         dense_stage=_dense_stage(axis_id),
@@ -555,30 +577,6 @@ def _derive_axis(
         round_to=round_to,
         provenance=provenance,
     )
-
-
-def _axis_provenance(
-    axis_id: str,
-    axis_kind: Literal["free", "fixed_derived"],
-    bindings: Sequence[Mapping[str, Any]],
-    dataflow_group_ids: tuple[str, ...],
-) -> dict[str, object]:
-    provenance: dict[str, object] = {
-        "source": "structural_axis_inputs",
-        "dataflow_group_ids": dataflow_group_ids,
-    }
-    if axis_kind != "fixed_derived":
-        return provenance
-    derived_from = {
-        _text(binding.get("derived_from"), "fixed-derived binding derived_from")
-        for binding in bindings
-    }
-    if len(derived_from) != 1:
-        raise ValueError(
-            f"fixed-derived axis {axis_id} must have one derived_from source"
-        )
-    provenance["derived_from"] = next(iter(derived_from))
-    return provenance
 
 
 def axis_to_dict(axis: StructuralAxis) -> dict[str, Any]:
@@ -600,7 +598,7 @@ def axis_to_dict(axis: StructuralAxis) -> dict[str, Any]:
             for member in axis.member_b1_groups
         ],
         "round_to": axis.round_to,
-        "provenance": dict(axis.provenance),
+        "provenance": mutable_mapping(axis.provenance),
     }
 
 
@@ -609,18 +607,8 @@ def axis_to_scanner_dict(
     inputs: Mapping[str, Any],
 ) -> dict[str, Any]:
     payload = axis_to_dict(axis)
-    source = inputs["provenance"]
-    return {
-        **payload,
-        "provenance": {
-            **dict(payload["provenance"]),
-            "source": source["source"],
-            "input_digest": inputs["digest"],
-            "checkpoint_digest": source["checkpoint_digest"],
-            "config_digest": source["config_digest"],
-            "scenario_digest": source["scenario_digest"],
-        },
-    }
+    validate_axis_provenance(payload["provenance"], inputs)
+    return payload
 
 
 def _required_list(inputs: Mapping[str, Any], key: str) -> list[Any]:
@@ -654,14 +642,18 @@ def _required_axis_value(
     return values[axis_id]
 
 
-def _by_id(rows: list[Any], key: str) -> dict[str, Mapping[str, Any]]:
+def _retained_groups_by_id(
+    rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Mapping[str, Any]]:
     out: dict[str, Mapping[str, Any]] = {}
     for row in rows:
         if not isinstance(row, Mapping):
-            raise ValueError(f"{key} rows must be objects")
-        row_id = _text(row.get(key), key)
+            raise ValueError("retained prune group rows must be objects")
+        row_id = _text(
+            row.get("group_id", row.get("id")), "retained prune group_id"
+        )
         if row_id in out:
-            raise ValueError(f"duplicate {key}: {row_id}")
+            raise ValueError(f"duplicate retained prune group_id: {row_id}")
         out[row_id] = row
     return out
 
@@ -722,16 +714,22 @@ def _member_binding(
     if group is None:
         raise ValueError(f"missing prune group for binding {b1_group_id}")
     member_width = _positive_int(group.get("cur_width"), "prune_groups.cur_width")
-    if member_width % base_width != 0:
-        raise ValueError("member width must form an integer ratio to canonical base")
-    num = member_width // base_width
-    den = 1
+    divisor = math.gcd(member_width, base_width)
+    num = member_width // divisor
+    den = base_width // divisor
     for width in legal_widths:
-        if width * num % den != 0:
+        mapped_numerator = width * num
+        if mapped_numerator % den != 0:
             raise ValueError("member transform must produce integer widths")
+        mapped_width = mapped_numerator // den
+        if mapped_width <= 0 or mapped_width > member_width:
+            raise ValueError("member transform exceeds member base width")
     return AxisMemberBinding(
         b1_group_id=b1_group_id,
-        module_path=_text(group.get("module_path"), "prune_groups.module_path"),
+        module_path=_text(
+            group.get("root_layer", group.get("module_path")),
+            "prune_groups.root_layer",
+        ),
         canonical_to_member_num=num,
         canonical_to_member_den=den,
         materializer_param=_text(binding.get("param"), "materializer_bindings.param"),
@@ -746,19 +744,6 @@ def _axis_kind(axis_id: str, bindings: list[Mapping[str, Any]]) -> Literal["free
     if kinds <= {"free"}:
         return "free"
     raise ValueError(f"structural axis {axis_id} mixes free and fixed-derived bindings")
-
-
-def _legal_widths(base_width: int, round_to: int, min_width: int) -> tuple[int, ...]:
-    if min_width > base_width:
-        raise ValueError("min_width exceeds base_width")
-    widths = tuple(
-        width
-        for width in range(min_width, base_width + 1, round_to)
-        if width % round_to == 0
-    )
-    if not widths:
-        raise ValueError("free structural axis has no legal widths")
-    return widths
 
 
 def _dense_stage(axis_id: str) -> str | None:
@@ -788,11 +773,7 @@ def _positive_int(value: object, field_name: str) -> int:
 
 
 __all__ = [
-    "AxisMemberBinding",
-    "StructuralAxis",
-    "StructuralAxisBundle",
-    "axis_to_dict",
-    "axis_to_scanner_dict",
-    "build_structural_axis_inputs",
+    "AxisMemberBinding", "StructuralAxis", "StructuralAxisBundle",
+    "axis_to_dict", "axis_to_scanner_dict", "build_structural_axis_inputs",
     "derive_structural_axes",
 ]

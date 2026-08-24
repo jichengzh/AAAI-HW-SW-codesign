@@ -27,6 +27,11 @@ from typing import Any, Mapping, Optional, Sequence
 
 import yaml
 
+from framework.stage1.structural_axis_digest import (
+    SCANNER_AXIS_PROVENANCE_SOURCE,
+    scanner_structural_axes_digest,
+)
+
 # 防御性默认 (字段缺失时退化为"最宽松且合法")。集中一处, 便于审计。
 DEFAULTS = {
     "int8_align": 32,
@@ -606,7 +611,10 @@ def _scanner_structural_axes(raw: Mapping[str, Any]) -> tuple[dict[str, Any], ..
     axis_ids = [axis["axis_id"] for axis in validated]
     if len(axis_ids) != len(set(axis_ids)):
         raise ValueError("duplicate structural_axes.axis_id is not allowed")
-    return tuple(sorted(validated, key=lambda axis: axis["axis_id"]))
+    canonical_axes = tuple(sorted(validated, key=lambda axis: axis["axis_id"]))
+    if digest != scanner_structural_axes_digest(canonical_axes):
+        raise ValueError("canonical scanner structural axes digest mismatch")
+    return canonical_axes
 
 
 def _validated_structural_axis(axis: Any) -> dict[str, Any]:
@@ -698,8 +706,8 @@ def _validated_axis_member(
 def _validated_axis_provenance(provenance: Any) -> dict[str, Any]:
     if not isinstance(provenance, Mapping) or not provenance:
         raise ValueError("structural_axes.provenance must be a non-empty object")
-    if not str(provenance.get("source") or "").strip():
-        raise ValueError("structural_axes.provenance.source is required")
+    if provenance.get("source") != SCANNER_AXIS_PROVENANCE_SOURCE:
+        raise ValueError("structural_axes.provenance.source is invalid")
     return dict(provenance)
 
 

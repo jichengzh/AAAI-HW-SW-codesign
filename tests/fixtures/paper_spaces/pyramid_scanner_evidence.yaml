@@ -1,0 +1,190 @@
+schema: paper_scanner_evidence_v1
+model: pyramid_lidar
+source_provenance:
+  scan_manifest_digest: 939522ace1bc9509a5acf4d5fd199c698440cb45ae4f13bf9503ffe9f766a6db
+  source_group_count: 43
+  declared_relevant_group_ids: [g0, g1, g10, g11, g12, g13, g14, g15, g16, g17, g18, g19, g2, g20, g21, g22, g23, g24, g25, g26, g27, g28, g29, g3, g30, g31, g32, g33, g34, g35, g36, g37, g38, g39, g4, g40, g41, g42, g5, g6, g7, g8, g9]
+  relevant_groups_digest: f830d378eca81c8f2179b04ded59291d509c0cfde3538ecc816d51851e41436f
+  purification: relative_module_ids_and_materializer_bound_relations_only
+loaded_config:
+  model:
+    args:
+      fusion_backbone: {num_filters: [64, 128, 256]}
+      shrink_header: {dim: [256]}
+checkpoint_evidence:
+  digest: 4ccc6fe1f7cc13b5d1294f74014b01e849cc8e90b69cbded14158e1999fa42b2
+  module_widths:
+    backbone_m1.resnet.layer0.0.downsample.0: 64
+    backbone_m1.resnet.layer0.0.conv1: 64
+    backbone_m1.resnet.layer0.1.conv1: 64
+    backbone_m1.resnet.layer0.2.conv1: 64
+    pyramid_backbone.resnet.layer0.0.conv2: 128
+    pyramid_backbone.resnet.layer0.0.conv1: 128
+    pyramid_backbone.resnet.layer0.1.conv2: 128
+    pyramid_backbone.resnet.layer0.1.conv1: 128
+    pyramid_backbone.resnet.layer0.2.conv2: 128
+    pyramid_backbone.resnet.layer0.2.conv1: 128
+    pyramid_backbone.resnet.layer1.0.downsample.0: 128
+    pyramid_backbone.resnet.layer1.0.conv2: 256
+    pyramid_backbone.resnet.layer1.0.conv1: 256
+    pyramid_backbone.resnet.layer1.1.conv2: 256
+    pyramid_backbone.resnet.layer1.1.conv1: 256
+    pyramid_backbone.resnet.layer1.2.conv2: 256
+    pyramid_backbone.resnet.layer1.2.conv1: 256
+    pyramid_backbone.resnet.layer1.3.conv2: 256
+    pyramid_backbone.resnet.layer1.3.conv1: 256
+    pyramid_backbone.resnet.layer1.4.conv2: 256
+    pyramid_backbone.resnet.layer1.4.conv1: 256
+    pyramid_backbone.resnet.layer2.0.downsample.0: 256
+    pyramid_backbone.resnet.layer2.0.conv2: 512
+    pyramid_backbone.resnet.layer2.0.conv1: 512
+    pyramid_backbone.resnet.layer2.1.conv2: 512
+    pyramid_backbone.resnet.layer2.1.conv1: 512
+    pyramid_backbone.resnet.layer2.2.conv2: 512
+    pyramid_backbone.resnet.layer2.2.conv1: 512
+    pyramid_backbone.resnet.layer2.3.conv2: 512
+    pyramid_backbone.resnet.layer2.3.conv1: 512
+    pyramid_backbone.resnet.layer2.4.conv2: 512
+    pyramid_backbone.resnet.layer2.4.conv1: 512
+    pyramid_backbone.resnet.layer2.5.conv2: 512
+    pyramid_backbone.resnet.layer2.5.conv1: 512
+    pyramid_backbone.resnet.layer2.6.conv2: 512
+    pyramid_backbone.resnet.layer2.6.conv1: 512
+    pyramid_backbone.resnet.layer2.7.conv2: 512
+    pyramid_backbone.resnet.layer2.7.conv1: 512
+    shrink_conv.layers.0.double_conv.2: 256
+    shrink_conv.layers.0.double_conv.0: 256
+    pyramid_backbone.deblocks.2.0: 128
+    pyramid_backbone.deblocks.1.0: 128
+    pyramid_backbone.deblocks.0.0: 128
+prune_groups:
+  - {group_id: g0, root_layer: shrink_conv.layers.0.double_conv.2, cur_width: 256, max_rate: 0.875}
+  - {group_id: g1, root_layer: shrink_conv.layers.0.double_conv.0, cur_width: 256, max_rate: 0.875}
+  - {group_id: g2, root_layer: pyramid_backbone.deblocks.2.0, cur_width: 128, max_rate: 0.75}
+  - {group_id: g3, root_layer: pyramid_backbone.resnet.layer2.0.downsample.0, cur_width: 256, max_rate: 0.875}
+  - {group_id: g4, root_layer: pyramid_backbone.resnet.layer1.0.downsample.0, cur_width: 128, max_rate: 0.75}
+  - {group_id: g5, root_layer: backbone_m1.resnet.layer0.0.downsample.0, cur_width: 64, max_rate: 0.5}
+  - {group_id: g6, root_layer: backbone_m1.resnet.layer0.0.conv1, cur_width: 64, max_rate: 0.5}
+  - {group_id: g7, root_layer: backbone_m1.resnet.layer0.1.conv1, cur_width: 64, max_rate: 0.5}
+  - {group_id: g8, root_layer: backbone_m1.resnet.layer0.2.conv1, cur_width: 64, max_rate: 0.5}
+  - {group_id: g9, root_layer: pyramid_backbone.resnet.layer0.0.conv2, cur_width: 128, max_rate: 0.75}
+  - {group_id: g10, root_layer: pyramid_backbone.resnet.layer0.0.conv1, cur_width: 128, max_rate: 0.75}
+  - {group_id: g11, root_layer: pyramid_backbone.resnet.layer0.1.conv2, cur_width: 128, max_rate: 0.75}
+  - {group_id: g12, root_layer: pyramid_backbone.resnet.layer0.1.conv1, cur_width: 128, max_rate: 0.75}
+  - {group_id: g13, root_layer: pyramid_backbone.resnet.layer0.2.conv2, cur_width: 128, max_rate: 0.75}
+  - {group_id: g14, root_layer: pyramid_backbone.resnet.layer0.2.conv1, cur_width: 128, max_rate: 0.75}
+  - {group_id: g15, root_layer: pyramid_backbone.resnet.layer1.0.conv2, cur_width: 256, max_rate: 0.875}
+  - {group_id: g16, root_layer: pyramid_backbone.resnet.layer1.0.conv1, cur_width: 256, max_rate: 0.875}
+  - {group_id: g17, root_layer: pyramid_backbone.resnet.layer1.1.conv2, cur_width: 256, max_rate: 0.875}
+  - {group_id: g18, root_layer: pyramid_backbone.resnet.layer1.1.conv1, cur_width: 256, max_rate: 0.875}
+  - {group_id: g19, root_layer: pyramid_backbone.resnet.layer1.2.conv2, cur_width: 256, max_rate: 0.875}
+  - {group_id: g20, root_layer: pyramid_backbone.resnet.layer1.2.conv1, cur_width: 256, max_rate: 0.875}
+  - {group_id: g21, root_layer: pyramid_backbone.resnet.layer1.3.conv2, cur_width: 256, max_rate: 0.875}
+  - {group_id: g22, root_layer: pyramid_backbone.resnet.layer1.3.conv1, cur_width: 256, max_rate: 0.875}
+  - {group_id: g23, root_layer: pyramid_backbone.resnet.layer1.4.conv2, cur_width: 256, max_rate: 0.875}
+  - {group_id: g24, root_layer: pyramid_backbone.resnet.layer1.4.conv1, cur_width: 256, max_rate: 0.875}
+  - {group_id: g25, root_layer: pyramid_backbone.resnet.layer2.0.conv2, cur_width: 512, max_rate: 0.9375}
+  - {group_id: g26, root_layer: pyramid_backbone.resnet.layer2.0.conv1, cur_width: 512, max_rate: 0.9375}
+  - {group_id: g27, root_layer: pyramid_backbone.resnet.layer2.1.conv2, cur_width: 512, max_rate: 0.9375}
+  - {group_id: g28, root_layer: pyramid_backbone.resnet.layer2.1.conv1, cur_width: 512, max_rate: 0.9375}
+  - {group_id: g29, root_layer: pyramid_backbone.resnet.layer2.2.conv2, cur_width: 512, max_rate: 0.9375}
+  - {group_id: g30, root_layer: pyramid_backbone.resnet.layer2.2.conv1, cur_width: 512, max_rate: 0.9375}
+  - {group_id: g31, root_layer: pyramid_backbone.resnet.layer2.3.conv2, cur_width: 512, max_rate: 0.9375}
+  - {group_id: g32, root_layer: pyramid_backbone.resnet.layer2.3.conv1, cur_width: 512, max_rate: 0.9375}
+  - {group_id: g33, root_layer: pyramid_backbone.resnet.layer2.4.conv2, cur_width: 512, max_rate: 0.9375}
+  - {group_id: g34, root_layer: pyramid_backbone.resnet.layer2.4.conv1, cur_width: 512, max_rate: 0.9375}
+  - {group_id: g35, root_layer: pyramid_backbone.resnet.layer2.5.conv2, cur_width: 512, max_rate: 0.9375}
+  - {group_id: g36, root_layer: pyramid_backbone.resnet.layer2.5.conv1, cur_width: 512, max_rate: 0.9375}
+  - {group_id: g37, root_layer: pyramid_backbone.resnet.layer2.6.conv2, cur_width: 512, max_rate: 0.9375}
+  - {group_id: g38, root_layer: pyramid_backbone.resnet.layer2.6.conv1, cur_width: 512, max_rate: 0.9375}
+  - {group_id: g39, root_layer: pyramid_backbone.resnet.layer2.7.conv2, cur_width: 512, max_rate: 0.9375}
+  - {group_id: g40, root_layer: pyramid_backbone.resnet.layer2.7.conv1, cur_width: 512, max_rate: 0.9375}
+  - {group_id: g41, root_layer: pyramid_backbone.deblocks.1.0, cur_width: 128, max_rate: 0.75}
+  - {group_id: g42, root_layer: pyramid_backbone.deblocks.0.0, cur_width: 128, max_rate: 0.75}
+dataflow_relations:
+  - canonical_axis_id: backbone.s0
+    module_root_selector: backbone_m1.resnet.layer0.0.downsample.0
+    declared_member_group_ids: [g5, g6, g7, g8, g9, g10, g11, g12, g13, g14]
+    member_relations_digest: 1ffd2aa43d7e29731c757982bc8ab68e0ee56556943564a2fc50e4060ebe828e
+    member_relations:
+      - {group_id: g5, role: output}
+      - {group_id: g6, role: internal}
+      - {group_id: g7, role: internal}
+      - {group_id: g8, role: internal}
+      - {group_id: g9, role: internal}
+      - {group_id: g10, role: internal}
+      - {group_id: g11, role: internal}
+      - {group_id: g12, role: internal}
+      - {group_id: g13, role: internal}
+      - {group_id: g14, role: internal}
+  - canonical_axis_id: backbone.s1
+    module_root_selector: pyramid_backbone.resnet.layer1.0.downsample.0
+    declared_member_group_ids: [g4, g15, g16, g17, g18, g19, g20, g21, g22, g23, g24]
+    member_relations_digest: f3e999d7a5b853fcfc20af269d53a48c4f65a537e31de39f1401adc8eb75ef77
+    member_relations:
+      - {group_id: g4, role: output}
+      - {group_id: g15, role: internal}
+      - {group_id: g16, role: internal}
+      - {group_id: g17, role: internal}
+      - {group_id: g18, role: internal}
+      - {group_id: g19, role: internal}
+      - {group_id: g20, role: internal}
+      - {group_id: g21, role: internal}
+      - {group_id: g22, role: internal}
+      - {group_id: g23, role: internal}
+      - {group_id: g24, role: internal}
+  - canonical_axis_id: backbone.s2
+    module_root_selector: pyramid_backbone.resnet.layer2.0.downsample.0
+    declared_member_group_ids: [g3, g25, g26, g27, g28, g29, g30, g31, g32, g33, g34, g35, g36, g37, g38, g39, g40]
+    member_relations_digest: ee2fd2fe27ea628cee405e74ccbda7cb8509349eae3f066f2820457b162fa46a
+    member_relations:
+      - {group_id: g3, role: output}
+      - {group_id: g25, role: internal}
+      - {group_id: g26, role: internal}
+      - {group_id: g27, role: internal}
+      - {group_id: g28, role: internal}
+      - {group_id: g29, role: internal}
+      - {group_id: g30, role: internal}
+      - {group_id: g31, role: internal}
+      - {group_id: g32, role: internal}
+      - {group_id: g33, role: internal}
+      - {group_id: g34, role: internal}
+      - {group_id: g35, role: internal}
+      - {group_id: g36, role: internal}
+      - {group_id: g37, role: internal}
+      - {group_id: g38, role: internal}
+      - {group_id: g39, role: internal}
+      - {group_id: g40, role: internal}
+  - canonical_axis_id: neck.output
+    module_root_selector: shrink_conv.layers.0.double_conv.2
+    axis_kind: fixed_derived
+    derived_from: backbone.s2
+    declared_member_group_ids: [g0, g1, g2, g41, g42]
+    member_relations_digest: 2feb7fec943e395685c4264066cd390449376851edca2360539db4d7955480fc
+    member_relations:
+      - {group_id: g0, role: output}
+      - {group_id: g1, role: derived_neck}
+      - {group_id: g2, role: derived_neck}
+      - {group_id: g41, role: derived_neck}
+      - {group_id: g42, role: derived_neck}
+scan_scenario:
+  hardware_precisions: [FP16, INT8]
+  backend_precisions: [FP16, INT8]
+  compression_modes: [fp16, int8]
+  graph_quant_unit_policy: {all: [FP16, INT8]}
+  alignment:
+    default_round_to: 8
+    default_hardware_alignment: 8
+    default_max_rate_numerator: 3
+    default_max_rate_denominator: 4
+    backbone.s1.round_to: 16
+    backbone.s1.hardware_alignment: 16
+    backbone.s2.round_to: 32
+    backbone.s2.hardware_alignment: 32
+    neck.output.round_to: 32
+    neck.output.hardware_alignment: 32
+diagnostics:
+  probe_anchors:
+    backbone.s0: [16, 40, 64]
+    backbone.s1: [32, 80, 128]
+    backbone.s2: [64, 160, 256]
