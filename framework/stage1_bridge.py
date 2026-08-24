@@ -23,7 +23,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Any, Mapping, Optional, Sequence
 
 import yaml
 
@@ -148,13 +148,21 @@ class HwCapability:
         def get_value(key: str) -> object:
             return hw.get(key, DEFAULTS.get(key))
 
+        raw_legal_bits = hw.get("legal_bits")
+        if raw_legal_bits is None:
+            raw_legal_bits = ((hw.get("ips", {}) or {}).get("gpu", {}) or {}).get(
+                "precisions"
+            )
+        if raw_legal_bits is None:
+            raw_legal_bits = DEFAULTS["legal_bits"]
+
         return cls(
             name=hw.get("name", "unknown"),
             int8_align=int(get_value("int8_align")),
             fp16_align=int(get_value("fp16_align")),
             int8_pack_factor=int(hw.get("int8_pack_factor", DEFAULTS["int8_pack_factor"])),
             alignment_enforcement=str(get_value("alignment_enforcement")),
-            legal_bits=tuple(hw.get("legal_bits", DEFAULTS["legal_bits"])),
+            legal_bits=tuple(raw_legal_bits),
             legal_granularity_w=tuple(
                 hw.get("legal_granularity_w", DEFAULTS["legal_granularity_w"])
             ),
@@ -339,9 +347,12 @@ class QuantUnit:
 
     @classmethod
     def from_entry(cls, e: dict) -> "QuantUnit":
+        quantizable = e.get("quantizable", DEFAULTS["quantizable"])
+        if not isinstance(quantizable, bool):
+            raise ValueError("quant_units.quantizable must be a boolean")
         return cls(
             unit=str(e.get("unit", "unit")),
-            quantizable=bool(e.get("quantizable", DEFAULTS["quantizable"])),
+            quantizable=quantizable,
             legal_bits=tuple(e.get("legal_bits", DEFAULTS["legal_bits"])),
             legal_granularity=tuple(
                 e.get(
@@ -511,6 +522,7 @@ class SpaceSpec:
         ]
         hierarchical_blocks = _hierarchical_blocks(self.raw, software_candidates, self.routing)
         claim_scope = _claim_scope(self.raw, hierarchical_blocks)
+        structural_axes = _scanner_structural_axes(self.raw)
         return {
             "schema": "stage2_search_space_v1",
             "model": self.model,
@@ -522,10 +534,27 @@ class SpaceSpec:
                 "alignment_enforcement": self.hw.alignment_enforcement,
             },
             "optimized_scope": claim_scope["optimized_scope"],
-            "structural_axes": [_structural_axis_from_knob(k) for k in self.knobs],
-            "formal_q_modes": _formal_q_modes(self.hw, self.quant_units),
+            "structural_axes": list(structural_axes),
+            "axis_schema": {
+                "free_axes": [
+                    axis for axis in structural_axes if axis.get("axis_kind") == "free"
+                ],
+                "fixed_derived_axes": [
+                    axis
+                    for axis in structural_axes
+                    if axis.get("axis_kind") == "fixed_derived"
+                ],
+            },
+            "formal_q_modes": _formal_q_modes(
+                self.hw,
+                self.raw.get("backend_support"),
+                self.raw.get("compression_modes"),
+                self.raw.get("quant_units"),
+                self.quant_units,
+            ),
             "formal_candidate_policy": {
-                "enumeration": "structural_axes_x_formal_q_modes",
+                "enumeration": "axis_schema.free_axes_x_formal_q_modes",
+                "legacy_views": "diagnostic_only",
                 "diagnostic_anchors_drive_formal_space": False,
             },
             "software_candidates": software_candidates,
@@ -556,6 +585,164 @@ class SpaceSpec:
                 )
             ),
         }
+
+
+def _scanner_structural_axes(raw: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
+    if "structural_axes" in raw:
+        raise ValueError("handwritten structural_axes are not accepted")
+    if "structural_axis_inputs" in raw:
+        raise ValueError("stage2 formal construction requires scanner_structural_axes")
+    axes = raw.get("scanner_structural_axes")
+    digest = raw.get("scanner_structural_axes_digest")
+    if not isinstance(axes, list) or not axes:
+        raise ValueError("stage2 formal construction requires scanner_structural_axes")
+    if (
+        not isinstance(digest, str)
+        or len(digest) != 64
+        or any(char not in "0123456789abcdef" for char in digest)
+    ):
+        raise ValueError("scanner structural axes provenance digest is required")
+    validated = tuple(_validated_structural_axis(axis) for axis in axes)
+    axis_ids = [axis["axis_id"] for axis in validated]
+    if len(axis_ids) != len(set(axis_ids)):
+        raise ValueError("duplicate structural_axes.axis_id is not allowed")
+    return tuple(sorted(validated, key=lambda axis: axis["axis_id"]))
+
+
+def _validated_structural_axis(axis: Any) -> dict[str, Any]:
+    if not isinstance(axis, Mapping):
+        raise ValueError("structural_axes entries must be objects")
+    axis_id = str(axis.get("axis_id") or "").strip()
+    if "axis_kind" not in axis:
+        raise ValueError("structural_axes.axis_kind is required")
+    axis_kind = str(axis.get("axis_kind") or "").strip()
+    if not axis_id:
+        raise ValueError("structural_axes.axis_id is required")
+    if axis_kind not in {"free", "fixed_derived"}:
+        raise ValueError("structural_axes.axis_kind is invalid")
+    base_width = _positive_int(axis.get("base_width"), "structural_axes.base_width")
+    round_to = _positive_int(axis.get("round_to"), "structural_axes.round_to")
+    raw_widths = axis.get("legal_widths")
+    if not isinstance(raw_widths, list) or not raw_widths:
+        raise ValueError("structural_axes.legal_widths must be a non-empty list")
+    legal_widths = [
+        _positive_int(width, "structural_axes.legal_widths") for width in raw_widths
+    ]
+    if legal_widths != sorted(set(legal_widths)):
+        raise ValueError("structural_axes.legal_widths must be sorted and unique")
+    if any(width % round_to != 0 for width in legal_widths):
+        raise ValueError("structural_axes.legal_widths must be divisible by round_to")
+    if legal_widths[-1] > base_width:
+        raise ValueError("structural_axes.legal_widths exceed base_width")
+    if legal_widths[-1] != base_width:
+        raise ValueError("structural_axes.legal_widths must end at base_width")
+    members = axis.get("member_b1_groups")
+    if not isinstance(members, list) or not members:
+        raise ValueError("structural_axes.member_b1_groups must be a non-empty list")
+    return {
+        "axis_id": axis_id,
+        "dense_stage": axis.get("dense_stage"),
+        "axis_kind": axis_kind,
+        "base_width": base_width,
+        "legal_widths": legal_widths,
+        "member_b1_groups": [
+            _validated_axis_member(member, base_width, legal_widths)
+            for member in members
+        ],
+        "round_to": round_to,
+        "provenance": _validated_axis_provenance(axis.get("provenance")),
+    }
+
+
+def _validated_axis_member(
+    member: Any,
+    base_width: int,
+    legal_widths: Sequence[int],
+) -> dict[str, Any]:
+    if not isinstance(member, Mapping):
+        raise ValueError("structural_axes.member_b1_groups entries must be objects")
+    out = {
+        "b1_group_id": str(member.get("b1_group_id") or "").strip(),
+        "module_path": str(member.get("module_path") or "").strip(),
+        "canonical_to_member_num": _positive_int(
+            member.get("canonical_to_member_num"),
+            "structural_axes.member_b1_groups.canonical_to_member_num",
+        ),
+        "canonical_to_member_den": _positive_int(
+            member.get("canonical_to_member_den"),
+            "structural_axes.member_b1_groups.canonical_to_member_den",
+        ),
+        "materializer_param": str(member.get("materializer_param") or "").strip(),
+        "role": str(member.get("role") or "").strip(),
+    }
+    if not all(
+        out[key] for key in ("b1_group_id", "module_path", "materializer_param", "role")
+    ):
+        raise ValueError("structural_axes.member_b1_groups entries are incomplete")
+    num = out["canonical_to_member_num"]
+    den = out["canonical_to_member_den"]
+    member_base_numerator = base_width * num
+    if member_base_numerator % den != 0:
+        raise ValueError("structural axis base must map to an integer member width")
+    member_base_width = member_base_numerator // den
+    for width in legal_widths:
+        mapped_numerator = width * num
+        if mapped_numerator % den != 0:
+            raise ValueError("every legal axis width must map to an integer member width")
+        mapped_width = mapped_numerator // den
+        if not 0 < mapped_width <= member_base_width:
+            raise ValueError("mapped member width violates the member base-width contract")
+    return out
+
+
+def _validated_axis_provenance(provenance: Any) -> dict[str, Any]:
+    if not isinstance(provenance, Mapping) or not provenance:
+        raise ValueError("structural_axes.provenance must be a non-empty object")
+    if not str(provenance.get("source") or "").strip():
+        raise ValueError("structural_axes.provenance.source is required")
+    return dict(provenance)
+
+
+def _normalized_precisions(values: object) -> set[str]:
+    if values is None:
+        return set()
+    if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
+        raise ValueError("formal q modes source must be a sequence")
+    out: set[str] = set()
+    for value in values:
+        token = str(value).strip().lower()
+        if token in {"fp16", "float16", "16"}:
+            out.add("fp16")
+        elif token in {"int8", "8"}:
+            out.add("int8")
+    return out
+
+
+def _graph_quant_precisions(raw_quant_units: object, quant_units: list[QuantUnit]) -> set[str]:
+    if raw_quant_units is not None:
+        if not isinstance(raw_quant_units, list):
+            raise ValueError("quant_units must be a list")
+        unit_modes: list[set[str]] = []
+        for unit in raw_quant_units:
+            if not isinstance(unit, Mapping):
+                raise ValueError("quant_units entries must be objects")
+            quantizable = unit.get("quantizable", True)
+            if not isinstance(quantizable, bool):
+                raise ValueError("quant_units.quantizable must be a boolean")
+            if quantizable:
+                unit_modes.append(
+                    _normalized_precisions(unit.get("legal_precisions", []))
+                )
+        return _common_quant_precisions(unit_modes)
+    return _common_quant_precisions(
+        [_normalized_precisions(unit.legal_bits) for unit in quant_units if unit.quantizable]
+    )
+
+
+def _common_quant_precisions(unit_modes: list[set[str]]) -> set[str]:
+    if not unit_modes:
+        return {"fp16"}
+    return set.intersection(*unit_modes)
 
 
 def load_spacespec(model: str, partitions_dir: str | Path = None) -> SpaceSpec:
@@ -616,22 +803,26 @@ def _structural_axis_from_knob(knob: KnobSpec) -> dict:
     }
 
 
-def _formal_q_modes(hw: HwCapability, quant_units: list[QuantUnit]) -> list[str]:
-    bit_to_mode = {"FP16": "fp16", "INT8": "int8"}
-    supported_bits = {str(bit).upper() for bit in hw.legal_bits}
-    if quant_units:
-        unit_bits = {
-            str(bit).upper()
-            for unit in quant_units
-            if unit.quantizable
-            for bit in unit.legal_bits
-        }
-        supported_bits &= unit_bits or {"FP16"}
-    return [
-        bit_to_mode[bit]
-        for bit in ("FP16", "INT8")
-        if bit in supported_bits
-    ]
+def _formal_q_modes(
+    hw: HwCapability,
+    backend_support: object,
+    compression_modes: object,
+    raw_quant_units: object,
+    quant_units: list[QuantUnit],
+) -> list[str]:
+    hardware = _normalized_precisions(hw.legal_bits)
+    backend = _normalized_precisions(
+        backend_support.get("precisions", [])
+        if isinstance(backend_support, Mapping)
+        else []
+    )
+    configured = _normalized_precisions(compression_modes or [])
+    graph = _graph_quant_precisions(raw_quant_units, quant_units)
+    modes = hardware & backend & configured & graph
+    ordered = [mode for mode in ("fp16", "int8") if mode in modes]
+    if not ordered:
+        raise ValueError("formal q modes intersection is empty")
+    return ordered
 
 
 def _quant_policies(knob: KnobSpec, quant_units: list[QuantUnit]) -> tuple[str, list[dict]]:
