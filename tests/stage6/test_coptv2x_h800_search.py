@@ -43,6 +43,10 @@ from framework.stage6.p6_history_source_materialization_v1 import (
     run_source_invocations,
 )
 from tests.p6_source_wrapper_support import write_test_project_python
+from tests.stage6.pyramid_formal_space_support import (
+    scanner_owned_pyramid_stage1_manifest,
+    scanner_owned_pyramid_stage2_space,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -886,41 +890,7 @@ def _synthetic_framework_plan(
 
 
 def _complete_framework_stage2_search_space() -> dict[str, Any]:
-    widths_by_stage_and_q_mode = {
-        "stage1": {"fp16": [32, 64, 96], "int8": [32, 64, 96]},
-        "stage2": {"fp16": [32, 64, 96], "int8": [32, 64]},
-        "stage3": {"fp16": [32, 64], "int8": [32]},
-    }
-    return {
-        "schema": "stage2_search_space_v1",
-        "model": "pyramid_lidar",
-        "hardware_target": {"name": "h800"},
-        "hardware_candidates": [
-            {
-                "id": "tvm_metaschedule_candidate",
-                "backend_scope": "measured_h800_tvm",
-                "hardware": "h800",
-                "schedule_policy": "tuned",
-            }
-        ],
-        "software_candidates": [
-            {
-                "dense_stage": stage,
-                "software_points": [
-                    {
-                        "id": f"{stage}:w{width}:{q_mode}",
-                        "width": width,
-                        "quant_policy": q_mode,
-                        "buildable": True,
-                        "status": "active",
-                    }
-                    for q_mode in ("fp16", "int8")
-                    for width in widths_by_stage_and_q_mode[stage][q_mode]
-                ],
-            }
-            for stage in ("stage1", "stage2", "stage3")
-        ],
-    }
+    return scanner_owned_pyramid_stage2_space()
 
 
 def _write_framework_stage1_partition_manifest(tmp_path: Path) -> Path:
@@ -929,40 +899,7 @@ def _write_framework_stage1_partition_manifest(tmp_path: Path) -> Path:
 
 def _real_stage1_partition_manifest() -> dict[str, Any]:
     """Return the minimum real Stage1 artifact accepted by the P6 scan gate."""
-    return {
-        "schema": "stage1_partition_manifest_v1",
-        "stage": "stage1_partition",
-        "model": "pyramid_lidar",
-        "scan_status": "ok",
-        "hw_capability": {"name": "h800"},
-        "view_b1_search_groups": [
-            {
-                "search_group_id": f"pyramid_group.{suffix}",
-                "bucket": "pyramid_backbone",
-                "widths": [224],
-                "round_to": 32,
-                "int8_buildable_align": 32,
-                "max_rate": 0.875,
-                "grouped_conv": True,
-                "criterion_pool": ["L1"],
-                "member_b1_groups": [f"pyramid_group.{suffix}"],
-            }
-            for suffix in ("s0", "s1", "s2")
-        ],
-        "view_b2_quant_units": [
-            {
-                "unit": "pyramid_backbone",
-                "quantizable": True,
-                "legal_bits": ["FP16", "INT8"],
-                "member_groups": [
-                    "pyramid_group.s0",
-                    "pyramid_group.s1",
-                    "pyramid_group.s2",
-                ],
-            }
-        ],
-        "view_d_routing_segments": {"segments": [{"device": "gpu", "n_nodes": 1}]},
-    }
+    return scanner_owned_pyramid_stage1_manifest()
 
 
 def _write_real_stage1_manifest(path: Path) -> Path:
@@ -1633,41 +1570,15 @@ def test_normalized_private_root_reaches_dynamic_stage2_and_registry_without_mea
 
 def test_zero_gpu_stage2_to_source_invocation_black_box(tmp_path: Path) -> None:
     """Gate dynamic public planning through shared-source direct argv without processes."""
-    stage2_output = {
-        "schema": "stage2_search_space_v1",
-        "model": "pyramid_lidar",
-        "hardware_target": {"name": "h800"},
-        "hardware_candidates": [
+    plan = execution.build_pyramid_candidate_plan(
+        scanner_owned_pyramid_stage2_space(
             {
-                "id": "tvm_metaschedule_candidate",
-                "backend_scope": "measured_h800_tvm",
-                "hardware": "h800",
-                "schedule_policy": "tuned",
+                "stage1": [128],
+                "stage2": [128],
+                "stage3": [64, 128],
             }
-        ],
-        "software_candidates": [
-            {
-                "dense_stage": stage,
-                "software_points": [
-                    {
-                        "id": f"{stage}:w{width}:{q_mode}",
-                        "width": width,
-                        "quant_policy": q_mode,
-                        "buildable": True,
-                        "status": "active",
-                    }
-                    for q_mode, widths in q_widths.items()
-                    for width in widths
-                ],
-            }
-            for stage, q_widths in {
-                "stage1": {"fp16": [17, 23, 29], "int8": [17]},
-                "stage2": {"fp16": [31], "int8": [31]},
-                "stage3": {"fp16": [63], "int8": [63]},
-            }.items()
-        ],
-    }
-    plan = execution.build_pyramid_candidate_plan(stage2_output)
+        )
+    )
 
     source_map = _write_normalized_history_source_map(tmp_path)
     history_root = Path(str(source_map["history_root"]))
@@ -1801,7 +1712,7 @@ def test_zero_gpu_stage2_to_source_invocation_black_box(tmp_path: Path) -> None:
     rows_by_group: dict[str, list[Mapping[str, Any]]] = {}
     for row in projected.request["rows"]:
         rows_by_group.setdefault(row["group_id"], []).append(row)
-    mixed_rows = rows_by_group["pyramid|17x31x63"]
+    mixed_rows = rows_by_group["pyramid|128x128x64"]
     assert {row["q_mode"] for row in mixed_rows} == {"fp16", "int8"}
     assert {key: mixed_rows[0]["source_contract"][key] for key in SHARED_SOURCE_PATH_KEYS} == {
         key: mixed_rows[1]["source_contract"][key] for key in SHARED_SOURCE_PATH_KEYS
@@ -1814,12 +1725,14 @@ def test_zero_gpu_stage2_to_source_invocation_black_box(tmp_path: Path) -> None:
     assert (
         len(all_paths) == len(set(all_paths)) == (len(rows_by_group) * len(SHARED_SOURCE_PATH_KEYS))
     )
-    assert len(runner.calls) == len(rows_by_group) == 3
+    assert len(runner.calls) == len(rows_by_group)
     assert [call[1::2] for call in runner.calls] == [
         ("--request", "--model", "--group-id", "--gpu")
-    ] * 3
+    ] * len(rows_by_group)
     assert [call[6] for call in runner.calls] == sorted(rows_by_group)
-    assert [call[8] for call in runner.calls] == ["17", "19", "23"]
+    assert [call[8] for call in runner.calls] == [
+        str(index) for index in synthetic_gpu_indices[: len(rows_by_group)]
+    ]
     for row in projected.request["rows"]:
         assert (
             row["source_contract_sha256"]
@@ -2100,11 +2013,12 @@ def test_run_p6_framework_mode_rejects_registry_plan_identity_mismatches_before_
             q_mode = registry["groups"][0]["available_q_modes"].pop()
             del registry["groups"][0]["source_point_ids_by_q_mode"][q_mode]
         elif mutation == "added":
-            group = next(
-                item for item in registry["groups"] if item["available_q_modes"] == ["fp16"]
-            )
-            group["available_q_modes"] = ["fp16", "int8"]
-            group["source_point_ids_by_q_mode"]["int8"] = ["extra-s1", "extra-s2", "extra-s3"]
+            group = copy.deepcopy(registry["groups"][0])
+            group["group_id"] = "pyramid|1x1x1"
+            group["width"] = [1, 1, 1]
+            group["source_contract"]["group_id"] = group["group_id"]
+            group["source_contract"]["width"] = group["width"]
+            registry["groups"].append(group)
         else:
             registry["groups"][-1] = dict(registry["groups"][0])
         registry_path.write_text(json.dumps(registry), encoding="utf-8")
@@ -2179,15 +2093,14 @@ def test_run_p6_framework_source_space_rejects_fewer_than_16_eligible_rows(
 
     def undersized_search_space(path: Path) -> dict[str, Any]:
         del path
-        search_space = _complete_framework_stage2_search_space()
-        for candidate in search_space["software_candidates"]:
-            candidate["software_points"] = [
-                point for point in candidate["software_points"] if point["quant_policy"] == "fp16"
-            ]
-        search_space["software_candidates"][1]["software_points"] = search_space[
-            "software_candidates"
-        ][1]["software_points"][:2]
-        return search_space
+        return scanner_owned_pyramid_stage2_space(
+            {
+                "stage1": [128],
+                "stage2": [128],
+                "stage3": [128],
+            },
+            q_modes=["fp16"],
+        )
 
     monkeypatch.setattr(execution, "load_stage2_search_space", undersized_search_space)
     measurement_calls = 0
@@ -2202,7 +2115,7 @@ def test_run_p6_framework_source_space_rejects_fewer_than_16_eligible_rows(
             measurement_calls += 1
             raise AssertionError("measurement must not start below the sample budget")
         plan = json.loads(Path(argv[4]).read_text(encoding="utf-8"))
-        assert plan["candidate_count"] == 12
+        assert plan["candidate_count"] == 1
         _write_source_registry_from_plan(Path(argv[3]), plan)
         return 0
 
@@ -2216,15 +2129,13 @@ def test_run_p6_framework_source_space_rejects_fewer_than_16_eligible_rows(
 @pytest.mark.parametrize(
     "mutation",
     [
-        lambda space: space["software_candidates"][0].update({"software_points": []}),
-        lambda space: space["software_candidates"][0]["software_points"][0].update(
-            {"quant_policy": "fp32"}
-        ),
-        lambda space: space["software_candidates"][0]["software_points"][0].update(
-            {"buildable": False}
+        lambda space: space["axis_schema"]["free_axes"][0].update({"legal_widths": []}),
+        lambda space: space["formal_q_modes"].append("fp32"),
+        lambda space: space["axis_schema"]["free_axes"][0].update(
+            {"base_width": 1}
         ),
     ],
-    ids=["missing-stage-points", "unsupported-fp32", "active-nonbuildable"],
+    ids=["missing-axis-widths", "unsupported-fp32", "over-base-axis"],
 )
 def test_run_p6_framework_mode_rejects_invalid_stage2_points_before_measurement(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: Callable[[dict[str, Any]], Any]

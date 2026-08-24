@@ -98,6 +98,41 @@ def _plan_for_widths(
     }
 
 
+def _formal_plan_for_widths(
+    widths: tuple[tuple[int, int, int], ...],
+    q_modes: tuple[str, ...] = ("fp16",),
+    *,
+    base_widths: tuple[int, int, int],
+) -> dict[str, Any]:
+    plan = _plan_for_widths(widths, q_modes)
+    for candidate in plan["candidates"]:
+        candidate["source_point_ids"] = [
+            f"backbone.s{index}:w{width}"
+            for index, width in enumerate(candidate["width"])
+        ]
+    plan["axis_schema"] = {
+        "free_axes": [
+            {
+                "axis_id": f"backbone.s{index}",
+                "dense_stage": f"stage{index + 1}",
+                "axis_kind": "free",
+                "base_width": base,
+            }
+            for index, base in enumerate(base_widths)
+        ],
+        "fixed_derived_axes": [],
+    }
+    return plan
+
+
+def _formal_plan_with_candidate(
+    width: list[int], base_widths: list[int]
+) -> dict[str, Any]:
+    return _formal_plan_for_widths(
+        (tuple(width),), base_widths=tuple(base_widths)  # type: ignore[arg-type]
+    )
+
+
 def _recipe() -> dict[str, Any]:
     output_templates = {
         q_mode: {
@@ -462,7 +497,119 @@ def test_registry_materializes_every_dynamic_identity_without_pruning(
     assert binding == original_binding
 
 
-def test_recipe_v2_registry_preserves_all_identities_and_marks_over_cap_diagnostic(
+def test_registry_rejects_over_base_formal_candidate_before_write(
+    tmp_path: Path,
+) -> None:
+    plan = _formal_plan_with_candidate(
+        width=[64, 128, 320], base_widths=[64, 128, 256]
+    )
+    binding = _binding(tmp_path)
+    local_output_root = tmp_path / "private-output"
+    local_output_root.mkdir()
+    registry_path = local_output_root / "source_registry.json"
+
+    with pytest.raises(P6HistoryRegistryError, match="over base"):
+        materialize_history_registry(plan, binding, local_output_root)
+
+    assert not registry_path.exists()
+
+
+@pytest.mark.parametrize(
+    "source_point_ids",
+    [
+        ["evil-stage:w64", "backbone.s1:w128", "backbone.s2:w256"],
+        ["backbone.s0:w64", "backbone.s0:w64", "backbone.s2:w256"],
+        ["backbone.s0:w63", "backbone.s1:w128", "backbone.s2:w256"],
+    ],
+    ids=["evil-stage", "duplicate-axis", "wrong-width"],
+)
+def test_registry_rejects_formal_source_point_id_drift_before_write(
+    tmp_path: Path, source_point_ids: list[str]
+) -> None:
+    plan = _formal_plan_with_candidate(
+        width=[64, 128, 256], base_widths=[64, 128, 256]
+    )
+    plan["candidates"][0]["source_point_ids"] = source_point_ids
+    binding = _binding(tmp_path)
+    local_output_root = tmp_path / "private-output"
+    local_output_root.mkdir()
+    registry_path = local_output_root / "source_registry.json"
+
+    with pytest.raises(P6HistoryRegistryError, match="source point"):
+        materialize_history_registry(plan, binding, local_output_root)
+
+    assert not registry_path.exists()
+
+
+def test_registry_projects_formal_identity_through_public_source_ids(
+    tmp_path: Path,
+) -> None:
+    plan = _formal_plan_for_widths(((64, 128, 256),), base_widths=(64, 128, 256))
+    candidate = plan["candidates"][0]
+    candidate["formal_candidate_id"] = "f" * 64
+    candidate["formal_identity"] = {
+        "axis_values": {"backbone.s0": 64, "backbone.s1": 128, "backbone.s2": 256}
+    }
+    binding = _binding(tmp_path)
+    local_output_root = tmp_path / "private-output"
+    local_output_root.mkdir()
+
+    registry = materialize_history_registry(plan, binding, local_output_root)
+
+    assert _registry_identity_map(registry) == _plan_identity_map(plan)
+    group = registry["groups"][0]
+    assert group["source_point_ids_by_q_mode"] == {
+        "fp16": candidate["source_point_ids"]
+    }
+    assert "formal_candidate_id" not in group
+    assert "formal_identity" not in group
+
+
+def test_recipe_v2_valid_formal_candidates_remain_ready_without_unavailable_split(
+    tmp_path: Path,
+) -> None:
+    plan = _formal_plan_for_widths(
+        ((8, 1, 1), (9, 1, 1)),
+        ("fp16",),
+        base_widths=(9, 1, 1),
+    )
+    private_root = _private_root_with_training_inputs(tmp_path)
+    binding = _binding_with_recipe_v2_training_template(private_root)
+    _bind_synthetic_prune_caps(binding, (9, 1, 1))
+    local_output_root = tmp_path / "private-output"
+    local_output_root.mkdir()
+
+    registry = materialize_history_registry(plan, binding, local_output_root)
+
+    assert _registry_identity_map(registry) == _plan_identity_map(plan)
+    assert [group["source_status"] for group in registry["groups"]] == [
+        "ready",
+        "ready",
+    ]
+
+
+def test_recipe_v2_rejects_formal_base_drift_before_write(
+    tmp_path: Path,
+) -> None:
+    plan = _formal_plan_for_widths(
+        ((9, 1, 1),),
+        ("fp16",),
+        base_widths=(10, 1, 1),
+    )
+    private_root = _private_root_with_training_inputs(tmp_path)
+    binding = _binding_with_recipe_v2_training_template(private_root)
+    _bind_synthetic_prune_caps(binding, (9, 1, 1))
+    local_output_root = tmp_path / "private-output"
+    local_output_root.mkdir()
+    registry_path = local_output_root / "source_registry.json"
+
+    with pytest.raises(P6HistoryRegistryError, match="base width"):
+        materialize_history_registry(plan, binding, local_output_root)
+
+    assert not registry_path.exists()
+
+
+def test_recipe_v2_registry_preserves_all_identities_without_over_cap_split(
     tmp_path: Path,
 ) -> None:
     widths = tuple((index, 1, 1) for index in range(1, 64))
@@ -479,12 +626,11 @@ def test_recipe_v2_registry_preserves_all_identities_and_marks_over_cap_diagnost
     registry = materialize_history_registry(plan, binding, local_output_root)
 
     assert _registry_identity_map(registry) == _plan_identity_map(plan)
-    ready = [group for group in registry["groups"] if group["source_status"] == "ready"]
-    diagnostic = [
-        group for group in registry["groups"] if group["source_status"] == "unavailable"
-    ]
-    assert sum(len(group["available_q_modes"]) for group in ready) == 18
-    assert sum(len(group["available_q_modes"]) for group in diagnostic) == 108
+    assert all(group["source_status"] == "ready" for group in registry["groups"])
+    assert (
+        sum(len(group["available_q_modes"]) for group in registry["groups"])
+        == plan["candidate_count"]
+    )
     for group in registry["groups"]:
         contract = group["source_contract"]
         assert contract["source_status"] == group["source_status"]
@@ -492,7 +638,7 @@ def test_recipe_v2_registry_preserves_all_identities_and_marks_over_cap_diagnost
         assert validate_source_contract(group) == contract
 
 
-def test_recipe_v2_registry_accepts_equal_cap_for_fp16_only_plan(
+def test_recipe_v2_registry_keeps_fp16_only_plan_ready(
     tmp_path: Path,
 ) -> None:
     plan = _plan_for_widths(((9, 1, 1), (10, 1, 1)), ("fp16",))
@@ -511,7 +657,7 @@ def test_recipe_v2_registry_accepts_equal_cap_for_fp16_only_plan(
     ]
     assert [group["source_status"] for group in registry["groups"]] == [
         "ready",
-        "unavailable",
+        "ready",
     ]
 
 

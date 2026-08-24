@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import copy
 import json
-from itertools import product
-from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 
-from framework.stage1_bridge import load_stage2_search_space
+from framework.stage1.structural_axis_digest import (
+    canonical_digest,
+    scanner_structural_axes_digest,
+)
 from framework.stage6.pyramid_search_space_adapter_v1 import (
     PyramidSearchSpaceAdapterError,
     build_pyramid_candidate_plan,
@@ -20,7 +21,6 @@ def _candidate(
     stage: str,
     widths: list[int],
     q_modes: list[str],
-    widths_by_q_mode: dict[str, list[int]] | None = None,
     *,
     group_id: str | None = None,
 ) -> dict[str, Any]:
@@ -37,7 +37,7 @@ def _candidate(
                 "status": "active",
             }
             for q_mode in q_modes
-            for width in (widths_by_q_mode or {}).get(q_mode, widths)
+            for width in widths
         ],
     }
 
@@ -46,11 +46,17 @@ def _space(**overrides: Any) -> dict[str, Any]:
     payload = {
         "schema": "stage2_search_space_v1",
         "model": "pyramid_lidar",
-        "hardware_target": {"name": "h800"},
+        "hardware_target": {
+            "name": "h800",
+            "int8_align": 32,
+            "fp16_align": 8,
+            "int8_pack_factor": 4,
+            "alignment_enforcement": "hard",
+        },
         "software_candidates": [
-            _candidate("stage1", [16, 32], ["fp16", "int8"], {"int8": [16]}),
-            _candidate("stage2", [32, 64], ["fp16", "int8"], {"int8": [32]}),
-            _candidate("stage3", [64, 96], ["fp16", "int8"], {"int8": [64]}),
+            _candidate("stage1", [64], ["fp16"], group_id="legacy-stage1"),
+            _candidate("stage2", [128], ["fp16"], group_id="legacy-stage2"),
+            _candidate("stage3", [256], ["fp16"], group_id="legacy-stage3"),
         ],
         "hardware_candidates": [
             {
@@ -64,79 +70,91 @@ def _space(**overrides: Any) -> dict[str, Any]:
     return {**payload, **overrides}
 
 
-def _formal_pyramid_paper_space() -> dict[str, Any]:
-    return _space(
-        structural_axes=[
-            {
-                "axis_id": "backbone.s0",
-                "dense_stage": "stage1",
-                "base_width": 64,
-                "legal_widths": [16, 24, 32, 40, 48, 56, 64],
-                "member_b1_groups": ["pyramid.backbone.s0"],
-                "provenance": "paper_fixture_scanned_axis",
-            },
-            {
-                "axis_id": "backbone.s1",
-                "dense_stage": "stage2",
-                "base_width": 128,
-                "legal_widths": [32, 48, 64, 80, 96, 112, 128],
-                "member_b1_groups": ["pyramid.backbone.s1"],
-                "provenance": "paper_fixture_scanned_axis",
-            },
-            {
-                "axis_id": "backbone.s2",
-                "dense_stage": "stage3",
-                "base_width": 256,
-                "legal_widths": [64, 96, 128, 160, 192, 224, 256],
-                "member_b1_groups": ["pyramid.backbone.s2"],
-                "provenance": "paper_fixture_scanned_axis",
-            },
-        ],
-        formal_q_modes=["fp16", "int8"],
-        formal_candidate_policy={
-            "enumeration": "structural_axes_x_formal_q_modes",
-            "diagnostic_anchors_drive_formal_space": False,
+def _scanner_axis(axis_id: str, dense_stage: str, widths: list[int]) -> dict[str, Any]:
+    provenance = {
+        "source": "stage1.graph_scan.build_structural_axis_inputs",
+        "scanner_input_digest": "a" * 64,
+        "input_digest": "a" * 64,
+        "dataflow_group_ids": [f"{axis_id}.g0"],
+        "config_digest": "b" * 64,
+        "checkpoint_digest": "c" * 64,
+        "scenario_digest": "d" * 64,
+        "scan_manifest_digest": "e" * 64,
+        "relevant_groups_digest": "f" * 64,
+        "structural_evidence_digest": "1" * 64,
+        "digest_sources": {
+            "config_digest": "trace_context.loaded_config",
+            "checkpoint_digest": "trace_context.checkpoint_evidence",
+            "scenario_digest": "scan_scenario",
+            "scan_manifest_digest": "scanner_group_manifest",
+            "structural_evidence_digest": "canonical_structural_axis_inputs",
         },
-        software_candidates=[],
-    )
-
-
-def _canonical_loader_manifest() -> dict[str, Any]:
-    search_groups = [
-        {
-            "search_group_id": f"pyramid_group.{suffix}",
-            "bucket": f"pyramid_{suffix}",
-            "widths": [16, 32, 48, 64],
-            "round_to": 16,
-            "int8_buildable_align": 64,
-            "max_rate": 0.75,
-            "grouped_conv": True,
-            "criterion_pool": ["L1"],
-            "member_b1_groups": [f"pyramid_group.{suffix}"],
-        }
-        for suffix in ("s0", "s1", "s2")
-    ]
+    }
     return {
-        "schema": "stage1_partition_manifest_demo_v1",
-        "model": "pyramid_lidar",
-        "scan_status": "ok",
-        "hw_capability": {"name": "h800_tvm_demo"},
-        "view_b1_search_groups": search_groups,
-        "view_b2_quant_units": [
+        "axis_id": axis_id,
+        "dense_stage": dense_stage,
+        "axis_kind": "free",
+        "base_width": widths[-1],
+        "legal_widths": widths,
+        "member_b1_groups": [
             {
-                "unit": group["bucket"],
-                "quantizable": True,
-                "legal_bits": ["FP16", "INT8"],
-                "member_groups": group["member_b1_groups"],
+                "b1_group_id": f"{axis_id}.g0",
+                "module_path": axis_id,
+                "canonical_to_member_num": 1,
+                "canonical_to_member_den": 1,
+                "materializer_param": f"model.{axis_id}",
+                "role": "output",
             }
-            for group in search_groups
         ],
-        "view_d_routing_segments": {"segments": [{"device": "gpu", "n_nodes": 1}]},
+        "round_to": 8,
+        "provenance": provenance,
     }
 
 
-def test_build_pyramid_candidate_plan_uses_independent_q_mode_products() -> None:
-    plan = build_pyramid_candidate_plan(_space())
+def _q_mode_provenance(
+    hardware_target: dict[str, Any], modes: list[str]
+) -> dict[str, Any]:
+    payload = {
+        "schema": "formal_q_mode_provenance_v1",
+        "hardware_target": copy.deepcopy(hardware_target),
+        "sources": {
+            "hardware": list(modes),
+            "backend": list(modes),
+            "configured": list(modes),
+            "graph": list(modes),
+        },
+        "formal_q_modes": list(modes),
+    }
+    return {**payload, "digest": canonical_digest(payload)}
+
+
+def _pyramid_space_with_axis_schema() -> dict[str, Any]:
+    axes = [
+        _scanner_axis("backbone.s0", "stage1", [16, 24, 32, 40, 48, 56, 64]),
+        _scanner_axis("backbone.s1", "stage2", [32, 48, 64, 80, 96, 112, 128]),
+        _scanner_axis("backbone.s2", "stage3", [64, 96, 128, 160, 192, 224, 256]),
+    ]
+    hardware_target = _space()["hardware_target"]
+    return _space(
+        scanner_structural_axes_digest=scanner_structural_axes_digest(axes),
+        axis_schema={"free_axes": axes, "fixed_derived_axes": []},
+        formal_q_modes=["fp16", "int8"],
+        formal_q_mode_provenance=_q_mode_provenance(
+            hardware_target, ["fp16", "int8"]
+        ),
+        formal_candidate_policy={
+            "enumeration": "axis_schema.free_axes_x_formal_q_modes",
+            "legacy_views": "diagnostic_only",
+            "diagnostic_anchors_drive_formal_space": False,
+            "source": "scanner_structural_axes",
+        },
+    )
+
+
+def test_build_pyramid_candidate_plan_uses_generic_formal_plan() -> None:
+    space = _pyramid_space_with_axis_schema()
+
+    plan = build_pyramid_candidate_plan(space)
 
     assert plan["schema_version"] == "p6_pyramid_candidate_plan_v2"
     assert plan["source_schema"] == "stage2_search_space_v1"
@@ -144,126 +162,70 @@ def test_build_pyramid_candidate_plan_uses_independent_q_mode_products() -> None
     assert plan["hardware_target"] == "h800"
     assert plan["execution_backend"] == "tvm_auto"
     assert plan["candidate_source_mode"] == "framework_stage2_search_space"
-    assert plan["structure_count"] == 8
-    assert plan["candidate_count"] == 9
-    assert {(tuple(row["width"]), row["q_mode"]) for row in plan["candidates"]} == {
-        *((width, "fp16") for width in product((16, 32), (32, 64), (64, 96))),
-        ((16, 32, 64), "int8"),
-    }
-    assert all(row["q_mode"] in {"fp16", "int8"} for row in plan["candidates"])
-
-
-def test_build_pyramid_candidate_plan_uses_formal_axes_for_paper_space() -> None:
-    """Catches legacy diagnostic anchors truncating the formal Pyramid paper space."""
-    plan = build_pyramid_candidate_plan(_formal_pyramid_paper_space())
-
     assert plan["structure_count"] == 343
     assert plan["candidate_count"] == 686
     assert plan["candidates"][0]["width"] == [16, 32, 64]
     assert plan["candidates"][-1]["width"] == [64, 128, 256]
     assert {row["q_mode"] for row in plan["candidates"]} == {"fp16", "int8"}
-    assert all(len(row["source_point_ids"]) == 3 for row in plan["candidates"])
+    assert all("formal_candidate_id" in row for row in plan["candidates"])
+    assert all("formal_identity" in row for row in plan["candidates"])
 
 
-def test_build_pyramid_candidate_plan_allows_missing_int8_counterparts() -> None:
-    space = _space()
-    for stage in space["software_candidates"]:
-        stage["software_points"] = [
-            point
-            for point in stage["software_points"]
-            if point["quant_policy"] == "fp16"
-        ]
+def test_build_pyramid_candidate_plan_ignores_legacy_candidates_for_formal_space() -> None:
+    space = _pyramid_space_with_axis_schema()
+    space["software_candidates"] = [
+        _candidate("stage1", [64], ["fp16"], group_id="legacy-stage1"),
+        _candidate("stage2", [128], ["fp16"], group_id="legacy-stage2"),
+        _candidate("stage3", [256], ["fp16"], group_id="legacy-stage3"),
+    ]
+
     plan = build_pyramid_candidate_plan(space)
-    assert plan["candidate_count"] == 8
-    assert all(row["q_mode"] == "fp16" for row in plan["candidates"])
 
-
-def test_build_pyramid_candidate_plan_accepts_canonical_loader_diagnostics(
-    tmp_path: Path,
-) -> None:
-    manifest_path = tmp_path / "pyramid.yaml"
-    manifest_path.write_text(
-        yaml.safe_dump(_canonical_loader_manifest(), sort_keys=False), encoding="utf-8"
-    )
-    search_space = load_stage2_search_space(manifest_path)
-
-    diagnostic_points = [
-        point
-        for group in search_space["software_candidates"]
-        for point in group["software_points"]
-        if point["status"] == "diagnostic_only"
-    ]
-    assert diagnostic_points
-    assert all(point["buildable"] is False for point in diagnostic_points)
-
-    plan = build_pyramid_candidate_plan(search_space)
-
-    assert plan["candidate_count"] == 128
-    assert {(tuple(row["width"]), row["q_mode"]) for row in plan["candidates"]} == {
-        *((widths, "fp16") for widths in product((16, 32, 48, 64), repeat=3)),
-        *((widths, "int8") for widths in product((16, 32, 48, 64), repeat=3)),
-    }
-
-
-def test_build_pyramid_candidate_plan_merges_real_same_stage_group_provenance() -> None:
-    payload = _space(
-        software_candidates=[
-            _candidate(
-                "stage1", [32], ["fp16"], group_id="stage1/group,A"
-            ),
-            _candidate(
-                "stage1", [32], ["fp16"], group_id="stage1 group+B%"
-            ),
-            _candidate("stage2", [64], ["fp16"]),
-            _candidate("stage3", [96], ["fp16"]),
-        ]
-    )
-
-    plan = build_pyramid_candidate_plan(payload)
-
-    assert plan["candidate_count"] == 1
-    candidate = plan["candidates"][0]
-    assert candidate["width"] == [32, 64, 96]
-    assert len(candidate["source_point_ids"]) == 3
-    assert parse_pyramid_stage_provenance_token(candidate["source_point_ids"][0]) == (
-        "stage1 group+B%-fp16-32",
-        "stage1/group,A-fp16-32",
-    )
-    assert candidate["source_point_ids"][1:] == [
-        "stage2-fp16-64",
-        "stage3-fp16-96",
-    ]
-
-
-def test_build_pyramid_candidate_plan_intersects_widths_across_stage_groups() -> None:
-    payload = _space(
-        software_candidates=[
-            _candidate("stage1", [16, 32], ["fp16"], group_id="stage1-a"),
-            _candidate("stage1", [32, 64], ["fp16"], group_id="stage1-b"),
-            _candidate("stage2", [32, 64], ["fp16"]),
-            _candidate("stage3", [64, 96], ["fp16"]),
-        ]
-    )
-
-    plan = build_pyramid_candidate_plan(payload)
-
-    assert plan["candidate_count"] == 4
-    assert {row["width"][0] for row in plan["candidates"]} == {32}
-
-
-def test_build_pyramid_candidate_plan_preserves_single_group_source_ids() -> None:
-    plan = build_pyramid_candidate_plan(_space())
-
-    candidate = next(
-        row
+    assert plan["structure_count"] == 343
+    assert plan["candidate_count"] == 686
+    assert plan["candidates"][0]["width"] == [16, 32, 64]
+    assert all(
+        "legacy-stage" not in json.dumps(row, sort_keys=True)
         for row in plan["candidates"]
-        if row["width"] == [16, 32, 64] and row["q_mode"] == "fp16"
     )
-    assert candidate["source_point_ids"] == [
-        "stage1-fp16-16",
-        "stage2-fp16-32",
-        "stage3-fp16-64",
+
+
+def test_build_pyramid_candidate_plan_preserves_formal_identity_and_order() -> None:
+    plan = build_pyramid_candidate_plan(_pyramid_space_with_axis_schema())
+    first = plan["candidates"][0]
+
+    assert first["source_point_ids"] == [
+        "backbone.s0:w16",
+        "backbone.s1:w32",
+        "backbone.s2:w64",
     ]
+    assert first["axis_order"] == ["backbone.s0", "backbone.s1", "backbone.s2"]
+    assert first["axis_values"] == {
+        "backbone.s0": 16,
+        "backbone.s1": 32,
+        "backbone.s2": 64,
+    }
+    assert first["formal_identity"]["source_provenance"] == plan["source_provenance"]
+    assert [row["formal_candidate_index"] for row in plan["candidates"]] == list(
+        range(plan["candidate_count"])
+    )
+
+
+def test_build_pyramid_candidate_plan_is_canonical_when_diagnostics_change() -> None:
+    first = _pyramid_space_with_axis_schema()
+    second = _pyramid_space_with_axis_schema()
+    second["software_candidates"] = list(reversed(second["software_candidates"]))
+    for candidate in second["software_candidates"]:
+        candidate["software_points"] = list(reversed(candidate["software_points"]))
+
+    assert json.dumps(build_pyramid_candidate_plan(first), sort_keys=True) == json.dumps(
+        build_pyramid_candidate_plan(second), sort_keys=True
+    )
+
+
+def test_build_pyramid_candidate_plan_requires_scanner_owned_axis_schema() -> None:
+    with pytest.raises(PyramidSearchSpaceAdapterError, match="axis_schema"):
+        build_pyramid_candidate_plan(_space())
 
 
 @pytest.mark.parametrize(
@@ -277,157 +239,50 @@ def test_build_pyramid_candidate_plan_preserves_single_group_source_ids() -> Non
             lambda data: data["hardware_candidates"][0].update({"backend_scope": "cuda"}),
             "TVM",
         ),
-        (lambda data: data.update({"software_candidates": data["software_candidates"][:-1]}), "stage"),
     ],
 )
-def test_build_pyramid_candidate_plan_rejects_unsupported_inputs(
+def test_build_pyramid_candidate_plan_rejects_unsupported_envelope(
     mutate: Any, message: str
 ) -> None:
-    payload = _space()
+    payload = _pyramid_space_with_axis_schema()
     mutate(payload)
     with pytest.raises(PyramidSearchSpaceAdapterError, match=message):
         build_pyramid_candidate_plan(payload)
 
 
-def test_build_pyramid_candidate_plan_rejects_unknown_quant_policy() -> None:
-    payload = _space()
-    payload["software_candidates"][0]["software_points"][0]["quant_policy"] = "fp32"
-    with pytest.raises(PyramidSearchSpaceAdapterError, match="quant"):
-        build_pyramid_candidate_plan(payload)
-
-
-def test_build_pyramid_candidate_plan_rejects_active_non_buildable_point() -> None:
-    payload = _space()
-    payload["software_candidates"][0]["software_points"][0]["buildable"] = False
-    with pytest.raises(PyramidSearchSpaceAdapterError, match="active.*buildable"):
-        build_pyramid_candidate_plan(payload)
-
-
-@pytest.mark.parametrize("status", ["diagnostic", "diagnostic_only"])
-def test_build_pyramid_candidate_plan_rejects_buildable_diagnostic_point(
-    status: str,
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (
+            lambda data: data["axis_schema"]["free_axes"][0].update(
+                {"dense_stage": None}
+            ),
+            "stage1, stage2, and stage3",
+        ),
+        (
+            lambda data: data["axis_schema"]["free_axes"][0].update(
+                {"dense_stage": "stage2"}
+            ),
+            "duplicate",
+        ),
+        (
+            lambda data: data["axis_schema"]["free_axes"].append(
+                _scanner_axis("backbone.s3", "stage4", [8, 16])
+            ),
+            "stage1, stage2, and stage3",
+        ),
+    ],
+)
+def test_build_pyramid_candidate_plan_rejects_non_pyramid_formal_axis_mapping(
+    mutate: Any, message: str
 ) -> None:
-    payload = _space()
-    payload["software_candidates"][0]["software_points"][0].update(
-        {"status": status, "buildable": True}
+    payload = _pyramid_space_with_axis_schema()
+    mutate(payload)
+    payload["scanner_structural_axes_digest"] = scanner_structural_axes_digest(
+        payload["axis_schema"]["free_axes"]
     )
-    with pytest.raises(PyramidSearchSpaceAdapterError, match="unsupported"):
+    with pytest.raises(PyramidSearchSpaceAdapterError, match=message):
         build_pyramid_candidate_plan(payload)
-
-
-@pytest.mark.parametrize("status", ["diagnostic", "diagnostic_only"])
-def test_build_pyramid_candidate_plan_ignores_nonbuildable_diagnostics(
-    status: str,
-) -> None:
-    payload = _space()
-    payload["software_candidates"][0]["software_points"].append(
-        {
-            "id": "diagnostic",
-            "width": 128,
-            "quant_policy": "int8",
-            "buildable": False,
-            "status": status,
-        }
-    )
-    assert build_pyramid_candidate_plan(payload)["candidate_count"] == 9
-
-
-def test_build_pyramid_candidate_plan_rejects_non_diagnostic_non_buildable_point() -> None:
-    payload = _space()
-    payload["software_candidates"][0]["software_points"].append(
-        {
-            "id": "retired",
-            "width": 128,
-            "quant_policy": "int8",
-            "buildable": False,
-            "status": "retired",
-        }
-    )
-    with pytest.raises(PyramidSearchSpaceAdapterError, match="unsupported"):
-        build_pyramid_candidate_plan(payload)
-
-
-def test_build_pyramid_candidate_plan_rejects_duplicate_point_identity() -> None:
-    payload = _space()
-    payload["software_candidates"][0]["software_points"].append(
-        payload["software_candidates"][0]["software_points"][0].copy()
-    )
-    with pytest.raises(PyramidSearchSpaceAdapterError, match="duplicate"):
-        build_pyramid_candidate_plan(payload)
-
-
-def test_build_pyramid_candidate_plan_rejects_source_id_across_shapes() -> None:
-    payload = _space()
-    payload["software_candidates"][0]["software_points"][1]["id"] = (
-        payload["software_candidates"][0]["software_points"][0]["id"]
-    )
-    with pytest.raises(PyramidSearchSpaceAdapterError, match="different shapes"):
-        build_pyramid_candidate_plan(payload)
-
-
-def test_build_pyramid_candidate_plan_rejects_reserved_token_prefix_collision() -> None:
-    payload = _space()
-    payload["software_candidates"][0]["software_points"][0]["id"] = (
-        "p6-stage-provenance-v1:raw-source-id"
-    )
-    with pytest.raises(PyramidSearchSpaceAdapterError, match="reserved provenance"):
-        build_pyramid_candidate_plan(payload)
-
-
-def test_build_pyramid_candidate_plan_rejects_no_complete_q_mode_product() -> None:
-    payload = _space()
-    payload["software_candidates"][1]["software_points"] = [{
-        "id": "diagnostic-stage2",
-        "width": 128,
-        "quant_policy": "fp16",
-        "buildable": False,
-        "status": "diagnostic",
-    }]
-    with pytest.raises(PyramidSearchSpaceAdapterError, match="q-mode"):
-        build_pyramid_candidate_plan(payload)
-
-
-def test_build_pyramid_candidate_plan_rejects_stage_groups_without_common_q_mode() -> None:
-    payload = _space(
-        software_candidates=[
-            _candidate("stage1", [16], ["fp16", "int8"], group_id="stage1-a"),
-            _candidate("stage1", [32], ["fp16", "int8"], group_id="stage1-b"),
-            _candidate("stage2", [64], ["fp16", "int8"]),
-            _candidate("stage3", [96], ["fp16", "int8"]),
-        ]
-    )
-    with pytest.raises(PyramidSearchSpaceAdapterError, match="q-mode"):
-        build_pyramid_candidate_plan(payload)
-
-
-def test_build_pyramid_candidate_plan_is_canonical_when_inputs_reverse() -> None:
-    first = _space()
-    second = _space()
-    first["software_candidates"].append(
-        _candidate(
-            "stage1",
-            [16, 32],
-            ["fp16", "int8"],
-            {"int8": [16]},
-            group_id="stage1-b",
-        )
-    )
-    second["software_candidates"].append(
-        _candidate(
-            "stage1",
-            [16, 32],
-            ["fp16", "int8"],
-            {"int8": [16]},
-            group_id="stage1-b",
-        )
-    )
-    second["software_candidates"] = list(reversed(second["software_candidates"]))
-    for candidate in second["software_candidates"]:
-        candidate["software_points"] = list(reversed(candidate["software_points"]))
-    second["hardware_candidates"] = list(reversed(second["hardware_candidates"]))
-    assert json.dumps(build_pyramid_candidate_plan(first), sort_keys=True) == json.dumps(
-        build_pyramid_candidate_plan(second), sort_keys=True
-    )
 
 
 @pytest.mark.parametrize(
@@ -447,3 +302,9 @@ def test_parse_pyramid_stage_provenance_token_rejects_noncanonical_tokens(
 ) -> None:
     with pytest.raises(PyramidSearchSpaceAdapterError, match="provenance token"):
         parse_pyramid_stage_provenance_token(token)
+
+
+def test_parse_pyramid_stage_provenance_token_accepts_canonical_token() -> None:
+    assert parse_pyramid_stage_provenance_token(
+        "p6-stage-provenance-v1:a,b%2Fc"
+    ) == ("a", "b/c")

@@ -14,12 +14,7 @@ import subprocess
 import tempfile
 from typing import Any
 
-from framework.stage5.genome_contract_v1 import (
-    canonical_group_id,
-    validate_structure_identity,
-)
 from framework.stage5.production_search_v1 import (
-    source_group_q_modes,
     validate_source_contract,
 )
 from framework.stage6.p6_history_binding_v1 import (
@@ -30,15 +25,19 @@ from framework.stage6.p6_history_recipe_profiles_v1 import (
     RECIPE_V2,
     SHARED_SOURCE_PATH_KEYS,
 )
+from framework.stage6.p6_formal_plan_contract_v1 import (
+    formal_base_widths as candidate_plan_formal_base_widths,
+    materialize_p6_history_groups,
+    recipe_v2_base_stage_widths,
+    validate_p6_candidate_plan,
+)
 from framework.stage6.p6_history_training_contract_v1 import (
     P6HistoryTrainingContractError,
-    validate_recipe_v2_group_training_contract,
     validate_recipe_v2_training_template,
 )
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-PLAN_SCHEMA_VERSION = "p6_pyramid_candidate_plan_v2"
 BINDING_SCHEMA_VERSION = "p6_history_binding_v1"
 REGISTRY_SCHEMA_VERSION = "stage5_candidate_source_registry_v2"
 RECIPE_V1 = "p6_history_dynamic_materialization_recipe_v1"
@@ -49,9 +48,6 @@ OUTPUT_TEMPLATE_KEYS = (
     "checkpoint_path_template",
     "onnx_path_template",
     "calibration_path_template",
-)
-LEGACY_OUTPUT_KEYS = tuple(
-    key.removesuffix("_template") for key in OUTPUT_TEMPLATE_KEYS
 )
 RECIPE_V1_KEYS = {
     "schema_version",
@@ -71,13 +67,6 @@ EXPECTED_BINDING_TARGET = {
     "model": "pyramid",
     "hardware": "h800",
     "backend": "tvm_auto",
-}
-EXPECTED_PLAN_FIELDS = {
-    "schema_version": PLAN_SCHEMA_VERSION,
-    "source_schema": "stage2_search_space_v1",
-    "target_model": "pyramid",
-    "execution_backend": "tvm_auto",
-    "candidate_source_mode": "framework_stage2_search_space",
 }
 FORBIDDEN_CONTEXT_TOKENS = (
     "metric",
@@ -225,78 +214,47 @@ def _require_private_registry_output(path: Path) -> None:
 def _validate_plan(
     raw_plan: Mapping[str, Any],
 ) -> dict[tuple[tuple[int, int, int], str], tuple[str, str, str]]:
-    if not isinstance(raw_plan, Mapping):
-        _invalid("candidate plan must be an object")
-    if any(raw_plan.get(key) != value for key, value in EXPECTED_PLAN_FIELDS.items()):
-        _invalid("candidate plan contract is incompatible")
-    hardware_target = raw_plan.get("hardware_target")
-    if not isinstance(hardware_target, str) or not (
-        hardware_target == "h800" or hardware_target.startswith("h800_")
-    ):
-        _invalid("candidate plan hardware is incompatible")
-    candidates = raw_plan.get("candidates")
-    if not isinstance(candidates, list) or not candidates:
-        _invalid("candidate plan candidates are invalid")
+    try:
+        return validate_p6_candidate_plan(raw_plan)
+    except ValueError as error:
+        _invalid(str(error))
 
-    entries: list[
-        tuple[tuple[tuple[int, int, int], str], tuple[str, str, str]]
-    ] = []
-    for candidate in candidates:
-        if not isinstance(candidate, Mapping):
-            _invalid("candidate plan candidate is invalid")
-        width = candidate.get("width")
-        q_mode = candidate.get("q_mode")
-        source_point_ids = candidate.get("source_point_ids")
-        if (
-            not isinstance(width, list)
-            or len(width) != 3
-            or any(
-                isinstance(value, bool)
-                or not isinstance(value, int)
-                or value <= 0
-                for value in width
-            )
-            or q_mode not in ALLOWED_Q_MODES
-            or not isinstance(source_point_ids, list)
-            or len(source_point_ids) != 3
-            or any(
-                not isinstance(source_point_id, str) or not source_point_id.strip()
-                for source_point_id in source_point_ids
-            )
-        ):
-            _invalid("candidate plan identity is invalid")
-        width_identity = (width[0], width[1], width[2])
-        provenance = (
-            source_point_ids[0],
-            source_point_ids[1],
-            source_point_ids[2],
-        )
-        entries.append(((width_identity, str(q_mode)), provenance))
 
-    mapping = dict(entries)
-    if len(mapping) != len(entries):
-        _invalid("candidate plan identity is duplicated")
-    ordered_entries = sorted(
-        entries,
-        key=lambda item: (item[0][0], item[0][1], item[1]),
+def _validate_formal_base_matches_binding(
+    raw_plan: Mapping[str, Any],
+    template: Mapping[str, Any],
+    recipe: Mapping[str, Any],
+) -> None:
+    formal_base_widths = candidate_plan_formal_base_widths(raw_plan)
+    binding_base_widths = recipe_v2_base_stage_widths(
+        template, str(recipe.get("schema_version"))
     )
-    if entries != ordered_entries:
-        _invalid("candidate plan is not canonical")
-    candidate_count = raw_plan.get("candidate_count")
-    structure_count = raw_plan.get("structure_count")
     if (
-        isinstance(candidate_count, bool)
-        or not isinstance(candidate_count, int)
-        or candidate_count != len(entries)
-        or isinstance(structure_count, bool)
-        or not isinstance(structure_count, int)
-        or structure_count != len({identity[0] for identity in mapping})
+        formal_base_widths is not None
+        and binding_base_widths is not None
+        and formal_base_widths != binding_base_widths
     ):
-        _invalid("candidate plan counts are inconsistent")
-    return mapping
+        _invalid("formal axis base width differs from binding base width")
 
 
 def _validate_template(binding: Mapping[str, Any]) -> ValidatedSourceTemplate:
+    private_root, template = _validate_template_binding(binding)
+    validated_template = _validate_source_contract_template(template, binding)
+    recipe = _validate_recipe(validated_template.get("dynamic_materialization_recipe"))
+    if recipe.get("schema_version") == RECIPE_V2:
+        validated_template = _validate_recipe_v2_template(
+            validated_template, private_root
+        )
+    return ValidatedSourceTemplate(
+        private_root=private_root,
+        template=validated_template,
+        recipe=recipe,
+    )
+
+
+def _validate_template_binding(
+    binding: Mapping[str, Any],
+) -> tuple[Path, dict[str, Any]]:
     if not isinstance(binding, Mapping):
         _invalid("history binding must be an object")
     try:
@@ -320,6 +278,13 @@ def _validate_template(binding: Mapping[str, Any]) -> ValidatedSourceTemplate:
     template = copy.deepcopy(dict(raw_template))
     _validate_no_forbidden_context(template)
     _validate_legacy_paths(template, private_root)
+    return private_root, template
+
+
+def _validate_source_contract_template(
+    template: Mapping[str, Any],
+    binding: Mapping[str, Any],
+) -> dict[str, Any]:
     evidence_sha = template.get("source_evidence_sha256")
     if not _is_sha256(evidence_sha):
         _invalid("source evidence SHA256 is invalid")
@@ -353,22 +318,22 @@ def _validate_template(binding: Mapping[str, Any]) -> ValidatedSourceTemplate:
         or validated_template.get("source_status") not in {"ready", "materializable"}
     ):
         _invalid("source contract template is incompatible")
-    recipe = _validate_recipe(validated_template.get("dynamic_materialization_recipe"))
-    if recipe.get("schema_version") == RECIPE_V2:
-        try:
-            validated_template = validate_recipe_v2_training_template(
-                validated_template,
-                private_root=private_root,
-            )
-        except P6HistoryTrainingContractError as error:
-            raise P6HistoryRegistryError(
-                "source_registry_invalid", "recipe-v2 training template is invalid"
-            ) from error
-    return ValidatedSourceTemplate(
-        private_root=private_root,
-        template=validated_template,
-        recipe=recipe,
-    )
+    return validated_template
+
+
+def _validate_recipe_v2_template(
+    template: Mapping[str, Any],
+    private_root: Path,
+) -> dict[str, Any]:
+    try:
+        return validate_recipe_v2_training_template(
+            template,
+            private_root=private_root,
+        )
+    except P6HistoryTrainingContractError as error:
+        raise P6HistoryRegistryError(
+            "source_registry_invalid", "recipe-v2 training template is invalid"
+        ) from error
 
 
 def _validate_no_forbidden_context(value: object) -> None:
@@ -503,41 +468,6 @@ def _validate_format_template(raw_template: object, allowed_fields: set[str]) ->
         _invalid("dynamic materialization template has no authoritative fields")
 
 
-def _render_template(template: str, values: Mapping[str, object]) -> str:
-    try:
-        rendered = template.format_map(values)
-    except (KeyError, ValueError) as error:
-        raise P6HistoryRegistryError(
-            "source_registry_invalid", "dynamic materialization template failed"
-        ) from error
-    if not rendered or any(character in rendered for character in ("\x00", "\r", "\n")):
-        _invalid("dynamic materialization template rendered an invalid value")
-    return rendered
-
-
-def _render_output_path(
-    template: str, values: Mapping[str, object], local_output_root: Path
-) -> Path:
-    rendered = _render_template(template, values)
-    relative = Path(rendered)
-    if relative.is_absolute() or ".." in relative.parts:
-        _invalid("dynamic materialization output escapes the allowed root")
-    try:
-        resolved = (local_output_root / relative).resolve(strict=False)
-    except OSError as error:
-        raise P6HistoryRegistryError(
-            "source_registry_invalid", "dynamic materialization output is unavailable"
-        ) from error
-    if (
-        resolved == local_output_root
-        or not _is_relative_to(resolved, local_output_root)
-        or resolved.is_symlink()
-        or (resolved.exists() and resolved.is_dir())
-    ):
-        _invalid("dynamic materialization output escapes the allowed root")
-    return resolved
-
-
 def _materialize_groups(
     plan_mapping: Mapping[tuple[tuple[int, int, int], str], tuple[str, str, str]],
     template: Mapping[str, Any],
@@ -546,158 +476,17 @@ def _materialize_groups(
     local_output_root: Path,
     registry_output_path: Path,
 ) -> list[dict[str, Any]]:
-    by_width: dict[
-        tuple[int, int, int], dict[str, tuple[str, str, str]]
-    ] = {}
-    for (width, q_mode), source_point_ids in plan_mapping.items():
-        by_width.setdefault(width, {})[q_mode] = source_point_ids
-
-    observed_artifacts: set[str] = set()
-    observed_outputs = {registry_output_path}
-    groups: list[dict[str, Any]] = []
-    recipe_version = recipe["schema_version"]
-    base_stage_widths = _recipe_v2_base_stage_widths(template, recipe_version)
-    for width, provenance_by_q_mode in sorted(by_width.items()):
-        width_values = dict(zip(STAGE_WIDTH_FIELDS, width, strict=True))
-        expected_group_id = canonical_group_id("pyramid", width)
-        group_id = _render_template(recipe["group_id_template"], width_values)
-        artifact_id = _render_template(recipe["artifact_id_template"], width_values)
-        if group_id != expected_group_id or artifact_id in observed_artifacts:
-            _invalid("dynamic materialization identity collides or drifts")
-        observed_artifacts.add(artifact_id)
-
-        available_q_modes = sorted(provenance_by_q_mode)
-        outputs_by_q_mode: dict[str, dict[str, str]] = {}
-        render_values = {
-            **width_values,
-            "group_id": group_id,
-            "artifact_id": artifact_id,
-        }
-        if recipe_version == RECIPE_V1:
-            output_templates_by_q_mode = recipe["output_path_templates_by_q_mode"]
-            for q_mode in available_q_modes:
-                raw_output_templates = output_templates_by_q_mode.get(q_mode)
-                if not isinstance(raw_output_templates, Mapping):
-                    _invalid("dynamic materialization output mapping is incomplete")
-                rendered_outputs: dict[str, str] = {}
-                for template_key in OUTPUT_TEMPLATE_KEYS:
-                    resolved_output = _render_output_path(
-                        raw_output_templates[template_key],
-                        {**render_values, "q_mode": q_mode},
-                        local_output_root,
-                    )
-                    if resolved_output in observed_outputs:
-                        _invalid("dynamic materialization output path collides")
-                    observed_outputs.add(resolved_output)
-                    rendered_outputs[template_key.removesuffix("_template")] = str(
-                        resolved_output
-                    )
-                outputs_by_q_mode[q_mode] = rendered_outputs
-        else:
-            shared_paths = {}
-            for key in SHARED_SOURCE_PATH_KEYS:
-                resolved_output = _render_output_path(
-                    recipe["shared_source_path_templates"][key],
-                    render_values,
-                    local_output_root,
-                )
-                if resolved_output in observed_outputs:
-                    _invalid("dynamic materialization output path collides")
-                observed_outputs.add(resolved_output)
-                shared_paths[key] = str(resolved_output)
-
-        contract = copy.deepcopy(dict(template))
-        contract.pop("dynamic_materialization_recipe", None)
-        if recipe_version == RECIPE_V2:
-            contract.pop("materialization_outputs_by_q_mode", None)
-            for key in (*SHARED_SOURCE_PATH_KEYS, *LEGACY_OUTPUT_KEYS):
-                contract.pop(key, None)
-        contract.update(
-            {
-                "group_id": group_id,
-                "model": "pyramid",
-                "width": list(width),
-                "artifact_id": artifact_id,
-                "source_status": _source_status_for_width(
-                    width,
-                    str(template["source_status"]),
-                    base_stage_widths,
-                ),
-                "stage_widths": width_values,
-                **(
-                    {"materialization_outputs_by_q_mode": outputs_by_q_mode}
-                    if recipe_version == RECIPE_V1
-                    else {"shared_source_paths": shared_paths}
-                ),
-            }
+    try:
+        return materialize_p6_history_groups(
+            plan_mapping,
+            template,
+            recipe,
+            private_root,
+            local_output_root,
+            registry_output_path,
         )
-        if recipe_version == RECIPE_V2:
-            try:
-                contract = validate_recipe_v2_group_training_contract(
-                    contract,
-                    private_root=private_root,
-                    local_output_root=local_output_root,
-                    group_id=group_id,
-                )
-            except P6HistoryTrainingContractError as error:
-                raise P6HistoryRegistryError(
-                    "source_registry_invalid", "recipe-v2 group training contract is invalid"
-                ) from error
-        evidence_sha = contract["source_evidence_sha256"]
-        group = {
-            "group_id": group_id,
-            "model": "pyramid",
-            "width": list(width),
-            "source_status": contract["source_status"],
-            "source_evidence_sha256": evidence_sha,
-            "source_contract": contract,
-            "source_contract_sha256": _canonical_sha(contract),
-            "materialization_kind": "local_pyramid_tvm",
-            "available_q_modes": available_q_modes,
-            "source_point_ids_by_q_mode": {
-                q_mode: list(provenance_by_q_mode[q_mode])
-                for q_mode in available_q_modes
-            },
-            "graph_features": {
-                "group_id": group_id,
-                "model": "pyramid",
-                "width": list(width),
-                **width_values,
-            },
-        }
-        try:
-            validate_structure_identity(group)
-            validate_source_contract(group)
-            source_group_q_modes(REGISTRY_SCHEMA_VERSION, group)
-        except (TypeError, ValueError) as error:
-            raise P6HistoryRegistryError(
-                "source_registry_invalid", "derived source contract is invalid"
-            ) from error
-        groups.append(group)
-    return groups
-
-
-def _recipe_v2_base_stage_widths(
-    template: Mapping[str, Any], recipe_version: str
-) -> tuple[int, int, int] | None:
-    if recipe_version != RECIPE_V2:
-        return None
-    external = template["external_training_binding"]
-    parameters = external["training_parameters"]
-    widths = parameters["base_stage_widths"]
-    return (widths[0], widths[1], widths[2])
-
-
-def _source_status_for_width(
-    width: tuple[int, int, int],
-    materializable_status: str,
-    base_stage_widths: tuple[int, int, int] | None,
-) -> str:
-    if base_stage_widths is None or all(
-        value <= cap for value, cap in zip(width, base_stage_widths, strict=True)
-    ):
-        return materializable_status
-    return "unavailable"
+    except ValueError as error:
+        _invalid(str(error))
 
 
 def _registry_identity_map(
@@ -807,6 +596,11 @@ def materialize_history_registry(
         _require_private_registry_output(output_path)
         plan_mapping = _validate_plan(plan)
         validated = _validate_template(binding)
+        _validate_formal_base_matches_binding(
+            plan,
+            validated.template,
+            validated.recipe,
+        )
         groups = _materialize_groups(
             plan_mapping,
             validated.template,
