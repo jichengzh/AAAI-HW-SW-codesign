@@ -285,6 +285,49 @@ def test_build_pyramid_candidate_plan_rejects_non_pyramid_formal_axis_mapping(
         build_pyramid_candidate_plan(payload)
 
 
+def test_build_pyramid_candidate_plan_accepts_exact_scanner_stage_alias_trio() -> None:
+    payload = _pyramid_space_with_axis_schema()
+    for axis, dense_stage in zip(
+        payload["axis_schema"]["free_axes"],
+        ("stage0", "stage1", "stage2"),
+        strict=True,
+    ):
+        axis["dense_stage"] = dense_stage
+    payload["scanner_structural_axes_digest"] = scanner_structural_axes_digest(
+        payload["axis_schema"]["free_axes"]
+    )
+
+    plan = build_pyramid_candidate_plan(payload)
+
+    assert plan["structure_count"] == 343
+    assert plan["candidate_count"] == 686
+    assert plan["candidates"][0]["width"] == [16, 32, 64]
+    assert plan["candidates"][-1]["width"] == [64, 128, 256]
+
+
+@pytest.mark.parametrize(
+    "dense_stages",
+    [
+        ("stage0", "stage1", "stage3"),
+        ("stage0", "stage1", "stage1"),
+        ("stage0", "stage1", "stage2", "stage3"),
+    ],
+)
+def test_build_pyramid_candidate_plan_rejects_partial_scanner_stage_aliases(
+    dense_stages: tuple[str, ...],
+) -> None:
+    payload = _pyramid_space_with_axis_schema()
+    axes = payload["axis_schema"]["free_axes"]
+    for axis, dense_stage in zip(axes, dense_stages, strict=False):
+        axis["dense_stage"] = dense_stage
+    if len(dense_stages) > len(axes):
+        axes.append(_scanner_axis("backbone.s3", dense_stages[-1], [8, 16]))
+    payload["scanner_structural_axes_digest"] = scanner_structural_axes_digest(axes)
+
+    with pytest.raises(PyramidSearchSpaceAdapterError):
+        build_pyramid_candidate_plan(payload)
+
+
 @pytest.mark.parametrize(
     "token",
     [

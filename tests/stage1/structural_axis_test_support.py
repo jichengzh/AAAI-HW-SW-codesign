@@ -3,16 +3,10 @@
 from __future__ import annotations
 
 from fractions import Fraction
-from pathlib import Path
 
-import torch
-import torch.nn as nn
-import yaml
-
-from framework.stage1.adapters import ScanScenario, TraceContext, get_adapter
-from framework.stage1.structural_axes import (
-    build_structural_axis_inputs,
-    derive_structural_axes,
+from framework.reproduction.coptv2x_paper_space_v1 import (
+    derive_paper_axis_bundle,
+    load_paper_scanner_evidence,
 )
 from framework.stage1.structural_axis_contract import (
     canonical_source_dataflow_relations,
@@ -26,45 +20,14 @@ from framework.stage1.structural_axis_digest import canonical_digest
 from framework.stage1.structural_axis_widths import scenario_axis_constraint
 
 
-_PAPER_FIXTURES = Path("tests/fixtures/paper_spaces")
-
-
 def paper_scanner_evidence(name: str) -> dict:
-    """Load one purified paper scanner-evidence fixture."""
-    path = _PAPER_FIXTURES / f"{name}_scanner_evidence.yaml"
-    return yaml.safe_load(path.read_text(encoding="utf-8"))
+    """Load one purified paper scanner-evidence fixture via production code."""
+    return load_paper_scanner_evidence(name)
 
 
 def paper_axis_bundle(name: str, evidence: dict | None = None):
-    """Derive a paper axis bundle through the public Task1/Task2 contracts."""
-    evidence = evidence or paper_scanner_evidence(name)
-    adapter = get_adapter(evidence["model"])
-    loaded_config = evidence["loaded_config"]
-    sources = adapter.materializer_parameter_sources(loaded_config)
-    module_widths = evidence["checkpoint_evidence"]["module_widths"]
-    trace_modules = {
-        path: nn.Conv2d(1, width, 1) for path, width in module_widths.items()
-    }
-    net = nn.Module()
-    context = TraceContext(
-        net=net,
-        example_inputs=(torch.ones(1, 1, 1, 1),),
-        full_model=net,
-        loaded_config=loaded_config,
-        checkpoint_evidence=evidence["checkpoint_evidence"],
-        materializer_sources=sources,
-        trace_modules=trace_modules,
-        dataflow_relations=tuple(evidence["dataflow_relations"]),
-    )
-    scenario = ScanScenario(**evidence["scan_scenario"])
-    inputs = build_structural_axis_inputs(
-        trace_context=context,
-        prune_groups=evidence["prune_groups"],
-        scenario=scenario,
-        group_manifest=evidence["source_provenance"],
-    )
-    bundle = derive_structural_axes({"structural_axis_inputs": inputs})
-    return evidence, inputs, bundle
+    """Derive a paper axis bundle via the public reproduction pipeline."""
+    return derive_paper_axis_bundle(name, evidence)
 
 
 def resign_structural_inputs(inputs: dict) -> None:

@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from pathlib import Path
 
 import pytest
-import yaml
 
-from framework.stage1.structural_axes import axis_to_scanner_dict
-from framework.stage1.structural_axis_digest import scanner_structural_axes_digest
-from framework.stage1_bridge import load_stage2_search_space
+from framework.reproduction.coptv2x_paper_space_v1 import (
+    build_paper_space_reproduction,
+)
+from framework.stage1.structural_axis_digest import canonical_digest
 from framework.stage2.formal_software_space_v1 import build_formal_software_plan
-from tests.stage1.structural_axis_test_support import paper_axis_bundle
 
 
 _PAPER_ORACLES = [
@@ -51,52 +49,17 @@ _PAPER_ORACLES = [
 ]
 
 
-def _scanner_manifest(name: str) -> dict[str, object]:
-    evidence, inputs, bundle = paper_axis_bundle(name)
-    scenario = evidence["scan_scenario"]
-    scanner_axes = [axis_to_scanner_dict(axis, inputs) for axis in bundle.axes]
-    return {
-        "schema": "stage1_scanner_contract_v1",
-        "model": evidence["model"],
-        "scan_status": "ok",
-        "hw_capability": {
-            "name": "h800",
-            "ips": {"gpu": {"precisions": scenario["hardware_precisions"]}},
-        },
-        "backend_support": {"precisions": scenario["backend_precisions"]},
-        "compression_modes": scenario["compression_modes"],
-        "quant_units": [
-            {"id": unit, "legal_precisions": precisions}
-            for unit, precisions in scenario["graph_quant_unit_policy"].items()
-        ],
-        "scanner_structural_axes": scanner_axes,
-        "scanner_structural_axes_digest": scanner_structural_axes_digest(
-            scanner_axes
-        ),
-        "view_b1_search_groups": [],
-        "view_b2_quant_units": [],
-        "view_d_routing_segments": {"segments": []},
-    }
-
-
-def _write_manifest(path: Path, manifest: dict[str, object]) -> Path:
-    path.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
-    return path
-
-
 @pytest.mark.parametrize(
     ("name", "expected_structures", "expected_candidates", "expected_widths"),
     _PAPER_ORACLES,
 )
 def test_scanner_evidence_reproduces_paper_formal_search_spaces(
-    tmp_path: Path,
     name: str,
     expected_structures: int,
     expected_candidates: int,
     expected_widths: list[list[int]],
 ) -> None:
-    manifest_path = _write_manifest(tmp_path / f"{name}.yaml", _scanner_manifest(name))
-    search_space = load_stage2_search_space(manifest_path)
+    search_space = build_paper_space_reproduction(name).mutable_search_space()
     plan = build_formal_software_plan(search_space)
 
     axes = plan["axis_schema"]["free_axes"]
@@ -130,17 +93,16 @@ def test_scanner_evidence_reproduces_paper_formal_search_spaces(
 
 
 def test_candidate_ids_bind_revalidated_q_capability_provenance(
-    tmp_path: Path,
 ) -> None:
-    first_manifest = _scanner_manifest("pyramid")
-    second_manifest = deepcopy(first_manifest)
-    second_manifest["hw_capability"]["name"] = "alternate-h800-profile"
-    first_space = load_stage2_search_space(
-        _write_manifest(tmp_path / "first.yaml", first_manifest)
-    )
-    second_space = load_stage2_search_space(
-        _write_manifest(tmp_path / "second.yaml", second_manifest)
-    )
+    first_space = build_paper_space_reproduction("pyramid").mutable_search_space()
+    second_space = deepcopy(first_space)
+    second_space["hardware_target"]["name"] = "alternate-h800-profile"
+    provenance = deepcopy(second_space["formal_q_mode_provenance"])
+    provenance["hardware_target"] = deepcopy(second_space["hardware_target"])
+    unsigned = {key: value for key, value in provenance.items() if key != "digest"}
+
+    provenance["digest"] = canonical_digest(unsigned)
+    second_space["formal_q_mode_provenance"] = provenance
 
     assert first_space["formal_q_modes"] == second_space["formal_q_modes"]
     assert first_space["formal_q_mode_provenance"]["digest"] != (

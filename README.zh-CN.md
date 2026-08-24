@@ -39,6 +39,17 @@ Smoke 是确定性的、离线的、CPU-only 的，仅使用 `data/demo/` 中的
 标识、源文件哈希、冻结随机种子与执行边界。对内容相同且已完成的输出目录重复运行
 将不产生新结果；内容不同的目录会被拒绝。
 
+如需从检入的净化 scanner evidence 复现三个公开模型的正式搜索空间，运行：
+
+```bash
+python scripts/reproduce_paper_search_space.py --model all
+```
+
+该命令是离线、CPU-only 的。它只把 Pyramid、CoDriving 和 F-Cooper 的
+scanner-contract fixture 送入公开 Stage1 bridge 与通用 Stage2 formal planner，
+并打印派生得到的结构数与候选数；不会训练、测量 latency/energy/AP、调用
+TVM/TensorRT，也不会访问数据集、checkpoint、GPU、SSH 或私有路径。
+
 如需独立核验“新 clone + 新虚拟环境 + smoke”闭环，可从任意已有检出目录运行：
 
 ```bash
@@ -70,6 +81,7 @@ framework/stage4/              嵌套分组 cost-model 选择
 framework/stage5/              选择与 measurement-request 契约
 framework/stage6/              外部证据 paper-table adapter
 framework/stage7/              仅选择的 online-ablation 契约与统计
+framework/reproduction/        公开 CPU-only 论文搜索空间复现 gate
 scripts/reproduce/             CPU-only smoke 与 verified-boundary 入口
 tests/                         单元、集成和发布检查
 ```

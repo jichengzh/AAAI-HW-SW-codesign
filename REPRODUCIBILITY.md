@@ -37,6 +37,21 @@ The current command deliberately exits non-zero after auditing Stage4, because
 verified Stage6 evidence and the Stage7 formal aggregate are absent. Its failure
 manifest retains the completed audit and marks the missing stages `unavailable`.
 
+To reproduce the public formal search spaces for the three CoptV2X paper
+models, run:
+
+```bash
+python scripts/reproduce_paper_search_space.py --model all
+```
+
+This gate is deterministic, offline, and CPU-only. It reads only the three
+checked-in purified scanner-evidence fixtures under `tests/fixtures/paper_spaces/`,
+derives scanner-owned structural axes, validates them through the public Stage1
+bridge, and enumerates the generic Stage2 formal software plan. The printed
+counts are a search-space contract check, not measured accuracy, latency,
+energy, compiler, training, checkpoint, dataset, GPU, SSH, TVM, or TensorRT
+evidence.
+
 ## Evidence matrix
 
 The manuscript's exact table/figure labels are not part of this archive. The
@@ -49,6 +64,7 @@ compiler retries, cache probes, or individual device observations.
 | --- | --- | --- | --- | --- | --- |
 | Stage4 cost-model selection audit (supporting analysis; manuscript figure/table label unavailable) | `framework/stage4/cost_model_selection_v1.py`; `scripts/reproduce/cost_model_selection.py` | `artifacts/verified/stage4/cost_model_selection_report.json`; `artifacts/verified/stage4/nested_cv_folds.csv`, enumerated by `artifacts/verified/manifest.json` | `20260716` | One nested grouped selection analysis on 176 measurements in 44 groups. It uses 5 outer folds and up to 3 inner folds per outer split; the 15 CSV rows are audit records, **not** 15 independent algorithm runs. | **verified** small, sanitized Stage4 artifact |
 | Stage5 selection-request analysis (not a manuscript result) | `framework/stage5/production_search_v1.py`; `scripts/reproduce/stage5_selection.py` | `data/demo/` only in the public smoke path | `20260717` | One selection/request construction in smoke; no external execution | **demo**; `paper_evidence: false` |
+| CoptV2X formal paper-model search-space contract | `framework/reproduction/coptv2x_paper_space_v1.py`; `scripts/reproduce_paper_search_space.py` | `tests/fixtures/paper_spaces/{pyramid,codriving,fcooper}_scanner_evidence.yaml` | Not randomized | One CPU-only derivation/enumeration per model; no training or measurement | **verified contract** for formal search-space size only; not numerical paper evidence |
 | Main paper-table adapter (exact table label unavailable in this archive) | `framework/stage6/paper_table_v1.py`; `scripts/reproduce/stage6_table.py` | External terminal measurement, AP, energy, and independent-validation records | External execution seed/log required | No public completed algorithm run; adapter validates supplied records before table selection | **unavailable**; required inputs are **external** |
 | Online-ablation table/figure aggregate (exact label unavailable in this archive) | `framework/stage7/online_component_ablation_v1.py`; `framework/stage7/ablation_statistics_v2.py`; `scripts/reproduce/stage7_selection.py` | External terminal trajectory records and formal aggregate; no Stage7 aggregate is in `artifacts/verified/` | `20260718`, `20260719`, `20260720` | Required formal design: 12 trajectories across four variants and three seeds, with 192 selected events total. The 192 selected events are terminal observations, not 192 algorithm runs. | **unavailable**; formal aggregate is **external** pending closure |
 | Any remaining manuscript table or figure | No unique mapping can be established from package contents | Not supplied in the package | Not supplied | Not established | **unavailable** |

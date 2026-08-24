@@ -13,6 +13,11 @@ class PyramidSearchSpaceAdapterError(ValueError):
 
 _Q_MODES = ("fp16", "int8")
 _STAGES = ("stage1", "stage2", "stage3")
+_SCANNER_STAGE_ALIASES = {
+    "stage0": "stage1",
+    "stage1": "stage2",
+    "stage2": "stage3",
+}
 _STAGE_PROVENANCE_TOKEN_PREFIX = "p6-stage-provenance-v1:"
 
 
@@ -88,20 +93,33 @@ def _stage_axis_ids(axis_schema: Mapping[str, Any]) -> dict[str, str]:
     axes = axis_schema.get("free_axes")
     if not isinstance(axes, list):
         _fail("formal axis_schema.free_axes is required")
+    stage_aliases = _stage_aliases(axes)
     by_stage: dict[str, str] = {}
     for axis in axes:
         if not isinstance(axis, Mapping):
             _fail("formal axis_schema.free_axes entries must be mappings")
         stage = axis.get("dense_stage")
         axis_id = axis.get("axis_id")
-        if stage not in _STAGES or not isinstance(axis_id, str) or not axis_id:
+        if stage not in stage_aliases or not isinstance(axis_id, str) or not axis_id:
             _fail("formal Pyramid axes must map to stage1, stage2, and stage3")
+        stage = stage_aliases[stage]
         if stage in by_stage:
             _fail("duplicate formal Pyramid stage axis")
         by_stage[stage] = axis_id
     if set(by_stage) != set(_STAGES):
         _fail("formal Pyramid axes must map to stage1, stage2, and stage3")
     return by_stage
+
+
+def _stage_aliases(axes: list[Any]) -> Mapping[str, str]:
+    stages = {
+        axis.get("dense_stage")
+        for axis in axes
+        if isinstance(axis, Mapping)
+    }
+    if stages == set(_SCANNER_STAGE_ALIASES):
+        return _SCANNER_STAGE_ALIASES
+    return {stage: stage for stage in _STAGES}
 
 
 def _p6_candidate(

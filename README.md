@@ -45,6 +45,19 @@ source record is explicitly marked `paper_evidence: false`. The resulting
 frozen seeds, and execution boundaries. Re-running a matching completed output
 directory is a no-op; a directory containing different data is rejected.
 
+To reproduce the public three-model formal search spaces from the checked-in
+purified scanner evidence, run:
+
+```bash
+python scripts/reproduce_paper_search_space.py --model all
+```
+
+This command is CPU-only and offline. It validates the Pyramid, CoDriving, and
+F-Cooper scanner-contract fixtures through the public Stage1 bridge and generic
+Stage2 formal planner, then prints derived structure/candidate counts. It does
+not train, measure latency/energy/AP, invoke TVM/TensorRT, or access datasets,
+checkpoints, GPUs, SSH, or private paths.
+
 To independently check that a fresh clone, new virtual environment, and smoke
 path work together, run this from any existing checkout:
 
@@ -76,6 +89,7 @@ check, not a successful paper run.
 data/demo/                     Deterministic smoke-only fixtures
 artifacts/verified/            Small, sanitized cost-model audit and SHA-256 manifest
 framework/                     Scanning, selection, validation, and aggregation modules
+framework/reproduction/        Public CPU-only paper search-space reproduction gate
 scripts/reproduce/             CPU-only smoke and verified-boundary entry points
 tests/                         Unit, integration, and release checks
 ```
