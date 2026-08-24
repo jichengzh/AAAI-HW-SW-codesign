@@ -257,7 +257,8 @@ def test_formal_q_modes_require_backend_support_config_and_graph_units(tmp_path:
     manifest["backend_support"] = {"precisions": ["FP16"]}
     manifest["compression_modes"] = ["fp16", "int8"]
     manifest["quant_units"] = [{"id": "all", "legal_precisions": ["FP16", "INT8"]}]
-    manifest["structural_axes"] = [_paper_axis("stage1", 64, [16, 24, 32, 40, 48, 56, 64])]
+    manifest["scanner_structural_axes"] = [_paper_axis("stage1", 64, [16, 24, 32, 40, 48, 56, 64])]
+    manifest["scanner_structural_axes_digest"] = "a" * 64
     path = _write_manifest(tmp_path / "backend-fp16.yaml", manifest)
     assert load_stage2_search_space(path)["formal_q_modes"] == ["fp16"]
 
@@ -267,7 +268,8 @@ def test_formal_q_modes_fail_when_intersection_is_empty(tmp_path: Path) -> None:
     manifest["backend_support"] = {"precisions": ["INT8"]}
     manifest["compression_modes"] = ["int8"]
     manifest["quant_units"] = [{"id": "all", "legal_precisions": ["INT8"]}]
-    manifest["structural_axes"] = [_paper_axis("stage1", 64, [16, 24, 32, 40, 48, 56, 64])]
+    manifest["scanner_structural_axes"] = [_paper_axis("stage1", 64, [16, 24, 32, 40, 48, 56, 64])]
+    manifest["scanner_structural_axes_digest"] = "a" * 64
     path = _write_manifest(tmp_path / "empty-q.yaml", manifest)
     with pytest.raises(ValueError, match="formal q modes"):
         load_stage2_search_space(path)
