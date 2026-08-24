@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from math import prod
 
 import pytest
 import yaml
@@ -46,6 +47,68 @@ def _manifest(*, int8_buildable_align: int = 64) -> dict:
 def _write_manifest(path: Path, payload: dict) -> Path:
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
     return path
+
+
+def _paper_manifest(model: str, axes: list[list[int]]) -> dict:
+    groups = []
+    units = []
+    for index, widths in enumerate(axes):
+        axis_id = (
+            f"backbone.s{index}"
+            if model != "fcooper" or index < 3
+            else ("neck.deblock" if index == 3 else "neck.output")
+        )
+        group_id = f"{model}.{axis_id}"
+        dense_stage = (
+            f"stage{index + 1}"
+            if model in {"pyramid_lidar", "codriving"} and index < 3
+            else axis_id
+        )
+        groups.append(
+            {
+                "search_group_id": group_id,
+                "bucket": axis_id.split(".", 1)[0],
+                "widths": [max(widths)],
+                "canonical_base_width": max(widths),
+                "round_to": widths[1] - widths[0] if len(widths) > 1 else widths[0],
+                "int8_buildable_align": widths[1] - widths[0]
+                if len(widths) > 1
+                else widths[0],
+                "max_rate": round(1.0 - min(widths) / max(widths), 6),
+                "grouped_conv": model == "pyramid_lidar",
+                "criterion_pool": ["L1"],
+                "member_b1_groups": [group_id],
+                "formal_axis": {
+                    "axis_id": axis_id,
+                    "dense_stage": dense_stage,
+                    "base_width": max(widths),
+                    "legal_widths": widths,
+                    "provenance": "paper_fixture_scanned_axis",
+                },
+            }
+        )
+        units.append(
+            {
+                "unit": axis_id,
+                "quantizable": True,
+                "legal_bits": ["FP16", "INT8"],
+                "member_groups": [group_id],
+            }
+        )
+    return {
+        "schema": "stage1_partition_manifest_v1",
+        "model": model,
+        "scan_status": "ok",
+        "hw_capability": {
+            "name": "h800",
+            "legal_bits": ["FP16", "INT8"],
+            "int8_align": 32,
+            "fp16_align": 8,
+        },
+        "view_b1_search_groups": groups,
+        "view_b2_quant_units": units,
+        "view_d_routing_segments": {"segments": [{"device": "gpu", "n_nodes": 1}]},
+    }
 
 
 def test_load_stage2_search_space_rejects_missing_manifest_path(tmp_path: Path) -> None:
@@ -130,3 +193,60 @@ def test_stage2_loader_accepts_schema_tagged_real_scan_manifest(tmp_path: Path) 
     path = _write_manifest(tmp_path / "partition.yaml", manifest)
 
     assert load_stage2_search_space(path)["schema"] == "stage2_search_space_v1"
+
+
+@pytest.mark.parametrize(
+    ("model", "axes", "structure_count"),
+    [
+        (
+            "pyramid_lidar",
+            [
+                [16, 24, 32, 40, 48, 56, 64],
+                [32, 48, 64, 80, 96, 112, 128],
+                [64, 96, 128, 160, 192, 224, 256],
+            ],
+            343,
+        ),
+        (
+            "codriving",
+            [
+                [16, 24, 32, 40, 48, 56, 64],
+                [32, 48, 64, 80, 96, 112, 128],
+                [64, 96, 128, 160, 192, 224, 256],
+            ],
+            343,
+        ),
+        (
+            "fcooper",
+            [
+                [32, 64],
+                [32, 64, 96, 128],
+                [32, 64, 96, 128, 160, 192, 224, 256],
+                [32, 64, 96, 128],
+                [64, 96, 128, 160, 192, 224, 256],
+            ],
+            1792,
+        ),
+    ],
+)
+def test_stage2_loader_exposes_scan_derived_paper_formal_axes(
+    tmp_path: Path,
+    model: str,
+    axes: list[list[int]],
+    structure_count: int,
+) -> None:
+    """Catches diagnostic anchors replacing the paper's formal scan-derived space."""
+    search_space = load_stage2_search_space(
+        _write_manifest(tmp_path / f"{model}.yaml", _paper_manifest(model, axes))
+    )
+
+    formal_axes = search_space["structural_axes"]
+
+    assert [axis["legal_widths"] for axis in formal_axes] == axes
+    assert [axis["base_width"] for axis in formal_axes] == [max(axis) for axis in axes]
+    assert prod(len(axis["legal_widths"]) for axis in formal_axes) == structure_count
+    assert search_space["formal_q_modes"] == ["fp16", "int8"]
+    assert search_space["formal_candidate_policy"] == {
+        "enumeration": "structural_axes_x_formal_q_modes",
+        "diagnostic_anchors_drive_formal_space": False,
+    }

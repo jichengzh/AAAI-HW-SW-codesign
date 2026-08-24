@@ -86,6 +86,40 @@ def _positive_int(value: object, field_name: str) -> int:
     return parsed
 
 
+def _parse_formal_axis(entry: dict, round_to: int) -> Optional[dict]:
+    axis = entry.get("formal_axis")
+    if axis is None:
+        return None
+    if not isinstance(axis, dict):
+        raise ValueError("formal_axis must be an object")
+    axis_id = str(axis.get("axis_id") or entry.get("search_group_id") or "").strip()
+    dense_stage = str(axis.get("dense_stage") or _stage_from_search_group(
+        axis_id, str(entry.get("bucket", "unknown"))
+    )).strip()
+    if not axis_id or not dense_stage:
+        raise ValueError("formal_axis requires axis_id and dense_stage")
+    base_width = _positive_int(axis.get("base_width"), "formal_axis.base_width")
+    raw_widths = axis.get("legal_widths")
+    if not isinstance(raw_widths, list) or not raw_widths:
+        raise ValueError("formal_axis.legal_widths must be a non-empty list")
+    legal_widths = [
+        _positive_int(width, "formal_axis.legal_widths") for width in raw_widths
+    ]
+    if legal_widths != sorted(set(legal_widths)):
+        raise ValueError("formal_axis.legal_widths must be sorted and unique")
+    if any(width % round_to != 0 for width in legal_widths):
+        raise ValueError("formal_axis.legal_widths must be divisible by round_to")
+    if legal_widths[-1] > base_width:
+        raise ValueError("formal_axis.legal_widths exceed base_width")
+    return {
+        "axis_id": axis_id,
+        "dense_stage": dense_stage,
+        "base_width": base_width,
+        "legal_widths": legal_widths,
+        "provenance": str(axis.get("provenance") or "stage1_formal_axis"),
+    }
+
+
 # ---------------------------------------------------------------------------
 # 硬件能力 (manifest hw_capability 块 → 结构化访问; 含未消费字段骨架)
 # ---------------------------------------------------------------------------
@@ -157,6 +191,11 @@ class KnobSpec:
     grouped_conv: bool
     criterion_pool: tuple[str, ...]
     member_b1_groups: tuple[str, ...] = ()
+    canonical_base_width: Optional[int] = None
+    formal_axis_id: Optional[str] = None
+    formal_dense_stage: Optional[str] = None
+    formal_legal_widths: tuple[int, ...] = ()
+    formal_axis_provenance: Optional[str] = None
 
     @classmethod
     def from_entry(cls, e: dict, hw: HwCapability) -> "KnobSpec":
@@ -179,6 +218,10 @@ class KnobSpec:
         max_rate = float(e.get("max_rate", DEFAULTS["max_rate"]))
         if not 0.0 <= max_rate < 1.0:
             raise ValueError("max_rate must be in [0, 1)")
+        formal_axis = _parse_formal_axis(e, round_to)
+        canonical_base = formal_axis["base_width"] if formal_axis else e.get(
+            "canonical_base_width"
+        )
         return cls(
             search_group_id=str(e.get("search_group_id", "knob")),
             bucket=str(e.get("bucket", "unknown")),
@@ -189,12 +232,31 @@ class KnobSpec:
             grouped_conv=grouped,
             criterion_pool=tuple(e.get("criterion_pool", DEFAULTS["criterion_pool"])),
             member_b1_groups=tuple(e.get("member_b1_groups", ())),
+            canonical_base_width=(
+                _positive_int(canonical_base, "canonical_base_width")
+                if canonical_base is not None
+                else None
+            ),
+            formal_axis_id=formal_axis["axis_id"] if formal_axis else None,
+            formal_dense_stage=formal_axis["dense_stage"] if formal_axis else None,
+            formal_legal_widths=(
+                tuple(formal_axis["legal_widths"]) if formal_axis else ()
+            ),
+            formal_axis_provenance=(
+                formal_axis["provenance"] if formal_axis else None
+            ),
         )
 
     @property
     def base_width(self) -> int:
         """未剪 (最大) 宽度。"""
-        return max(self.cur_widths) if self.cur_widths else self.round_to
+        return (
+            self.canonical_base_width
+            if self.canonical_base_width is not None
+            else max(self.cur_widths)
+            if self.cur_widths
+            else self.round_to
+        )
 
     def legal_widths(self) -> list[int]:
         """该旋钮的合法剪枝宽度 = [floor, base] 内 round_to 的倍数。
@@ -203,6 +265,8 @@ class KnobSpec:
         这是"结构上可剪"的宽度集 (含 int8 不可建者); 是否可建 int8 另由
         buildable_int8 判定 —— 二者分离正是耦合陷阱的载体 (可剪≠可建 int8)。
         """
+        if self.formal_legal_widths:
+            return list(self.formal_legal_widths)
         base = self.base_width
         rt = max(1, self.round_to)
         lo = base * (1.0 - self.max_rate)
@@ -458,6 +522,12 @@ class SpaceSpec:
                 "alignment_enforcement": self.hw.alignment_enforcement,
             },
             "optimized_scope": claim_scope["optimized_scope"],
+            "structural_axes": [_structural_axis_from_knob(k) for k in self.knobs],
+            "formal_q_modes": _formal_q_modes(self.hw, self.quant_units),
+            "formal_candidate_policy": {
+                "enumeration": "structural_axes_x_formal_q_modes",
+                "diagnostic_anchors_drive_formal_space": False,
+            },
             "software_candidates": software_candidates,
             "hardware_candidates": _hardware_candidates(self.hw, self.routing),
             "model_search_policy": _model_search_policy(self),
@@ -521,6 +591,47 @@ def _quant_unit_for_knob(knob: KnobSpec, quant_units: list[QuantUnit]) -> Option
         if set(unit.member_groups) & set(knob.member_b1_groups):
             return unit
     return None
+
+
+def _structural_axis_from_knob(knob: KnobSpec) -> dict:
+    legal_widths = knob.legal_widths()
+    if not legal_widths:
+        raise ValueError("formal structural axis has no legal widths")
+    if max(legal_widths) > knob.base_width:
+        raise ValueError("formal structural axis exceeds base width")
+    axis_id = knob.formal_axis_id or knob.search_group_id
+    dense_stage = knob.formal_dense_stage or _stage_from_search_group(
+        knob.search_group_id, knob.bucket
+    )
+    return {
+        "axis_id": axis_id,
+        "search_group_id": knob.search_group_id,
+        "bucket": knob.bucket,
+        "dense_stage": dense_stage,
+        "base_width": knob.base_width,
+        "legal_widths": legal_widths,
+        "round_to": knob.round_to,
+        "member_b1_groups": list(knob.member_b1_groups),
+        "provenance": knob.formal_axis_provenance or "derived_from_view_b1_search_group",
+    }
+
+
+def _formal_q_modes(hw: HwCapability, quant_units: list[QuantUnit]) -> list[str]:
+    bit_to_mode = {"FP16": "fp16", "INT8": "int8"}
+    supported_bits = {str(bit).upper() for bit in hw.legal_bits}
+    if quant_units:
+        unit_bits = {
+            str(bit).upper()
+            for unit in quant_units
+            if unit.quantizable
+            for bit in unit.legal_bits
+        }
+        supported_bits &= unit_bits or {"FP16"}
+    return [
+        bit_to_mode[bit]
+        for bit in ("FP16", "INT8")
+        if bit in supported_bits
+    ]
 
 
 def _quant_policies(knob: KnobSpec, quant_units: list[QuantUnit]) -> tuple[str, list[dict]]:
