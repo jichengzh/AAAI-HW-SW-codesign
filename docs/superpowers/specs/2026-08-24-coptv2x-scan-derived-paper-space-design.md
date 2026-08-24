@@ -31,6 +31,10 @@ hardware constraints instead of paper constants.
   graph dependency/dataflow relations, adapter materialization bindings, base
   config/checkpoint widths, and hardware/backend constraints. It must not return
   fixed axis counts or fixed axis sets from model name.
+- Adapter code does not return final axes, paper width sets, or paper counts.
+  It returns a frozen trace context plus selector declarations. The scanner
+  resolves those selectors against the traced network, loaded config, loaded
+  checkpoint/module tensors, and DepGraph groups.
 - Each axis records canonical base width, legal widths, member B1 groups,
   integer-ratio transforms from canonical coordinate to member coordinate,
   provenance, and whether the axis is free or fixed-derived.
@@ -44,6 +48,78 @@ hardware constraints instead of paper constants.
   registry writes; they are not retained as normal `unavailable` candidates.
 - The formal planner consumes a generic `axis_schema`; P6 Pyramid code is only a
   thin adapter over that schema.
+
+## Trace adapter and scenario contract
+
+Add an adapter module for model-specific trace-context extraction:
+
+- `framework/stage1/adapters.py`
+
+The adapter interface is explicit and narrow. Define a `TraceAdapter`
+protocol, or an equivalent interface with the same responsibilities:
+
+```python
+class TraceAdapter(Protocol):
+    def build_trace_context(
+        self,
+        net: Any,
+        example_inputs: tuple[Any, ...],
+        loaded_config: Mapping[str, Any],
+        checkpoint_evidence: Mapping[str, Any],
+    ) -> TraceContext: ...
+
+    def materialization_axis_bindings(
+        self,
+        context: TraceContext,
+        prune_groups: Sequence[Mapping[str, Any]],
+    ) -> tuple[MaterializerParameterSource, ...]: ...
+
+    def canonical_axis_base_widths(
+        self,
+        context: TraceContext,
+    ) -> tuple[Mapping[str, Any], ...]: ...
+```
+
+Equivalent method names are acceptable, but the ownership split is mandatory:
+adapter methods declare selectors and evidence locations; the scanner resolves
+the selectors and derives widths/ratios.
+
+`TraceContext` is frozen and contains only evidence needed by the generic
+scanner:
+
+- traced `net`
+- `example_inputs`
+- full model/module root
+- parsed loaded config
+- checkpoint-loaded evidence
+- materializer source selectors
+- trace module/dataflow metadata
+
+`MaterializerParameterSource` is frozen and declares selectors only:
+
+- `axis_id: str`
+- `config_selector: str`
+- `mutation_kind: str`
+- `module_root_selector: str`
+- `allowed_roles: tuple[str, ...]`
+- `provenance: dict[str, object]`
+
+The adapter must not branch on model name to return paper axis counts, paper
+width sets, `343/686`, or `1792/3584`. The three paper models still need
+adapter definitions, but those definitions expose selector paths, not oracle
+spaces.
+
+Backend and quantization constraints come from an explicit `ScanScenario`
+input, not from adapter/model-name logic:
+
+- `hardware_precisions`
+- `backend_precisions`
+- `compression_modes`
+- `graph_quant_unit_policy`
+- alignment/packing constraints
+
+The scanner combines `TraceContext`, DepGraph groups, checkpoint-loaded module
+tensors, and `ScanScenario` to create formal structural axes.
 
 ## Scanner-owned structural-axis contract
 
@@ -75,25 +151,46 @@ The module owns these immutable data shapes:
 
 Builder responsibilities:
 
-1. Group low-level prune groups by graph dependency/dataflow and adapter
-   materialization parameter bindings.
-2. Choose the canonical coordinate from base config/checkpoint width for the
-   materializer-facing parameter, not from the maximum internal tensor width.
-3. Preserve member relationships as exact integer ratios. For example, an
+1. Consume `TraceContext`, DepGraph prune groups, and `ScanScenario`.
+2. Resolve materializer source selectors into config paths and module roots.
+3. Fail closed when a selector is missing, ambiguous, or resolves to multiple
+   config paths for one axis.
+4. Group low-level prune groups by graph dependency/dataflow and resolved
+   materializer parameter bindings.
+5. Choose the canonical coordinate from the unique loaded config selector, then
+   cross-check it against checkpoint-loaded module tensors and DepGraph group
+   width relations.
+6. Preserve member relationships as exact integer ratios. For example, an
    internal bottleneck tensor at `2C` is recorded as a `2/1` member transform,
    not as a separate legal canonical width.
-4. Generate `legal_widths` by pruning from canonical base width under graph
+7. Generate `legal_widths` by pruning from canonical base width under graph
    validity, materializer feasibility, and alignment/packing constraints.
-5. Mark axes that are graph/materializer-derived but not independent knobs as
+8. Mark axes that are graph/materializer-derived but not independent knobs as
    `fixed_derived`. Fixed-derived axes keep provenance but do not multiply the
    formal structure count.
-6. Fail closed when a free axis has no legal widths, when a member transform is
-   non-integral for any legal canonical width, or when required provenance is
-   missing.
+9. Fail closed when a free axis has no legal widths, when a member transform is
+   non-integral for any legal canonical width, when a binding points to no
+   DepGraph group, or when required provenance/digest data is missing.
 
 The existing `view_b1_prune_groups`, `view_b1_search_groups`, and
 `software_candidates` fields remain public compatibility and diagnostic fields.
 They are not a source of formal axes.
+
+## Graph scan and bridge ownership
+
+`framework/stage1/graph_scan.py` owns the production flow:
+
+1. Build `TraceContext` from the model adapter.
+2. Run tracing/DepGraph extraction.
+3. Resolve materializer selectors into `structural_axis_inputs`.
+4. Call `derive_structural_axes(...)`.
+5. Emit scanner-owned derived axes with compact source provenance and digest.
+
+`framework/stage1_bridge.py` consumes only scanner-owned derived axes. It must
+reject top-level handwritten `formal_axis`, `structural_axes`, or equivalent
+oracle injection that lacks scanner provenance/digest. The bridge may serialize
+the scanner-owned axes into Stage2 output as `structural_axes`, but the input
+must be trace/scanner-derived.
 
 ## q-mode contract
 
@@ -167,11 +264,17 @@ F-Cooper:
 
 - Three purified real scanner-contract fixtures are the only integration
   acceptance fixtures:
-  - Pyramid scanner contract fixture.
-  - CoDriving scanner contract fixture with neck fixed-derived provenance.
-  - F-Cooper scanner contract fixture with two independent neck interface axes.
-- Unit tests must include RED evidence for missing `structural_axes`, malformed
-  member ratios, empty q-mode intersections, and over-base registry rejection.
+  - Pyramid fixture purified from real scanner output plus adapter contract.
+  - CoDriving fixture purified from real scanner output plus adapter contract,
+    with neck fixed-derived provenance.
+  - F-Cooper fixture purified from real scanner output plus adapter contract,
+    with two independent neck interface axes.
+- Fixtures retain source provenance/digest and contain no `expected_counts`,
+  `expected_widths`, or handwritten formal-axis oracle fields.
+- Unit tests must include RED evidence for missing adapter binding/base,
+  binding that resolves to no DepGraph group, non-unique config path, fixture
+  handwritten axes, missing provenance/digest, malformed member ratios, empty
+  q-mode intersections, and over-base registry rejection.
 - Integration tests and CLI summaries assert exact paper counts:
   - Pyramid `343/686`
   - CoDriving `343/686`

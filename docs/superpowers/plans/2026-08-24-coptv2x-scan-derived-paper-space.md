@@ -15,9 +15,12 @@
 - Acceptance covers only Pyramid, CoDriving, and F-Cooper paper-model space reproduction.
 - Do not add arbitrary synthetic four-axis fixtures or tests such as `6×8×10×12`.
 - Do not start post-source adapters, SSH jobs, GPU training, or the four-round real search in this plan.
+- Do not execute real GPU/SSH/training commands in this plan; all verification is CPU-only.
 - Production code must not use `3`, `5`, `7`, `343`, `686`, `1792`, or `3584` as generation drivers.
 - Legacy `view_b1_search_groups`, `software_candidates`, probe anchors, and cliff neighbors are diagnostics, never formal-axis fallbacks.
 - Missing or invalid scanner-owned `structural_axes` must fail formal construction.
+- Adapters expose frozen `TraceContext` and selector declarations only; they do not return paper axes, paper widths, or paper counts.
+- Backend/q constraints come from explicit `ScanScenario`, not adapter/model-name branching.
 - q modes are `hardware precision ∩ backend support ∩ configured compression modes ∩ graph quant units`; an empty intersection fails.
 - Over-base formal candidates are rejected before registry writes and are not normal `unavailable` rows.
 - Each implementation task has one implementer, then strict serial review: SPEC reviewer first, QUALITY reviewer second.
@@ -27,17 +30,19 @@
 
 ## File Structure
 
-- Create `framework/stage1/structural_axes.py`: scanner-owned immutable data shapes, validation, axis derivation, legal-width derivation, fixed-derived provenance.
-- Modify `framework/stage1/graph_scan.py`: emit low-level prune groups plus materializer-binding/dataflow metadata needed by `structural_axes.py`; keep legacy diagnostic views.
+- Create `framework/stage1/adapters.py`: frozen `TraceContext`, frozen `MaterializerParameterSource`, `ScanScenario`, and per-paper-model trace selector providers.
+- Create `framework/stage1/structural_axes.py`: scanner-owned immutable data shapes, binding resolver, validation, axis derivation, legal-width derivation, fixed-derived provenance.
+- Modify `framework/stage1/graph_scan.py`: build `TraceContext`, run DepGraph/trace extraction, resolve adapter selectors into `structural_axis_inputs`, call `derive_structural_axes`, and keep legacy diagnostic views.
 - Modify `framework/stage1/hardware_scan.py`: expose hardware precision without silently defaulting unsupported modes.
 - Modify `framework/stage1_bridge.py`: load scanner-owned axes, derive formal q modes from all four sources, and fail if formal axes are missing.
 - Create `framework/stage2/formal_search_space.py`: generic planner that enumerates free structural axes times q modes and returns a model-agnostic candidate schema.
 - Modify `framework/stage6/pyramid_search_space_adapter_v1.py`: thin P6 mapping from generic formal plan into legacy Pyramid row fields.
 - Modify `framework/stage6/p6_history_registry_v1.py`: reject over-base rows before writes.
-- Create `tests/fixtures/coptv2x_paper_space/pyramid_scanner_contract.yaml`: purified scanner-contract fixture from real Pyramid scan.
-- Create `tests/fixtures/coptv2x_paper_space/codriving_scanner_contract.yaml`: purified scanner-contract fixture from real CoDriving scan; neck is fixed-derived.
-- Create `tests/fixtures/coptv2x_paper_space/fcooper_scanner_contract.yaml`: purified scanner-contract fixture from real F-Cooper scan; two neck interface axes are free only because graph independence and materializer bindings prove independence.
-- Create `tests/stage1/test_structural_axes.py`: unit tests for axis construction and validation.
+- Create `tests/fixtures/coptv2x_paper_space/pyramid_scanner_contract.yaml`: purified scanner-contract fixture from real Pyramid scanner output plus adapter contract, retaining source provenance/digest and no expected counts/width fields.
+- Create `tests/fixtures/coptv2x_paper_space/codriving_scanner_contract.yaml`: purified scanner-contract fixture from real CoDriving scanner output plus adapter contract; neck is fixed-derived; retains source provenance/digest and no expected counts/width fields.
+- Create `tests/fixtures/coptv2x_paper_space/fcooper_scanner_contract.yaml`: purified scanner-contract fixture from real F-Cooper scanner output plus adapter contract; two neck interface axes are free only because graph independence and materializer bindings prove independence; retains source provenance/digest and no expected counts/width fields.
+- Create `tests/stage1/test_adapters.py`: adapter selector and `ScanScenario` unit tests.
+- Create `tests/stage1/test_structural_axes.py`: binding resolver, axis construction, and validation tests.
 - Modify `tests/stage1/test_hardware_scan.py`: q-mode source tests.
 - Modify `tests/stage1/test_stage1_bridge.py`: Stage2 contract tests for formal axes and q modes.
 - Create `tests/stage2/test_formal_search_space.py`: generic planner tests.
@@ -297,14 +302,20 @@ Expected: tests fail because current behavior does not yet enforce all four q-mo
 
 - [ ] **Step 5: Implement the correction**
 
-In `framework/stage1_bridge.py`, replace legacy fallback logic with a fail-closed loader:
+In `framework/stage1_bridge.py`, replace legacy fallback logic with a fail-closed scanner-derived loader:
 
 ```python
-def _scanner_structural_axes(raw: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
-    axes = raw.get("structural_axes")
+def _scanner_derived_axis_bundle(raw: Mapping[str, Any]) -> StructuralAxisBundle:
+    if "structural_axes" in raw and "scanner_structural_axes" not in raw:
+        raise ValueError("handwritten structural_axes are not accepted as scanner provenance")
+    axes = raw.get("scanner_structural_axes")
     if not isinstance(axes, list) or not axes:
-        raise ValueError("stage2 formal construction requires scanner structural_axes")
-    return tuple(_validated_structural_axis(axis) for axis in axes)
+        raise ValueError("stage2 formal construction requires scanner_structural_axes")
+    validated = tuple(_validated_structural_axis(axis) for axis in axes)
+    digest = raw.get("scanner_structural_axes_digest")
+    if not isinstance(digest, str) or len(digest) < 32:
+        raise ValueError("scanner structural axes provenance digest is required")
+    return StructuralAxisBundle.from_validated_axes(validated)
 ```
 
 Then implement q-mode intersection:
@@ -354,30 +365,228 @@ git commit -m "fix: require scanner axes and complete q-mode intersection"
 
 ---
 
-### Task 1: Scanner-Owned Structural Axes Module
+### Task 1: TraceContext, Adapter Selectors, and Structural Axis Inputs
 
 **Implementer:** one fresh implementer only.
 
 **Files:**
+- Create: `framework/stage1/adapters.py`
+- Create: `tests/stage1/test_adapters.py`
+- Modify: `framework/stage1/graph_scan.py`
 - Create: `framework/stage1/structural_axes.py`
 - Create: `tests/stage1/test_structural_axes.py`
+
+**Interfaces:**
+- Consumes: real loaded config, traced module/dataflow metadata, checkpoint-loaded evidence, DepGraph prune groups, and explicit `ScanScenario`.
+- Produces: `TraceAdapter`, `TraceContext`, `MaterializerParameterSource`, `ScanScenario`, and scanner-owned `structural_axis_inputs`.
+
+- [ ] **Step 1: Write RED adapter interface tests**
+
+Create `tests/stage1/test_adapters.py` with:
+
+```python
+def test_trace_adapter_declares_selectors_not_width_oracles() -> None:
+    context = build_trace_context(
+        net=_tiny_pyramid_net(),
+        example_inputs=_example_inputs(),
+        loaded_config={"fusion_backbone": {"num_filters": [64, 128, 256]}},
+        checkpoint_evidence={"digest": "a" * 64},
+    )
+    sources = materializer_parameter_sources(context)
+    assert all(isinstance(source.config_selector, str) for source in sources)
+    assert all(not hasattr(source, "legal_widths") for source in sources)
+    assert all(not hasattr(source, "candidate_count") for source in sources)
+
+def test_scan_scenario_carries_backend_and_quant_constraints() -> None:
+    scenario = ScanScenario(
+        hardware_precisions=("FP16", "INT8"),
+        backend_precisions=("FP16", "INT8"),
+        compression_modes=("fp16", "int8"),
+        graph_quant_unit_policy={"conv": ("FP16", "INT8")},
+        alignment={"default_round_to": 8},
+    )
+    assert scenario.backend_precisions == ("FP16", "INT8")
+```
+
+- [ ] **Step 2: Write RED graph-scan selector failure tests**
+
+Add to `tests/stage1/test_structural_axes.py`:
+
+```python
+def test_graph_scan_rejects_missing_adapter_binding() -> None:
+    with pytest.raises(ValueError, match="materializer binding"):
+        build_structural_axis_inputs(
+            trace_context=_trace_context_without_sources(),
+            prune_groups=_depgraph_groups(),
+            scenario=_scan_scenario(),
+        )
+
+def test_graph_scan_rejects_missing_canonical_base() -> None:
+    with pytest.raises(ValueError, match="canonical base"):
+        build_structural_axis_inputs(
+            trace_context=_trace_context_with_missing_config_selector(),
+            prune_groups=_depgraph_groups(),
+            scenario=_scan_scenario(),
+        )
+
+def test_graph_scan_rejects_binding_without_depgraph_group() -> None:
+    with pytest.raises(ValueError, match="DepGraph group"):
+        build_structural_axis_inputs(
+            trace_context=_trace_context_binding_unknown_group(),
+            prune_groups=_depgraph_groups(),
+            scenario=_scan_scenario(),
+        )
+
+def test_graph_scan_rejects_non_unique_config_path() -> None:
+    with pytest.raises(ValueError, match="unique config path"):
+        build_structural_axis_inputs(
+            trace_context=_trace_context_with_ambiguous_config_selector(),
+            prune_groups=_depgraph_groups(),
+            scenario=_scan_scenario(),
+        )
+```
+
+- [ ] **Step 3: Verify RED**
+
+Run:
+
+```bash
+pytest tests/stage1/test_adapters.py tests/stage1/test_structural_axes.py::test_graph_scan_rejects_missing_adapter_binding \
+       tests/stage1/test_structural_axes.py::test_graph_scan_rejects_missing_canonical_base \
+       tests/stage1/test_structural_axes.py::test_graph_scan_rejects_binding_without_depgraph_group \
+       tests/stage1/test_structural_axes.py::test_graph_scan_rejects_non_unique_config_path -q
+```
+
+- [ ] **Step 4: Implement frozen adapter contracts**
+
+In `framework/stage1/adapters.py`, implement:
+
+```python
+@dataclass(frozen=True)
+class TraceContext:
+    net: Any
+    example_inputs: tuple[Any, ...]
+    full_model: Any
+    loaded_config: Mapping[str, Any]
+    checkpoint_evidence: Mapping[str, Any]
+    materializer_sources: tuple["MaterializerParameterSource", ...]
+    trace_modules: Mapping[str, Any]
+    dataflow_relations: tuple[Mapping[str, Any], ...]
+
+@dataclass(frozen=True)
+class MaterializerParameterSource:
+    axis_id: str
+    config_selector: str
+    mutation_kind: str
+    module_root_selector: str
+    allowed_roles: tuple[str, ...]
+    provenance: Mapping[str, object]
+
+@dataclass(frozen=True)
+class ScanScenario:
+    hardware_precisions: tuple[str, ...]
+    backend_precisions: tuple[str, ...]
+    compression_modes: tuple[str, ...]
+    graph_quant_unit_policy: Mapping[str, tuple[str, ...]]
+    alignment: Mapping[str, int]
+
+class TraceAdapter(Protocol):
+    def build_trace_context(
+        self,
+        net: Any,
+        example_inputs: tuple[Any, ...],
+        loaded_config: Mapping[str, Any],
+        checkpoint_evidence: Mapping[str, Any],
+    ) -> TraceContext: ...
+
+    def materialization_axis_bindings(
+        self,
+        context: TraceContext,
+        prune_groups: Sequence[Mapping[str, Any]],
+    ) -> tuple[MaterializerParameterSource, ...]: ...
+
+    def canonical_axis_base_widths(
+        self,
+        context: TraceContext,
+    ) -> tuple[Mapping[str, Any], ...]: ...
+```
+
+- [ ] **Step 5: Implement selector resolution in graph scan**
+
+Modify `framework/stage1/graph_scan.py` so production scan does this sequence:
+
+```python
+context = adapter.build_trace_context(net, example_inputs, loaded_config, checkpoint_evidence)
+prune_groups = extract_prune_groups(context.full_model, context.example_inputs)
+axis_inputs = build_structural_axis_inputs(
+    trace_context=context,
+    prune_groups=prune_groups,
+    scenario=scan_scenario,
+)
+axis_bundle = derive_structural_axes(axis_inputs)
+```
+
+`build_structural_axis_inputs` resolves each `config_selector` to exactly one
+loaded-config path, resolves each `module_root_selector` to checkpoint-loaded
+module tensors, verifies each binding has a matching DepGraph group, and emits
+source provenance plus digest.
+
+- [ ] **Step 6: Verify GREEN**
+
+Run:
+
+```bash
+pytest tests/stage1/test_adapters.py tests/stage1/test_structural_axes.py tests/stage1/test_auto_and_run_scan.py -q
+```
+
+- [ ] **Step 7: SPEC review, then QUALITY review**
+
+Run strict serial review:
+
+```bash
+python -m compileall framework/stage1/adapters.py framework/stage1/graph_scan.py -q
+pytest tests/stage1/test_adapters.py --cov=framework.stage1.adapters --cov-fail-under=80 -q
+```
+
+SPEC reviewer confirms adapters return selectors only and no model-name branch returns paper constants. QUALITY reviewer checks frozen dataclasses, selector validation, and CPU-only tests. Write `task-1-spec-review.md` then `task-1-quality-review.md`.
+
+- [ ] **Step 8: Commit**
+
+Run:
+
+```bash
+git add framework/stage1/adapters.py framework/stage1/graph_scan.py tests/stage1/test_adapters.py tests/stage1/test_structural_axes.py
+git commit -m "feat: add trace adapter selector contract"
+```
+
+---
+
+### Task 2: Binding Resolver and Scanner-Owned Structural Axes
+
+**Implementer:** one fresh implementer only.
+
+**Files:**
+- Modify: `framework/stage1/structural_axes.py`
+- Modify: `tests/stage1/test_structural_axes.py`
 - Modify: `framework/stage1/graph_scan.py`
 
 **Interfaces:**
-- Consumes: low-level prune groups with module paths/current widths, graph dependency/dataflow IDs, materializer bindings, base config/checkpoint widths, and alignment constraints.
-- Produces: `derive_structural_axes(raw_scan: Mapping[str, Any]) -> StructuralAxisBundle`.
+- Consumes: scanner-built `structural_axis_inputs` from Task 1.
+- Produces: `derive_structural_axes(axis_inputs: Mapping[str, Any]) -> StructuralAxisBundle`.
 
 - [ ] **Step 1: Write RED tests for canonical coordinate and member ratios**
 
-Create `tests/stage1/test_structural_axes.py` with:
+Add to `tests/stage1/test_structural_axes.py`:
 
 ```python
-def test_derive_structural_axis_uses_canonical_base_not_max_internal_width() -> None:
+def test_derive_structural_axis_uses_config_base_checkpoint_and_depgraph_crosscheck() -> None:
     bundle = derive_structural_axes(_pyramid_stage_with_output_c_and_internal_2c())
     axis = bundle.free_axes[0]
     assert axis.axis_id == "backbone.stage3"
     assert axis.base_width == 256
     assert axis.legal_widths == (64, 96, 128, 160, 192, 224, 256)
+    assert axis.provenance["config_selector"] == "fusion_backbone.num_filters[2]"
+    assert axis.provenance["checkpoint_digest"] == "a" * 64
     assert [(m.canonical_to_member_num, m.canonical_to_member_den) for m in axis.member_b1_groups] == [(1, 1), (2, 1)]
 
 def test_derive_structural_axes_rejects_non_integral_member_ratio() -> None:
@@ -394,6 +603,7 @@ def test_codriving_neck_is_fixed_derived_not_free_axis() -> None:
     bundle = derive_structural_axes(_codriving_scan_with_neck_binding())
     assert [axis.axis_id for axis in bundle.free_axes] == ["backbone.stage1", "backbone.stage2", "backbone.stage3"]
     assert [axis.axis_id for axis in bundle.fixed_axes] == ["neck.output"]
+    assert bundle.fixed_axes[0].provenance["derived_from"] == "backbone.stage3"
 
 def test_fcooper_neck_interfaces_are_free_when_bindings_are_independent() -> None:
     bundle = derive_structural_axes(_fcooper_scan_with_independent_neck_bindings())
@@ -414,7 +624,7 @@ Run:
 pytest tests/stage1/test_structural_axes.py -q
 ```
 
-Expected: import or assertions fail because `framework.stage1.structural_axes` is absent or incomplete.
+Expected: assertions fail until structural-axis derivation consumes scanner-built inputs with provenance.
 
 - [ ] **Step 4: Implement immutable data shapes and validation**
 
@@ -451,7 +661,7 @@ Expose properties `free_axes` and `fixed_axes` that filter by `axis_kind`.
 
 - [ ] **Step 5: Implement scanner-owned grouping**
 
-In `derive_structural_axes`, group by `(dataflow_group_id, materializer_param)` from the raw scan. Compute member ratios using `member_current_width / canonical_base_width`; reduce with `math.gcd`; reject denominator/width combinations that are non-integral for every legal width.
+In `derive_structural_axes`, group by `(dataflow_group_id, materializer_param)` from scanner-built `structural_axis_inputs`. Compute member ratios from checkpoint-loaded module tensor width, loaded config canonical base width, and DepGraph group width; require all three sources to agree after integer-ratio normalization.
 
 - [ ] **Step 6: Implement legal-width derivation**
 
@@ -466,7 +676,7 @@ Use model-specific raw scanner evidence only as input data; do not branch on mod
 
 - [ ] **Step 7: Wire graph scan output**
 
-Modify `framework/stage1/graph_scan.py` to include the required metadata in the Stage1 manifest:
+Modify `framework/stage1/graph_scan.py` to include both the scanner inputs and derived scanner-owned axes in the Stage1 manifest:
 
 ```yaml
 structural_axis_inputs:
@@ -475,6 +685,8 @@ structural_axis_inputs:
   materializer_bindings: [...]
   base_widths: [...]
   backend_constraints: [...]
+scanner_structural_axes: [...]
+scanner_structural_axes_digest: <sha256>
 ```
 
 Keep `view_b1_search_groups` unchanged as a diagnostic field.
@@ -492,11 +704,11 @@ pytest tests/stage1/test_structural_axes.py tests/stage1/test_auto_and_run_scan.
 Run strict serial review:
 
 ```bash
-python -m compileall framework/stage1/structural_axes.py -q
+python -m compileall framework/stage1/structural_axes.py framework/stage1/graph_scan.py -q
 pytest tests/stage1/test_structural_axes.py --cov=framework.stage1.structural_axes --cov-fail-under=80 -q
 ```
 
-SPEC reviewer writes `task-1-spec-review.md`; QUALITY reviewer writes `task-1-quality-review.md`.
+SPEC reviewer writes `task-2-spec-review.md`; QUALITY reviewer writes `task-2-quality-review.md`.
 
 - [ ] **Step 10: Commit**
 
@@ -509,7 +721,7 @@ git commit -m "feat: derive structural axes from scanner evidence"
 
 ---
 
-### Task 2: Stage1 Bridge Formal Contract
+### Task 3: Stage1 Bridge Formal Contract
 
 **Implementer:** one fresh implementer only.
 
@@ -521,16 +733,20 @@ git commit -m "feat: derive structural axes from scanner evidence"
 - Create: `tests/fixtures/coptv2x_paper_space/fcooper_scanner_contract.yaml`
 
 **Interfaces:**
-- Consumes: `derive_structural_axes(raw_scan)` and `HwCapability`.
+- Consumes: scanner-owned `scanner_structural_axes`, `scanner_structural_axes_digest`, summarized source provenance, and `HwCapability`.
 - Produces: `load_stage2_search_space(path)` with `structural_axes`, `axis_schema`, `formal_q_modes`, and diagnostic-only legacy fields.
 
 - [ ] **Step 1: Build purified scanner-contract fixtures**
 
-Create the three fixture files from real scanner contracts by retaining only:
+Create the three fixture files from real scanner output plus adapter contract by retaining only:
 
 ```yaml
 schema: stage1_scanner_contract_v1
 model: <pyramid_lidar|codriving|fcooper>
+source_provenance:
+  scan_command_digest: <sha256>
+  adapter_contract_digest: <sha256>
+  checkpoint_digest: <sha256>
 hardware_target:
   name: h800
 backend_support:
@@ -545,11 +761,13 @@ structural_axis_inputs:
   materializer_bindings: [...]
   base_widths: [...]
   backend_constraints: [...]
+scanner_structural_axes: [...]
+scanner_structural_axes_digest: <sha256>
 view_b1_search_groups: [...]
 software_candidates: []
 ```
 
-Do not add synthetic networks and do not encode expected counts in fixture fields.
+Do not add synthetic networks. Do not encode `expected_counts`, `expected_widths`, `formal_axis`, handwritten top-level `structural_axes`, or any paper oracle field in fixtures.
 
 - [ ] **Step 2: Write RED paper fixture bridge tests**
 
@@ -569,21 +787,49 @@ def test_stage1_bridge_emits_scanner_owned_paper_axes(fixture_name, expected_axi
     assert [axis["axis_id"] for axis in space["axis_schema"]["free_axes"]] == expected_axis_ids
     assert [axis["legal_widths"] for axis in space["axis_schema"]["free_axes"]] == expected_widths
     assert space["formal_q_modes"] == expected_q_modes
+    assert space["formal_candidate_policy"]["source"] == "scanner_structural_axes"
+    assert isinstance(space["scanner_structural_axes_digest"], str)
 ```
 
-- [ ] **Step 3: Verify RED**
+- [ ] **Step 3: Write RED bridge rejection tests**
+
+Add:
+
+```python
+def test_stage1_bridge_rejects_handwritten_top_level_axes(tmp_path: Path) -> None:
+    manifest = _manifest()
+    manifest["structural_axes"] = [_paper_axis("stage1", 64, [16, 24, 32, 40, 48, 56, 64])]
+    manifest.pop("scanner_structural_axes", None)
+    path = _write_manifest(tmp_path / "handwritten-axes.yaml", manifest)
+    with pytest.raises(ValueError, match="handwritten structural_axes"):
+        load_stage2_search_space(path)
+
+def test_stage1_bridge_rejects_scanner_axes_without_provenance_digest(tmp_path: Path) -> None:
+    manifest = _manifest()
+    manifest["scanner_structural_axes"] = [_paper_axis("stage1", 64, [16, 24, 32, 40, 48, 56, 64])]
+    manifest.pop("scanner_structural_axes_digest", None)
+    path = _write_manifest(tmp_path / "missing-digest.yaml", manifest)
+    with pytest.raises(ValueError, match="provenance digest"):
+        load_stage2_search_space(path)
+```
+
+- [ ] **Step 4: Verify RED**
 
 Run:
 
 ```bash
-pytest tests/stage1/test_stage1_bridge.py::test_stage1_bridge_emits_scanner_owned_paper_axes -q
+pytest tests/stage1/test_stage1_bridge.py::test_stage1_bridge_emits_scanner_owned_paper_axes \
+       tests/stage1/test_stage1_bridge.py::test_stage1_bridge_rejects_handwritten_top_level_axes \
+       tests/stage1/test_stage1_bridge.py::test_stage1_bridge_rejects_scanner_axes_without_provenance_digest -q
 ```
 
-- [ ] **Step 4: Implement bridge loading**
+- [ ] **Step 5: Implement bridge loading**
 
-In `SpaceSpec.stage2_search_space()`, call `derive_structural_axes(self.raw)` and serialize:
+In `SpaceSpec.stage2_search_space()`, validate scanner-owned axes and serialize:
 
 ```python
+axis_bundle = _scanner_derived_axis_bundle(self.raw)
+"scanner_structural_axes_digest": self.raw["scanner_structural_axes_digest"],
 "structural_axes": [_axis_to_dict(axis) for axis in axis_bundle.axes],
 "axis_schema": {
     "free_axes": [_axis_to_dict(axis) for axis in axis_bundle.free_axes],
@@ -592,16 +838,17 @@ In `SpaceSpec.stage2_search_space()`, call `derive_structural_axes(self.raw)` an
 "formal_candidate_policy": {
     "enumeration": "axis_schema.free_axes_x_formal_q_modes",
     "legacy_views": "diagnostic_only",
+    "source": "scanner_structural_axes",
 },
 ```
 
 Keep `view_b1_prune_groups`, `view_b1_search_groups`, and `software_candidates` in the payload for compatibility.
 
-- [ ] **Step 5: Implement bridge q modes**
+- [ ] **Step 6: Implement bridge q modes**
 
 Pass `backend_support`, `compression_modes`, and `quant_units` into the Task 0 `_formal_q_modes` intersection. Reject empty q modes before returning Stage2 space.
 
-- [ ] **Step 6: Verify GREEN**
+- [ ] **Step 7: Verify GREEN**
 
 Run:
 
@@ -609,11 +856,11 @@ Run:
 pytest tests/stage1/test_stage1_bridge.py tests/stage1/test_structural_axes.py -q
 ```
 
-- [ ] **Step 7: SPEC review, then QUALITY review**
+- [ ] **Step 8: SPEC review, then QUALITY review**
 
-SPEC reviewer checks that legacy fallback is removed. QUALITY reviewer checks fixture purity and compatibility-field preservation. Write `task-2-spec-review.md` then `task-2-quality-review.md`.
+SPEC reviewer checks that legacy fallback is removed. QUALITY reviewer checks fixture purity and compatibility-field preservation. Write `task-3-spec-review.md` then `task-3-quality-review.md`.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 Run:
 
@@ -624,7 +871,7 @@ git commit -m "feat: expose scanner-owned paper space contract"
 
 ---
 
-### Task 3: Generic Formal Search-Space Planner
+### Task 4: Generic Formal Search-Space Planner
 
 **Implementer:** one fresh implementer only.
 
@@ -703,7 +950,7 @@ pytest tests/stage2/test_formal_search_space.py -q
 
 - [ ] **Step 5: SPEC review, then QUALITY review**
 
-SPEC reviewer confirms no model-name branching. QUALITY reviewer confirms small pure functions and deterministic ordering. Write `task-3-spec-review.md` then `task-3-quality-review.md`.
+SPEC reviewer confirms no model-name branching. QUALITY reviewer confirms small pure functions and deterministic ordering. Write `task-4-spec-review.md` then `task-4-quality-review.md`.
 
 - [ ] **Step 6: Commit**
 
@@ -716,7 +963,7 @@ git commit -m "feat: add generic formal search-space planner"
 
 ---
 
-### Task 4: P6 Pyramid Thin Adapter and Registry Guard
+### Task 5: P6 Pyramid Thin Adapter and Registry Guard
 
 **Implementer:** one fresh implementer only.
 
@@ -796,7 +1043,7 @@ pytest tests/stage6/test_pyramid_search_space_adapter.py tests/stage6/test_p6_hi
 
 - [ ] **Step 8: SPEC review, then QUALITY review**
 
-SPEC reviewer confirms P6 is a thin adapter and registry no longer records over-base formal candidates as `unavailable`. QUALITY reviewer checks deterministic plan rows and compatibility fields. Write `task-4-spec-review.md` then `task-4-quality-review.md`.
+SPEC reviewer confirms P6 is a thin adapter and registry no longer records over-base formal candidates as `unavailable`. QUALITY reviewer checks deterministic plan rows and compatibility fields. Write `task-5-spec-review.md` then `task-5-quality-review.md`.
 
 - [ ] **Step 9: Commit**
 
@@ -809,7 +1056,7 @@ git commit -m "fix: drive P6 from generic formal axes"
 
 ---
 
-### Task 5: Three Paper-Model Reproduction Gate
+### Task 6: Three Paper-Model Reproduction Gate
 
 **Implementer:** one fresh implementer only.
 
@@ -885,7 +1132,7 @@ fcooper: structures=1792 candidates=3584 q_modes=fp16,int8
 
 - [ ] **Step 5: SPEC review, then QUALITY review**
 
-SPEC reviewer confirms counts are assertions only and not production drivers. QUALITY reviewer confirms CLI uses public APIs and no GPU/SSH. Write `task-5-spec-review.md` then `task-5-quality-review.md`.
+SPEC reviewer confirms counts are assertions only and not production drivers. QUALITY reviewer confirms CLI uses public APIs and no GPU/SSH. Write `task-6-spec-review.md` then `task-6-quality-review.md`.
 
 - [ ] **Step 6: Commit**
 
@@ -900,7 +1147,7 @@ If the Stage5 files are unchanged, omit them from `git add`.
 
 ---
 
-### Task 6: Full CPU Verification and Final Two-Stage Review
+### Task 7: Full CPU Verification and Final Two-Stage Review
 
 **Implementer:** one fresh implementer only for any fixes. Reviewers remain separate and serial.
 
