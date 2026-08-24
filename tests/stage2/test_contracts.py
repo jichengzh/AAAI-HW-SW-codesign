@@ -20,10 +20,11 @@ from framework.stage2.contracts import (
     safe_output_path,
     write_json_idempotent,
 )
+from tests.stage2.formal_software_test_support import with_scanner_owned_contract
 
 
 def _manifest() -> dict:
-    return {
+    manifest = {
         "schema": "stage1_partition_manifest_demo_v1",
         "model": "pyramid_lidar",
         "scan_status": "ok",
@@ -51,6 +52,7 @@ def _manifest() -> dict:
         ],
         "view_d_routing_segments": {"segments": [{"device": "gpu", "n_nodes": 1}]},
     }
+    return with_scanner_owned_contract(manifest, "pyramid")
 
 
 def _classification(

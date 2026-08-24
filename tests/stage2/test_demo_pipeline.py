@@ -9,6 +9,9 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
+
+from tests.stage2.formal_software_test_support import with_scanner_owned_contract
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -28,6 +31,32 @@ def _run(*args: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         check=True,
         text=True,
+    )
+
+
+def _upgrade_to_test_only_canonical_formal_scanner_fixture(
+    demo_root: Path,
+) -> None:
+    """Upgrade legacy diagnostic demo output only inside this test's temp root.
+
+    ``prepare_stage2_demo_data.py`` remains a legacy diagnostic demo generator,
+    not a paper-space reproduction entry point and not a scanner-axis producer.
+    """
+    manifest_path = demo_root / "framework/partitions/pyramid_lidar_partition.yaml"
+    classification_path = demo_root / "results/model_classifier.json"
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    migrated = with_scanner_owned_contract(manifest, "pyramid")
+    manifest_path.write_text(
+        yaml.safe_dump(migrated, sort_keys=False), encoding="utf-8"
+    )
+    classification = json.loads(classification_path.read_text(encoding="utf-8"))
+    record = next(
+        row for row in classification["models"] if row["model"] == "pyramid_lidar"
+    )
+    record["manifest_digest"] = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    classification_path.write_text(
+        json.dumps(classification, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
     )
 
 
@@ -85,10 +114,18 @@ def test_demo_pipeline_is_schema_valid_and_byte_stable_across_two_runs(tmp_path:
     ]
 
     _run(str(PREPARE), "--output-root", str(demo_root))
+    manifest_path = demo_root / "framework/partitions/pyramid_lidar_partition.yaml"
+    classification_path = demo_root / "results/model_classifier.json"
+    legacy_manifest = manifest_path.read_bytes()
+    legacy_classification = classification_path.read_bytes()
+    _upgrade_to_test_only_canonical_formal_scanner_fixture(demo_root)
     _run(*command)
     first_bytes = out_json.read_bytes()
 
+    manifest_path.write_bytes(legacy_manifest)
+    classification_path.write_bytes(legacy_classification)
     _run(str(PREPARE), "--output-root", str(demo_root))
+    _upgrade_to_test_only_canonical_formal_scanner_fixture(demo_root)
     _run(*command)
     second_bytes = out_json.read_bytes()
     output = json.loads(second_bytes)

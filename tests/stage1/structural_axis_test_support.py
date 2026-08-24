@@ -3,7 +3,17 @@
 from __future__ import annotations
 
 from fractions import Fraction
+from pathlib import Path
 
+import torch
+import torch.nn as nn
+import yaml
+
+from framework.stage1.adapters import ScanScenario, TraceContext, get_adapter
+from framework.stage1.structural_axes import (
+    build_structural_axis_inputs,
+    derive_structural_axes,
+)
 from framework.stage1.structural_axis_contract import (
     canonical_source_dataflow_relations,
     formal_scanner_evidence_digest,
@@ -14,10 +24,97 @@ from framework.stage1.structural_axis_contract import (
 )
 from framework.stage1.structural_axis_digest import canonical_digest
 from framework.stage1.structural_axis_widths import scenario_axis_constraint
-from tests.stage1.test_structural_axes import (
-    _resign_inputs,
-    _set_scanner_owned_group_width,
-)
+
+
+_PAPER_FIXTURES = Path("tests/fixtures/paper_spaces")
+
+
+def paper_scanner_evidence(name: str) -> dict:
+    """Load one purified paper scanner-evidence fixture."""
+    path = _PAPER_FIXTURES / f"{name}_scanner_evidence.yaml"
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def paper_axis_bundle(name: str, evidence: dict | None = None):
+    """Derive a paper axis bundle through the public Task1/Task2 contracts."""
+    evidence = evidence or paper_scanner_evidence(name)
+    adapter = get_adapter(evidence["model"])
+    loaded_config = evidence["loaded_config"]
+    sources = adapter.materializer_parameter_sources(loaded_config)
+    module_widths = evidence["checkpoint_evidence"]["module_widths"]
+    trace_modules = {
+        path: nn.Conv2d(1, width, 1) for path, width in module_widths.items()
+    }
+    net = nn.Module()
+    context = TraceContext(
+        net=net,
+        example_inputs=(torch.ones(1, 1, 1, 1),),
+        full_model=net,
+        loaded_config=loaded_config,
+        checkpoint_evidence=evidence["checkpoint_evidence"],
+        materializer_sources=sources,
+        trace_modules=trace_modules,
+        dataflow_relations=tuple(evidence["dataflow_relations"]),
+    )
+    scenario = ScanScenario(**evidence["scan_scenario"])
+    inputs = build_structural_axis_inputs(
+        trace_context=context,
+        prune_groups=evidence["prune_groups"],
+        scenario=scenario,
+        group_manifest=evidence["source_provenance"],
+    )
+    bundle = derive_structural_axes({"structural_axis_inputs": inputs})
+    return evidence, inputs, bundle
+
+
+def resign_structural_inputs(inputs: dict) -> None:
+    """Re-seal a deliberately mutated structural-input test payload."""
+    inputs["structural_evidence_digest"] = canonical_digest(
+        {
+            key: inputs.get(key)
+            for key in (
+                "prune_groups",
+                "source_dataflow_relations",
+                "dataflow_relations",
+                "materializer_bindings",
+                "base_widths",
+                "backend_constraints",
+            )
+        }
+    )
+    inputs["provenance"]["structural_evidence_digest"] = inputs[
+        "structural_evidence_digest"
+    ]
+    unsigned = {
+        key: value
+        for key, value in inputs.items()
+        if key not in {"digest", "scanner_input_digest"}
+    }
+    inputs["scanner_input_digest"] = canonical_digest(unsigned)
+    inputs["digest"] = inputs["scanner_input_digest"]
+
+
+def set_scanner_owned_group_width(
+    inputs: dict, group_id: str, width: int
+) -> None:
+    """Set an outer and sealed scanner group width, then re-seal inputs."""
+    outer_group = next(
+        group
+        for group in inputs["prune_groups"]
+        if group.get("group_id", group.get("id")) == group_id
+    )
+    outer_group["cur_width"] = width
+    sealed_group = next(
+        group
+        for group in inputs["scanner_evidence"]["prune_groups"]
+        if group.get("group_id", group.get("id")) == group_id
+    )
+    sealed_group["cur_width"] = width
+    inputs["provenance"]["scan_manifest_digest"] = canonical_digest(
+        inputs["scanner_evidence"]
+    )
+    resign_structural_inputs(inputs)
+
 
 def _scan(
     prune_groups: list[dict],
@@ -272,7 +369,7 @@ def _scanner_owned_bindings(
     return sealed
 
 
-def _pyramid_stage_with_output_c_and_internal_2c() -> dict:
+def pyramid_stage_with_output_c_and_internal_2c() -> dict:
     return _scan(
         prune_groups=[
             {
@@ -317,17 +414,17 @@ def _pyramid_stage_with_output_c_and_internal_2c() -> dict:
     )
 
 
-def _stage_with_non_integral_member_width() -> dict:
-    bad = _pyramid_stage_with_output_c_and_internal_2c()
-    _set_scanner_owned_group_width(
+def stage_with_non_integral_member_width() -> dict:
+    bad = pyramid_stage_with_output_c_and_internal_2c()
+    set_scanner_owned_group_width(
         bad["structural_axis_inputs"], "stage3.inner", 300
     )
     bad["structural_axis_inputs"]["backend_constraints"][0]["round_to"] = 32
-    _resign_inputs(bad["structural_axis_inputs"])
+    resign_structural_inputs(bad["structural_axis_inputs"])
     return bad
 
 
-def _codriving_scan_with_neck_binding() -> dict:
+def codriving_scan_with_neck_binding() -> dict:
     return _scan(
         prune_groups=[
             {"id": "s1.out", "module_path": "backbone.stage1", "cur_width": 64, "dataflow_group_id": "s1"},
@@ -367,7 +464,7 @@ def _codriving_scan_with_neck_binding() -> dict:
     )
 
 
-def _fcooper_scan_with_independent_neck_bindings() -> dict:
+def fcooper_scan_with_independent_neck_bindings() -> dict:
     return _scan(
         prune_groups=[
             {"id": "b0.out", "module_path": "backbone.s0", "cur_width": 64, "dataflow_group_id": "b0"},

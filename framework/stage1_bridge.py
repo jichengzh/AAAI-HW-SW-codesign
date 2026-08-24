@@ -29,6 +29,7 @@ import yaml
 
 from framework.stage1.structural_axis_digest import (
     SCANNER_AXIS_PROVENANCE_SOURCE,
+    canonical_digest,
     scanner_structural_axes_digest,
 )
 
@@ -55,6 +56,65 @@ STAGE_NAME_BY_SUFFIX = {
     "s1": "stage2",
     "s2": "stage3",
 }
+_SCANNER_AXIS_FIELDS = frozenset(
+    {
+        "axis_id", "dense_stage", "axis_kind", "base_width", "legal_widths",
+        "member_b1_groups", "round_to", "provenance",
+    }
+)
+_SCANNER_MEMBER_FIELDS = frozenset(
+    {
+        "b1_group_id", "module_path", "canonical_to_member_num",
+        "canonical_to_member_den", "materializer_param", "role",
+    }
+)
+_SCANNER_PROVENANCE_FIELDS = frozenset(
+    {
+        "source", "scanner_input_digest", "input_digest", "dataflow_group_ids",
+        "config_digest", "checkpoint_digest", "scenario_digest",
+        "scan_manifest_digest", "relevant_groups_digest",
+        "structural_evidence_digest", "digest_sources",
+    }
+)
+_SCANNER_DIGEST_SOURCES = {
+    "config_digest": "trace_context.loaded_config",
+    "checkpoint_digest": "trace_context.checkpoint_evidence",
+    "scenario_digest": "scan_scenario",
+    "scan_manifest_digest": "scanner_group_manifest",
+    "structural_evidence_digest": "canonical_structural_axis_inputs",
+}
+
+
+def _exact_fields(
+    value: Mapping[str, Any],
+    required: frozenset[str],
+    optional: frozenset[str],
+    field_name: str,
+) -> None:
+    unknown = sorted(set(value) - required - optional)
+    if unknown:
+        raise ValueError(f"{field_name} has unknown fields: {unknown}")
+    missing = sorted(required - set(value))
+    if missing:
+        raise ValueError(f"{field_name} is missing required fields: {missing}")
+
+
+def _canonical_sha256(value: object, field_name: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(char not in "0123456789abcdef" for char in value)
+    ):
+        raise ValueError(f"{field_name} must be a canonical SHA-256 digest")
+    return value
+
+
+def _validated_dense_stage(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("structural_axes.dense_stage must be null or non-empty string")
+    return value
 
 
 def _manifest_path(path: str | Path) -> Path:
@@ -160,6 +220,10 @@ class HwCapability:
             )
         if raw_legal_bits is None:
             raw_legal_bits = DEFAULTS["legal_bits"]
+        if isinstance(raw_legal_bits, (str, bytes)) or not isinstance(
+            raw_legal_bits, Sequence
+        ):
+            raise ValueError("hardware precision source must be a sequence")
 
         return cls(
             name=hw.get("name", "unknown"),
@@ -528,17 +592,23 @@ class SpaceSpec:
         hierarchical_blocks = _hierarchical_blocks(self.raw, software_candidates, self.routing)
         claim_scope = _claim_scope(self.raw, hierarchical_blocks)
         structural_axes = _scanner_structural_axes(self.raw)
+        hardware_target = _hardware_target_summary(self.hw)
+        q_modes, q_provenance = _formal_q_mode_contract(
+            self.hw,
+            self.raw.get("backend_support"),
+            self.raw.get("compression_modes"),
+            self.raw.get("quant_units"),
+            self.quant_units,
+            hardware_target,
+        )
         return {
             "schema": "stage2_search_space_v1",
             "model": self.model,
-            "hardware_target": {
-                "name": self.hw.name,
-                "int8_align": self.hw.int8_align,
-                "fp16_align": self.hw.fp16_align,
-                "int8_pack_factor": self.hw.int8_pack_factor,
-                "alignment_enforcement": self.hw.alignment_enforcement,
-            },
+            "hardware_target": hardware_target,
             "optimized_scope": claim_scope["optimized_scope"],
+            "scanner_structural_axes_digest": self.raw[
+                "scanner_structural_axes_digest"
+            ],
             "structural_axes": list(structural_axes),
             "axis_schema": {
                 "free_axes": [
@@ -550,17 +620,13 @@ class SpaceSpec:
                     if axis.get("axis_kind") == "fixed_derived"
                 ],
             },
-            "formal_q_modes": _formal_q_modes(
-                self.hw,
-                self.raw.get("backend_support"),
-                self.raw.get("compression_modes"),
-                self.raw.get("quant_units"),
-                self.quant_units,
-            ),
+            "formal_q_modes": q_modes,
+            "formal_q_mode_provenance": q_provenance,
             "formal_candidate_policy": {
                 "enumeration": "axis_schema.free_axes_x_formal_q_modes",
                 "legacy_views": "diagnostic_only",
                 "diagnostic_anchors_drive_formal_space": False,
+                "source": "scanner_structural_axes",
             },
             "software_candidates": software_candidates,
             "hardware_candidates": _hardware_candidates(self.hw, self.routing),
@@ -608,18 +674,32 @@ def _scanner_structural_axes(raw: Mapping[str, Any]) -> tuple[dict[str, Any], ..
     ):
         raise ValueError("scanner structural axes provenance digest is required")
     validated = tuple(_validated_structural_axis(axis) for axis in axes)
-    axis_ids = [axis["axis_id"] for axis in validated]
-    if len(axis_ids) != len(set(axis_ids)):
-        raise ValueError("duplicate structural_axes.axis_id is not allowed")
+    _validate_structural_axis_relations(validated)
     canonical_axes = tuple(sorted(validated, key=lambda axis: axis["axis_id"]))
     if digest != scanner_structural_axes_digest(canonical_axes):
         raise ValueError("canonical scanner structural axes digest mismatch")
     return canonical_axes
 
 
+def _validate_structural_axis_relations(axes: Sequence[Mapping[str, Any]]) -> None:
+    axis_ids = [axis["axis_id"] for axis in axes]
+    if len(axis_ids) != len(set(axis_ids)):
+        raise ValueError("duplicate structural_axes.axis_id is not allowed")
+    free_axis_ids = {
+        axis["axis_id"] for axis in axes if axis["axis_kind"] == "free"
+    }
+    if any(
+        axis["axis_kind"] == "fixed_derived"
+        and axis["provenance"]["derived_from"] not in free_axis_ids
+        for axis in axes
+    ):
+        raise ValueError("fixed-derived provenance.derived_from must name a free axis")
+
+
 def _validated_structural_axis(axis: Any) -> dict[str, Any]:
     if not isinstance(axis, Mapping):
         raise ValueError("structural_axes entries must be objects")
+    _exact_fields(axis, _SCANNER_AXIS_FIELDS, frozenset(), "structural_axes entry")
     axis_id = str(axis.get("axis_id") or "").strip()
     if "axis_kind" not in axis:
         raise ValueError("structural_axes.axis_kind is required")
@@ -649,7 +729,7 @@ def _validated_structural_axis(axis: Any) -> dict[str, Any]:
         raise ValueError("structural_axes.member_b1_groups must be a non-empty list")
     return {
         "axis_id": axis_id,
-        "dense_stage": axis.get("dense_stage"),
+        "dense_stage": _validated_dense_stage(axis.get("dense_stage")),
         "axis_kind": axis_kind,
         "base_width": base_width,
         "legal_widths": legal_widths,
@@ -658,7 +738,9 @@ def _validated_structural_axis(axis: Any) -> dict[str, Any]:
             for member in members
         ],
         "round_to": round_to,
-        "provenance": _validated_axis_provenance(axis.get("provenance")),
+        "provenance": _validated_axis_provenance(
+            axis.get("provenance"), axis_kind
+        ),
     }
 
 
@@ -669,6 +751,12 @@ def _validated_axis_member(
 ) -> dict[str, Any]:
     if not isinstance(member, Mapping):
         raise ValueError("structural_axes.member_b1_groups entries must be objects")
+    _exact_fields(
+        member,
+        _SCANNER_MEMBER_FIELDS,
+        frozenset(),
+        "structural_axes.member_b1_groups entry",
+    )
     out = {
         "b1_group_id": str(member.get("b1_group_id") or "").strip(),
         "module_path": str(member.get("module_path") or "").strip(),
@@ -703,12 +791,44 @@ def _validated_axis_member(
     return out
 
 
-def _validated_axis_provenance(provenance: Any) -> dict[str, Any]:
+def _validated_axis_provenance(
+    provenance: Any,
+    axis_kind: str,
+) -> dict[str, Any]:
     if not isinstance(provenance, Mapping) or not provenance:
         raise ValueError("structural_axes.provenance must be a non-empty object")
+    optional = frozenset({"derived_from"}) if axis_kind == "fixed_derived" else frozenset()
+    _exact_fields(
+        provenance,
+        _SCANNER_PROVENANCE_FIELDS,
+        optional,
+        "structural_axes.provenance",
+    )
     if provenance.get("source") != SCANNER_AXIS_PROVENANCE_SOURCE:
         raise ValueError("structural_axes.provenance.source is invalid")
+    for field_name in (
+        "scanner_input_digest", "input_digest", "config_digest",
+        "checkpoint_digest", "scenario_digest", "scan_manifest_digest",
+        "relevant_groups_digest", "structural_evidence_digest",
+    ):
+        _canonical_sha256(provenance.get(field_name), f"provenance.{field_name}")
+    if provenance["input_digest"] != provenance["scanner_input_digest"]:
+        raise ValueError("provenance.input_digest alias mismatch")
+    _validated_dataflow_group_ids(provenance.get("dataflow_group_ids"))
+    if provenance.get("digest_sources") != _SCANNER_DIGEST_SOURCES:
+        raise ValueError("structural_axes.provenance.digest_sources is invalid")
+    if axis_kind == "fixed_derived" and not str(provenance.get("derived_from") or "").strip():
+        raise ValueError("fixed-derived provenance.derived_from is required")
     return dict(provenance)
+
+
+def _validated_dataflow_group_ids(value: object) -> None:
+    if not isinstance(value, list) or not value:
+        raise ValueError("structural_axes.provenance.dataflow_group_ids must be non-empty")
+    if any(not isinstance(group_id, str) or not group_id.strip() for group_id in value):
+        raise ValueError("structural_axes.provenance.dataflow_group_ids are invalid")
+    if len(value) != len(set(value)):
+        raise ValueError("structural_axes.provenance.dataflow_group_ids must be unique")
 
 
 def _normalized_precisions(values: object) -> set[str]:
@@ -718,7 +838,15 @@ def _normalized_precisions(values: object) -> set[str]:
         raise ValueError("formal q modes source must be a sequence")
     out: set[str] = set()
     for value in values:
+        if isinstance(value, bool) or not isinstance(value, (str, int)):
+            raise ValueError(
+                "formal q mode precision entries must be strings or non-boolean integers"
+            )
         token = str(value).strip().lower()
+        if not token:
+            raise ValueError(
+                "formal q mode precision entries must be strings or non-boolean integers"
+            )
         if token in {"fp16", "float16", "16"}:
             out.add("fp16")
         elif token in {"int8", "8"}:
@@ -811,26 +939,62 @@ def _structural_axis_from_knob(knob: KnobSpec) -> dict:
     }
 
 
-def _formal_q_modes(
+def _hardware_target_summary(hw: HwCapability) -> dict[str, object]:
+    return {
+        "name": hw.name,
+        "int8_align": hw.int8_align,
+        "fp16_align": hw.fp16_align,
+        "int8_pack_factor": hw.int8_pack_factor,
+        "alignment_enforcement": hw.alignment_enforcement,
+    }
+
+
+def _formal_q_mode_sources(
     hw: HwCapability,
     backend_support: object,
     compression_modes: object,
     raw_quant_units: object,
     quant_units: list[QuantUnit],
-) -> list[str]:
-    hardware = _normalized_precisions(hw.legal_bits)
-    backend = _normalized_precisions(
-        backend_support.get("precisions", [])
-        if isinstance(backend_support, Mapping)
-        else []
-    )
-    configured = _normalized_precisions(compression_modes or [])
-    graph = _graph_quant_precisions(raw_quant_units, quant_units)
-    modes = hardware & backend & configured & graph
-    ordered = [mode for mode in ("fp16", "int8") if mode in modes]
-    if not ordered:
+) -> dict[str, set[str]]:
+    return {
+        "hardware": _normalized_precisions(hw.legal_bits),
+        "backend": _normalized_precisions(
+            backend_support.get("precisions", [])
+            if isinstance(backend_support, Mapping)
+            else []
+        ),
+        "configured": _normalized_precisions(compression_modes or []),
+        "graph": _graph_quant_precisions(raw_quant_units, quant_units),
+    }
+
+
+def _formal_q_modes_from_sources(sources: Mapping[str, set[str]]) -> list[str]:
+    modes = set.intersection(*sources.values())
+    ordered = sorted(modes)
+    if not modes:
         raise ValueError("formal q modes intersection is empty")
     return ordered
+
+
+def _formal_q_mode_contract(
+    hw: HwCapability,
+    backend_support: object,
+    compression_modes: object,
+    raw_quant_units: object,
+    quant_units: list[QuantUnit],
+    hardware_target: Mapping[str, object],
+) -> tuple[list[str], dict[str, object]]:
+    sources = _formal_q_mode_sources(
+        hw, backend_support, compression_modes, raw_quant_units, quant_units
+    )
+    modes = _formal_q_modes_from_sources(sources)
+    payload: dict[str, object] = {
+        "schema": "formal_q_mode_provenance_v1",
+        "hardware_target": dict(hardware_target),
+        "sources": {name: sorted(values) for name, values in sources.items()},
+        "formal_q_modes": modes,
+    }
+    return modes, {**payload, "digest": canonical_digest(payload)}
 
 
 def _quant_policies(knob: KnobSpec, quant_units: list[QuantUnit]) -> tuple[str, list[dict]]:

@@ -14,9 +14,9 @@ from framework.stage1.structural_axis_contract import (
     validate_scanner_inputs,
 )
 from framework.stage1.structural_axis_digest import canonical_digest
-from tests.stage1.test_trace_graph_adapter_workflow import (
-    _paper_axis_bundle,
-    _paper_scanner_evidence,
+from tests.stage1.structural_axis_test_support import (
+    paper_axis_bundle,
+    paper_scanner_evidence,
 )
 
 @pytest.mark.parametrize(
@@ -68,7 +68,7 @@ def test_paper_scanner_evidence_derives_formal_axes(
     legal_widths: list[list[int]],
     fixed_axis_ids: list[str],
 ) -> None:
-    evidence, inputs, bundle = _paper_axis_bundle(name)
+    evidence, inputs, bundle = paper_axis_bundle(name)
     _assert_paper_axes(evidence, inputs, bundle, free_axis_ids, legal_widths, fixed_axis_ids)
     _assert_paper_base_authority(inputs)
     assert len(inputs["digest"]) == 64
@@ -144,7 +144,7 @@ def _assert_paper_base_authority(inputs: dict) -> None:
 
 @pytest.mark.parametrize("name", ["pyramid", "codriving", "fcooper"])
 def test_paper_scanner_fixtures_contain_only_purified_input_evidence(name: str) -> None:
-    evidence = _paper_scanner_evidence(name)
+    evidence = paper_scanner_evidence(name)
     serialized = yaml.safe_dump(evidence)
 
     assert evidence["schema"] == "paper_scanner_evidence_v1"
@@ -157,7 +157,7 @@ def test_paper_scanner_fixtures_contain_only_purified_input_evidence(name: str) 
 
 @pytest.mark.parametrize("name", ["pyramid", "codriving", "fcooper"])
 def test_paper_scanner_fixture_digest_seals_retained_formal_evidence(name: str) -> None:
-    evidence = _paper_scanner_evidence(name)
+    evidence = paper_scanner_evidence(name)
     manifest = evidence["source_provenance"]
     declaration = {
         key: manifest[key]
@@ -178,15 +178,15 @@ def test_paper_scanner_fixture_digest_seals_retained_formal_evidence(name: str) 
 
 
 def test_paper_group_manifest_rejects_incomplete_purified_evidence() -> None:
-    evidence = _paper_scanner_evidence("codriving")
+    evidence = paper_scanner_evidence("codriving")
     evidence["prune_groups"].pop()
 
     with pytest.raises(ValueError, match="declared relevant groups"):
-        _paper_axis_bundle("codriving", evidence)
+        paper_axis_bundle("codriving", evidence)
 
 
 def test_scanner_axis_bundle_keeps_paper_provenance_immutable() -> None:
-    _, _, bundle = _paper_axis_bundle("pyramid")
+    _, _, bundle = paper_axis_bundle("pyramid")
 
     with pytest.raises(TypeError):
         bundle.axes[0].provenance["source"] = "tampered"  # type: ignore[index]
@@ -195,22 +195,22 @@ def test_scanner_axis_bundle_keeps_paper_provenance_immutable() -> None:
 
 
 def test_fcooper_neck_requires_graph_independence_evidence() -> None:
-    evidence = _paper_scanner_evidence("fcooper")
+    evidence = paper_scanner_evidence("fcooper")
     evidence["dataflow_relations"][3].pop("independent_interface")
 
     with pytest.raises(ValueError, match="independent interface|scanner evidence seal"):
-        _paper_axis_bundle("fcooper", evidence)
+        paper_axis_bundle("fcooper", evidence)
 
 
 def test_formal_axis_identity_ignores_scanner_evidence_serialization_order() -> None:
-    evidence = _paper_scanner_evidence("pyramid")
-    _, first_inputs, first_bundle = _paper_axis_bundle("pyramid", evidence)
+    evidence = paper_scanner_evidence("pyramid")
+    _, first_inputs, first_bundle = paper_axis_bundle("pyramid", evidence)
     evidence["prune_groups"].reverse()
     evidence["dataflow_relations"].reverse()
     for relation in evidence["dataflow_relations"]:
         relation["member_relations"].reverse()
 
-    _, second_inputs, second_bundle = _paper_axis_bundle("pyramid", evidence)
+    _, second_inputs, second_bundle = paper_axis_bundle("pyramid", evidence)
 
     assert second_bundle == first_bundle
     assert second_inputs["digest"] == first_inputs["digest"]
@@ -222,7 +222,7 @@ def test_formal_axis_identity_ignores_scanner_evidence_serialization_order() -> 
 
 
 def test_derive_rejects_group_outside_matched_raw_relation_members() -> None:
-    _, inputs, _ = _paper_axis_bundle("pyramid")
+    _, inputs, _ = paper_axis_bundle("pyramid")
     derived = inputs["dataflow_relations"][0]
     source_digest = derived["relation_provenance"]["source_relation_digest"]
     source = next(
@@ -247,7 +247,7 @@ def test_derive_rejects_group_outside_matched_raw_relation_members() -> None:
 
 
 def test_derive_rejects_retained_group_owned_by_another_source_relation() -> None:
-    _, inputs, _ = _paper_axis_bundle("pyramid")
+    _, inputs, _ = paper_axis_bundle("pyramid")
     derived = inputs["dataflow_relations"][0]
     source_digest = derived["relation_provenance"]["source_relation_digest"]
     source = next(
@@ -279,7 +279,7 @@ def test_derive_rejects_retained_group_owned_by_another_source_relation() -> Non
 
 @pytest.mark.parametrize("field", ["cur_width", "module_path"])
 def test_derive_rejects_outer_prune_group_field_drift(field: str) -> None:
-    _, inputs, _ = _paper_axis_bundle("pyramid")
+    _, inputs, _ = paper_axis_bundle("pyramid")
     group = inputs["prune_groups"][0]
     group[field] = (
         int(group[field]) * 2 if field == "cur_width" else "tampered.module"
@@ -293,7 +293,7 @@ def test_derive_rejects_outer_prune_group_field_drift(field: str) -> None:
 
 @pytest.mark.parametrize("mutation", ["missing", "duplicate"])
 def test_validate_rejects_outer_prune_group_membership_drift(mutation: str) -> None:
-    _, inputs, _ = _paper_axis_bundle("pyramid")
+    _, inputs, _ = paper_axis_bundle("pyramid")
     if mutation == "missing":
         inputs["prune_groups"].pop()
     else:
@@ -304,7 +304,7 @@ def test_validate_rejects_outer_prune_group_membership_drift(mutation: str) -> N
 
 
 def test_outer_prune_group_order_is_not_an_authority_difference() -> None:
-    _, inputs, expected = _paper_axis_bundle("pyramid")
+    _, inputs, expected = paper_axis_bundle("pyramid")
     inputs["prune_groups"].reverse()
 
     actual = derive_structural_axes(
@@ -315,7 +315,7 @@ def test_outer_prune_group_order_is_not_an_authority_difference() -> None:
 
 
 def test_derive_rejects_self_signed_noncanonical_outer_group_order() -> None:
-    _, inputs, _ = _paper_axis_bundle("pyramid")
+    _, inputs, _ = paper_axis_bundle("pyramid")
     inputs["prune_groups"].reverse()
 
     with pytest.raises(ValueError, match="canonical retained prune group order"):
@@ -334,7 +334,7 @@ def test_derive_rejects_self_signed_noncanonical_outer_group_order() -> None:
 def test_validate_rejects_binding_tamper_against_relation_authority(
     field: str,
 ) -> None:
-    _, inputs, _ = _paper_axis_bundle("pyramid")
+    _, inputs, _ = paper_axis_bundle("pyramid")
     binding = inputs["materializer_bindings"][0]
     sealed = inputs["scanner_evidence"]["materializer_bindings"][0]
     if field == "write_targets":
@@ -364,7 +364,7 @@ def test_validate_rejects_binding_tamper_against_relation_authority(
 
 
 def test_validate_rejects_missing_binding_to_relation_identity() -> None:
-    _, inputs, _ = _paper_axis_bundle("pyramid")
+    _, inputs, _ = paper_axis_bundle("pyramid")
     inputs["materializer_bindings"].pop()
     inputs["scanner_evidence"]["materializer_bindings"].pop()
     inputs["provenance"]["scan_manifest_digest"] = (
@@ -376,7 +376,7 @@ def test_validate_rejects_missing_binding_to_relation_identity() -> None:
 
 
 def test_derive_rejects_self_signed_base_width_tamper() -> None:
-    _, inputs, _ = _paper_axis_bundle("pyramid")
+    _, inputs, _ = paper_axis_bundle("pyramid")
     inputs["base_widths"][0]["width"] //= 2
 
     with pytest.raises(ValueError, match="base width authority"):
@@ -396,7 +396,7 @@ def test_derive_rejects_self_signed_base_width_tamper() -> None:
     ],
 )
 def test_validate_rejects_base_proof_coordinate_tamper(mutation: str) -> None:
-    _, inputs, _ = _paper_axis_bundle("pyramid")
+    _, inputs, _ = paper_axis_bundle("pyramid")
     row = inputs["base_widths"][0]
     sealed = inputs["scanner_evidence"]["base_widths"][0]
     changes: dict[str, object]
@@ -433,7 +433,7 @@ def test_validate_rejects_base_proof_coordinate_tamper(mutation: str) -> None:
 
 
 def test_validate_rejects_foreign_member_as_canonical_base() -> None:
-    _, inputs, _ = _paper_axis_bundle("pyramid")
+    _, inputs, _ = paper_axis_bundle("pyramid")
     row = inputs["base_widths"][0]
     sealed = inputs["scanner_evidence"]["base_widths"][0]
     foreign = next(
@@ -461,7 +461,7 @@ def test_validate_rejects_foreign_member_as_canonical_base() -> None:
 def test_validate_rejects_structural_authority_alias_drift(
     collection: str, mutation: str
 ) -> None:
-    _, inputs, _ = _paper_axis_bundle("pyramid")
+    _, inputs, _ = paper_axis_bundle("pyramid")
     rows = inputs[collection]
     if mutation == "missing":
         rows.pop()
@@ -478,7 +478,7 @@ def test_validate_rejects_structural_authority_alias_drift(
 
 @pytest.mark.parametrize("mutation", ["missing", "duplicate"])
 def test_derive_requires_one_relation_per_declared_source_member(mutation: str) -> None:
-    _, inputs, _ = _paper_axis_bundle("pyramid")
+    _, inputs, _ = paper_axis_bundle("pyramid")
     source = next(
         relation
         for relation in inputs["source_dataflow_relations"]
@@ -505,7 +505,7 @@ def test_derive_requires_one_relation_per_declared_source_member(mutation: str) 
 
 
 def test_pyramid_multi_member_relation_keeps_exact_declared_group_set() -> None:
-    _, inputs, bundle = _paper_axis_bundle("pyramid")
+    _, inputs, bundle = paper_axis_bundle("pyramid")
     source = next(
         relation
         for relation in inputs["source_dataflow_relations"]

@@ -2,28 +2,19 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import torch
 import torch.nn as nn
 import pytest
-import yaml
 
 from framework.stage1.adapters import (
     MaterializerParameterSource,
     ScanScenario,
-    TraceAdapter,
     TraceContext,
     _first_conv_in_channels,
     _generic_bucket,
     get_adapter,
 )
 from framework.stage1.graph_scan import _output_shapes, _resolve_profile, scan
-from framework.stage1.hardware_scan import HwCapability
-from framework.stage1.structural_axes import (
-    build_structural_axis_inputs,
-    derive_structural_axes,
-)
 from framework.stage1.structural_axis_digest import scanner_structural_axes_digest
 from framework.stage1_bridge import load_stage2_search_space
 from framework.stage1.trace_plan import (
@@ -33,52 +24,19 @@ from framework.stage1.trace_plan import (
     attach_runtime_validation,
     legacy_trace_plan_from_manifest,
 )
+from tests.stage1.trace_graph_test_support import (
+    FullModel,
+    ToyAdapter,
+    formal_evidence,
+    hardware_capability,
+)
 
 
-class _FullModel(nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-        self.backbone = nn.Sequential(nn.Conv2d(32, 32, 3, padding=1), nn.ReLU())
-        self.attention_fusion = nn.Identity()
-        self.cls_head = nn.Conv2d(32, 2, 1)
-        self.reg_head = nn.Conv2d(32, 4, 1)
-
-    def forward(self, spatial_features: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        features = self.attention_fusion(self.backbone(spatial_features))
-        return self.cls_head(features), self.reg_head(features)
-
-
-class _ToyAdapter(TraceAdapter):
-    name = "toy"
-    skipped_modules = ["attention_fusion (attention boundary)"]
-
-    def build_trace_net(self, device: str) -> tuple[nn.Module, torch.Tensor]:
-        return _FullModel().to(device).eval(), torch.ones(1, 32, 8, 8, device=device)
-
-    def ignored_layers(self, net: nn.Module) -> list[nn.Module]:
-        return [net.cls_head, net.reg_head]  # type: ignore[attr-defined]
-
-    def materializer_parameter_sources(
-        self, loaded_config: dict
-    ) -> tuple[MaterializerParameterSource, ...]:
-        assert "backbone" in loaded_config["model"]
-        return (
-            MaterializerParameterSource(
-                axis_id="backbone",
-                config_selector="model.backbone.width",
-                mutation_kind="out_channels",
-                module_root_selector="backbone.0",
-                allowed_roles=("output",),
-                provenance={"adapter": "toy"},
-            ),
-        )
-
-
-class _DiagnosticOnlyAdapter(_ToyAdapter):
+class _DiagnosticOnlyAdapter(ToyAdapter):
     build_trace_context = None  # type: ignore[assignment]
 
 
-class _ForgingAdapter(_ToyAdapter):
+class _ForgingAdapter(ToyAdapter):
     def build_trace_context(
         self,
         net: nn.Module,
@@ -94,7 +52,7 @@ class _ForgingAdapter(_ToyAdapter):
         )
 
 
-class _MutatingAdapter(_ToyAdapter):
+class _MutatingAdapter(ToyAdapter):
     def materializer_parameter_sources(
         self, loaded_config: dict
     ) -> tuple[MaterializerParameterSource, ...]:
@@ -102,66 +60,9 @@ class _MutatingAdapter(_ToyAdapter):
         return super().materializer_parameter_sources(loaded_config)
 
 
-def _hardware() -> HwCapability:
-    return HwCapability(
-        {
-            "name": "unit hardware",
-            "ips": {"gpu": {"precisions": ["INT8", "FP16"]}, "dla": {"count": 1, "op_whitelist": ["Conv"]}},
-            "alignment": {"int8_channel": 32, "fp16_channel": 16},
-        },
-        "unit.yaml",
-        True,
-    )
-
-
-def _formal_evidence() -> tuple[dict, dict]:
-    return (
-        {"model": {"backbone": {"width": 32}}},
-        {"digest": "c" * 64, "module_widths": {"backbone.0": 32}},
-    )
-
-
-_PAPER_FIXTURES = Path("tests/fixtures/paper_spaces")
-
-
-def _paper_scanner_evidence(name: str) -> dict:
-    path = _PAPER_FIXTURES / f"{name}_scanner_evidence.yaml"
-    return yaml.safe_load(path.read_text(encoding="utf-8"))
-
-
-def _paper_axis_bundle(name: str, evidence: dict | None = None):
-    evidence = evidence or _paper_scanner_evidence(name)
-    adapter = get_adapter(evidence["model"])
-    loaded_config = evidence["loaded_config"]
-    sources = adapter.materializer_parameter_sources(loaded_config)
-    module_widths = evidence["checkpoint_evidence"]["module_widths"]
-    trace_modules = {
-        path: nn.Conv2d(1, width, 1) for path, width in module_widths.items()
-    }
-    net = nn.Module()
-    context = TraceContext(
-        net=net,
-        example_inputs=(torch.ones(1, 1, 1, 1),),
-        full_model=net,
-        loaded_config=loaded_config,
-        checkpoint_evidence=evidence["checkpoint_evidence"],
-        materializer_sources=sources,
-        trace_modules=trace_modules,
-        dataflow_relations=tuple(evidence["dataflow_relations"]),
-    )
-    scenario = ScanScenario(**evidence["scan_scenario"])
-    inputs = build_structural_axis_inputs(
-        trace_context=context,
-        prune_groups=evidence["prune_groups"],
-        scenario=scenario,
-        group_manifest=evidence["source_provenance"],
-    )
-    return evidence, inputs, derive_structural_axes({"structural_axis_inputs": inputs})
-
-
 def test_trace_detector_and_generated_wrapper_preserve_dense_head_interface() -> None:
     """The detector identifies fusion as a gate and emits an executable dense wrapper."""
-    full_model = _FullModel().eval()
+    full_model = FullModel().eval()
     plan = TraceBoundaryDetector().detect(
         full_model, model_name="attfuse", ckpt_status="loaded", input_shape=[1, 32, 8, 8]
     )
@@ -194,7 +95,7 @@ def test_legacy_trace_plan_and_runtime_validation_keep_coverage_boundaries() -> 
 
 def test_toy_adapter_executes_full_cpu_graph_scan_without_hardware_measurement() -> None:
     """A real Conv graph reaches Stage1's B1/B2/routing/validation contracts on CPU."""
-    manifest = scan(_ToyAdapter(), _hardware(), device="cpu", profile_latency_mode="off")
+    manifest = scan(ToyAdapter(), hardware_capability(), device="cpu", profile_latency_mode="off")
 
     assert manifest["scan_status"] == "ok"
     assert manifest["view_b1_prune_groups"]
@@ -216,11 +117,11 @@ def test_formal_scan_requires_trace_context_instead_of_legacy_width_fallback() -
         alignment={"default_round_to": 16, "default_min_width": 16},
     )
 
-    loaded_config, checkpoint = _formal_evidence()
+    loaded_config, checkpoint = formal_evidence()
     with pytest.raises(ValueError, match="TraceContext"):
         scan(
             _DiagnosticOnlyAdapter(),
-            _hardware(),
+            hardware_capability(),
             device="cpu",
             profile_latency_mode="off",
             scenario=scenario,
@@ -240,8 +141,8 @@ def test_formal_scan_requires_scanner_owned_config_and_checkpoint_evidence() -> 
 
     with pytest.raises(ValueError, match="loaded_config.*checkpoint_evidence"):
         scan(
-            _ToyAdapter(),
-            _hardware(),
+            ToyAdapter(),
+            hardware_capability(),
             device="cpu",
             profile_latency_mode="off",
             scenario=scenario,
@@ -249,12 +150,12 @@ def test_formal_scan_requires_scanner_owned_config_and_checkpoint_evidence() -> 
 
 
 def test_public_scan_rejects_non_scenario_objects_at_the_api_boundary() -> None:
-    loaded_config, checkpoint = _formal_evidence()
+    loaded_config, checkpoint = formal_evidence()
 
     with pytest.raises(TypeError, match="ScanScenario"):
         scan(
-            _ToyAdapter(),
-            _hardware(),
+            ToyAdapter(),
+            hardware_capability(),
             device="cpu",
             profile_latency_mode="off",
             scenario={"hardware_precisions": ["FP16"]},  # type: ignore[arg-type]
@@ -271,12 +172,12 @@ def test_formal_scan_rejects_adapter_forged_scanner_evidence() -> None:
         graph_quant_unit_policy={"backbone": ("FP16",)},
         alignment={"default_round_to": 16, "default_min_width": 16},
     )
-    loaded_config, checkpoint = _formal_evidence()
+    loaded_config, checkpoint = formal_evidence()
 
     with pytest.raises(ValueError, match="scanner-owned loaded_config"):
         scan(
             _ForgingAdapter(),
-            _hardware(),
+            hardware_capability(),
             device="cpu",
             profile_latency_mode="off",
             scenario=scenario,
@@ -293,12 +194,12 @@ def test_formal_scan_prevents_adapter_mutating_scanner_evidence() -> None:
         graph_quant_unit_policy={"backbone": ("FP16",)},
         alignment={"default_round_to": 16, "default_min_width": 16},
     )
-    loaded_config, checkpoint = _formal_evidence()
+    loaded_config, checkpoint = formal_evidence()
 
     with pytest.raises(TypeError):
         scan(
             _MutatingAdapter(),
-            _hardware(),
+            hardware_capability(),
             device="cpu",
             profile_latency_mode="off",
             scenario=scenario,
@@ -309,7 +210,7 @@ def test_formal_scan_prevents_adapter_mutating_scanner_evidence() -> None:
 
 
 def test_toy_scan_marks_real_partition_manifest_schema() -> None:
-    manifest = scan(_ToyAdapter(), _hardware(), device="cpu", profile_latency_mode="off")
+    manifest = scan(ToyAdapter(), hardware_capability(), device="cpu", profile_latency_mode="off")
 
     assert manifest["schema"] == "stage1_partition_manifest_v1"
     assert manifest["stage"] == "stage1_partition"
@@ -327,10 +228,10 @@ def test_scan_scenario_drives_backend_and_compression_q_sources(tmp_path) -> Non
             "default_max_rate_denominator": 4,
         },
     )
-    loaded_config, checkpoint = _formal_evidence()
+    loaded_config, checkpoint = formal_evidence()
     manifest = scan(
-        _ToyAdapter(),
-        _hardware(),
+        ToyAdapter(),
+        hardware_capability(),
         device="cpu",
         profile_latency_mode="off",
         scenario=scenario,
@@ -357,9 +258,9 @@ def test_scan_scenario_drives_backend_and_compression_q_sources(tmp_path) -> Non
 
 def test_adapter_helpers_and_graph_shape_modes_are_explicit() -> None:
     """Small helpers keep naming buckets and CPU profiling policy deterministic."""
-    adapter = _ToyAdapter()
+    adapter = ToyAdapter()
 
-    assert _first_conv_in_channels(_FullModel()) == 32
+    assert _first_conv_in_channels(FullModel()) == 32
     assert _generic_bucket("shrinker.block") == "neck"
     assert _generic_bucket("cls_head") == "heads"
     assert adapter.typed_skipped_subgraphs()[0]["type"] == "attention_or_routing_fusion"
