@@ -64,6 +64,43 @@ def _space(**overrides: Any) -> dict[str, Any]:
     return {**payload, **overrides}
 
 
+def _formal_pyramid_paper_space() -> dict[str, Any]:
+    return _space(
+        structural_axes=[
+            {
+                "axis_id": "backbone.s0",
+                "dense_stage": "stage1",
+                "base_width": 64,
+                "legal_widths": [16, 24, 32, 40, 48, 56, 64],
+                "member_b1_groups": ["pyramid.backbone.s0"],
+                "provenance": "paper_fixture_scanned_axis",
+            },
+            {
+                "axis_id": "backbone.s1",
+                "dense_stage": "stage2",
+                "base_width": 128,
+                "legal_widths": [32, 48, 64, 80, 96, 112, 128],
+                "member_b1_groups": ["pyramid.backbone.s1"],
+                "provenance": "paper_fixture_scanned_axis",
+            },
+            {
+                "axis_id": "backbone.s2",
+                "dense_stage": "stage3",
+                "base_width": 256,
+                "legal_widths": [64, 96, 128, 160, 192, 224, 256],
+                "member_b1_groups": ["pyramid.backbone.s2"],
+                "provenance": "paper_fixture_scanned_axis",
+            },
+        ],
+        formal_q_modes=["fp16", "int8"],
+        formal_candidate_policy={
+            "enumeration": "structural_axes_x_formal_q_modes",
+            "diagnostic_anchors_drive_formal_space": False,
+        },
+        software_candidates=[],
+    )
+
+
 def _canonical_loader_manifest() -> dict[str, Any]:
     search_groups = [
         {
@@ -116,6 +153,18 @@ def test_build_pyramid_candidate_plan_uses_independent_q_mode_products() -> None
     assert all(row["q_mode"] in {"fp16", "int8"} for row in plan["candidates"])
 
 
+def test_build_pyramid_candidate_plan_uses_formal_axes_for_paper_space() -> None:
+    """Catches legacy diagnostic anchors truncating the formal Pyramid paper space."""
+    plan = build_pyramid_candidate_plan(_formal_pyramid_paper_space())
+
+    assert plan["structure_count"] == 343
+    assert plan["candidate_count"] == 686
+    assert plan["candidates"][0]["width"] == [16, 32, 64]
+    assert plan["candidates"][-1]["width"] == [64, 128, 256]
+    assert {row["q_mode"] for row in plan["candidates"]} == {"fp16", "int8"}
+    assert all(len(row["source_point_ids"]) == 3 for row in plan["candidates"])
+
+
 def test_build_pyramid_candidate_plan_allows_missing_int8_counterparts() -> None:
     space = _space()
     for stage in space["software_candidates"]:
@@ -149,10 +198,10 @@ def test_build_pyramid_candidate_plan_accepts_canonical_loader_diagnostics(
 
     plan = build_pyramid_candidate_plan(search_space)
 
-    assert plan["candidate_count"] == 65
+    assert plan["candidate_count"] == 128
     assert {(tuple(row["width"]), row["q_mode"]) for row in plan["candidates"]} == {
         *((widths, "fp16") for widths in product((16, 32, 48, 64), repeat=3)),
-        ((64, 64, 64), "int8"),
+        *((widths, "int8") for widths in product((16, 32, 48, 64), repeat=3)),
     }
 
 

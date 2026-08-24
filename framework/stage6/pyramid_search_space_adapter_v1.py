@@ -113,6 +113,106 @@ def _common_stage_points(
     return by_q_mode
 
 
+def _formal_q_modes(search_space: Mapping[str, Any]) -> tuple[str, ...]:
+    raw_q_modes = search_space.get("formal_q_modes")
+    if not isinstance(raw_q_modes, list) or not raw_q_modes:
+        _fail("formal q modes are required")
+    q_modes = tuple(str(q_mode) for q_mode in raw_q_modes)
+    if (
+        tuple(sorted(q_modes)) != q_modes
+        or len(set(q_modes)) != len(q_modes)
+        or not set(q_modes) <= set(_Q_MODES)
+    ):
+        _fail("formal q modes must be sorted unique fp16/int8 modes")
+    return q_modes
+
+
+def _formal_axis_points(axis: Mapping[str, Any]) -> list[dict[str, Any]]:
+    axis_id = axis.get("axis_id")
+    widths = axis.get("legal_widths")
+    base_width = axis.get("base_width")
+    if (
+        not isinstance(axis_id, str)
+        or not axis_id.strip()
+        or not isinstance(widths, list)
+        or not widths
+        or isinstance(base_width, bool)
+        or not isinstance(base_width, int)
+        or base_width <= 0
+    ):
+        _fail("formal structural axis is invalid")
+    if any(isinstance(width, bool) or not isinstance(width, int) for width in widths):
+        _fail("formal structural axis width is invalid")
+    if widths != sorted(set(widths)) or widths[-1] > base_width:
+        _fail("formal structural axis widths are not canonical")
+    return [
+        {
+            "id": f"{axis_id}:w{width}",
+            "width": width,
+        }
+        for width in widths
+    ]
+
+
+def _formal_points_by_stage(
+    search_space: Mapping[str, Any],
+) -> dict[str, list[dict[str, Any]]] | None:
+    raw_axes = search_space.get("structural_axes")
+    if raw_axes is None:
+        return None
+    if not isinstance(raw_axes, list) or not raw_axes:
+        _fail("formal structural axes are required")
+    points_by_stage: dict[str, list[dict[str, Any]]] = {}
+    for axis in raw_axes:
+        if not isinstance(axis, Mapping):
+            _fail("formal structural axis must be a mapping")
+        stage = axis.get("dense_stage")
+        if stage not in _STAGES:
+            _fail("formal structural axes for stage1, stage2, and stage3 are required")
+        if stage in points_by_stage:
+            _fail("duplicate formal structural axis stage")
+        points_by_stage[stage] = _formal_axis_points(axis)
+    if set(points_by_stage) != set(_STAGES):
+        _fail("formal structural axes for stage1, stage2, and stage3 are required")
+    return {stage: points_by_stage[stage] for stage in _STAGES}
+
+
+def _build_formal_candidate_plan(
+    search_space: Mapping[str, Any], hardware_name: str
+) -> dict[str, Any] | None:
+    points_by_stage = _formal_points_by_stage(search_space)
+    if points_by_stage is None:
+        return None
+    candidates: list[dict[str, Any]] = []
+    for q_mode in _formal_q_modes(search_space):
+        for selected in product(*(points_by_stage[stage] for stage in _STAGES)):
+            candidates.append(
+                {
+                    "width": [item["width"] for item in selected],
+                    "q_mode": q_mode,
+                    "source_point_ids": [item["id"] for item in selected],
+                }
+            )
+    candidates.sort(
+        key=lambda row: (
+            tuple(row["width"]),
+            row["q_mode"],
+            tuple(row["source_point_ids"]),
+        )
+    )
+    return {
+        "schema_version": "p6_pyramid_candidate_plan_v2",
+        "source_schema": "stage2_search_space_v1",
+        "target_model": "pyramid",
+        "hardware_target": hardware_name,
+        "execution_backend": "tvm_auto",
+        "candidate_source_mode": "framework_stage2_search_space",
+        "structure_count": len({tuple(row["width"]) for row in candidates}),
+        "candidate_count": len(candidates),
+        "candidates": candidates,
+    }
+
+
 def build_pyramid_candidate_plan(search_space: Mapping[str, Any]) -> dict[str, Any]:
     """Convert a Stage2 Pyramid search space into executable candidates."""
     if not isinstance(search_space, Mapping):
@@ -146,6 +246,10 @@ def build_pyramid_candidate_plan(search_space: Mapping[str, Any]) -> dict[str, A
         for candidate in hardware_candidates
     ):
         _fail("TVM hardware candidate is required")
+
+    formal_plan = _build_formal_candidate_plan(search_space, hardware_name)
+    if formal_plan is not None:
+        return formal_plan
 
     software_candidates = search_space.get("software_candidates")
     if not isinstance(software_candidates, list):
