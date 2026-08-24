@@ -25,6 +25,9 @@ from framework.stage6.p6_source_reuse_evidence_v1 import (
     SOURCE_ARTIFACT_KEYS,
     SOURCE_MARKER_KEYS,
 )
+from tests.release.scanner_owned_stage1_fixture import (
+    scanner_owned_pyramid_stage1_manifest,
+)
 from tests.stage6.test_coptv2x_h800_search import (
     _closure,
     _gold176,
@@ -397,7 +400,13 @@ def build_offline_reuse_lifecycle(
         if command == "offline-stage1":
             path = Path(argv[1])
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(yaml.safe_dump(_stage1_manifest(), sort_keys=False), encoding="utf-8")
+            path.write_text(
+                yaml.safe_dump(
+                    scanner_owned_pyramid_stage1_manifest(_stage1_manifest()),
+                    sort_keys=False,
+                ),
+                encoding="utf-8",
+            )
         elif command == "offline-registry":
             registry_path, plan_path = map(Path, argv[1:3])
             plan = json.loads(plan_path.read_text(encoding="utf-8"))
@@ -453,5 +462,11 @@ def build_offline_reuse_lifecycle(
 
 def _write_stage1_seed(tmp_path: Path) -> Path:
     path = tmp_path / "stage1-seed.yaml"
-    path.write_text(yaml.safe_dump(_stage1_manifest(), sort_keys=False), encoding="utf-8")
+    path.write_text(
+        yaml.safe_dump(
+            scanner_owned_pyramid_stage1_manifest(_stage1_manifest()),
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
     return path

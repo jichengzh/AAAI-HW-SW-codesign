@@ -22,6 +22,9 @@ from tests.release.test_p6_history_execution_adapters import (
     _synthetic_history_binding,
     _write_synthetic_nvidia_smi,
 )
+from tests.release.scanner_owned_stage1_fixture import (
+    scanner_owned_pyramid_stage1_manifest,
+)
 
 try:
     import resource
@@ -215,40 +218,42 @@ shutil.copyfile(template_path, output_path)
 
 
 def _real_stage1_partition_manifest() -> dict[str, Any]:
-    return {
-        "schema": "stage1_partition_manifest_v1",
-        "stage": "stage1_partition",
-        "model": "pyramid_lidar",
-        "scan_status": "ok",
-        "hw_capability": {"name": "h800"},
-        "view_b1_search_groups": [
-            {
-                "search_group_id": f"pyramid_group.{suffix}",
-                "bucket": "pyramid_backbone",
-                "widths": [224],
-                "round_to": 32,
-                "int8_buildable_align": 32,
-                "max_rate": 0.875,
-                "grouped_conv": True,
-                "criterion_pool": ["L1"],
-                "member_b1_groups": [f"pyramid_group.{suffix}"],
-            }
-            for suffix in ("s0", "s1", "s2")
-        ],
-        "view_b2_quant_units": [
-            {
-                "unit": "pyramid_backbone",
-                "quantizable": True,
-                "legal_bits": ["FP16", "INT8"],
-                "member_groups": [
-                    "pyramid_group.s0",
-                    "pyramid_group.s1",
-                    "pyramid_group.s2",
-                ],
-            }
-        ],
-        "view_d_routing_segments": {"segments": [{"device": "gpu", "n_nodes": 1}]},
-    }
+    return scanner_owned_pyramid_stage1_manifest(
+        {
+            "schema": "stage1_partition_manifest_v1",
+            "stage": "stage1_partition",
+            "model": "pyramid_lidar",
+            "scan_status": "ok",
+            "hw_capability": {"name": "h800"},
+            "view_b1_search_groups": [
+                {
+                    "search_group_id": f"pyramid_group.{suffix}",
+                    "bucket": "pyramid_backbone",
+                    "widths": [224],
+                    "round_to": 32,
+                    "int8_buildable_align": 32,
+                    "max_rate": 0.875,
+                    "grouped_conv": True,
+                    "criterion_pool": ["L1"],
+                    "member_b1_groups": [f"pyramid_group.{suffix}"],
+                }
+                for suffix in ("s0", "s1", "s2")
+            ],
+            "view_b2_quant_units": [
+                {
+                    "unit": "pyramid_backbone",
+                    "quantizable": True,
+                    "legal_bits": ["FP16", "INT8"],
+                    "member_groups": [
+                        "pyramid_group.s0",
+                        "pyramid_group.s1",
+                        "pyramid_group.s2",
+                    ],
+                }
+            ],
+            "view_d_routing_segments": {"segments": [{"device": "gpu", "n_nodes": 1}]},
+        }
+    )
 
 
 def _write_fake_stage1_adapter(path: Path) -> Path:

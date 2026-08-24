@@ -46,6 +46,9 @@ from framework.stage6.p6_runner_template_validator_v1 import (
 )
 from framework.stage6.p6_source_reuse_evidence_v1 import create_fresh_run_context
 from tests.release.p6_source_reuse_lifecycle_fixture import _stage1_manifest
+from tests.release.scanner_owned_stage1_fixture import (
+    scanner_owned_pyramid_stage1_manifest,
+)
 from tests.stage6.test_coptv2x_h800_search import (
     _OfflineGpuProbe,
     _gold176,
@@ -233,11 +236,26 @@ class _RegeneratedDeploymentFixture:
 def _dynamic_candidate_plan(root: Path) -> dict[str, Any]:
     stage1_seed = root / "stage1-seed.yaml"
     stage1_seed.write_text(
-        yaml.safe_dump(_stage1_manifest(), sort_keys=False), encoding="utf-8"
+        yaml.safe_dump(
+            scanner_owned_pyramid_stage1_manifest(_stage1_manifest()),
+            sort_keys=False,
+        ),
+        encoding="utf-8",
     )
     return execution.build_pyramid_candidate_plan(
         execution.load_stage2_search_space(stage1_seed)
     )
+
+
+def test_scanner_owned_seed_builder_deep_copies_nested_manifest() -> None:
+    original = _stage1_manifest()
+    migrated = scanner_owned_pyramid_stage1_manifest(original)
+
+    migrated["view_b1_search_groups"][0]["widths"].append(96)
+    original["view_b2_quant_units"][0]["legal_bits"].append("FP8")
+
+    assert original["view_b1_search_groups"][0]["widths"] == [128]
+    assert migrated["view_b2_quant_units"][0]["legal_bits"] == ["FP16", "INT8"]
 
 
 def _projected_dynamic_request(
