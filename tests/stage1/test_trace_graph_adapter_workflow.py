@@ -6,9 +6,18 @@ import torch
 import torch.nn as nn
 import pytest
 
-from framework.stage1.adapters import TraceAdapter, _first_conv_in_channels, _generic_bucket, get_adapter
+from framework.stage1.adapters import (
+    MaterializerParameterSource,
+    ScanScenario,
+    TraceAdapter,
+    TraceContext,
+    _first_conv_in_channels,
+    _generic_bucket,
+    get_adapter,
+)
 from framework.stage1.graph_scan import _output_shapes, _resolve_profile, scan
 from framework.stage1.hardware_scan import HwCapability
+from framework.stage1_bridge import load_stage2_search_space
 from framework.stage1.trace_plan import (
     BoundaryValidator,
     GeneratedTraceWrapper,
@@ -41,6 +50,49 @@ class _ToyAdapter(TraceAdapter):
     def ignored_layers(self, net: nn.Module) -> list[nn.Module]:
         return [net.cls_head, net.reg_head]  # type: ignore[attr-defined]
 
+    def materializer_parameter_sources(
+        self, loaded_config: dict
+    ) -> tuple[MaterializerParameterSource, ...]:
+        assert "backbone" in loaded_config["model"]
+        return (
+            MaterializerParameterSource(
+                axis_id="backbone",
+                config_selector="model.backbone.width",
+                mutation_kind="out_channels",
+                module_root_selector="backbone.0",
+                allowed_roles=("output",),
+                provenance={"adapter": "toy"},
+            ),
+        )
+
+
+class _DiagnosticOnlyAdapter(_ToyAdapter):
+    build_trace_context = None  # type: ignore[assignment]
+
+
+class _ForgingAdapter(_ToyAdapter):
+    def build_trace_context(
+        self,
+        net: nn.Module,
+        example_inputs: tuple[torch.Tensor, ...],
+        loaded_config: dict,
+        checkpoint_evidence: dict,
+    ) -> TraceContext:
+        return super().build_trace_context(
+            net,
+            example_inputs,
+            {"model": {"backbone": {"width": 16}}},
+            checkpoint_evidence,
+        )
+
+
+class _MutatingAdapter(_ToyAdapter):
+    def materializer_parameter_sources(
+        self, loaded_config: dict
+    ) -> tuple[MaterializerParameterSource, ...]:
+        loaded_config["model"]["backbone"]["width"] = 16
+        return super().materializer_parameter_sources(loaded_config)
+
 
 def _hardware() -> HwCapability:
     return HwCapability(
@@ -51,6 +103,13 @@ def _hardware() -> HwCapability:
         },
         "unit.yaml",
         True,
+    )
+
+
+def _formal_evidence() -> tuple[dict, dict]:
+    return (
+        {"model": {"backbone": {"width": 32}}},
+        {"digest": "c" * 64, "module_widths": {"backbone.0": 32}},
     )
 
 
@@ -98,6 +157,109 @@ def test_toy_adapter_executes_full_cpu_graph_scan_without_hardware_measurement()
     assert manifest["view_d_routing_segments"]["n_segments"] >= 1
     assert manifest["view_latency"]["status"] == "skipped"
     assert manifest["trace_plan"] is None
+    assert manifest["formal_scan"]["status"] == "not_requested"
+    assert "scanner_structural_axes" not in manifest
+
+
+def test_formal_scan_requires_trace_context_instead_of_legacy_width_fallback() -> None:
+    scenario = ScanScenario(
+        hardware_precisions=("FP16",),
+        backend_precisions=("FP16",),
+        compression_modes=("fp16",),
+        graph_quant_unit_policy={"backbone": ("FP16",)},
+        alignment={"default_round_to": 16, "default_min_width": 16},
+    )
+
+    loaded_config, checkpoint = _formal_evidence()
+    with pytest.raises(ValueError, match="TraceContext"):
+        scan(
+            _DiagnosticOnlyAdapter(),
+            _hardware(),
+            device="cpu",
+            profile_latency_mode="off",
+            scenario=scenario,
+            loaded_config=loaded_config,
+            checkpoint_evidence=checkpoint,
+        )
+
+
+def test_formal_scan_requires_scanner_owned_config_and_checkpoint_evidence() -> None:
+    scenario = ScanScenario(
+        hardware_precisions=("FP16",),
+        backend_precisions=("FP16",),
+        compression_modes=("fp16",),
+        graph_quant_unit_policy={"backbone": ("FP16",)},
+        alignment={"default_round_to": 16, "default_min_width": 16},
+    )
+
+    with pytest.raises(ValueError, match="loaded_config.*checkpoint_evidence"):
+        scan(
+            _ToyAdapter(),
+            _hardware(),
+            device="cpu",
+            profile_latency_mode="off",
+            scenario=scenario,
+        )
+
+
+def test_public_scan_rejects_non_scenario_objects_at_the_api_boundary() -> None:
+    loaded_config, checkpoint = _formal_evidence()
+
+    with pytest.raises(TypeError, match="ScanScenario"):
+        scan(
+            _ToyAdapter(),
+            _hardware(),
+            device="cpu",
+            profile_latency_mode="off",
+            scenario={"hardware_precisions": ["FP16"]},  # type: ignore[arg-type]
+            loaded_config=loaded_config,
+            checkpoint_evidence=checkpoint,
+        )
+
+
+def test_formal_scan_rejects_adapter_forged_scanner_evidence() -> None:
+    scenario = ScanScenario(
+        hardware_precisions=("FP16",),
+        backend_precisions=("FP16",),
+        compression_modes=("fp16",),
+        graph_quant_unit_policy={"backbone": ("FP16",)},
+        alignment={"default_round_to": 16, "default_min_width": 16},
+    )
+    loaded_config, checkpoint = _formal_evidence()
+
+    with pytest.raises(ValueError, match="scanner-owned loaded_config"):
+        scan(
+            _ForgingAdapter(),
+            _hardware(),
+            device="cpu",
+            profile_latency_mode="off",
+            scenario=scenario,
+            loaded_config=loaded_config,
+            checkpoint_evidence=checkpoint,
+        )
+
+
+def test_formal_scan_prevents_adapter_mutating_scanner_evidence() -> None:
+    scenario = ScanScenario(
+        hardware_precisions=("FP16",),
+        backend_precisions=("FP16",),
+        compression_modes=("fp16",),
+        graph_quant_unit_policy={"backbone": ("FP16",)},
+        alignment={"default_round_to": 16, "default_min_width": 16},
+    )
+    loaded_config, checkpoint = _formal_evidence()
+
+    with pytest.raises(TypeError):
+        scan(
+            _MutatingAdapter(),
+            _hardware(),
+            device="cpu",
+            profile_latency_mode="off",
+            scenario=scenario,
+            loaded_config=loaded_config,
+            checkpoint_evidence=checkpoint,
+        )
+    assert loaded_config["model"]["backbone"]["width"] == 32
 
 
 def test_toy_scan_marks_real_partition_manifest_schema() -> None:
@@ -105,6 +267,39 @@ def test_toy_scan_marks_real_partition_manifest_schema() -> None:
 
     assert manifest["schema"] == "stage1_partition_manifest_v1"
     assert manifest["stage"] == "stage1_partition"
+
+
+def test_scan_scenario_drives_backend_and_compression_q_sources(tmp_path) -> None:
+    scenario = ScanScenario(
+        hardware_precisions=("FP16", "INT8"),
+        backend_precisions=("FP16",),
+        compression_modes=("fp16", "int8"),
+        graph_quant_unit_policy={"backbone": ("FP16", "INT8"), "heads": ("FP16",)},
+        alignment={"default_round_to": 32, "default_min_width": 32},
+    )
+    loaded_config, checkpoint = _formal_evidence()
+    manifest = scan(
+        _ToyAdapter(),
+        _hardware(),
+        device="cpu",
+        profile_latency_mode="off",
+        scenario=scenario,
+        loaded_config=loaded_config,
+        checkpoint_evidence=checkpoint,
+    )
+    path = tmp_path / "toy-scenario.yaml"
+    import yaml
+
+    path.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+
+    assert manifest["scan_scenario"]["backend_precisions"] == ["FP16"]
+    assert manifest["scanner_structural_axes"]
+    assert len(manifest["scanner_structural_axes_digest"]) == 64
+    assert manifest["scanner_structural_axes"][0]["provenance"]["input_digest"] == (
+        manifest["scanner_structural_axes_digest"]
+    )
+    assert "structural_axis_inputs" not in manifest
+    assert load_stage2_search_space(path)["formal_q_modes"] == ["fp16"]
 
 
 def test_adapter_helpers_and_graph_shape_modes_are_explicit() -> None:

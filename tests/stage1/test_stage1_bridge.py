@@ -8,9 +8,14 @@ from math import prod
 import pytest
 import yaml
 
+from framework.stage1.adapters import ScanScenario
 from framework.stage1.graph_scan import scan
 from framework.stage1_bridge import SpaceSpec, load_stage2_search_space
-from tests.stage1.test_trace_graph_adapter_workflow import _ToyAdapter, _hardware
+from tests.stage1.test_trace_graph_adapter_workflow import (
+    _ToyAdapter,
+    _formal_evidence,
+    _hardware,
+)
 
 
 SCANNER_DIGEST = "a" * 64
@@ -210,10 +215,33 @@ def test_legacy_manifest_without_int8_alignment_remains_deterministic(tmp_path: 
 
 
 def test_stage2_loader_accepts_schema_tagged_real_scan_manifest(tmp_path: Path) -> None:
-    manifest = scan(_ToyAdapter(), _hardware(), device="cpu", profile_latency_mode="off")
+    scenario = ScanScenario(
+        hardware_precisions=("FP16", "INT8"),
+        backend_precisions=("FP16", "INT8"),
+        compression_modes=("fp16", "int8"),
+        graph_quant_unit_policy={
+            "backbone": ("FP16", "INT8"),
+            "heads": ("FP16", "INT8"),
+        },
+        alignment={"default_round_to": 32, "default_min_width": 32},
+    )
+    loaded_config, checkpoint = _formal_evidence()
+    manifest = scan(
+        _ToyAdapter(),
+        _hardware(),
+        device="cpu",
+        profile_latency_mode="off",
+        scenario=scenario,
+        loaded_config=loaded_config,
+        checkpoint_evidence=checkpoint,
+    )
     path = _write_manifest(tmp_path / "partition.yaml", manifest)
 
-    assert load_stage2_search_space(path)["schema"] == "stage2_search_space_v1"
+    search_space = load_stage2_search_space(path)
+    assert search_space["schema"] == "stage2_search_space_v1"
+    assert search_space["structural_axes"][0]["provenance"]["input_digest"] == (
+        manifest["scanner_structural_axes_digest"]
+    )
 
 
 @pytest.mark.parametrize(

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Optional
+from typing import Any, Mapping, Optional
 
 import torch
 import torch.nn as nn
@@ -26,7 +26,12 @@ import torch.nn as nn
 import torch_pruning as tp
 
 from framework.stage1.hardware_scan import HwCapability
-from framework.stage1.adapters import TraceAdapter
+from framework.stage1.adapters import ScanScenario, TraceAdapter
+from framework.stage1.formal_scan_contract import (
+    formal_axis_payload,
+    formal_manifest_fields,
+    validate_formal_request,
+)
 from framework.stage1.trace_plan import attach_runtime_validation
 
 _PRUNABLE_TYPES = (nn.Conv2d, nn.ConvTranspose2d, nn.Linear, nn.BatchNorm2d)
@@ -211,7 +216,7 @@ def extract_prune_groups(DG, net, hw: HwCapability, adapter: TraceAdapter,
                          ignored: list[nn.Module]) -> list[dict]:
     name_map = _name_map(net)
     ignored_ids = {id(m) for m in ignored}
-    groups_out, gid = [], 0
+    groups_out = []
     for group in DG.get_all_groups(root_module_types=_ROOT_TYPES,
                                    ignored_layers=ignored):
         members = _group_members(group, name_map)
@@ -223,50 +228,46 @@ def extract_prune_groups(DG, net, hw: HwCapability, adapter: TraceAdapter,
         cur_w = _width_of(root_mod)
         if not cur_w:
             continue
-        g = _grouped_conv_g(members)
-        round_int8 = hw.int8_align
-        round_fp16 = hw.fp16_align
-        # 剪枝结构对齐 (prune granularity): grouped-conv 取 lcm(round_to, groups)。
-        # 决定"哪些剪后宽度结构上合法可剪" → 驱动 width_floor/max_rate。
-        align_int8 = round_int8 if g == 1 else math.lcm(round_int8, g)
-        # int8 dp4a/WMMA 可建对齐 (buildability): 沿 per-group 输入轴打包 pack_factor
-        # 个 int8 → in_per_g % pack_factor == 0 ⟺ width % (pack_factor×groups) == 0。
-        # = pack_factor × groups。这是 **TVM dp4a/WMMA 路径** 的 per-group 打包约束,
-        # 不叠加 TRT 张量对齐 int8_align (那是张量 tiling, 进 round_to 不进可建性)。
-        # 与 round_to 区分: 它是搜索期 int8 可建谓词 (合法宽度的可建子集), 非剪枝粒度
-        # (故不进 max_rate)。g=1: 4 (标准卷积全可建, 实测 codriving_int8_verify.json
-        # Cin=48/64 均 build); g=32: 128 (实测 q_int8_dp4a_pairs.csv: cur_width 96 NOT_
-        # APPLICABLE / 128 PASS → 仅 %128 可建)。★ 两模型实测交叉定标: 若叠 int8_align=32
-        # 取 lcm, g=1 会误判 48/16 不可建 (lcm(32,4)=32) — 与 codriving 实测矛盾。
-        int8_buildable_align = hw.int8_pack_factor * max(1, g)
-        floor = min(align_int8, cur_w) if cur_w >= align_int8 else cur_w
-        max_rate = round((cur_w - floor) / cur_w, 4) if cur_w > floor else 0.0
-        bucket = adapter.semantic_bucket(root_name)
-        coupled = sorted({adapter.semantic_bucket(n) for n, _ in members})
-        feature = _group_feature(members, coupled)
-        groups_out.append({
-            "group_id": f"g{gid}",
-            "bucket": bucket,
-            "root_layer": root_name,
-            "member_layers": [n for n, _ in members],
-            "n_members": len(members),
-            "prune_dim": "out",
-            "cur_width": int(cur_w),
-            "grouped_conv_g": g,
-            "round_to_int8": round_int8,
-            "round_to_fp16": round_fp16,
-            "round_to_default": align_int8,   # 保守取 INT8 对齐 (含 grouped lcm); = 剪枝粒度
-            "int8_buildable_align": int(int8_buildable_align),  # dp4a int8 可建对齐 (lcm(int8_align, pack×g))
-            "width_floor": int(floor),
-            "enforcement": hw.alignment_enforcement,
-            "max_rate": max_rate,
-            "criterion_pool": _criterion_pool(members),
-            "prunable": True,
-            "coupled_buckets": coupled if len(coupled) > 1 else None,
-            "feature": feature,
-        })
-        gid += 1
+        groups_out.append(
+            _prune_group_row(len(groups_out), root_name, members, cur_w, hw, adapter)
+        )
     return groups_out
+
+
+# Structural pruning uses lcm(round_to, groups), while INT8 buildability is a
+# distinct per-group dp4a/WMMA packing predicate: pack_factor * groups. Do not
+# fold tensor tiling alignment into that predicate; width 48/64 standard convs
+# were buildable while a grouped width 96 was not and width 128 was.
+def _prune_group_row(gid, root_name, members, cur_w, hw, adapter) -> dict:
+    g = _grouped_conv_g(members)
+    round_int8 = hw.int8_align
+    align_int8 = round_int8 if g == 1 else math.lcm(round_int8, g)
+    int8_buildable_align = hw.int8_pack_factor * max(1, g)
+    floor = min(align_int8, cur_w) if cur_w >= align_int8 else cur_w
+    max_rate = round((cur_w - floor) / cur_w, 4) if cur_w > floor else 0.0
+    bucket = adapter.semantic_bucket(root_name)
+    coupled = sorted({adapter.semantic_bucket(n) for n, _ in members})
+    return {
+        "group_id": f"g{gid}",
+        "bucket": bucket,
+        "root_layer": root_name,
+        "member_layers": [n for n, _ in members],
+        "n_members": len(members),
+        "prune_dim": "out",
+        "cur_width": int(cur_w),
+        "grouped_conv_g": g,
+        "round_to_int8": round_int8,
+        "round_to_fp16": hw.fp16_align,
+        "round_to_default": align_int8,
+        "int8_buildable_align": int(int8_buildable_align),
+        "width_floor": int(floor),
+        "enforcement": hw.alignment_enforcement,
+        "max_rate": max_rate,
+        "criterion_pool": _criterion_pool(members),
+        "prunable": True,
+        "coupled_buckets": coupled if len(coupled) > 1 else None,
+        "feature": _group_feature(members, coupled),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -537,102 +538,129 @@ def _output_shapes(out) -> list[list[int]]:
     return []
 
 
-def scan(adapter: TraceAdapter, hw: HwCapability, device: str = "cpu",
-         profile_latency_mode: str = "auto",
-         lat_warmup: int = 30, lat_measure: int = 100) -> dict:
-    """跑完整 Stage1 子流程 B + 汇合 A → 返回 partition manifest dict。"""
-    print(f"[scan] {adapter.name}  device={device}  hw={hw.name}")
-    print(f"       torch {torch.__version__}  tp {tp.__version__}")
+def _failed_trace_plan(adapter: TraceAdapter, error: Exception) -> dict:
+    return {
+        "schema": "stage1_trace_plan_v1",
+        "model": adapter.name,
+        "detector": "trace_plan_builder_failed",
+        "manual_override_used": True,
+        "trace_confidence": "low",
+        "coverage_scope": "unknown",
+        "review_required": True,
+        "review_reasons": ["trace_plan_builder_failed"],
+        "selected_candidate": {
+            "candidate_id": "trace_plan_builder_failed",
+            "status": "rejected",
+            "validation": {"full_model_module_tree_scan": "fail"},
+        },
+        "included_modules": [],
+        "ignored_layers": [],
+        "skipped_subgraphs": [],
+        "rejected_candidates": [{
+            "candidate_id": "trace_plan_builder_failed",
+            "status": "rejected",
+            "failed_at": "trace_plan_builder",
+            "error": f"{type(error).__name__}: {str(error)[:200]}",
+            "suggested_override": "fall back to legacy TraceAdapter registry",
+        }],
+        "module_inventory": [],
+    }
 
-    # S0 + S1
-    net, x = adapter.build_trace_net(device)
+
+def _adapter_trace_plan(adapter: TraceAdapter, device: str) -> Any:
     trace_plan = getattr(adapter, "trace_plan", None)
-    if trace_plan is None and hasattr(adapter, "build_trace_plan"):
-        try:
-            trace_plan = adapter.build_trace_plan(device=device)
-        except Exception as e:  # noqa: BLE001
-            trace_plan = {
-                "schema": "stage1_trace_plan_v1",
-                "model": adapter.name,
-                "detector": "trace_plan_builder_failed",
-                "manual_override_used": True,
-                "trace_confidence": "low",
-                "coverage_scope": "unknown",
-                "review_required": True,
-                "review_reasons": ["trace_plan_builder_failed"],
-                "selected_candidate": {
-                    "candidate_id": "trace_plan_builder_failed",
-                    "status": "rejected",
-                    "validation": {"full_model_module_tree_scan": "fail"},
-                },
-                "included_modules": [],
-                "ignored_layers": [],
-                "skipped_subgraphs": [],
-                "rejected_candidates": [
-                    {
-                        "candidate_id": "trace_plan_builder_failed",
-                        "status": "rejected",
-                        "failed_at": "trace_plan_builder",
-                        "error": f"{type(e).__name__}: {str(e)[:200]}",
-                        "suggested_override": "fall back to legacy TraceAdapter registry",
-                    }
-                ],
-                "module_inventory": [],
-            }
+    if trace_plan is not None or not hasattr(adapter, "build_trace_plan"):
+        return trace_plan
+    try:
+        return adapter.build_trace_plan(device=device)
+    except Exception as error:  # noqa: BLE001
+        return _failed_trace_plan(adapter, error)
+
+
+def _build_trace_graph(adapter: TraceAdapter, device: str) -> dict[str, Any]:
+    net, x = adapter.build_trace_net(device)
+    trace_plan = _adapter_trace_plan(adapter, device)
     ignored = adapter.ignored_layers(net)
     with torch.no_grad():
-        out0 = net(x)
+        output = net(x)
     print(f"  [S0] forward OK, entry={tuple(x.shape)}, "
-          f"outs={[tuple(o.shape) for o in out0] if isinstance(out0,(list,tuple)) else tuple(out0.shape)}")
-
-    DG = tp.DependencyGraph().build_dependency(net, example_inputs=x)
-    n_groups_raw = len(list(DG.get_all_groups(root_module_types=_ROOT_TYPES,
-                                              ignored_layers=ignored)))
+          f"outs={[tuple(o.shape) for o in output] if isinstance(output,(list,tuple)) else tuple(output.shape)}")
+    depgraph = tp.DependencyGraph().build_dependency(net, example_inputs=x)
+    groups = depgraph.get_all_groups(
+        root_module_types=_ROOT_TYPES, ignored_layers=ignored
+    )
+    n_groups_raw = len(list(groups))
     print(f"  [S1] build_dependency OK, prunable groups={n_groups_raw}")
+    return {
+        "net": net, "x": x, "output": output, "depgraph": depgraph,
+        "ignored": ignored, "n_groups_raw": n_groups_raw,
+        "trace_plan": trace_plan,
+    }
 
-    # S2 / S2b / S3 / S4 / S4b
-    b1 = extract_prune_groups(DG, net, hw, adapter, ignored)
+
+def _build_scan_views(
+    adapter, hw, trace, scenario, loaded_config, checkpoint_evidence
+) -> dict[str, Any]:
+    net, x = trace["net"], trace["x"]
+    b1 = extract_prune_groups(trace["depgraph"], net, hw, adapter, trace["ignored"])
     b1_search = consolidate_search_groups(b1)
     b2 = extract_quant_units(net, b1, hw, adapter)
     d = tag_routing(net, b2, hw, adapter)
     d_seg = routing_segments(d, hw)
+    scanner_axes = formal_axis_payload(
+        adapter, net, x, b1, scenario, loaded_config, checkpoint_evidence
+    )
     print(f"  [S2] B1 groups={len(b1)} → 搜索旋钮={len(b1_search)}  "
           f"[S3] B2 units={len(b2)}  [S4] D nodes={len(d)} → 路由段={d_seg['n_segments']}")
+    return {
+        "b1": b1, "b1_search": b1_search, "b2": b2,
+        "routing": d, "routing_segments": d_seg, "scanner_axes": scanner_axes,
+    }
 
-    # S5
-    checks = stats_and_validate(adapter, b1, hw, device)
+
+def _run_scan_validation(adapter, hw, device, trace, views) -> tuple[dict, Any]:
+    checks = stats_and_validate(adapter, views["b1"], hw, device)
     trace_plan = attach_runtime_validation(
-        trace_plan,
+        trace["trace_plan"],
         forward_status="ok",
         depgraph_status="ok",
         prune_status=str(checks["dryrun_prune05"].get("status") or "unknown"),
-        n_prunable_groups=n_groups_raw,
-        output_shapes=_output_shapes(out0),
+        n_prunable_groups=trace["n_groups_raw"],
+        output_shapes=_output_shapes(trace["output"]),
     )
     print(f"  [S5] dryrun_prune05={checks['dryrun_prune05'].get('status')}  "
           f"param_dist={checks['param_dist']}")
+    return checks, trace_plan
 
-    # S5b 逐层时延 profiling (内建工作流步骤; 复用 S0 的 net/x, 描述性旁注非约束)
-    if _resolve_profile(profile_latency_mode, device):
+
+def _scan_latency(
+    adapter, device, mode, warmup, measure, trace, skipped_subgraphs
+) -> dict:
+    if _resolve_profile(mode, device):
         from framework.stage1.latency_profile import profile_latency
-        view_latency = profile_latency(net, x, adapter, device,
-                                       warmup=lat_warmup, measure=lat_measure)
+        view_latency = profile_latency(
+            trace["net"], trace["x"], adapter, device,
+            warmup=warmup, measure=measure,
+        )
         print(f"  [S5b] latency profile status={view_latency['status']}  "
               f"e2e_forward={view_latency['e2e_forward_ms']}ms  "
               f"top_bucket={view_latency['by_b2_quant_unit'][0] if view_latency['by_b2_quant_unit'] else None}")
     else:
         view_latency = {"status": "skipped",
-                        "reason": (f"profile_latency_mode={profile_latency_mode}, device={device} "
+                        "reason": (f"profile_latency_mode={mode}, device={device} "
                                    "(auto 仅 cuda 开; --profile-latency on 可强制 cpu 估算)")}
         print(f"  [S5b] latency profile skipped ({view_latency['reason']})")
-    skipped_subgraphs = adapter.typed_skipped_subgraphs()
     view_latency.setdefault(
         "coverage",
         _trace_latency_coverage(view_latency.get("status"), skipped_subgraphs),
     )
+    return view_latency
 
-    # S6 汇合 manifest
-    manifest = {
+
+def _manifest_core(
+    adapter, hw, trace, views, checks, trace_plan, latency, skipped_subgraphs
+) -> dict:
+    return {
         "schema": "stage1_partition_manifest_v1",
         "stage": "stage1_partition",
         "model": adapter.name,
@@ -642,7 +670,7 @@ def scan(adapter: TraceAdapter, hw: HwCapability, device: str = "cpu",
         "ckpt_status": adapter.ckpt_status,
         "hw_capability": hw.summary(),
         "trace": {
-            "entry_shape": list(x.shape),
+            "entry_shape": list(trace["x"].shape),
             "skipped_modules": adapter.skipped_modules,
             "skipped_subgraphs": skipped_subgraphs,
             "note": adapter.trace_note,
@@ -651,23 +679,52 @@ def scan(adapter: TraceAdapter, hw: HwCapability, device: str = "cpu",
         "prune_object": "channel",   # 设计裁剪: 锁定, 不搜 2:4/element
         "stats": {"params_total": checks["params_total"], "param_dist": checks["param_dist"]},
         "search_space_summary": {
-            "n_b1_groups_structural": len(b1),     # 结构真相 (DepGraph 最小耦合单元)
-            "n_b1_search_knobs": len(b1_search),   # 整合后真正要搜的剪枝率旋钮
-            "n_b2_quant_units": len(b2),
-            "n_d_routing_segments": d_seg["n_segments"],
-            "latency_status": view_latency.get("status"),
-            "latency_e2e_forward_ms": view_latency.get("e2e_forward_ms"),
+            "n_b1_groups_structural": len(views["b1"]),
+            "n_b1_search_knobs": len(views["b1_search"]),
+            "n_b2_quant_units": len(views["b2"]),
+            "n_d_routing_segments": views["routing_segments"]["n_segments"],
+            "latency_status": latency.get("status"),
+            "latency_e2e_forward_ms": latency.get("e2e_forward_ms"),
         },
-        "view_b1_search_groups": b1_search,   # ★ 搜索器用这个 (整合旋钮)
-        "view_b1_prune_groups": b1,           # 结构真相 (保留, 不直接搜)
-        "view_b2_quant_units": b2,
-        "view_d_routing_segments": d_seg,     # ★ 搜索器用这个 (路由段)
-        "view_d_routing": d,                  # 逐节点 tag (素材, 保留)
-        "view_latency": view_latency,         # S5b 时延旁注 (描述性, 非约束; 回答"动哪里最值")
+        "view_b1_search_groups": views["b1_search"],
+        "view_b1_prune_groups": views["b1"],
+        "view_b2_quant_units": views["b2"],
+        "view_d_routing_segments": views["routing_segments"],
+        "view_d_routing": views["routing"],
+        "view_latency": latency,
         "checks": {k: v for k, v in checks.items() if k not in ("params_total", "param_dist")},
         "scan_status": "ok" if checks["dryrun_prune05"].get("status") == "ok" else "partial",
     }
-    return manifest
+
+
+def scan(adapter: TraceAdapter, hw: HwCapability, device: str = "cpu",
+         profile_latency_mode: str = "auto",
+         lat_warmup: int = 30, lat_measure: int = 100,
+         scenario: ScanScenario | None = None,
+         loaded_config: Mapping[str, Any] | None = None,
+         checkpoint_evidence: Mapping[str, Any] | None = None) -> dict:
+    """跑完整 Stage1 子流程 B + 汇合 A → 返回 partition manifest dict。"""
+    validate_formal_request(scenario, loaded_config, checkpoint_evidence)
+    print(f"[scan] {adapter.name}  device={device}  hw={hw.name}")
+    print(f"       torch {torch.__version__}  tp {tp.__version__}")
+    trace = _build_trace_graph(adapter, device)
+    views = _build_scan_views(
+        adapter, hw, trace, scenario, loaded_config, checkpoint_evidence
+    )
+    checks, trace_plan = _run_scan_validation(adapter, hw, device, trace, views)
+    skipped_subgraphs = adapter.typed_skipped_subgraphs()
+    latency = _scan_latency(
+        adapter, device, profile_latency_mode, lat_warmup, lat_measure,
+        trace, skipped_subgraphs,
+    )
+    core = _manifest_core(
+        adapter, hw, trace, views, checks, trace_plan, latency, skipped_subgraphs
+    )
+    return {
+        **core,
+        **formal_manifest_fields(scenario, views["b2"]),
+        **views["scanner_axes"],
+    }
 
 
 __all__ = ["scan", "extract_prune_groups", "extract_quant_units", "tag_routing",
