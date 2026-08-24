@@ -2,53 +2,184 @@
 
 ## Goal
 
-Make Stage1 → Stage2 space construction reproduce the CoptV2X paper spaces for Pyramid, CoDriving, and F-Cooper without using the paper counts as production drivers.
+Repair Stage1 → Stage2 formal search-space construction so the public
+framework reproduces the three CoptV2X paper model spaces, while the
+production implementation remains driven by graph scanning, dependency
+relations, materializer bindings, base checkpoint widths, and backend
+hardware constraints instead of paper constants.
+
+## Non-goals
+
+- Do not add an arbitrary four-axis synthetic network such as `6×8×10×12`.
+  Acceptance is limited to the three paper models: Pyramid, CoDriving, and
+  F-Cooper.
+- Do not start post-source adapters, SSH jobs, H800 training, or the four-round
+  real search in this repair plan. Those resume only after the CPU-only formal
+  space contract is correct.
+- Do not use `3`, `5`, `7`, `343`, `686`, `1792`, or `3584` as production
+  generation drivers. These values are allowed only as test or CLI summary
+  oracles for the three paper models.
 
 ## Binding requirements
 
-- The formal search space is generated from scanned graph structure, dependency provenance, base checkpoint widths, materializer feasibility, and hardware/backend precision capability.
-- Probe anchors, cliff-neighbor diagnostics, and low/mid/high samples are diagnostic-only. They must not replace or truncate the formal candidate universe.
-- A candidate must never require a width above the canonical base checkpoint width for its structural axis. Over-base widths are construction errors, not normal `unavailable` search candidates.
-- q modes are the intersection of hardware capability, backend/search implementation support, and quant-unit legality. For H800/TVM paper reproduction this yields `fp16` and `int8`.
-- Production logic must not be driven by constants such as `3`, `7`, `343`, `686`, `1792`, or `3584`. Tests may assert those counts as paper-model reproduction oracles.
-- Acceptance covers only the three paper models. Do not add arbitrary synthetic four-axis networks such as `6×8×10×12`.
+- Formal production enumeration consumes `structural_axes` only. Legacy
+  `view_b1_search_groups` and probe anchors are diagnostic views; they are not
+  fallback production axes.
+- If scanner-owned `structural_axes` are absent, malformed, or incomplete,
+  Stage2 formal construction fails closed with a clear validation error.
+- The scanner-owned structural-axis builder consumes low-level prune groups,
+  graph dependency/dataflow relations, adapter materialization bindings, base
+  config/checkpoint widths, and hardware/backend constraints. It must not return
+  fixed axis counts or fixed axis sets from model name.
+- Each axis records canonical base width, legal widths, member B1 groups,
+  integer-ratio transforms from canonical coordinate to member coordinate,
+  provenance, and whether the axis is free or fixed-derived.
+- Probe anchors, cliff-neighbor diagnostics, and low/mid/high samples remain
+  available only as diagnostic metadata and never truncate the formal universe.
+- q modes are derived as:
+  `hardware precision ∩ backend support ∩ configured compression modes ∩ graph quant units`.
+  An empty intersection is an error.
+- A formal candidate must never require a canonical axis width above that
+  axis's base checkpoint/config width. Over-base rows are rejected before
+  registry writes; they are not retained as normal `unavailable` candidates.
+- The formal planner consumes a generic `axis_schema`; P6 Pyramid code is only a
+  thin adapter over that schema.
 
-## Formal model-space contract
+## Scanner-owned structural-axis contract
 
-Stage2 output keeps existing compatibility fields:
+Add a Stage1 module responsible for the formal axis contract:
 
-- `view_b1_prune_groups`: low-level dependency truth.
-- `view_b1_search_groups`: legacy search-group compatibility and diagnostic anchors.
-- `software_candidates`: existing public candidate/diagnostic view.
+- `framework/stage1/structural_axes.py`
 
-It additionally exposes a formal product-space view:
+The module owns these immutable data shapes:
 
-- `structural_axes`: ordered canonical axes. Each axis contains `axis_id`, `dense_stage`, `base_width`, `legal_widths`, `member_b1_groups`, and provenance.
-- `formal_q_modes`: ordered q modes derived from capability and implementation support.
-- `formal_candidate_policy`: states that formal enumeration is `structural_axes × formal_q_modes`, while probes are diagnostic-only.
+- `AxisMemberBinding`
+  - `b1_group_id: str`
+  - `module_path: str`
+  - `canonical_to_member_num: int`
+  - `canonical_to_member_den: int`
+  - `materializer_param: str`
+  - `role: str`
+- `StructuralAxis`
+  - `axis_id: str`
+  - `dense_stage: str | None`
+  - `axis_kind: "free" | "fixed_derived"`
+  - `base_width: int`
+  - `legal_widths: tuple[int, ...]`
+  - `member_b1_groups: tuple[AxisMemberBinding, ...]`
+  - `round_to: int`
+  - `provenance: dict[str, object]`
+- `StructuralAxisBundle`
+  - `axes: tuple[StructuralAxis, ...]`
+  - `diagnostics: dict[str, object]`
 
-P6 consumes `structural_axes` when present. The legacy `software_candidates` parser remains as a fallback for old tests and archives.
+Builder responsibilities:
 
-## Paper-model reproduction oracles
+1. Group low-level prune groups by graph dependency/dataflow and adapter
+   materialization parameter bindings.
+2. Choose the canonical coordinate from base config/checkpoint width for the
+   materializer-facing parameter, not from the maximum internal tensor width.
+3. Preserve member relationships as exact integer ratios. For example, an
+   internal bottleneck tensor at `2C` is recorded as a `2/1` member transform,
+   not as a separate legal canonical width.
+4. Generate `legal_widths` by pruning from canonical base width under graph
+   validity, materializer feasibility, and alignment/packing constraints.
+5. Mark axes that are graph/materializer-derived but not independent knobs as
+   `fixed_derived`. Fixed-derived axes keep provenance but do not multiply the
+   formal structure count.
+6. Fail closed when a free axis has no legal widths, when a member transform is
+   non-integral for any legal canonical width, or when required provenance is
+   missing.
 
-Pyramid and CoDriving:
+The existing `view_b1_prune_groups`, `view_b1_search_groups`, and
+`software_candidates` fields remain public compatibility and diagnostic fields.
+They are not a source of formal axes.
 
-- axes: `[16,24,32,40,48,56,64]`, `[32,48,64,80,96,112,128]`, `[64,96,128,160,192,224,256]`
+## q-mode contract
+
+Stage1 exposes `formal_q_modes` from four sources:
+
+1. `HwCapability.gpu_precisions` or equivalent hardware profile.
+2. Backend implementation support, such as TVM/TensorRT precision support.
+3. Configured compression/search modes for the run.
+4. Graph quant-unit legality emitted by the scanner.
+
+The mapping is explicit and case-normalized:
+
+- `FP16` → `fp16`
+- `INT8` → `int8`
+
+Unsupported entries such as INT4 are ignored unless all configured modes become
+unsupported, in which case construction fails.
+
+## Three paper-model reproduction oracles
+
+These values are test oracles only.
+
+Pyramid:
+
+- free axes:
+  - `[16,24,32,40,48,56,64]`
+  - `[32,48,64,80,96,112,128]`
+  - `[64,96,128,160,192,224,256]`
 - structures: `343`
 - H800/TVM q modes: `fp16`, `int8`
 - candidates: `686`
-- CoDriving neck provenance may be preserved, but neck is not an independent free axis.
+
+CoDriving:
+
+- free axes:
+  - `[16,24,32,40,48,56,64]`
+  - `[32,48,64,80,96,112,128]`
+  - `[64,96,128,160,192,224,256]`
+- structures: `343`
+- H800/TVM q modes: `fp16`, `int8`
+- candidates: `686`
+- neck components are preserved as fixed-derived provenance, not independent
+  free axes.
 
 F-Cooper:
 
-- axes: `[32,64]`, `[32,64,96,128]`, `[32,64,96,128,160,192,224,256]`, `[32,64,96,128]`, `[64,96,128,160,192,224,256]`
+- free axes:
+  - `[32,64]`
+  - `[32,64,96,128]`
+  - `[32,64,96,128,160,192,224,256]`
+  - `[32,64,96,128]`
+  - `[64,96,128,160,192,224,256]`
 - structures: `1792`
 - H800/TVM q modes: `fp16`, `int8`
 - candidates: `3584`
+- the two neck axes are independent interface axes only when graph
+  independence and materializer bindings prove they are not fixed-derived from
+  a backbone axis.
 
-## Implementation boundaries
+## Planner and registry contract
 
-- Stage1 may emit explicit `formal_axis` metadata when the scanner can derive a canonical axis directly.
-- If `formal_axis` is absent, the bridge derives the axis from the legacy search group using canonical base width and prune constraints, preserving old fixture behavior.
-- Hardware precision parsing must honor `ips.gpu.precisions` and `quant_constraints.bit_widths_w`; an INT4-only device must not silently produce INT8/FP16.
-- P6 registry materialization rejects over-base plan rows before writing instead of publishing `unavailable` rows.
+- Generic planning code enumerates `axis_schema.free_axes × formal_q_modes`.
+- P6 Pyramid adapter maps generic axis IDs into legacy P6 row fields after
+  formal enumeration; it does not rediscover Pyramid stages from legacy anchors.
+- Registry validation rejects over-base canonical widths before writing any
+  plan or registry output.
+- Registry records may keep rejected diagnostics outside the formal plan, but
+  rejected rows must never be counted as formal search candidates.
+
+## Acceptance gates
+
+- Three purified real scanner-contract fixtures are the only integration
+  acceptance fixtures:
+  - Pyramid scanner contract fixture.
+  - CoDriving scanner contract fixture with neck fixed-derived provenance.
+  - F-Cooper scanner contract fixture with two independent neck interface axes.
+- Unit tests must include RED evidence for missing `structural_axes`, malformed
+  member ratios, empty q-mode intersections, and over-base registry rejection.
+- Integration tests and CLI summaries assert exact paper counts:
+  - Pyramid `343/686`
+  - CoDriving `343/686`
+  - F-Cooper `1792/3584`
+- Full verification for this plan is CPU-only:
+  - targeted Stage1/Stage5/Stage6/integration pytest
+  - release tests
+  - `python -m compileall framework scripts tests -q`
+  - coverage `>=80%` for touched modules
+- Each implementation task has one implementer, followed by strict serial
+  two-stage review: SPEC reviewer first, QUALITY reviewer second.
