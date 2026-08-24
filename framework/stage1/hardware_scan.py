@@ -122,12 +122,13 @@ class HwCapability:
         """我们只搜 {INT8, FP16}; 与硬件实际支持位宽取交集。"""
         qc = self._qc()
         bw = set(qc.get("bit_widths_w", [8, 16, 32]) or [8, 16, 32])
+        supported = {str(item).upper() for item in (self.gpu_precisions or _SEARCH_BITS)}
         out = []
         if 8 in bw:
             out.append("INT8")
         if 16 in bw:
             out.append("FP16")
-        return out or list(_SEARCH_BITS)
+        return [bit for bit in out if bit in supported]
 
     @property
     def legal_granularity_w(self) -> list[str]:

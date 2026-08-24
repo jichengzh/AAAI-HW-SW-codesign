@@ -73,3 +73,33 @@ def test_hardware_scan_retains_normalized_view_when_schema_validation_fails(tmp_
     assert capability.int8_align == 32
     assert capability.fp16_align == 8
     assert capability.has_dla is False
+
+
+def test_hardware_scan_intersects_gpu_precisions_with_quant_constraints(
+    tmp_path: Path,
+) -> None:
+    """Catches q-mode generation that ignores device precision capability."""
+    raw = _raw_capability()
+    raw["ips"]["gpu"]["precisions"] = ["FP16"]
+    raw["quant_constraints"]["bit_widths_w"] = [8, 16]
+    path = tmp_path / "fp16.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+    capability = HwCapability.from_yaml(path)
+
+    assert capability.legal_bits == ["FP16"]
+
+
+def test_hardware_scan_rejects_int4_only_as_no_supported_search_bits(
+    tmp_path: Path,
+) -> None:
+    """Catches fallback to INT8/FP16 when the backend cannot search either mode."""
+    raw = _raw_capability()
+    raw["ips"]["gpu"]["precisions"] = ["INT4"]
+    raw["quant_constraints"]["bit_widths_w"] = [4]
+    path = tmp_path / "int4.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+    capability = HwCapability.from_yaml(path)
+
+    assert capability.legal_bits == []
