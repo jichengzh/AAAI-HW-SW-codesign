@@ -34,6 +34,9 @@ from framework.stage6.p6_external_training_binding_v1 import (  # noqa: E402
 from framework.stage6.p6_history_measurement_v1 import (  # noqa: E402
     plan_validated_history_round_paths,
 )
+from framework.stage6.p6_history_execution_closure_v1 import (  # noqa: E402
+    validate_post_source_wrapper_runner_binding,
+)
 from framework.stage6.p6_history_training_contract_v1 import (  # noqa: E402
     validate_recipe_v2_training_template,
 )
@@ -42,6 +45,9 @@ from framework.stage6.p6_runner_template_validator_v1 import (  # noqa: E402
 )
 from framework.stage6.p6_post_source_adapter_profile_v1 import (  # noqa: E402
     load_post_source_adapter_profile,
+)
+from framework.stage6.p6_post_source_wrapper_template_v1 import (  # noqa: E402
+    validate_post_source_adapter_wrappers,
 )
 from framework.stage6.p6_source_reuse_evidence_v1 import (  # noqa: E402
     plan_source_reuse_paths,
@@ -115,9 +121,18 @@ def preflight_materializer_training_bridge(
             if (private_root / "post-source-adapter-profile.yaml").is_file():
                 raise ValueError
         else:
-            load_post_source_adapter_profile(
+            profile = load_post_source_adapter_profile(
                 post_source_adapter_profile_path,
                 private_root=private_root,
+            )
+            wrapper_paths = validate_post_source_adapter_wrappers(
+                profile,
+                private_root=private_root,
+            )
+            validate_post_source_wrapper_runner_binding(
+                runner_template_path,
+                normalized_private_root=private_root,
+                post_source_wrapper_paths=wrapper_paths,
             )
         runner_template = validate_pre_provision_runner_template(
             runner_template_path, private_root, require_exact_history_environment=True

@@ -232,6 +232,61 @@ def validate_normalized_runner_closure(
         _invalid()
 
 
+def validate_post_source_wrapper_runner_binding(
+    runner_template_path: Path,
+    *,
+    normalized_private_root: Path,
+    post_source_wrapper_paths: Mapping[str, Path],
+) -> ValidatedRunnerTemplate:
+    """Validate one normalized runner's post-source stages against wrapper paths."""
+    try:
+        root = _existing_directory(normalized_private_root)
+        template = validate_pre_provision_runner_template(
+            runner_template_path,
+            root,
+            require_exact_history_environment=True,
+        )
+        return validate_normalized_runner_closure(
+            runner_template_path,
+            normalized_private_root=root,
+            expected_closure=_observed_runner_closure(template, root),
+            post_source_wrapper_paths=post_source_wrapper_paths,
+        )
+    except P6ExecutionClosureError:
+        raise
+    except Exception:
+        _invalid()
+
+
+def _observed_runner_closure(
+    template: ValidatedRunnerTemplate,
+    root: Path,
+) -> P6ValidatedExecutionClosure:
+    observed = _runner_role_paths(template)
+    roles = tuple(
+        P6ExecutionClosureRole(
+            role,
+            "observed",
+            _relative_observed_role_path(role, observed, root),
+        )
+        for role in EXECUTION_CLOSURE_ROLES
+    )
+    return P6ValidatedExecutionClosure(
+        _SCHEMA_VERSION,
+        (P6ExecutionClosureRoot("observed", root, Path("."), "0" * 64),),
+        roles,
+    )
+
+
+def _relative_observed_role_path(
+    role: str,
+    observed: Mapping[str, Path],
+    root: Path,
+) -> Path:
+    path = root / _SOURCE_WRAPPER if role == "source_materializer" else observed[role]
+    return _role_relative_path(path, root)
+
+
 def _wrapper_relative_paths(
     post_source_wrapper_paths: Mapping[str, Path] | None,
     root: Path,

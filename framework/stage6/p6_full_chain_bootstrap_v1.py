@@ -38,6 +38,10 @@ from framework.stage6.p6_history_binding_v1 import (
     validate_ready_source_contract_template,
     write_private_binding_pair,
 )
+from framework.stage6.p6_history_execution_closure_v1 import (
+    P6ExecutionClosureError,
+    validate_post_source_wrapper_runner_binding,
+)
 from framework.stage6.p6_history_recipe_profiles_v1 import RECIPE_V2
 from framework.stage6.p6_history_training_contract_v1 import (
     P6HistoryTrainingContractError,
@@ -222,10 +226,20 @@ def materialize_full_chain_binding(
                 post_source_adapter_profile,
                 private_root=root,
             )
-            render_post_source_adapter_wrappers(profile, private_root=root)
-        except (P6PostSourceAdapterProfileError, P6PostSourceWrapperError) as error:
+            wrapper_paths = render_post_source_adapter_wrappers(profile, private_root=root)
+            validate_post_source_wrapper_runner_binding(
+                runner_template,
+                normalized_private_root=root,
+                post_source_wrapper_paths=wrapper_paths,
+            )
+        except (
+            P6ExecutionClosureError,
+            P6PostSourceAdapterProfileError,
+            P6PostSourceWrapperError,
+        ) as error:
+            category = getattr(error, "category", "history_execution_invalid")
             raise FullChainBootstrapError(
-                "history_execution_invalid", "post-source adapter profile is invalid"
+                category, "post-source adapter profile is invalid"
             ) from error
     try:
         validated_template = validate_pre_provision_runner_template(

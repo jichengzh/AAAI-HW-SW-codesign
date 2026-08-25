@@ -382,6 +382,31 @@ def _v3_valid_args(tmp_path: Path) -> tuple[tuple[str, ...], dict[str, Path]]:
     return args, normalized
 
 
+def _alternate_post_source_entrypoint(root: Path, stage: str) -> str:
+    relative = {
+        "quantization": "private-runner/bin/alternate-quantize-private",
+        "performance": "archived-stage5-copy/stage5_build_performance_plan_v2.py",
+        "ap": "private-runner/bin/alternate-measure-ap-private",
+        "finalization": "archived-stage5-copy/stage5_finalize_feedback_v2.py",
+    }[stage]
+    _write_executable(root / relative)
+    return relative
+
+
+def _replace_runner_post_source_entrypoint(
+    runner_template: Path,
+    *,
+    private_root: Path,
+    stage: str,
+) -> None:
+    payload = yaml.safe_load(runner_template.read_text(encoding="utf-8"))
+    for entry in payload["execution_interface"]["execution_chain"]:
+        if entry["stage"] == stage:
+            entry["argv"][0] = _alternate_post_source_entrypoint(private_root, stage)
+            break
+    _write_yaml(runner_template, payload)
+
+
 def _attach_expected_recipe(
     tmp_path: Path,
     args: tuple[str, ...],
@@ -700,6 +725,35 @@ def test_cli_accepts_post_source_adapter_profile_for_v3_recipe_v2(
     assert result.returncode == 0
     assert result.stdout == "p6_full_chain_config_written\n"
     assert result.stderr == ""
+
+
+@pytest.mark.parametrize(
+    "stage",
+    ["quantization", "performance", "ap", "finalization"],
+)
+def test_cli_rejects_v3_runner_not_bound_to_generated_post_source_wrappers(
+    tmp_path: Path,
+    stage: str,
+) -> None:
+    args, normalized = _v3_valid_args(tmp_path)
+    _replace_runner_post_source_entrypoint(
+        normalized["runner_template"],
+        private_root=tmp_path / "v3-private-normalized",
+        stage=stage,
+    )
+
+    result = _run_cli(
+        tmp_path,
+        *args,
+        "--post-source-adapter-profile",
+        str(normalized["post_source_adapter_profile"]),
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "history_normalization_invalid\n"
+    assert not (tmp_path / "v3-private-output" / "binding.json").exists()
+    assert not (tmp_path / "v3-private-output" / "p6.local.yaml").exists()
 
 
 def test_cli_does_not_overwrite_differing_source_marker_or_write_pair(

@@ -113,6 +113,44 @@ def _build_v3_preflight_inputs(root: Path) -> dict[str, Path]:
     }
 
 
+def _write_executable(path: Path, body: str = "#!/bin/sh\nexit 0\n") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+    path.chmod(0o700)
+    return path
+
+
+def _v3_private_root(inputs: dict[str, Path]) -> Path:
+    return Path(_read_json(inputs["private_binding_path"])["private_root"])
+
+
+def _alternate_post_source_entrypoint(root: Path, stage: str) -> str:
+    relative = {
+        "quantization": "private-runner/bin/alternate-quantize-private",
+        "performance": "archived-stage5-copy/stage5_build_performance_plan_v2.py",
+        "ap": "private-runner/bin/alternate-measure-ap-private",
+        "finalization": "archived-stage5-copy/stage5_finalize_feedback_v2.py",
+    }[stage]
+    _write_executable(root / relative)
+    return relative
+
+
+def _replace_runner_post_source_entrypoint(
+    inputs: dict[str, Path],
+    *,
+    stage: str,
+) -> None:
+    runner_path = inputs["runner_template_path"]
+    payload = yaml.safe_load(runner_path.read_text(encoding="utf-8"))
+    for entry in payload["execution_interface"]["execution_chain"]:
+        if entry["stage"] == stage:
+            entry["argv"][0] = _alternate_post_source_entrypoint(
+                _v3_private_root(inputs), stage
+            )
+            break
+    _write_yaml(runner_path, payload)
+
+
 @pytest.fixture(scope="module")
 def _preflight_template(tmp_path_factory: pytest.TempPathFactory) -> Iterator[dict[str, Any]]:
     workspace = tmp_path_factory.mktemp("p6-preflight")
@@ -308,6 +346,32 @@ def test_preflight_requires_profile_argument_only_for_v3_recipe_v2(
         post_source_adapter_profile_path=post_source_profile,
     )
     assert report.status == "accepted"
+
+
+@pytest.mark.parametrize(
+    "stage",
+    ["quantization", "performance", "ap", "finalization"],
+)
+def test_preflight_rejects_v3_runner_not_bound_to_generated_post_source_wrappers(
+    tmp_path: Path,
+    stage: str,
+) -> None:
+    inputs = _build_v3_preflight_inputs(tmp_path)
+    _replace_runner_post_source_entrypoint(inputs, stage=stage)
+
+    with pytest.raises(P6CoptV2XExecutionError):
+        preflight_materializer_training_bridge(**inputs)
+
+
+def test_preflight_rejects_tampered_generated_post_source_wrapper_bytes(
+    tmp_path: Path,
+) -> None:
+    inputs = _build_v3_preflight_inputs(tmp_path)
+    wrapper = _v3_private_root(inputs) / "private-runner/bin/quantize-private"
+    _write_executable(wrapper, "#!/usr/bin/python3\nraise SystemExit(0)\n")
+
+    with pytest.raises(P6CoptV2XExecutionError):
+        preflight_materializer_training_bridge(**inputs)
 
 
 @pytest.mark.parametrize(

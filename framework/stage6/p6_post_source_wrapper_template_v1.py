@@ -45,6 +45,24 @@ def render_post_source_adapter_wrappers(
     return wrappers
 
 
+def validate_post_source_adapter_wrappers(
+    profile: ValidatedPostSourceAdapterProfile,
+    *,
+    private_root: Path,
+) -> Mapping[str, Path]:
+    """Prove existing generated wrapper bytes match the profile/template."""
+    root = _private_root(profile, private_root)
+    wrappers: dict[str, Path] = {}
+    for stage in POST_SOURCE_ADAPTER_STAGES:
+        path = root / WRAPPER_RELATIVE_PATHS[stage]
+        if not _single_link_executable(path) or path.read_text(encoding="utf-8") != _wrapper_text(
+            profile, stage
+        ):
+            raise P6PostSourceWrapperError()
+        wrappers[stage] = path
+    return wrappers
+
+
 def _wrapper_text(profile: ValidatedPostSourceAdapterProfile, stage: str) -> str:
     adapter = next(item for item in profile.adapters if item.stage == stage)
     expected_adapter = {
@@ -73,6 +91,7 @@ def _wrapper_text(profile: ValidatedPostSourceAdapterProfile, stage: str) -> str
         project_python=str(profile.project_python),
         adapter_path=expected_adapter["implementation_relative_path"],
         adapter_cwd=expected_adapter["implementation_cwd_relative_path"],
+        adapter_sha256=_sha256(adapter.implementation),
         env_keys=tuple(EXPECTED_HISTORY_ENV_KEYS),
         expected_adapter=expected_adapter,
         expected_leaves=expected_leaves,
@@ -92,6 +111,23 @@ def _private_root(
     if root != profile.private_root:
         raise P6PostSourceWrapperError()
     return root
+
+
+def _sha256(path: Path) -> str:
+    try:
+        import hashlib
+
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as error:
+        raise P6PostSourceWrapperError() from error
+
+
+def _single_link_executable(path: Path) -> bool:
+    try:
+        info = path.stat()
+        return path.is_file() and info.st_nlink == 1 and os.access(path, os.X_OK)
+    except OSError:
+        return False
 
 
 def _write_executable(path: Path, text: str) -> None:
@@ -138,6 +174,7 @@ PROFILE_PATH = PRIVATE_ROOT / 'post-source-adapter-profile.yaml'
 PROJECT_PYTHON = Path({project_python!r})
 ADAPTER_IMPLEMENTATION = PRIVATE_ROOT / {adapter_path!r}
 ADAPTER_CWD = PRIVATE_ROOT / {adapter_cwd!r}
+ADAPTER_SHA256 = {adapter_sha256!r}
 EXPECTED_ENV_KEYS = {env_keys!r}
 EXPECTED_ADAPTER = {expected_adapter!r}
 EXPECTED_LEAVES = {expected_leaves!r}
@@ -156,6 +193,8 @@ def _profile_payload() -> dict:
 
 def _valid_profile(payload: dict) -> bool:
     if payload.get('project_python') != str(PROJECT_PYTHON):
+        return False
+    if _sha256(ADAPTER_IMPLEMENTATION) != ADAPTER_SHA256:
         return False
     adapters = payload.get('adapters')
     leaves = payload.get('leaves')

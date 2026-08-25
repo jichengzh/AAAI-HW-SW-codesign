@@ -20,7 +20,9 @@ from framework.stage6.p6_post_source_adapter_profile_v1 import (
     post_source_adapter_profile_to_mapping,
 )
 from framework.stage6.p6_post_source_wrapper_template_v1 import (
+    P6PostSourceWrapperError,
     render_post_source_adapter_wrappers,
+    validate_post_source_adapter_wrappers,
 )
 
 
@@ -160,6 +162,7 @@ def _expected_wrapper_text(
         f"PROJECT_PYTHON = Path({str(profile.project_python)!r})\n"
         f"ADAPTER_IMPLEMENTATION = PRIVATE_ROOT / {expected_adapter['implementation_relative_path']!r}\n"
         f"ADAPTER_CWD = PRIVATE_ROOT / {expected_adapter['implementation_cwd_relative_path']!r}\n"
+        f"ADAPTER_SHA256 = {_sha256(adapter.implementation)!r}\n"
         f"EXPECTED_ENV_KEYS = {tuple(EXPECTED_HISTORY_ENV_KEYS)!r}\n"
         f"EXPECTED_ADAPTER = {expected_adapter!r}\n"
         f"EXPECTED_LEAVES = {expected_leaves!r}\n\n"
@@ -173,6 +176,8 @@ def _expected_wrapper_text(
         "    return payload\n\n\n"
         "def _valid_profile(payload: dict) -> bool:\n"
         "    if payload.get('project_python') != str(PROJECT_PYTHON):\n"
+        "        return False\n"
+        "    if _sha256(ADAPTER_IMPLEMENTATION) != ADAPTER_SHA256:\n"
         "        return False\n"
         "    adapters = payload.get('adapters')\n"
         "    leaves = payload.get('leaves')\n"
@@ -289,6 +294,48 @@ def test_wrapper_rejects_extra_incoming_environment_key(tmp_path: Path) -> None:
     assert not report_path.exists()
 
 
+def test_existing_wrapper_validator_accepts_expected_generated_bytes(
+    tmp_path: Path,
+) -> None:
+    private_root, _, profile = _profile_fixture(tmp_path)
+    wrappers = render_post_source_adapter_wrappers(profile, private_root=private_root)
+
+    assert validate_post_source_adapter_wrappers(
+        profile,
+        private_root=private_root,
+    ) == wrappers
+
+
+def test_existing_wrapper_validator_rejects_tampered_or_missing_wrapper_bytes(
+    tmp_path: Path,
+) -> None:
+    private_root, _, profile = _profile_fixture(tmp_path)
+    wrappers = render_post_source_adapter_wrappers(profile, private_root=private_root)
+    wrappers["quantization"].write_text("#!/usr/bin/python3\nraise SystemExit(0)\n", encoding="utf-8")
+
+    with pytest.raises(P6PostSourceWrapperError):
+        validate_post_source_adapter_wrappers(profile, private_root=private_root)
+
+    render_post_source_adapter_wrappers(profile, private_root=private_root)
+    wrappers["quantization"].unlink()
+    with pytest.raises(P6PostSourceWrapperError):
+        validate_post_source_adapter_wrappers(profile, private_root=private_root)
+
+
+def test_existing_wrapper_validator_rejects_wrong_profile_or_root(
+    tmp_path: Path,
+) -> None:
+    private_root, _, profile = _profile_fixture(tmp_path)
+    render_post_source_adapter_wrappers(profile, private_root=private_root)
+    other_root = tmp_path / "other-root"
+    other_root.mkdir()
+
+    with pytest.raises(P6PostSourceWrapperError):
+        validate_post_source_adapter_wrappers(profile, private_root=other_root)
+    with pytest.raises(P6PostSourceWrapperError):
+        validate_post_source_adapter_wrappers(object(), private_root=private_root)  # type: ignore[arg-type]
+
+
 @pytest.mark.parametrize(
     "mutation",
     ["interpreter_drift", "adapter_implementation_drift", "leaf_digest_drift"],
@@ -318,6 +365,28 @@ def test_wrapper_rejects_profile_or_leaf_drift_before_adapter_execution(
         leaf = next(item for item in profile.leaves if item.name == "quant_contract")
         leaf.implementation.write_text("#!/usr/bin/env python3\n# drift\n", encoding="utf-8")
     report_path = tmp_path / f"{mutation}-record.json"
+
+    completed = _run_wrapper(
+        wrapper,
+        private_root,
+        ["--stage=quantization", str(report_path)],
+    )
+
+    assert completed.returncode == 1
+    assert not report_path.exists()
+
+
+def test_wrapper_rejects_adapter_implementation_byte_drift_before_child_execution(
+    tmp_path: Path,
+) -> None:
+    private_root, _, profile = _profile_fixture(tmp_path)
+    wrapper = render_post_source_adapter_wrappers(profile, private_root=private_root)[
+        "quantization"
+    ]
+    adapter = next(item for item in profile.adapters if item.stage == "quantization")
+    adapter.implementation.write_text(_fake_adapter_body("tampered-byte-drift"), encoding="utf-8")
+    adapter.implementation.chmod(0o700)
+    report_path = tmp_path / "adapter-byte-drift-record.json"
 
     completed = _run_wrapper(
         wrapper,
