@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -44,6 +45,9 @@ class _APRunner:
         planner_returncode: int = 0,
         sanity_returncode: int = 0,
         full_returncode: int = 0,
+        planner_writes_outputs: bool = True,
+        malformed_plan_json: bool = False,
+        state_mutator: Any | None = None,
     ) -> None:
         self.calls: list[Mapping[str, Any]] = []
         self.max_active_per_gpu: dict[str, int] = {}
@@ -53,6 +57,9 @@ class _APRunner:
         self._planner_returncode = planner_returncode
         self._sanity_returncode = sanity_returncode
         self._full_returncode = full_returncode
+        self._planner_writes_outputs = planner_writes_outputs
+        self._malformed_plan_json = malformed_plan_json
+        self._state_mutator = state_mutator
 
     def run(
         self,
@@ -70,7 +77,7 @@ class _APRunner:
         result = _Result()
         if stage == "planner":
             result.returncode = self._planner_returncode
-            if result.returncode == 0:
+            if self._planner_writes_outputs:
                 self._write_plan(argv)
             self._finish_call(call_index)
             return result
@@ -128,6 +135,11 @@ class _APRunner:
     def _write_plan(self, argv: Sequence[str]) -> None:
         output_json = Path(argv[argv.index("--output-json") + 1])
         output_jsonl = Path(argv[argv.index("--output-jsonl") + 1])
+        if self._malformed_plan_json:
+            output_json.parent.mkdir(parents=True, exist_ok=True)
+            output_json.write_text("{", encoding="utf-8")
+            output_jsonl.write_text("", encoding="utf-8")
+            return
         rows = list(self._plan_rows or _native_ap_plan_rows(_read_json(output_json.parent.parent / "measurement-request.json")))
         output_json.parent.mkdir(parents=True, exist_ok=True)
         _write_json(
@@ -149,10 +161,12 @@ class _APRunner:
         state_path = Path(argv[argv.index("--state-jsonl") + 1])
         existing = _read_jsonl(state_path) if state_path.is_file() else []
         additions = [
-            _native_ap_terminal(row, stage)
+            _native_ap_terminal(row, stage, Path(argv[argv.index("--artifact-root") + 1]).parents[1])
             for row in plan_rows
             if row.get("ap_terminal") == "ready"
         ]
+        if self._state_mutator is not None:
+            additions = [self._state_mutator(row, plan_rows, stage) for row in additions]
         state_path.parent.mkdir(parents=True, exist_ok=True)
         state_path.write_text(
             "".join(
@@ -240,8 +254,8 @@ def test_ap_round_preserves_numerical_skip_and_performance_blocked_native_status
     _write_performance_outputs(round_root, request)
     rows = _native_ap_plan_rows(request)
     rows[1]["runner_key"] = "codriving_tvm_int8_numeric_gate"
-    rows[2]["ap_terminal"] = "blocked_performance_not_success"
-    runner = _APRunner(plan_rows=rows)
+    rows[2] = _native_nonready_row(rows[2], "blocked_performance_not_success")
+    runner = _APRunner(plan_rows=rows, planner_returncode=1)
 
     run_ap_round(profile, task_state, round_root, runner)
 
@@ -268,14 +282,108 @@ def test_ap_round_accepts_all_performance_blocked_native_rows(
     task_state = _write_performance_task_state(round_root, request)
     _write_performance_outputs(round_root, request)
     rows = [
-        {**row, "ap_terminal": "blocked_performance_not_success"}
+        _native_nonready_row(row, "blocked_performance_not_success")
         for row in _native_ap_plan_rows(request)
     ]
 
-    run_ap_round(profile, task_state, round_root, _APRunner(plan_rows=rows))
+    runner = _APRunner(plan_rows=rows, planner_returncode=1)
+
+    run_ap_round(profile, task_state, round_root, runner)
 
     assert (round_root / "ap/ap_state.jsonl").read_text(encoding="utf-8") == ""
+    assert [call["stage"] for call in runner.calls] == ["planner"]
     assert _read_json(task_state)["stage"] == "ap"
+
+
+def test_ap_round_accepts_planner_rc1_for_mixed_native_nonready_plan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: valid Stage5 AP planner rc=1 is treated as leaf failure."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_performance_task_state(round_root, request)
+    _write_performance_outputs(round_root, request)
+    rows = _native_ap_plan_rows(request)
+    rows[0] = _native_nonready_row(rows[0], "blocked_performance_not_success")
+    rows[2] = _native_nonready_row(rows[2], "blocked_runner_missing")
+    rows[3] = _native_nonready_row(rows[3], "blocked_result_json_missing")
+    runner = _APRunner(plan_rows=rows, planner_returncode=1)
+
+    run_ap_round(profile, task_state, round_root, runner)
+
+    assert [call["argv"][call["argv"].index("--gpu") + 1] for call in runner.calls[1:]] == ["5", "5"]
+    assert _read_json(task_state)["stage"] == "ap"
+
+
+@pytest.mark.parametrize(
+    "runner_factory",
+    [
+        lambda rows: _APRunner(plan_rows=rows, planner_returncode=2),
+        lambda rows: _APRunner(plan_rows=rows, planner_returncode=1, planner_writes_outputs=False),
+        lambda rows: _APRunner(plan_rows=rows, planner_returncode=1, malformed_plan_json=True),
+        lambda rows: _APRunner(plan_rows=rows, planner_returncode=1),
+        lambda rows: _APRunner(plan_rows=[{**rows[0], "ap_terminal": "private_alias"}, *rows[1:]], planner_returncode=1),
+        lambda rows: _APRunner(plan_rows=[{**rows[0], "ap_terminal": "blocked_runner_missing"}, *rows[1:]], planner_returncode=1),
+        lambda rows: _APRunner(plan_rows=[_native_nonready_row(rows[0], "blocked_performance_not_success"), *rows[1:]], planner_returncode=0),
+    ],
+)
+def test_ap_round_rejects_inconsistent_or_failed_planner_results(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    runner_factory: Any,
+) -> None:
+    """Break caught: planner rc/plan consistency and native non-ready terminals drift."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_performance_task_state(round_root, request)
+    _write_performance_outputs(round_root, request)
+    original_state = _read_json(task_state)
+
+    with pytest.raises(P6APRoundAdapterError):
+        run_ap_round(profile, task_state, round_root, runner_factory(_native_ap_plan_rows(request)))
+
+    assert _read_json(task_state) == original_state
+
+
+@pytest.mark.parametrize(
+    "state_mutator",
+    [
+        lambda row, plan_rows, stage: {**row, "plan_fingerprint": "0" * 64},
+        lambda row, plan_rows, stage: {**row, "report_path": row["report_path"] + ".missing"},
+        lambda row, plan_rows, stage: {**row, "report_path": "/tmp/escaped-ap-report.json"},
+        lambda row, plan_rows, stage: {**row, "report_sha256": "0" * 64},
+        lambda row, plan_rows, stage: (
+            {**row, "report_path": row["report_path"] + ".other"}
+            if row["status"] == "skipped_numerical_feasibility"
+            else row
+        ),
+    ],
+)
+def test_ap_round_rejects_stale_or_unbound_native_state_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    state_mutator: Any,
+) -> None:
+    """Break caught: AP terminal state is accepted without native report evidence."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_performance_task_state(round_root, request)
+    _write_performance_outputs(round_root, request)
+    rows = _native_ap_plan_rows(request)
+    rows[1]["runner_key"] = "codriving_tvm_int8_numeric_gate"
+    runner = _APRunner(plan_rows=rows, state_mutator=state_mutator)
+
+    with pytest.raises(P6APRoundAdapterError):
+        run_ap_round(profile, task_state, round_root, runner)
+
+    assert _read_json(task_state)["stage"] == "performance"
 
 
 @pytest.mark.parametrize(
@@ -434,6 +542,7 @@ def _native_ap_plan_rows(request: Mapping[str, Any]) -> list[dict[str, Any]]:
 def _native_ap_plan_row(row: Mapping[str, Any]) -> dict[str, Any]:
     job_id = str(row["manifest_job_id"])
     runner_key = "pyramid_tvm_int8_numeric_gate" if row["q_mode"] == "int8" else "pyramid_tvm_fp16_bridge"
+    output_dir = f"ap/{row['model']}/{'x'.join(str(item) for item in row['width'])}/{row['q_mode']}/{row['capability_profile_id']}"
     return {
         "schema_version": "stage5_ap_plan_v2",
         "manifest_job_id": job_id,
@@ -450,15 +559,33 @@ def _native_ap_plan_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "compiled_artifact": f"/native/artifacts/{job_id}.so",
         "compiled_artifact_path": f"/native/artifacts/{job_id}.so",
         "compiled_artifact_digest": "a" * 64,
-        "sanity_command": ["python3", "ap.py", "--report-json", f"/native/ap/{job_id}/sanity.json"],
-        "full_command": ["python3", "ap.py", "--report-json", f"/native/ap/{job_id}/full.json"],
+        "sanity_command": ["python3", "ap.py", "--report-json", f"__AP_EXECUTION__/{output_dir}/sanity_16/full_ap_eval_report.json"],
+        "full_command": ["python3", "ap.py", "--report-json", f"__AP_EXECUTION__/{output_dir}/full_1789/full_ap_eval_report.json"],
         "full_command_state_bindings": None,
         "ap_terminal": "ready",
     }
 
 
-def _native_ap_terminal(row: Mapping[str, Any], stage: str) -> dict[str, Any]:
+def _native_nonready_row(row: Mapping[str, Any], terminal: str) -> dict[str, Any]:
+    updated = {**row, "ap_terminal": terminal}
+    if terminal == "blocked_performance_not_success":
+        updated["performance_terminal"] = "pending"
+    if terminal == "blocked_result_json_missing":
+        updated["performance_result_json"] = None
+    if terminal == "blocked_compiled_artifact_missing":
+        updated["block_reason"] = "compiled artifact missing from performance result"
+    if terminal == "blocked_runner_missing":
+        updated["block_reason"] = "scripts/missing.py"
+    return updated
+
+
+def _native_ap_terminal(row: Mapping[str, Any], stage: str, ap_execution: Path) -> dict[str, Any]:
     job_id = str(row["manifest_job_id"])
+    terminal_stage = stage
+    if row.get("runner_key") == "codriving_tvm_int8_numeric_gate" and stage == "full":
+        terminal_stage = "sanity"
+    report_path = _materialize_native_ap_report(row, terminal_stage, ap_execution)
+    report_sha = hashlib.sha256(report_path.read_bytes()).hexdigest()
     if row.get("runner_key") == "codriving_tvm_int8_numeric_gate" and stage == "sanity":
         status = "failed"
         failure = "numerical_feasibility_failure"
@@ -475,13 +602,56 @@ def _native_ap_terminal(row: Mapping[str, Any], stage: str) -> dict[str, Any]:
         "stage": stage,
         "status": status,
         "attempts": 0 if status == "skipped_numerical_feasibility" else 1,
-        "report_path": f"/native/ap/{job_id}/{stage}.json",
-        "report_sha256": "b" * 64,
-        "ap": {} if stage == "sanity" else {"ap30": 0.3, "ap50": 0.5, "ap70": 0.7},
+        "report_path": str(report_path),
+        "report_sha256": report_sha,
+        "ap": {} if status == "skipped_numerical_feasibility" or stage == "sanity" else {"ap30": 0.3, "ap50": 0.5, "ap70": 0.7},
         "failure_reason": failure,
-        "plan_fingerprint": f"fingerprint-{job_id}-{stage}",
+        "plan_fingerprint": _native_plan_fingerprint(row, stage),
         "timestamp": "2026-08-25T00:00:00+00:00",
     }
+
+
+def _materialize_native_ap_report(row: Mapping[str, Any], stage: str, ap_execution: Path) -> Path:
+    command = [str(part).replace("__AP_EXECUTION__", str(ap_execution)) for part in row[f"{stage}_command"]]
+    report_path = Path(command[command.index("--report-json") + 1])
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(_native_report_payload(row, stage), sort_keys=True), encoding="utf-8")
+    return report_path
+
+
+def _native_report_payload(row: Mapping[str, Any], stage: str) -> dict[str, Any]:
+    if row.get("runner_key") == "codriving_tvm_int8_numeric_gate" and stage == "sanity":
+        return {
+            "status": "numerical_feasibility_failure",
+            "processed_samples": 16,
+            "engine_samples": 16,
+            "engine_accounting_valid": True,
+            "fallback_samples": 0,
+            "failed_samples": 0,
+            "ap_measured": False,
+            "gates": {"sanity_16": False},
+            "failure_reasons": ["numeric_output_failed"],
+            "numeric_outputs": {"a": {"passed": False}, "b": {"passed": True}, "c": {"passed": True}},
+        }
+    payload = {"status": "success", "processed_samples": 16 if stage == "sanity" else 1789, "fallback_samples": 0, "failed_samples": 0}
+    if stage == "full":
+        payload.update({"ap": {"ap30": 0.3, "ap50": 0.5, "ap70": 0.7}, "ap_measured": True, "smoke_gate_passed": True})
+    return payload
+
+
+def _native_plan_fingerprint(row: Mapping[str, Any], stage: str) -> str:
+    command = list(map(str, row.get(f"{stage}_command") or []))
+    report_path = command[command.index("--report-json") + 1] if "--report-json" in command else None
+    binding = {
+        "runner_key": row.get("runner_key"),
+        "compiled_artifact_digest": row.get("compiled_artifact_digest"),
+        "compiled_artifact_path": row.get("compiled_artifact_path") or row.get("compiled_artifact"),
+        "stage": stage,
+        "stage_command": command,
+        "report_path": report_path,
+    }
+    encoded = json.dumps(binding, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def _expected_argv(

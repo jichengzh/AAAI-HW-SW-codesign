@@ -248,6 +248,7 @@ from pathlib import Path
 import sys
 
 manifest = json.loads(Path(sys.argv[sys.argv.index("--manifest-json") + 1]).read_text(encoding="utf-8"))
+output_root = Path(sys.argv[sys.argv.index("--output-root") + 1])
 output_json = Path(sys.argv[sys.argv.index("--output-json") + 1])
 output_jsonl = Path(sys.argv[sys.argv.index("--output-jsonl") + 1])
 rows = [{
@@ -266,8 +267,8 @@ rows = [{
     "compiled_artifact": "/native/artifacts/" + row["manifest_job_id"] + ".so",
     "compiled_artifact_path": "/native/artifacts/" + row["manifest_job_id"] + ".so",
     "compiled_artifact_digest": "a" * 64,
-    "sanity_command": ["python3", "ap.py", "--report-json", "/native/sanity.json"],
-    "full_command": ["python3", "ap.py", "--report-json", "/native/full.json"],
+    "sanity_command": ["python3", "ap.py", "--report-json", str(output_root / "ap" / row["manifest_job_id"] / "sanity_16" / "full_ap_eval_report.json")],
+    "full_command": ["python3", "ap.py", "--report-json", str(output_root / "ap" / row["manifest_job_id"] / "full_1789" / "full_ap_eval_report.json")],
     "full_command_state_bindings": None,
     "ap_terminal": "ready",
 } for row in manifest["jobs"]]
@@ -281,8 +282,18 @@ with (round_root / "ap-leaves.log").open("a", encoding="utf-8") as handle:
 
 
 def _execute_leaf_body() -> str:
+    return (
+        _execute_leaf_imports()
+        + _execute_leaf_fingerprint_helpers()
+        + _execute_leaf_terminal_writer()
+        + _execute_leaf_log_writer()
+    )
+
+
+def _execute_leaf_imports() -> str:
     return r"""
 from __future__ import annotations
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -298,23 +309,69 @@ state_path = Path(sys.argv[sys.argv.index("--state-jsonl") + 1])
 existing = []
 if state_path.is_file():
     existing = [json.loads(line) for line in state_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-state_path.write_text("".join(
-    json.dumps(row, sort_keys=True) + "\n"
-    for row in [*existing, *[{
+"""
+
+
+def _execute_leaf_fingerprint_helpers() -> str:
+    return r"""
+
+def report_path_from_command(command):
+    for index, token in enumerate(command):
+        if token == "--report-json" and index + 1 < len(command):
+            return command[index + 1]
+    return None
+
+def fingerprint(row, stage):
+    command = list(map(str, row[stage + "_command"]))
+    binding = {
+        "runner_key": row.get("runner_key"),
+        "compiled_artifact_digest": row.get("compiled_artifact_digest"),
+        "compiled_artifact_path": row.get("compiled_artifact_path") or row.get("compiled_artifact"),
+        "stage": stage,
+        "stage_command": command,
+        "report_path": report_path_from_command(command),
+    }
+    return hashlib.sha256(json.dumps(binding, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+"""
+
+
+def _execute_leaf_terminal_writer() -> str:
+    return r"""
+def report_payload(stage):
+    payload = {"status": "success", "processed_samples": 16 if stage == "sanity" else 1789, "fallback_samples": 0, "failed_samples": 0}
+    if stage == "full":
+        payload.update({"ap": {"ap30": 0.3, "ap50": 0.5, "ap70": 0.7}, "ap_measured": True, "smoke_gate_passed": True})
+    return payload
+
+def terminal(row):
+    report_path = Path(report_path_from_command(row[stage + "_command"]))
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(report_payload(stage), sort_keys=True), encoding="utf-8")
+    report_sha = hashlib.sha256(report_path.read_bytes()).hexdigest()
+    return {
         "record_type": "job_terminal",
         "job_id": row["manifest_job_id"],
         "model": row["model"],
         "stage": stage,
         "status": "success",
         "attempts": 1,
-        "report_path": "/native/ap/" + row["manifest_job_id"] + "/" + stage + ".json",
-        "report_sha256": "b" * 64,
+        "report_path": str(report_path),
+        "report_sha256": report_sha,
         "ap": {} if stage == "sanity" else {"ap30": 0.3, "ap50": 0.5, "ap70": 0.7},
         "failure_reason": None,
-        "plan_fingerprint": "fingerprint-" + row["manifest_job_id"] + "-" + stage,
+        "plan_fingerprint": fingerprint(row, stage),
         "timestamp": "2026-08-25T00:00:00+00:00",
-    } for row in rows if row["ap_terminal"] == "ready"]]
+    }
+
+state_path.write_text("".join(
+    json.dumps(row, sort_keys=True) + "\n"
+    for row in [*existing, *[terminal(row) for row in rows if row["ap_terminal"] == "ready"]]
 ), encoding="utf-8")
+"""
+
+
+def _execute_leaf_log_writer() -> str:
+    return r"""
 round_root = Path(os.environ["P6_HISTORY_ROUND_OUTPUT_ROOT"])
 with (round_root / "ap-leaves.log").open("a", encoding="utf-8") as handle:
     handle.write(json.dumps({"leaf": "execute", "argv": sys.argv[1:], "cuda": os.environ["CUDA_VISIBLE_DEVICES"]}, sort_keys=True) + "\n")
