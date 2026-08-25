@@ -404,8 +404,7 @@ def _recipe_from_v2_source_map(
     history_root: Path,
     runner_template_path: Path | None,
 ) -> tuple[dict[str, Any], bool]:
-    mode = source_map.get("recipe_mode")
-    schema_version = source_map.get("schema_version")
+    mode, schema_version = source_map.get("recipe_mode"), source_map.get("schema_version")
     if mode == "explicit_dynamic_recipe":
         expected_keys = (
             SOURCE_MAP_V3_EXPLICIT_KEYS
