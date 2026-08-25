@@ -39,6 +39,7 @@ from tests.stage6.test_p6_history_normalization import (
     _as_v2_procedural,
     valid_private_source_map,
 )
+from tests.stage6.test_p6_post_source_adapter_profile import v3_private_source_map
 
 
 def _build_preflight_inputs(root: Path) -> dict[str, Path]:
@@ -74,6 +75,41 @@ def _build_preflight_inputs(root: Path) -> dict[str, Path]:
         "runner_template_path": runner_template,
         "source_wrapper_profile_path": wrapper_profile,
         "external_training_binding_path": external_training,
+    }
+
+
+def _build_v3_preflight_inputs(root: Path) -> dict[str, Path]:
+    source_map, source_runner = v3_private_source_map(root)
+    private_root = root / "normalized-private-root"
+    normalized = normalize_history_inputs(
+        source_map,
+        Path(str(source_map["history_root"])),
+        private_root,
+        runner_template_path=source_runner,
+    )
+    local_output_root = root / "provisioned"
+    local_output_root.mkdir()
+    binding = local_output_root / "binding.json"
+    local_config = local_output_root / "local.yaml"
+    materialize_full_chain_binding(
+        normalized["legacy"],
+        normalized["runner_template"],
+        local_output_root,
+        binding,
+        local_config,
+        _OfflineGpuProbe(),
+        source_wrapper_profile=normalized["source_wrapper_profile"],
+        external_training_binding=normalized["external_training_binding"],
+        post_source_adapter_profile=normalized["post_source_adapter_profile"],
+    )
+    return {
+        "public_contract_path": _write_yaml(root / "public.yaml", _public_contract()),
+        "local_config_path": local_config,
+        "private_binding_path": binding,
+        "runner_template_path": normalized["runner_template"],
+        "source_wrapper_profile_path": normalized["source_wrapper_profile"],
+        "external_training_binding_path": normalized["external_training_binding"],
+        "post_source_adapter_profile_path": normalized["post_source_adapter_profile"],
     }
 
 
@@ -258,6 +294,22 @@ def test_preflight_accepts_regenerated_training_binding_without_process_or_gpu(
     assert report.gpu_probe_count == 0
 
 
+def test_preflight_requires_profile_argument_only_for_v3_recipe_v2(
+    tmp_path: Path,
+) -> None:
+    inputs = _build_v3_preflight_inputs(tmp_path)
+    post_source_profile = inputs.pop("post_source_adapter_profile_path")
+
+    with pytest.raises(P6CoptV2XExecutionError):
+        preflight_materializer_training_bridge(**inputs)
+
+    report = preflight_materializer_training_bridge(
+        **inputs,
+        post_source_adapter_profile_path=post_source_profile,
+    )
+    assert report.status == "accepted"
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -351,6 +403,35 @@ def test_preflight_cli_emits_only_allowlisted_public_fields(
             str(preflight_inputs["source_wrapper_profile_path"]),
             "--external-training-binding",
             str(preflight_inputs["external_training_binding_path"]),
+        ]
+    )
+    output = capsys.readouterr()
+
+    assert result == 0
+    assert output.err == ""
+    assert set(json.loads(output.out)) == set(P6MaterializerPreflightReport.__dataclass_fields__)
+
+
+def test_preflight_cli_accepts_v3_post_source_adapter_profile(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    inputs = _build_v3_preflight_inputs(tmp_path)
+    result = main(
+        [
+            "--contract",
+            str(inputs["public_contract_path"]),
+            "--local-config",
+            str(inputs["local_config_path"]),
+            "--binding",
+            str(inputs["private_binding_path"]),
+            "--runner-template",
+            str(inputs["runner_template_path"]),
+            "--source-wrapper-profile",
+            str(inputs["source_wrapper_profile_path"]),
+            "--external-training-binding",
+            str(inputs["external_training_binding_path"]),
+            "--post-source-adapter-profile",
+            str(inputs["post_source_adapter_profile_path"]),
         ]
     )
     output = capsys.readouterr()

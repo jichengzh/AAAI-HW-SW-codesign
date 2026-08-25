@@ -44,6 +44,9 @@ from framework.stage6.p6_post_source_adapter_profile_v1 import (
     load_post_source_adapter_profile,
     post_source_adapter_profile_to_mapping,
 )
+from framework.stage6.p6_post_source_wrapper_template_v1 import (
+    render_post_source_adapter_wrappers,
+)
 from framework.stage6.p6_post_source_leaf_binding_v1 import (
     P6PostSourceLeafBindingError,
     validate_post_source_leaf_binding,
@@ -601,6 +604,7 @@ def normalize_history_inputs(
         _atomic_write_json(registry_path, _build_registry_v1(canonical["source_contract"]))
         paths["registry"] = registry_path
         recipe_v2_source = "external_training" in canonical
+        post_source_wrapper_paths = None
         if recipe_v2_source:
             copied_roles = copy_execution_closure(
                 canonical["execution_closure"], staged_private_root=staged
@@ -656,11 +660,16 @@ def normalize_history_inputs(
                 )
                 if loaded_profile != adapter_profile:
                     _invalid("post-source adapter profile is inconsistent")
+                post_source_wrapper_paths = render_post_source_adapter_wrappers(
+                    loaded_profile,
+                    private_root=staged,
+                )
                 paths["post_source_adapter_profile"] = adapter_profile_path
             runner_payload = render_normalized_runner_template(
                 canonical["source_runner"],
                 normalized_private_root=staged,
                 copied_role_paths=copied_roles,
+                post_source_wrapper_paths=post_source_wrapper_paths,
             )
             runner_path = staged / "runner-template.yaml"
             _atomic_write_yaml(runner_path, runner_payload)
@@ -669,6 +678,7 @@ def normalize_history_inputs(
                 runner_path,
                 normalized_private_root=staged,
                 expected_closure=canonical["execution_closure"],
+                post_source_wrapper_paths=post_source_wrapper_paths,
             )
         else:
             _copy_private_tree(

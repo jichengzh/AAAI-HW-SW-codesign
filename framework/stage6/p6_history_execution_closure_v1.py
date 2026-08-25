@@ -49,6 +49,7 @@ _ROLE_BY_STAGE = {
     "ap": "ap",
     "finalization": "finalization",
 }
+_POST_SOURCE_WRAPPER_STAGES = ("quantization", "performance", "ap", "finalization")
 _APPROVED_SYSTEM_IMPORTS = frozenset(sys.builtin_module_names) | frozenset(sys.stdlib_module_names)
 
 
@@ -162,6 +163,7 @@ def render_normalized_runner_template(
     *,
     normalized_private_root: Path,
     copied_role_paths: Mapping[str, Path],
+    post_source_wrapper_paths: Mapping[str, Path] | None = None,
 ) -> dict[str, Any]:
     """Rewrite every repository-local executable to its normalized role path."""
     if not isinstance(source_template, ValidatedRunnerTemplate) or set(copied_role_paths) != set(
@@ -170,14 +172,14 @@ def render_normalized_runner_template(
         _invalid()
     root = _planned_or_existing_directory(normalized_private_root)
     canonical = {role: _role_relative_path(path, root) for role, path in copied_role_paths.items()}
+    wrappers = _wrapper_relative_paths(post_source_wrapper_paths, root)
     _reject_path_argv_tails(source_template)
     interface = copy.deepcopy(dict(source_template.execution_interface))
     interface["controller"]["argv"][0] = canonical["controller"].as_posix()
     for entry in interface["execution_chain"]:
         role = _ROLE_BY_STAGE[entry["stage"]]
-        entry["argv"][0] = str(
-            _SOURCE_WRAPPER if role == "source_materializer" else canonical[role]
-        )
+        target = _stage_entrypoint(entry["stage"], role, canonical, wrappers)
+        entry["argv"][0] = target.as_posix()
         entry["required_placeholders"] = list(REQUIRED_STAGE_PLACEHOLDERS[entry["stage"]])
     interface["environment"]["activation_argv"][0] = canonical["activation"].as_posix()
     return {
@@ -198,6 +200,7 @@ def validate_normalized_runner_closure(
     *,
     normalized_private_root: Path,
     expected_closure: P6ValidatedExecutionClosure,
+    post_source_wrapper_paths: Mapping[str, Path] | None = None,
 ) -> ValidatedRunnerTemplate:
     """Revalidate the runner and prove all eight executable roles are declared."""
     try:
@@ -208,14 +211,52 @@ def validate_normalized_runner_closure(
             require_exact_history_environment=True,
         )
         expected = _expected_normalized_role_paths(expected_closure, root)
+        wrappers = {
+            _ROLE_BY_STAGE[stage]: root / relative
+            for stage, relative in _wrapper_relative_paths(
+                post_source_wrapper_paths, root
+            ).items()
+        }
         observed = _runner_role_paths(validated)
-        if observed != {**expected, "source_materializer": root / _SOURCE_WRAPPER}:
+        target = {
+            **expected,
+            "source_materializer": root / _SOURCE_WRAPPER,
+            **wrappers,
+        }
+        if observed != target:
             _invalid()
         return validated
     except P6ExecutionClosureError:
         raise
     except Exception:
         _invalid()
+
+
+def _wrapper_relative_paths(
+    post_source_wrapper_paths: Mapping[str, Path] | None,
+    root: Path,
+) -> dict[str, Path]:
+    if post_source_wrapper_paths is None:
+        return {}
+    if not isinstance(post_source_wrapper_paths, Mapping) or set(post_source_wrapper_paths) != set(
+        _POST_SOURCE_WRAPPER_STAGES
+    ):
+        _invalid()
+    return {
+        stage: _role_relative_path(post_source_wrapper_paths[stage], root)
+        for stage in _POST_SOURCE_WRAPPER_STAGES
+    }
+
+
+def _stage_entrypoint(
+    stage: str,
+    role: str,
+    canonical: Mapping[str, Path],
+    wrappers: Mapping[str, Path],
+) -> Path:
+    if role == "source_materializer":
+        return _SOURCE_WRAPPER
+    return wrappers.get(stage, canonical[role])
 
 
 def _validated_roots(

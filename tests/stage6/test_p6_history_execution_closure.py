@@ -773,6 +773,90 @@ def test_closure_renders_and_revalidates_normalized_runner(tmp_path: Path) -> No
     )
 
 
+def test_normalized_runner_routes_post_source_stages_through_generated_wrappers(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    validated = validate_execution_closure_manifest(
+        fixture["manifest"],
+        source_history_root=fixture["source_root"],
+        external_training=fixture["external"],
+    )
+    copied = copy_execution_closure(validated, staged_private_root=fixture["staged"])
+    source_payload = _runner_template()
+    source_payload["stage1_scan"]["argv"][0] = str(fixture["closure_root"] / "scan")
+    interface = source_payload["execution_interface"]
+    interface["controller"]["argv"][0] = str(
+        fixture["closure_root"] / "stage5_task_round_controller_v3.sh"
+    )
+    source_stage_paths = {
+        "source_materialization": fixture["source_marker"],
+        "quantization": fixture["closure_root"] / "quantize",
+        "performance": fixture["closure_root"] / "stage5_build_performance_plan_v2.py",
+        "ap": fixture["closure_root"] / "ap",
+        "finalization": fixture["closure_root"] / "stage5_finalize_feedback_v2.py",
+    }
+    for entry in interface["execution_chain"]:
+        entry["argv"][0] = str(source_stage_paths[entry["stage"]])
+    interface["environment"]["activation_argv"][0] = str(fixture["closure_root"] / "activate")
+    template_path = tmp_path / "runner.yaml"
+    template_path.write_text(yaml.safe_dump(source_payload), encoding="utf-8")
+    source_template = validate_pre_provision_runner_template(template_path, fixture["source_root"])
+    wrapper_paths = {
+        "quantization": fixture["staged"] / "private-runner/bin/quantize-private",
+        "performance": (
+            fixture["staged"]
+            / "documented-stage5-chain/stage5_build_performance_plan_v2.py"
+        ),
+        "ap": fixture["staged"] / "private-runner/bin/measure-ap-private",
+        "finalization": (
+            fixture["staged"] / "documented-stage5-chain/stage5_finalize_feedback_v2.py"
+        ),
+    }
+    for path in wrapper_paths.values():
+        _write_executable(path)
+
+    rendered = render_normalized_runner_template(
+        source_template,
+        normalized_private_root=fixture["staged"],
+        copied_role_paths=copied,
+        post_source_wrapper_paths=wrapper_paths,
+    )
+
+    chain_by_stage = {
+        entry["stage"]: entry["argv"]
+        for entry in rendered["execution_interface"]["execution_chain"]
+    }
+    assert chain_by_stage["source_materialization"][0] == (
+        "documented-stage5-chain/stage5_materialize_round_sources_v1.sh"
+    )
+    assert chain_by_stage["quantization"][0] == "private-runner/bin/quantize-private"
+    assert chain_by_stage["performance"][0] == (
+        "documented-stage5-chain/stage5_build_performance_plan_v2.py"
+    )
+    assert chain_by_stage["ap"][0] == "private-runner/bin/measure-ap-private"
+    assert chain_by_stage["finalization"][0] == (
+        "documented-stage5-chain/stage5_finalize_feedback_v2.py"
+    )
+    for stage, source_argv in source_template.stage_argv.items():
+        assert tuple(chain_by_stage[stage][1:]) == source_argv[1:]
+
+    normalized_template = fixture["staged"] / "runner-template.yaml"
+    _write_executable(
+        fixture["staged"] / "documented-stage5-chain/stage5_materialize_round_sources_v1.sh"
+    )
+    normalized_template.write_text(yaml.safe_dump(rendered), encoding="utf-8")
+    rebound = validate_normalized_runner_closure(
+        normalized_template,
+        normalized_private_root=fixture["staged"],
+        expected_closure=validated,
+        post_source_wrapper_paths=wrapper_paths,
+    )
+    assert rebound.stage_argv["performance"][0].endswith(
+        "documented-stage5-chain/stage5_build_performance_plan_v2.py"
+    )
+
+
 def test_projected_training_contract_uses_nested_binding_only(tmp_path: Path) -> None:
     fixture = _fixture(tmp_path)
     group_id = "pyramid|16x32x64"

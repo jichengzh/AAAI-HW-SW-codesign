@@ -47,6 +47,14 @@ from framework.stage6.p6_runner_template_validator_v1 import (
     RunnerTemplateValidationError,
     validate_pre_provision_runner_template,
 )
+from framework.stage6.p6_post_source_adapter_profile_v1 import (
+    P6PostSourceAdapterProfileError,
+    load_post_source_adapter_profile,
+)
+from framework.stage6.p6_post_source_wrapper_template_v1 import (
+    P6PostSourceWrapperError,
+    render_post_source_adapter_wrappers,
+)
 from framework.stage6.p6_source_wrapper_profile_v1 import (
     P6SourceWrapperProfileError,
     load_source_wrapper_profile,
@@ -143,6 +151,7 @@ def materialize_full_chain_binding(
     *,
     source_wrapper_profile: Path | None = None,
     external_training_binding: Path | None = None,
+    post_source_adapter_profile: Path | None = None,
 ) -> dict[str, Any]:
     """Validate private inputs and atomically materialize one binding/config pair."""
     output_root, binding_path, config_path = _resolve_private_outputs(
@@ -202,6 +211,21 @@ def materialize_full_chain_binding(
         except P6SourceWrapperProfileError as error:
             raise FullChainBootstrapError(
                 error.category, "source wrapper profile is invalid"
+            ) from error
+    if post_source_adapter_profile is None and (root / "post-source-adapter-profile.yaml").exists():
+        raise FullChainBootstrapError(
+            "history_execution_invalid", "post-source adapter profile is required"
+        )
+    if post_source_adapter_profile is not None:
+        try:
+            profile = load_post_source_adapter_profile(
+                post_source_adapter_profile,
+                private_root=root,
+            )
+            render_post_source_adapter_wrappers(profile, private_root=root)
+        except (P6PostSourceAdapterProfileError, P6PostSourceWrapperError) as error:
+            raise FullChainBootstrapError(
+                "history_execution_invalid", "post-source adapter profile is invalid"
             ) from error
     try:
         validated_template = validate_pre_provision_runner_template(

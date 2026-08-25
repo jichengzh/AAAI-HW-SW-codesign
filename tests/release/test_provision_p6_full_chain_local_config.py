@@ -16,9 +16,13 @@ from framework.stage6.coptv2x_h800_search_v2 import (
     load_local_config,
     load_public_contract,
 )
+from framework.stage6.p6_history_normalization_v1 import normalize_history_inputs
 from tools.release import provision_p6_history_local_config as provision_cli
 from tests.p6_source_wrapper_support import write_test_project_python
 from tests.stage6.test_p6_history_normalization import _recipe_v2
+from tests.stage6.test_p6_post_source_adapter_profile import (
+    v3_private_source_map,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -348,6 +352,36 @@ def _private_pair_paths(tmp_path: Path) -> tuple[Path, Path]:
     return root / "binding.json", root / "p6.local.yaml"
 
 
+def _v3_valid_args(tmp_path: Path) -> tuple[tuple[str, ...], dict[str, Path]]:
+    source_map, runner = v3_private_source_map(tmp_path)
+    private_dir = tmp_path / "v3-private-normalized"
+    normalized = normalize_history_inputs(
+        source_map,
+        Path(str(source_map["history_root"])),
+        private_dir,
+        runner_template_path=runner,
+    )
+    output_root = tmp_path / "v3-private-output"
+    output_root.mkdir()
+    args = (
+        "--legacy-local-config",
+        str(normalized["legacy"]),
+        "--runner-template",
+        str(normalized["runner_template"]),
+        "--local-output-root",
+        str(output_root),
+        "--binding-output",
+        str(output_root / "binding.json"),
+        "--config-output",
+        str(output_root / "p6.local.yaml"),
+        "--source-wrapper-profile",
+        str(normalized["source_wrapper_profile"]),
+        "--external-training-binding",
+        str(normalized["external_training_binding"]),
+    )
+    return args, normalized
+
+
 def _attach_expected_recipe(
     tmp_path: Path,
     args: tuple[str, ...],
@@ -635,6 +669,37 @@ def test_cli_requires_source_wrapper_profile_for_recipe_v2_without_pair(
     assert result.stderr == "history_execution_invalid\n"
     assert not _private_pair_paths(tmp_path)[0].exists()
     assert not _private_pair_paths(tmp_path)[1].exists()
+
+
+def test_cli_requires_post_source_adapter_profile_for_v3_recipe_v2_without_pair(
+    tmp_path: Path,
+) -> None:
+    args, _ = _v3_valid_args(tmp_path)
+
+    result = _run_cli(tmp_path, *args)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "history_execution_invalid\n"
+    assert not (tmp_path / "v3-private-output" / "binding.json").exists()
+    assert not (tmp_path / "v3-private-output" / "p6.local.yaml").exists()
+
+
+def test_cli_accepts_post_source_adapter_profile_for_v3_recipe_v2(
+    tmp_path: Path,
+) -> None:
+    args, normalized = _v3_valid_args(tmp_path)
+
+    result = _run_cli(
+        tmp_path,
+        *args,
+        "--post-source-adapter-profile",
+        str(normalized["post_source_adapter_profile"]),
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == "p6_full_chain_config_written\n"
+    assert result.stderr == ""
 
 
 def test_cli_does_not_overwrite_differing_source_marker_or_write_pair(

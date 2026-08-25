@@ -40,6 +40,9 @@ from framework.stage6.p6_history_training_contract_v1 import (  # noqa: E402
 from framework.stage6.p6_runner_template_validator_v1 import (  # noqa: E402
     validate_pre_provision_runner_template,
 )
+from framework.stage6.p6_post_source_adapter_profile_v1 import (  # noqa: E402
+    load_post_source_adapter_profile,
+)
 from framework.stage6.p6_source_reuse_evidence_v1 import (  # noqa: E402
     plan_source_reuse_paths,
 )
@@ -91,6 +94,7 @@ def preflight_materializer_training_bridge(
     runner_template_path: Path,
     source_wrapper_profile_path: Path,
     external_training_binding_path: Path,
+    post_source_adapter_profile_path: Path | None = None,
 ) -> P6MaterializerPreflightReport:
     """Validate only static inputs and deterministic absent destinations."""
     try:
@@ -107,6 +111,14 @@ def preflight_materializer_training_bridge(
         validated_template = validate_recipe_v2_training_template(
             template, private_root=private_root
         )
+        if post_source_adapter_profile_path is None:
+            if (private_root / "post-source-adapter-profile.yaml").is_file():
+                raise ValueError
+        else:
+            load_post_source_adapter_profile(
+                post_source_adapter_profile_path,
+                private_root=private_root,
+            )
         runner_template = validate_pre_provision_runner_template(
             runner_template_path, private_root, require_exact_history_environment=True
         )
@@ -190,6 +202,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--runner-template", type=Path, required=True)
     parser.add_argument("--source-wrapper-profile", type=Path, required=True)
     parser.add_argument("--external-training-binding", type=Path, required=True)
+    parser.add_argument("--post-source-adapter-profile", type=Path)
     try:
         args = parser.parse_args(argv)
         report = preflight_materializer_training_bridge(
@@ -199,6 +212,7 @@ def main(argv: list[str] | None = None) -> int:
             runner_template_path=args.runner_template,
             source_wrapper_profile_path=args.source_wrapper_profile,
             external_training_binding_path=args.external_training_binding,
+            post_source_adapter_profile_path=args.post_source_adapter_profile,
         )
     except Exception:
         sys.stderr.write("preflight_failed\n")
