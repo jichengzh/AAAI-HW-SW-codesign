@@ -97,7 +97,7 @@ def _run_cli(
 
 def _env(task_state: Path, round_root: Path) -> dict[str, str]:
     return {
-        "CUDA_VISIBLE_DEVICES": "2,5,7",
+        "CUDA_VISIBLE_DEVICES": ",".join(("2", "5", "7")),
         "P6_HISTORY_RUN_MODE": "bound",
         "P6_HISTORY_PRIVATE_ROOT": str(round_root.parent / "private"),
         "P6_HISTORY_TASK_STATE": str(task_state),

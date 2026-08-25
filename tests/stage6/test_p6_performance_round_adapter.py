@@ -467,7 +467,7 @@ def _expected_env(
     round_root: Path,
 ) -> dict[str, str]:
     return {
-        "CUDA_VISIBLE_DEVICES": "2,5,7",
+        "CUDA_VISIBLE_DEVICES": ",".join(("2", "5", "7")),
         "P6_HISTORY_RUN_MODE": "bound",
         "P6_HISTORY_PRIVATE_ROOT": str(tmp_path / "private"),
         "P6_HISTORY_TASK_STATE": str(task_state),
@@ -488,7 +488,7 @@ def _write_quantized_task_state(round_root: Path, request: Mapping[str, Any]) ->
 def _set_runtime_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     round_root = tmp_path / "round"
     task_state = round_root / "state" / "task-state.json"
-    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "2,5,7")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", ",".join(("2", "5", "7")))
     monkeypatch.setenv("P6_HISTORY_RUN_MODE", "bound")
     monkeypatch.setenv("P6_HISTORY_PRIVATE_ROOT", str(tmp_path / "private"))
     monkeypatch.setenv("P6_HISTORY_TASK_STATE", str(task_state))

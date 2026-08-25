@@ -16,6 +16,12 @@ from framework.stage5.single_target_search_v2 import (
     build_task_candidate_manifest,
 )
 from tools.release import measure_p6_history_batch as measurement_cli
+from tests.release.p6_post_source_adapter_chain_fixture import (
+    assert_adapter_leaf_chain,
+    build_adapter_measurement_request,
+    install_adapter_chain,
+    write_source_materializer,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -143,7 +149,10 @@ for output_path, payload in outputs:
     return str(path)
 
 
-def _execution_binding_fields(private_root: Path) -> dict[str, Any]:
+def _execution_binding_fields(
+    private_root: Path,
+    post_source_wrappers: Mapping[str, Path] | None = None,
+) -> dict[str, Any]:
     chain_root = private_root / "documented-stage5-chain"
     component_names = {
         "controller": "stage5_task_round_controller_v3.sh",
@@ -152,16 +161,28 @@ def _execution_binding_fields(private_root: Path) -> dict[str, Any]:
         "finalizer": "stage5_finalize_feedback_v2.py",
     }
     components = {
-        role: (
-            _write_finalizer(chain_root / name)
-            if role == "finalizer"
-            else _write_executable(chain_root / name)
-        )
+        role: str(post_source_wrappers["finalization"])
+        if role == "finalizer" and post_source_wrappers is not None
+        else str(post_source_wrappers["performance"])
+        if role == "performance_plan" and post_source_wrappers is not None
+        else write_source_materializer(chain_root / name)
+        if role == "source_materializer"
+        else _write_finalizer(chain_root / name)
+        if role == "finalizer"
+        else _write_executable(chain_root / name)
         for role, name in component_names.items()
     }
     private_bin = private_root / "private-runner" / "bin"
-    quantize = _write_executable(private_bin / "quantize-private")
-    measure_ap = _write_executable(private_bin / "measure-ap-private")
+    quantize = (
+        str(post_source_wrappers["quantization"])
+        if post_source_wrappers is not None
+        else _write_executable(private_bin / "quantize-private")
+    )
+    measure_ap = (
+        str(post_source_wrappers["ap"])
+        if post_source_wrappers is not None
+        else _write_executable(private_bin / "measure-ap-private")
+    )
     activate = _write_executable(private_bin / "activate-private")
     terminal_statuses = [
         "measured_success_gold",
@@ -299,9 +320,12 @@ def _execution_binding_fields(private_root: Path) -> dict[str, Any]:
     return {"component_paths": components, "execution_interface": interface}
 
 
-def _synthetic_history_binding(tmp_path: Path) -> dict[str, Any]:
+def _synthetic_history_binding(
+    tmp_path: Path, *, adapter_chain: bool = False
+) -> dict[str, Any]:
     private_root = tmp_path / "synthetic-history"
     private_root.mkdir(exist_ok=True)
+    wrappers = install_adapter_chain(private_root) if adapter_chain else None
     evidence_sha = hashlib.sha256(b"synthetic-history-evidence").hexdigest()
     outputs = {
         q_mode: {
@@ -318,7 +342,7 @@ def _synthetic_history_binding(tmp_path: Path) -> dict[str, Any]:
             "backend": "tvm_auto",
         },
         "private_root": str(private_root),
-        **_execution_binding_fields(private_root),
+        **_execution_binding_fields(private_root, wrappers),
         "gpu_policy": {
             "indices": list(SYNTHETIC_GPU_INDICES),
             "uuid_by_index": {
@@ -400,7 +424,7 @@ def _run_registry_cli(
             *extra,
         ],
         cwd=REPOSITORY_ROOT,
-        env={**os.environ, "PYTHONPATH": str(REPOSITORY_ROOT)},
+        env={**_subprocess_base_env(), "PYTHONPATH": str(REPOSITORY_ROOT)},
         text=True,
         capture_output=True,
         check=False,
@@ -720,7 +744,7 @@ def _run_measurement_cli(
         ],
         cwd=REPOSITORY_ROOT,
         env={
-            **os.environ,
+            **_subprocess_base_env(),
             "PYTHONPATH": str(REPOSITORY_ROOT),
             "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}",
         },
@@ -730,16 +754,24 @@ def _run_measurement_cli(
     )
 
 
+def _subprocess_base_env() -> dict[str, str]:
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith("COV_CORE_") and key != "COVERAGE_PROCESS_START"
+    }
+
+
 def test_measurement_cli_executes_synthetic_chain_and_atomically_writes_feedback(
     tmp_path: Path,
 ) -> None:
     """Catches a CLI that validates but never persists complete four-row feedback."""
-    binding = _synthetic_history_binding(tmp_path)
+    binding = _synthetic_history_binding(tmp_path, adapter_chain=True)
     private_root = Path(binding["private_root"])
     round_output_root = private_root / "controller-round"
     round_output_root.mkdir()
     binding_path = _write_json(round_output_root / "binding.json", binding)
-    request = _measurement_request()
+    request = build_adapter_measurement_request(private_root)
     request_path = _write_json(round_output_root / "request.json", request)
     feedback_path = round_output_root / "feedback.json"
     fake_bin = tmp_path / "fake-bin"
@@ -759,18 +791,19 @@ def test_measurement_cli_executes_synthetic_chain_and_atomically_writes_feedback
     feedback = json.loads(feedback_path.read_text(encoding="utf-8"))
     assert feedback["measurement_request_sha256"] == request["measurement_request_sha256"]
     assert len(feedback["rows"]) == 4
+    assert_adapter_leaf_chain(private_root / "private-runs/0", request, binding)
 
 
 def test_measurement_cli_keeps_history_artifacts_separate_from_external_feedback_root(
     tmp_path: Path,
 ) -> None:
     """Catches coupling controller feedback storage to the historical artifact root."""
-    binding = _synthetic_history_binding(tmp_path)
+    binding = _synthetic_history_binding(tmp_path, adapter_chain=True)
     history_root = Path(binding["private_root"])
     controller_round_root = tmp_path / "external-controller-round"
     controller_round_root.mkdir()
     binding_path = _write_json(controller_round_root / "binding.json", binding)
-    request = _measurement_request()
+    request = build_adapter_measurement_request(controller_round_root.parent)
     request_path = _write_json(controller_round_root / "request.json", request)
     feedback_path = controller_round_root / "feedback.json"
     fake_bin = tmp_path / "fake-bin"
@@ -806,10 +839,6 @@ def test_measurement_cli_keeps_history_artifacts_separate_from_external_feedback
     assert [record["stage"] for record in stage_records] == [
         "activate-private",
         *(["stage5_materialize_round_sources_v1.sh"] * len(expected_groups)),
-        "quantize-private",
-        "stage5_build_performance_plan_v2.py",
-        "measure-ap-private",
-        "stage5_finalize_feedback_v2.py",
     ]
     source_records = [
         record
@@ -841,6 +870,7 @@ def test_measurement_cli_keeps_history_artifacts_separate_from_external_feedback
         for record in stage_records
         for token in record["argv"]
     )
+    assert_adapter_leaf_chain(history_round, request, binding)
     assert not (controller_round_root / "private-runs").exists()
     assert set(path.name for path in controller_round_root.iterdir()) == {
         "binding.json",

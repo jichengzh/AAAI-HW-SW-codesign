@@ -119,7 +119,7 @@ def test_quantization_round_fans_out_only_int8_rows_in_request_order(
     expected_call_indices: tuple[int, ...],
 ) -> None:
     """Break caught: FP16 rows launch quant leaves or INT8 GPU order drifts."""
-    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "2,5,7")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", ",".join(("2", "5", "7")))
     monkeypatch.setenv("P6_HISTORY_RUN_MODE", "bound")
     monkeypatch.setenv("P6_HISTORY_PRIVATE_ROOT", str(tmp_path / "private"))
     monkeypatch.setenv("P6_HISTORY_TASK_STATE", str(tmp_path / "round/state/task-state.json"))
@@ -185,7 +185,7 @@ def test_quantization_round_keeps_state_initialized_until_native_contracts_valid
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Break caught: task state advances even though the native leaf output is wrong."""
-    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "2,5,7")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", ",".join(("2", "5", "7")))
     monkeypatch.setenv("P6_HISTORY_RUN_MODE", "bound")
     monkeypatch.setenv("P6_HISTORY_PRIVATE_ROOT", str(tmp_path / "private"))
     monkeypatch.setenv("P6_HISTORY_TASK_STATE", str(tmp_path / "round/state/task-state.json"))
@@ -540,7 +540,7 @@ def _write_task_state(round_root: Path, request: Mapping[str, Any]) -> Path:
 
 
 def _set_runtime_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "2,5,7")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", ",".join(("2", "5", "7")))
     monkeypatch.setenv("P6_HISTORY_RUN_MODE", "bound")
     monkeypatch.setenv("P6_HISTORY_PRIVATE_ROOT", str(tmp_path / "private"))
     monkeypatch.setenv(

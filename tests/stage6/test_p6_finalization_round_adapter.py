@@ -490,7 +490,7 @@ def _assert_unpublished(fixture: Mapping[str, Any]) -> None:
 
 
 def _set_runtime_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "2,5,7")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", ",".join(("2", "5", "7")))
     monkeypatch.setenv("P6_HISTORY_RUN_MODE", "bound")
     monkeypatch.setenv("P6_HISTORY_PRIVATE_ROOT", str(tmp_path / "private"))
     monkeypatch.setenv("P6_HISTORY_TASK_STATE", str(tmp_path / "round/state/task-state.json"))
