@@ -360,19 +360,49 @@ def _validate_performance_job(
     if any(job.get(key) != value for key, value in expected.items()):
         raise P6PerformanceRoundAdapterError()
     _validate_source_contract(request_row.get("source_contract"), source_contract, quant_binding)
-    _validate_job_outputs(job, performance_root)
     _validate_job_quant_command(job, quant_binding)
+    _validate_job_outputs(job, performance_root)
 
 
 def _validate_job_outputs(job: Mapping[str, Any], performance_root: Path) -> None:
-    artifact_root = performance_root / "artifacts"
-    if _resolved_payload_path(job.get("remote_artifact_root")) != artifact_root.resolve(
-        strict=False
-    ):
+    artifact_root = (performance_root / "artifacts").resolve(strict=False)
+    if _canonical_output_path(job.get("remote_artifact_root")) != artifact_root:
         raise P6PerformanceRoundAdapterError()
-    expected_result = _resolved_payload_path(job.get("expected_result_json"))
-    if not _is_relative_to(expected_result, artifact_root.resolve(strict=False)):
+    expected_result = _canonical_output_path(job.get("expected_result_json"))
+    if not _is_relative_to(expected_result, artifact_root):
         raise P6PerformanceRoundAdapterError()
+    _validate_command_output_path(job, artifact_root)
+
+
+def _validate_command_output_path(job: Mapping[str, Any], artifact_root: Path) -> None:
+    command = job["command"]
+    expected_flag = "--out-dir" if str(job["runner_key"]).startswith("tvm_") else "--out"
+    other_flag = "--out" if expected_flag == "--out-dir" else "--out-dir"
+    if command.count(expected_flag) != 1 or other_flag in command:
+        raise P6PerformanceRoundAdapterError()
+    output = _canonical_output_path(_flag_value(command, expected_flag))
+    if output == artifact_root or not _is_relative_to(output, artifact_root):
+        raise P6PerformanceRoundAdapterError()
+
+
+def _canonical_output_path(value: object) -> Path:
+    if not isinstance(value, str) or not value or any(char in value for char in "\x00\r\n"):
+        raise P6PerformanceRoundAdapterError()
+    path = Path(value)
+    try:
+        resolved = path.resolve(strict=False)
+    except OSError:
+        raise P6PerformanceRoundAdapterError() from None
+    if not path.is_absolute() or path != resolved:
+        raise P6PerformanceRoundAdapterError()
+    return resolved
+
+
+def _flag_value(command: list[str], flag: str) -> str:
+    index = command.index(flag)
+    if index + 1 >= len(command):
+        raise P6PerformanceRoundAdapterError()
+    return command[index + 1]
 
 
 def _validate_job_quant_command(
@@ -532,12 +562,30 @@ def _validate_terminal_rows(
     if len(terminals) != 1:
         raise P6PerformanceRoundAdapterError()
     terminal = terminals[0]
-    if terminal["status"] == "confirmed_failure" and terminal["attempt"] != job["max_attempts"]:
-        raise P6PerformanceRoundAdapterError()
+    if terminal["status"] == "confirmed_failure":
+        _validate_confirmed_failure_history(rows, terminal, job)
     if any(
         row["status"] == "failed" and row["attempt"] > terminal["attempt"]
         for row in rows
     ):
+        raise P6PerformanceRoundAdapterError()
+
+
+def _validate_confirmed_failure_history(
+    rows: list[Mapping[str, Any]],
+    terminal: Mapping[str, Any],
+    job: Mapping[str, Any],
+) -> None:
+    max_attempts = int(job["max_attempts"])
+    expected_statuses = ["failed"] * max_attempts + ["confirmed_failure"]
+    expected_attempts = [*range(1, max_attempts + 1), max_attempts]
+    if [row["status"] for row in rows] != expected_statuses:
+        raise P6PerformanceRoundAdapterError()
+    if [row["attempt"] for row in rows] != expected_attempts:
+        raise P6PerformanceRoundAdapterError()
+    last_failure = rows[-2]
+    keys = set(terminal) - {"status"}
+    if any(last_failure.get(key) != terminal.get(key) for key in keys):
         raise P6PerformanceRoundAdapterError()
 
 

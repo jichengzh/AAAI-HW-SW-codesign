@@ -130,6 +130,15 @@ def _state_identity(
     status: str | None,
 ) -> tuple[str, str, Path]:
     if isinstance(job, Mapping):
+        command = list(job.get("command") or [])
+        if str(job.get("runner_key") or "").startswith("tvm_") and "--out-dir" in command:
+            output_dir = Path(command[command.index("--out-dir") + 1])
+            name = (
+                "route_b_int8_auto_decomp_result.json"
+                if job.get("runner_key") == "tvm_int8"
+                else "route_b_fp16_auto_result.json"
+            )
+            return job_id, str(status), output_dir / name
         return job_id, str(status), Path(str(job["expected_result_json"]))
     native_job_id = str(job)
     return native_job_id, job_id, Path(f"/native/results/{native_job_id}.json")

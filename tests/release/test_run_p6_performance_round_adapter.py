@@ -308,7 +308,7 @@ artifact_root = output_dir / "artifacts"
         "source_contract": row["source_contract"],
         "command": [
             "/native/python", "measure.py", "--gpu", str(gpus[index % len(gpus)]),
-            "--out", str(artifact_root / row["manifest_job_id"] / "result.json"),
+            "--out-dir", str(artifact_root / row["manifest_job_id"]),
             *(["--tensor-quant-params-json", row["source_contract"]["tensor_quant_params_json"]]
               if row["q_mode"] == "int8" else []),
         ],
@@ -352,7 +352,11 @@ jobs = [
 ]
 state_path = Path(sys.argv[sys.argv.index("--state-jsonl") + 1])
 for row in jobs:
-    result_path = Path(row["expected_result_json"])
+    command = row["command"]
+    output_dir = Path(command[command.index("--out-dir") + 1])
+    name = ("route_b_int8_auto_decomp_result.json"
+            if row["runner_key"] == "tvm_int8" else "route_b_fp16_auto_result.json")
+    result_path = output_dir / name
     result_path.parent.mkdir(parents=True, exist_ok=True)
     result_path.write_text(json.dumps({
         "status": "success",
@@ -360,6 +364,7 @@ for row in jobs:
         "lat_p50_ms": 1.25,
         "energy_j": 2.5,
     }, sort_keys=True), encoding="utf-8")
+    row["native_result_json"] = str(result_path)
 state_path.write_text("".join(
     json.dumps({
         "schema_version": "stage3_execute_performance_plan_v3_state",
@@ -372,8 +377,8 @@ state_path.write_text("".join(
         "elapsed_s": 1.0,
         "stdout_path": "/native/logs/" + row["job_id"] + ".stdout.txt",
         "stderr_path": "/native/logs/" + row["job_id"] + ".stderr.txt",
-        "result_json": row["expected_result_json"],
-        "result_sha256": hashlib.sha256(Path(row["expected_result_json"]).read_bytes()).hexdigest(),
+        "result_json": row["native_result_json"],
+        "result_sha256": hashlib.sha256(Path(row["native_result_json"]).read_bytes()).hexdigest(),
         "failure_reasons": [],
     }, sort_keys=True) + "\n"
     for row in jobs

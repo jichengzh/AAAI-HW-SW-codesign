@@ -10,9 +10,14 @@ import pytest
 
 from framework.stage6.p6_performance_round_adapter_v1 import (
     P6PerformanceRoundAdapterError,
+    _validate_terminal_rows,
     run_performance_round,
 )
-from tests.stage6.p6_performance_native_fixture import quant_contract_path
+from tests.stage6.p6_performance_native_fixture import (
+    native_state_rows,
+    quant_contract_path,
+    sha256_file,
+)
 from tests.stage6.test_p6_performance_round_adapter import (
     _PerformanceRunner,
     _native_source_contract,
@@ -189,3 +194,126 @@ def test_performance_round_rejects_planner_quant_output_identity_drift(
                 first_job_overrides={"source_contract": drifted},
             ),
         )
+
+
+@pytest.mark.parametrize(
+    ("flag", "relative_result"),
+    (
+        ("--out", "proxy.json"),
+        ("--out-dir", "proxy-dir/route_b_fp16_auto_result.json"),
+    ),
+)
+def test_performance_round_rejects_external_command_result_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    flag: str,
+    relative_result: str,
+) -> None:
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_quantized_task_state(round_root, request)
+    result_path = tmp_path / "external" / relative_result
+    _write_native_success_result(result_path)
+    command_output = result_path if flag == "--out" else result_path.parent
+
+    with pytest.raises(P6PerformanceRoundAdapterError):
+        run_performance_round(
+            profile,
+            task_state,
+            round_root,
+            _PerformanceRunner(
+                first_job_overrides={"command": ["python", "measure.py", flag, str(command_output)]},
+                first_state_overrides={
+                    "result_json": str(result_path),
+                    "result_sha256": sha256_file(result_path),
+                },
+            ),
+        )
+
+
+def test_performance_round_accepts_native_tvm_out_dir_result_layout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_quantized_task_state(round_root, request)
+    output_dir = round_root / "performance/artifacts/batch_01/pyramid/tvm_fp16"
+    result_path = output_dir / "route_b_fp16_auto_result.json"
+
+    run_performance_round(
+        profile,
+        task_state,
+        round_root,
+        _PerformanceRunner(
+            first_job_overrides={
+                "command": ["python", "measure.py", "--out-dir", str(output_dir)]
+            },
+            first_result_path=result_path,
+        ),
+    )
+
+    assert _read_json(task_state)["stage"] == "performance"
+
+
+def test_performance_round_rejects_confirmed_failure_without_failed_attempt_history(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_quantized_task_state(round_root, request)
+
+    with pytest.raises(P6PerformanceRoundAdapterError):
+        run_performance_round(
+            profile,
+            task_state,
+            round_root,
+            _PerformanceRunner(native_confirmed_history=False),
+        )
+
+
+def _write_native_success_result(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _write_json(
+        path,
+        {
+            "status": "success",
+            "numerical_finite": True,
+            "lat_p50_ms": 1.25,
+            "energy_j": 2.5,
+        },
+    )
+
+
+@pytest.mark.parametrize("mutation", ("missing_attempt", "wrong_order", "copy_drift"))
+def test_confirmed_failure_requires_exact_native_failed_attempt_history(
+    mutation: str,
+) -> None:
+    job = {
+        "job_id": "pyramid|16x32x64|tvm_fp16",
+        "max_attempts": 2,
+        "expected_result_json": "/native/results/result.json",
+    }
+    rows = native_state_rows(
+        job,
+        job["job_id"],
+        "confirmed_failure",
+        write_result=False,
+        result_payload_overrides={},
+    )
+    if mutation == "missing_attempt":
+        rows = rows[1:]
+    elif mutation == "wrong_order":
+        rows = [rows[1], rows[0], rows[2]]
+    else:
+        rows[2] = {**rows[2], "failure_reasons": ["different-final-failure"]}
+
+    with pytest.raises(P6PerformanceRoundAdapterError):
+        _validate_terminal_rows(rows, job)

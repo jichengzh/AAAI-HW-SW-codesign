@@ -56,6 +56,8 @@ class _PerformanceRunner:
         first_state_overrides: Mapping[str, Any] | None = None,
         write_result_artifacts: bool = True,
         result_payload_overrides: Mapping[str, Any] | None = None,
+        native_confirmed_history: bool = True,
+        first_result_path: Path | None = None,
         raise_unexpected: bool = False,
     ) -> None:
         self.calls: list[Mapping[str, Any]] = []
@@ -74,6 +76,8 @@ class _PerformanceRunner:
         self._first_state_overrides = dict(first_state_overrides or {})
         self._write_result_artifacts = write_result_artifacts
         self._result_payload_overrides = dict(result_payload_overrides or {})
+        self._native_confirmed_history = native_confirmed_history
+        self._first_result_path = first_result_path
         self._raise_unexpected = raise_unexpected
 
     def run(
@@ -172,14 +176,26 @@ class _PerformanceRunner:
             for job, job_id, status in zip(
                 jobs, state_job_ids, self._state_statuses, strict=True
             )
-            for row in _native_state_rows(
-                job,
-                job_id,
-                status,
-                write_result=self._write_result_artifacts,
-                result_payload_overrides=self._result_payload_overrides,
+            for row in (
+                _native_state_rows(
+                    job,
+                    job_id,
+                    status,
+                    write_result=self._write_result_artifacts,
+                    result_payload_overrides=self._result_payload_overrides,
+                )
+                if self._native_confirmed_history
+                else [_native_state_row(job, job_id, status)]
             )
         ]
+        if self._first_result_path is not None:
+            self._first_result_path.parent.mkdir(parents=True, exist_ok=True)
+            _write_json(self._first_result_path, _native_success_payload())
+            native_rows[0] = {
+                **native_rows[0],
+                "result_json": str(self._first_result_path),
+                "result_sha256": _sha256_file(self._first_result_path),
+            }
         native_rows[0] = {**native_rows[0], **self._first_state_overrides}
         state_path.write_text(
             "".join(
@@ -211,6 +227,15 @@ def _native_jobs(
         }
         for index, (row, row_id) in enumerate(zip(rows, job_ids, strict=True))
     ][:job_count]
+
+
+def _native_success_payload() -> dict[str, Any]:
+    return {
+        "status": "success",
+        "numerical_finite": True,
+        "lat_p50_ms": 1.25,
+        "energy_j": 2.5,
+    }
 
 
 def test_performance_round_plans_once_then_executes_with_historical_argv(
@@ -628,8 +653,16 @@ def _native_performance_job(
     runner_key = "tvm_int8" if row["q_mode"] == "int8" else "tvm_fp16"
     source_contract = _native_source_contract(row, manifest_id, quant_root=quant_root)
     artifact_root = performance_root / "artifacts" if performance_root else Path("/native/artifacts")
-    result_path = artifact_root / manifest_id / "result.json"
-    command = ["/native/python", "measure.py", "--gpu", str(assigned_gpu), "--out", str(result_path)]
+    output_dir = artifact_root / manifest_id
+    result_path = output_dir / "result.json"
+    command = [
+        "/native/python",
+        "measure.py",
+        "--gpu",
+        str(assigned_gpu),
+        "--out-dir",
+        str(output_dir),
+    ]
     if row["q_mode"] == "int8" and quant_root is not None:
         command.extend(
             ["--tensor-quant-params-json", str(_quant_contract_path(quant_root.parent, row))]
