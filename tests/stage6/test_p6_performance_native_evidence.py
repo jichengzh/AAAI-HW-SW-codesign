@@ -43,6 +43,7 @@ from tests.stage6.test_p6_quantization_round_adapter import (
         "calibration_npz_sha256",
         "calibration_summary",
         "calibration_summary_sha256",
+        "params_empty",
     ),
 )
 def test_performance_round_rejects_unbound_int8_quant_contract_before_planner(
@@ -60,7 +61,10 @@ def test_performance_round_rejects_unbound_int8_quant_contract_before_planner(
         contract_path.unlink()
     else:
         contract = _read_json(contract_path)
-        contract[mutation] = "wrong" if not mutation.endswith("sha256") else "0" * 64
+        if mutation == "params_empty":
+            contract["params"] = {}
+        else:
+            contract[mutation] = "wrong" if not mutation.endswith("sha256") else "0" * 64
         _write_json(contract_path, contract)
     original_state = _read_json(task_state)
     runner = _PerformanceRunner()
@@ -85,6 +89,37 @@ def test_performance_round_does_not_require_quant_contract_for_fp16(
     run_performance_round(profile, task_state, round_root, _PerformanceRunner())
 
     assert _read_json(task_state)["stage"] == "performance"
+
+
+@pytest.mark.parametrize("owned_root", ("attempts", "artifacts"))
+@pytest.mark.parametrize("stale_kind", ("file", "symlink"))
+def test_performance_round_rejects_non_directory_native_output_roots(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    owned_root: str,
+    stale_kind: str,
+) -> None:
+    """A native output root cannot be replaced by a stale file or symlink."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_quantized_task_state(round_root, request)
+    stale = round_root / "performance" / owned_root
+    stale.parent.mkdir(parents=True, exist_ok=True)
+    if stale_kind == "file":
+        stale.write_text("stale", encoding="utf-8")
+    else:
+        target = tmp_path / f"{owned_root}-stale-target"
+        target.mkdir()
+        stale.symlink_to(target, target_is_directory=True)
+    runner = _PerformanceRunner()
+
+    with pytest.raises(P6PerformanceRoundAdapterError):
+        run_performance_round(profile, task_state, round_root, runner)
+
+    assert runner.calls == []
+    assert _read_json(task_state)["stage"] == "quantization"
 
 
 @pytest.mark.parametrize(
@@ -161,6 +196,84 @@ def test_performance_round_rejects_invalid_native_success_result_payload(
             round_root,
             _PerformanceRunner(result_payload_overrides={"energy_j": None}),
         )
+
+
+@pytest.mark.parametrize(
+    "result_payload",
+    (
+        {
+            "status": "built",
+            "build_success": True,
+            "numerical_finite": False,
+            "correctness_vs_native_direct": [{"allclose": True}],
+            "lat_p50_ms": None,
+            "latency": {"latency_ms_p50": 1.25},
+            "energy_j": None,
+            "energy": {"joules_per_inference": 2.5},
+        },
+        {
+            "numerical_finite": False,
+            "correctness_all_exact": True,
+            "lat_p50_ms": None,
+            "latency_ms": 1.25,
+            "energy_j": None,
+            "energy": {"energy_J": 2.5},
+        },
+    ),
+)
+def test_performance_round_accepts_historical_nested_measurement_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    result_payload: Mapping[str, Any],
+) -> None:
+    """Native historical result spellings remain first-class measurement evidence."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_quantized_task_state(round_root, request)
+
+    run_performance_round(
+        profile,
+        task_state,
+        round_root,
+        _PerformanceRunner(result_payload_overrides=result_payload),
+    )
+
+    assert _read_json(task_state)["stage"] == "performance"
+
+
+@pytest.mark.parametrize(
+    "partial_result",
+    (
+        {"result_json": "/native/results/stale.json"},
+        {"result_sha256": "0" * 64},
+    ),
+)
+def test_performance_round_rejects_partial_result_binding_on_failed_attempt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    partial_result: Mapping[str, Any],
+) -> None:
+    """A failed native attempt cannot bind only half of its optional result evidence."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_quantized_task_state(round_root, request)
+
+    with pytest.raises(P6PerformanceRoundAdapterError):
+        run_performance_round(
+            profile,
+            task_state,
+            round_root,
+            _PerformanceRunner(
+                state_statuses=("failed", "success", "confirmed_failure", "success"),
+                first_state_overrides=partial_result,
+            ),
+        )
+
+    assert _read_json(task_state)["stage"] == "quantization"
 
 
 def test_performance_round_rejects_planner_quant_output_identity_drift(
