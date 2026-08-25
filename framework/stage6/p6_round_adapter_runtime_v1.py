@@ -146,7 +146,11 @@ def _validate_state_identity(
     *,
     prior_stage: str,
 ) -> None:
-    if state.get("stage") != prior_stage or not isinstance(state.get("rows"), list):
+    if (
+        set(state) != {"stage", "rows"}
+        or state.get("stage") != prior_stage
+        or not isinstance(state.get("rows"), list)
+    ):
         _invalid()
     if len(state["rows"]) != 4:
         _invalid()
@@ -156,9 +160,12 @@ def _validate_state_identity(
         if not isinstance(state_row, Mapping):
             _invalid()
         row_id = request_row["row_id"]
+        source_evidence = state_row.get("source_evidence_sha256")
         if (
             state_row.get("row_id") != row_id
             or state_row.get("row_sha256") != row_hashes[row_id]
+            or not _is_sha(source_evidence)
+            or source_evidence != request_row.get("source_evidence_sha256")
             or state_row.get("terminal_status") != "pending"
         ):
             _invalid()
@@ -242,6 +249,14 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 def _valid_stage(stage: object) -> bool:
     return isinstance(stage, str) and stage in {"quantization", "performance", "ap", "finalization"}
+
+
+def _is_sha(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
 
 
 def _beneath(path: Path, parent: Path) -> bool:

@@ -128,29 +128,38 @@ def _contract_path(contract: Mapping[str, Any], key: str) -> str:
 
 
 def _leaf_env(context: RoundContext, call_index: int) -> dict[str, str]:
-    inherited = {
-        key: os.environ[key]
-        for key in (
-            "P6_HISTORY_RUN_MODE",
-            "P6_HISTORY_PRIVATE_ROOT",
-            "P6_HISTORY_TASK_STATE",
-            "P6_HISTORY_ROUND_OUTPUT_ROOT",
-        )
-        if key in os.environ
-    }
-    if set(inherited) != {
-        "P6_HISTORY_RUN_MODE",
-        "P6_HISTORY_PRIVATE_ROOT",
-        "P6_HISTORY_TASK_STATE",
-        "P6_HISTORY_ROUND_OUTPUT_ROOT",
-    }:
-        raise P6QuantizationRoundAdapterError()
+    inherited = _validated_incoming_env(context)
     return {
         "CUDA_VISIBLE_DEVICES": context.gpu_indices[call_index % len(context.gpu_indices)],
         **inherited,
         "PATH": os.pathsep.join((str(context.profile.project_python.parent), "/usr/bin", "/bin")),
         "PYTHONPATH": os.pathsep.join((str(context.profile.private_root), str(Path.cwd()))),
     }
+
+
+def _validated_incoming_env(context: RoundContext) -> dict[str, str]:
+    keys = (
+        "P6_HISTORY_RUN_MODE",
+        "P6_HISTORY_PRIVATE_ROOT",
+        "P6_HISTORY_TASK_STATE",
+        "P6_HISTORY_ROUND_OUTPUT_ROOT",
+    )
+    inherited = {key: os.environ[key] for key in keys if key in os.environ}
+    if set(inherited) != set(keys):
+        raise P6QuantizationRoundAdapterError()
+    try:
+        private_root = Path(inherited["P6_HISTORY_PRIVATE_ROOT"]).resolve(strict=False)
+        task_state = Path(inherited["P6_HISTORY_TASK_STATE"]).resolve(strict=False)
+        round_root = Path(inherited["P6_HISTORY_ROUND_OUTPUT_ROOT"]).resolve(strict=False)
+    except OSError:
+        raise P6QuantizationRoundAdapterError()
+    if (
+        private_root != context.profile.private_root.resolve(strict=False)
+        or task_state != context.task_state_path
+        or round_root != context.round_root
+    ):
+        raise P6QuantizationRoundAdapterError()
+    return inherited
 
 
 def _require_native_quant_contract(path: Path) -> None:

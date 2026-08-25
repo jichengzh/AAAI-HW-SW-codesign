@@ -347,6 +347,77 @@ def test_quantization_round_rejects_missing_contract_input_path(
     assert _read_json(task_state) == original_state
 
 
+def test_quantization_round_rejects_task_state_source_evidence_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: task-state source evidence drifts from request row identity."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("int8", "fp16", "fp16", "fp16"))
+    task_state = _write_task_state(round_root, request)
+    state = _read_json(task_state)
+    state["rows"][0]["source_evidence_sha256"] = "d" * 64
+    _write_json(task_state, state)
+
+    with pytest.raises(P6QuantizationRoundAdapterError):
+        run_quantization_round(profile, task_state, round_root, _FakeLeafRunner())
+
+    assert _read_json(task_state) == state
+
+
+@pytest.mark.parametrize(
+    ("key", "value_factory"),
+    [
+        ("P6_HISTORY_PRIVATE_ROOT", lambda tmp_path, task_state, round_root: tmp_path / "other-private"),
+        ("P6_HISTORY_TASK_STATE", lambda tmp_path, task_state, round_root: task_state.with_name("other-state.json")),
+        ("P6_HISTORY_ROUND_OUTPUT_ROOT", lambda tmp_path, task_state, round_root: tmp_path / "other-round"),
+    ],
+)
+def test_quantization_round_rejects_incoming_env_path_mismatch_before_leaf_execution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    key: str,
+    value_factory: Any,
+) -> None:
+    """Break caught: wrapper env points at a different private root/state/round."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("int8", "fp16", "fp16", "fp16"))
+    task_state = _write_task_state(round_root, request)
+    original_state = _read_json(task_state)
+    monkeypatch.setenv(key, str(value_factory(tmp_path, task_state, round_root)))
+    runner = _FakeLeafRunner()
+
+    with pytest.raises(P6QuantizationRoundAdapterError):
+        run_quantization_round(profile, task_state, round_root, runner)
+
+    assert runner.calls == []
+    assert _read_json(task_state) == original_state
+
+
+def test_quantization_round_rejects_extra_top_level_task_state_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: unknown task-state top-level keys are silently dropped."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("int8", "fp16", "fp16", "fp16"))
+    task_state = _write_task_state(round_root, request)
+    state = _read_json(task_state)
+    state["unexpected"] = {"private": "must-not-propagate"}
+    _write_json(task_state, state)
+
+    with pytest.raises(P6QuantizationRoundAdapterError):
+        run_quantization_round(profile, task_state, round_root, _FakeLeafRunner())
+
+    assert _read_json(task_state) == state
+
+
 def _profile(
     tmp_path: Path,
     *,
