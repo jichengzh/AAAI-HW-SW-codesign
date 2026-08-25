@@ -233,17 +233,30 @@ def test_performance_round_rejects_external_command_result_candidate(
         )
 
 
+@pytest.mark.parametrize(
+    ("first_q_mode", "result_name"),
+    (
+        ("fp16", "route_b_fp16_auto_result.json"),
+        ("int8", "route_b_int8_auto_decomp_result.json"),
+    ),
+)
 def test_performance_round_accepts_native_tvm_out_dir_result_layout(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    first_q_mode: str,
+    result_name: str,
 ) -> None:
     _set_runtime_env(monkeypatch, tmp_path)
     profile = _profile(tmp_path)
     round_root = tmp_path / "round"
-    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    other_q_mode = "int8" if first_q_mode == "fp16" else "fp16"
+    request = _write_round_request(
+        round_root,
+        (first_q_mode, other_q_mode, "fp16", "int8"),
+    )
     task_state = _write_quantized_task_state(round_root, request)
-    output_dir = round_root / "performance/artifacts/batch_01/pyramid/tvm_fp16"
-    result_path = output_dir / "route_b_fp16_auto_result.json"
+    output_dir = round_root / f"performance/artifacts/batch_01/pyramid/tvm_{first_q_mode}"
+    result_path = output_dir / result_name
 
     run_performance_round(
         profile,
@@ -251,13 +264,83 @@ def test_performance_round_accepts_native_tvm_out_dir_result_layout(
         round_root,
         _PerformanceRunner(
             first_job_overrides={
-                "command": ["python", "measure.py", "--out-dir", str(output_dir)]
+                "command": [
+                    "python",
+                    "measure.py",
+                    "--out-dir",
+                    str(output_dir),
+                    *(
+                        [
+                            "--tensor-quant-params-json",
+                            str(quant_contract_path(round_root, request["rows"][0])),
+                        ]
+                        if first_q_mode == "int8"
+                        else []
+                    ),
+                ]
             },
             first_result_path=result_path,
         ),
     )
 
     assert _read_json(task_state)["stage"] == "performance"
+
+
+@pytest.mark.parametrize(
+    ("first_q_mode", "result_name"),
+    (
+        ("fp16", "result.json"),
+        ("fp16", "route_b_int8_auto_decomp_result.json"),
+        ("int8", "route_b_fp16_auto_result.json"),
+    ),
+)
+def test_performance_round_rejects_tvm_proxy_or_cross_precision_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    first_q_mode: str,
+    result_name: str,
+) -> None:
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    other_q_mode = "int8" if first_q_mode == "fp16" else "fp16"
+    request = _write_round_request(
+        round_root,
+        (first_q_mode, other_q_mode, "fp16", "int8"),
+    )
+    task_state = _write_quantized_task_state(round_root, request)
+    output_dir = (
+        round_root
+        / "performance/artifacts"
+        / str(request["rows"][0]["manifest_job_id"])
+    )
+    result_path = output_dir / result_name
+
+    with pytest.raises(P6PerformanceRoundAdapterError):
+        run_performance_round(
+            profile,
+            task_state,
+            round_root,
+            _PerformanceRunner(
+                first_job_overrides={
+                    "command": [
+                        "python",
+                        "measure.py",
+                        "--out-dir",
+                        str(output_dir),
+                        *(
+                            [
+                                "--tensor-quant-params-json",
+                                str(quant_contract_path(round_root, request["rows"][0])),
+                            ]
+                            if first_q_mode == "int8"
+                            else []
+                        ),
+                    ]
+                },
+                first_result_path=result_path,
+            ),
+        )
 
 
 def test_performance_round_rejects_confirmed_failure_without_failed_attempt_history(

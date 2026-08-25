@@ -29,6 +29,12 @@ NATIVE_MANIFEST_SCHEMA = "stage5_performance_manifest_v2"
 NATIVE_MANIFEST_ROW_SCHEMA = "stage5_performance_manifest_row_v1"
 NATIVE_JOB_SCHEMA = "stage5_performance_job_v1"
 NATIVE_STATE_SCHEMA = "stage3_execute_performance_plan_v3_state"
+NATIVE_RESULT_NAMES = {
+    "tvm_fp16": "route_b_fp16_auto_result.json",
+    "tvm_int8": "route_b_int8_auto_decomp_result.json",
+    "trt_fp16": "trt_profile_result.json",
+    "trt_int8": "trt_profile_result.json",
+}
 OWNED_NATIVE_FILES = (
     "performance_manifest.json",
     "performance_jobs.jsonl",
@@ -656,12 +662,8 @@ def _native_result_candidates(
     work_dir = performance_root / "attempts" / slug / f"attempt_{attempt:02d}"
     candidates = _declared_result_candidates(job, work_dir)
     state_path = _resolved_payload_path(state_row.get("result_json"))
-    known_names = {
-        "route_b_fp16_auto_result.json",
-        "route_b_int8_auto_decomp_result.json",
-        "trt_profile_result.json",
-    }
-    if state_path.name in known_names and _is_relative_to(
+    native_name = NATIVE_RESULT_NAMES[str(job["runner_key"])]
+    if state_path.name == native_name and _is_relative_to(
         state_path, work_dir.resolve(strict=False)
     ):
         candidates.add(state_path)
@@ -669,29 +671,24 @@ def _native_result_candidates(
 
 
 def _declared_result_candidates(job: Mapping[str, Any], work_dir: Path) -> set[Path]:
-    expected = Path(str(job["expected_result_json"]))
-    candidates = {expected, work_dir / expected.name}
     command = job["command"]
-    if "--out" in command:
-        output = _flag_path(command, "--out")
-        candidates.update((output, work_dir / output.name))
-    if "--out-dir" in command:
+    runner_key = str(job["runner_key"])
+    native_name = NATIVE_RESULT_NAMES[runner_key]
+    if runner_key.startswith("tvm_"):
         output_dir = _flag_path(command, "--out-dir")
-        names = ("route_b_fp16_auto_result.json", "route_b_int8_auto_decomp_result.json")
-        candidates.update(output_dir / name for name in names)
-        candidates.update(work_dir / output_dir.name / name for name in names)
+        candidates = {
+            output_dir / native_name,
+            work_dir / output_dir.name / native_name,
+            work_dir / native_name,
+        }
         if "--label" in command:
             label = command[command.index("--label") + 1]
-            candidates.update(output_dir / label / name for name in names)
-    fallback = (
-        "route_b_fp16_auto_result.json"
-        if job["runner_key"] == "tvm_fp16"
-        else "route_b_int8_auto_decomp_result.json"
-        if job["runner_key"] == "tvm_int8"
-        else "trt_profile_result.json"
-    )
-    candidates.add(work_dir / fallback)
-    return candidates
+            candidates.add(output_dir / label / native_name)
+        return candidates
+    output = _flag_path(command, "--out")
+    if output.name != native_name:
+        raise P6PerformanceRoundAdapterError()
+    return {output, work_dir / native_name}
 
 
 def _flag_path(command: list[str], flag: str) -> Path:
