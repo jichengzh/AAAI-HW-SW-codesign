@@ -336,3 +336,130 @@ tools/release/run_p6_ap_round_adapter.py long_functions= []
 tests/stage6/test_p6_ap_round_adapter.py long_functions= []
 tests/release/test_run_p6_ap_round_adapter.py long_functions= []
 ```
+
+## Fix round 2/5 — bound full command fingerprint and stale AP output preflight
+
+### Root cause
+
+Native `stage3_execute_ap_plan_v3.py` binds `full_command_state_bindings` before executing full AP, then computes `plan_fingerprint(job, "full")` from that bound full job. The adapter was validating full success terminals against the unbound original plan. Separately, AP planner rc=1 could be paired with stale preexisting `ap_plan*` / `ap_state*` outputs because the adapter did not require adapter-owned AP output targets to be absent before planner invocation.
+
+### RED evidence
+
+Command:
+
+```bash
+PYTHONPATH=. pytest -q tests/stage6/test_p6_ap_round_adapter.py tests/release/test_run_p6_ap_round_adapter.py
+```
+
+Full output:
+
+```text
+................FFFFF.......                                             [100%]
+=================================== FAILURES ===================================
+FAILED tests/stage6/test_p6_ap_round_adapter.py::test_ap_round_accepts_bound_full_command_state_fingerprint
+FAILED tests/stage6/test_p6_ap_round_adapter.py::test_ap_round_rejects_preexisting_ap_outputs_before_planner[<lambda>0]
+FAILED tests/stage6/test_p6_ap_round_adapter.py::test_ap_round_rejects_preexisting_ap_outputs_before_planner[<lambda>1]
+FAILED tests/stage6/test_p6_ap_round_adapter.py::test_ap_round_rejects_preexisting_ap_outputs_before_planner[<lambda>2]
+FAILED tests/stage6/test_p6_ap_round_adapter.py::test_ap_round_rejects_preexisting_ap_outputs_before_planner[<lambda>3]
+5 failed, 23 passed in 6.39s
+```
+
+### GREEN focused rerun
+
+Command:
+
+```bash
+PYTHONPATH=. pytest -q tests/stage6/test_p6_ap_round_adapter.py tests/release/test_run_p6_ap_round_adapter.py
+```
+
+Full output:
+
+```text
+............................                                             [100%]
+28 passed in 5.87s
+/home/jichengzhi/miniconda3/lib/python3.13/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /tmp/pytest-of-jichengzhi/garbage-c6b3770d-ee67-40c7-b0dd-d1d2f91759c9/test_temporary_cleanup_unlocks0/.execution-closure.locked.tmp
+<class 'OSError'>: [Errno 39] Directory not empty: '/tmp/pytest-of-jichengzhi/garbage-c6b3770d-ee67-40c7-b0dd-d1d2f91759c9/test_temporary_cleanup_unlocks0/.execution-closure.locked.tmp'
+  warnings.warn(
+/home/jichengzhi/miniconda3/lib/python3.13/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /tmp/pytest-of-jichengzhi/garbage-c6b3770d-ee67-40c7-b0dd-d1d2f91759c9/test_temporary_cleanup_unlocks0
+<class 'OSError'>: [Errno 39] Directory not empty: '/tmp/pytest-of-jichengzhi/garbage-c6b3770d-ee67-40c7-b0dd-d1d2f91759c9/test_temporary_cleanup_unlocks0'
+  warnings.warn(
+/home/jichengzhi/miniconda3/lib/python3.13/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /tmp/pytest-of-jichengzhi/garbage-c6b3770d-ee67-40c7-b0dd-d1d2f91759c9
+<class 'OSError'>: [Errno 39] Directory not empty: '/tmp/pytest-of-jichengzhi/garbage-c6b3770d-ee67-40c7-b0dd-d1d2f91759c9'
+  warnings.warn(
+```
+
+### Pre-import branch coverage
+
+Command:
+
+```bash
+PYTHONPATH=. python - <<'PY'
+import framework.stage6.coptv2x_h800_search_v2
+import pytest
+raise SystemExit(pytest.main([
+    '-q',
+    '--cov=framework.stage6.p6_ap_round_adapter_v1',
+    '--cov-branch',
+    '--cov-report=term-missing',
+    '--cov-fail-under=80',
+    'tests/stage6/test_p6_ap_round_adapter.py',
+]))
+PY
+```
+
+Full output:
+
+```text
+..........................                                               [100%]
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.13.12-final-0 _______________
+
+Name                                         Stmts   Miss Branch BrPart  Cover   Missing
+----------------------------------------------------------------------------------------
+framework/stage6/p6_ap_round_adapter_v1.py     308     36    116     27    85%   73-74, 184, 228, 235, 247, 250->245, 309, 324, 337, 342, 345->347, 356, 420, 430-431, 437, 448, 455, 457, 459-460, 462, 468, 471, 478, 503-504, 510-513, 515, 528, 531, 538, 557-558
+----------------------------------------------------------------------------------------
+TOTAL                                          308     36    116     27    85%
+Required test coverage of 80% reached. Total coverage: 84.67%
+26 passed in 1.10s
+/home/jichengzhi/miniconda3/lib/python3.13/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /tmp/pytest-of-jichengzhi/garbage-c74b49ad-2d90-47bb-a37f-cf6561bb4d6f/test_temporary_cleanup_unlocks0/.execution-closure.locked.tmp
+<class 'OSError'>: [Errno 39] Directory not empty: '/tmp/pytest-of-jichengzhi/garbage-c74b49ad-2d90-47bb-a37f-cf6561bb4d6f/test_temporary_cleanup_unlocks0/.execution-closure.locked.tmp'
+  warnings.warn(
+/home/jichengzhi/miniconda3/lib/python3.13/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /tmp/pytest-of-jichengzhi/garbage-c74b49ad-2d90-47bb-a37f-cf6561bb4d6f/test_temporary_cleanup_unlocks0
+<class 'OSError'>: [Errno 39] Directory not empty: '/tmp/pytest-of-jichengzhi/garbage-c74b49ad-2d90-47bb-a37f-cf6561bb4d6f/test_temporary_cleanup_unlocks0'
+  warnings.warn(
+/home/jichengzhi/miniconda3/lib/python3.13/site-packages/_pytest/pathlib.py:96: PytestWarning: (rm_rf) error removing /tmp/pytest-of-jichengzhi/garbage-c74b49ad-2d90-47bb-a37f-cf6561bb4d6f
+<class 'OSError'>: [Errno 39] Directory not empty: '/tmp/pytest-of-jichengzhi/garbage-c74b49ad-2d90-47bb-a37f-cf6561bb4d6f'
+  warnings.warn(
+```
+
+### Static/shape gates
+
+Ruff:
+
+```text
+python -m ruff check framework/stage6/p6_ap_round_adapter_v1.py tools/release/run_p6_ap_round_adapter.py tests/stage6/test_p6_ap_round_adapter.py tests/release/test_run_p6_ap_round_adapter.py
+=> All checks passed!
+```
+
+compileall:
+
+```text
+python -m compileall -q framework/stage6/p6_ap_round_adapter_v1.py tools/release/run_p6_ap_round_adapter.py tests/stage6/test_p6_ap_round_adapter.py tests/release/test_run_p6_ap_round_adapter.py
+=> exit 0
+```
+
+git diff check:
+
+```text
+git diff --check
+=> exit 0
+```
+
+Function size:
+
+```text
+framework/stage6/p6_ap_round_adapter_v1.py long_functions= []
+tools/release/run_p6_ap_round_adapter.py long_functions= []
+tests/stage6/test_p6_ap_round_adapter.py long_functions= []
+tests/release/test_run_p6_ap_round_adapter.py long_functions= []
+```

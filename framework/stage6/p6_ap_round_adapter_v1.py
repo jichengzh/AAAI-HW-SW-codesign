@@ -59,6 +59,7 @@ def run_ap_round(
         plan_leaf = _single_leaf(context.profile, "ap_plan")
         execute_leaf = _single_leaf(context.profile, "ap_execute")
         ap_root = context.round_root / "ap"
+        _require_fresh_ap_outputs(context, ap_root)
         planner_returncode = _run_planner(context, plan_leaf, ap_root, runner)
         rows = _validate_native_plan(context, ap_root, planner_returncode)
         shards = _write_plan_shards(context, ap_root, rows)
@@ -226,8 +227,12 @@ def _validate_native_state(
             if not _is_full_numerical_skip(row, full):
                 raise P6APRoundAdapterError()
             _require_same_report_evidence(sanity, full)
-        elif _is_success_terminal(row, sanity, "sanity") and _is_success_terminal(row, full, "full"):
+            continue
+        if _is_success_terminal(row, sanity, "sanity"):
             _require_terminal_report(context, sanity)
+            full_plan = _bind_full_command_state(row, sanity)
+            if not _is_success_terminal(full_plan, full, "full"):
+                raise P6APRoundAdapterError()
             _require_terminal_report(context, full)
         else:
             raise P6APRoundAdapterError()
@@ -308,6 +313,49 @@ def _require_terminal_report(context: RoundContext, row: Mapping[str, Any] | Non
         raise P6APRoundAdapterError()
 
 
+def _bind_full_command_state(
+    plan: Mapping[str, Any],
+    sanity: Mapping[str, Any] | None,
+) -> Mapping[str, Any]:
+    bindings = plan.get("full_command_state_bindings")
+    if not isinstance(bindings, Mapping):
+        return plan
+    if sanity is None:
+        raise P6APRoundAdapterError()
+    command = list(plan.get("full_command") or [])
+    for raw_spec in bindings.values():
+        command = _bind_full_command_spec(command, raw_spec, sanity)
+    return {**plan, "full_command": command}
+
+
+def _bind_full_command_spec(
+    command: Sequence[object],
+    raw_spec: object,
+    sanity: Mapping[str, Any],
+) -> list[object]:
+    if not isinstance(raw_spec, Mapping):
+        raise P6APRoundAdapterError()
+    _require_binding_state(raw_spec, sanity)
+    path = sanity.get(str(raw_spec.get("path_field")))
+    digest = sanity.get(str(raw_spec.get("sha256_field")))
+    if not _nonempty_string(path) or not _nonempty_string(digest):
+        raise P6APRoundAdapterError()
+    bound = _replace_or_append_option(command, str(raw_spec.get("command_option")), str(path))
+    sha_option = raw_spec.get("sha256_command_option")
+    if sha_option:
+        bound = _replace_or_append_option(bound, str(sha_option), str(digest))
+    return bound
+
+
+def _require_binding_state(spec: Mapping[str, Any], sanity: Mapping[str, Any]) -> None:
+    if (
+        sanity.get("stage") != spec.get("state_stage")
+        or sanity.get("status") != spec.get("state_status")
+        or spec.get("verify_sha256") is not True
+    ):
+        raise P6APRoundAdapterError()
+
+
 def _merge_shard_state(ap_root: Path, shard_count: int) -> Path:
     state_path = ap_root / "ap_state.jsonl"
     temporary = ap_root / f".{state_path.name}.tmp"
@@ -325,6 +373,19 @@ def _merge_shard_state(ap_root: Path, shard_count: int) -> Path:
 
 def _shard_has_ready_rows(path: Path) -> bool:
     return any(row.get("ap_terminal") == READY_TERMINAL for row in _read_jsonl_mappings(path, allow_empty=True))
+
+
+def _require_fresh_ap_outputs(context: RoundContext, ap_root: Path) -> None:
+    paths = [
+        ap_root / "ap_plan.json",
+        ap_root / "ap_plan.jsonl",
+        ap_root / "ap_state.jsonl",
+    ]
+    paths.extend(ap_root / f"ap_plan_shard_{index}.jsonl" for index in range(len(context.gpu_indices)))
+    paths.extend(ap_root / f"ap_state_shard_{index}.jsonl" for index in range(len(context.gpu_indices)))
+    paths.extend(ap_root.glob("ap_state_sanity_*.jsonl") if ap_root.is_dir() else ())
+    if any(path.exists() or path.is_symlink() for path in paths):
+        raise P6APRoundAdapterError()
 
 
 def _single_leaf(
@@ -441,6 +502,18 @@ def _report_path_from_command(command: Sequence[str]) -> str | None:
             if token.startswith(option + "="):
                 return token.split("=", 1)[1]
     return None
+
+
+def _replace_or_append_option(command: Sequence[object], option: str, value: str) -> list[object]:
+    result = list(command)
+    if option in result:
+        index = result.index(option)
+        if index + 1 >= len(result):
+            raise P6APRoundAdapterError()
+        return [*result[: index + 1], value, *result[index + 2:]]
+    if not _nonempty_string(option):
+        raise P6APRoundAdapterError()
+    return [*result, option, value]
 
 
 def _write_jsonl(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:

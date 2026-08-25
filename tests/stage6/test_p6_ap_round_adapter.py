@@ -48,6 +48,7 @@ class _APRunner:
         planner_writes_outputs: bool = True,
         malformed_plan_json: bool = False,
         state_mutator: Any | None = None,
+        bind_full_command_state: bool = False,
     ) -> None:
         self.calls: list[Mapping[str, Any]] = []
         self.max_active_per_gpu: dict[str, int] = {}
@@ -60,6 +61,7 @@ class _APRunner:
         self._planner_writes_outputs = planner_writes_outputs
         self._malformed_plan_json = malformed_plan_json
         self._state_mutator = state_mutator
+        self._bind_full_command_state = bind_full_command_state
 
     def run(
         self,
@@ -160,9 +162,15 @@ class _APRunner:
         plan_rows = _read_jsonl(Path(argv[argv.index("--ap-plan-jsonl") + 1]))
         state_path = Path(argv[argv.index("--state-jsonl") + 1])
         existing = _read_jsonl(state_path) if state_path.is_file() else []
+        terminal_rows = [
+            _bound_full_row(row, existing)
+            if stage == "full" and self._bind_full_command_state
+            else row
+            for row in plan_rows
+        ]
         additions = [
             _native_ap_terminal(row, stage, Path(argv[argv.index("--artifact-root") + 1]).parents[1])
-            for row in plan_rows
+            for row in terminal_rows
             if row.get("ap_terminal") == "ready"
         ]
         if self._state_mutator is not None:
@@ -386,6 +394,67 @@ def test_ap_round_rejects_stale_or_unbound_native_state_evidence(
     assert _read_json(task_state)["stage"] == "performance"
 
 
+def test_ap_round_accepts_bound_full_command_state_fingerprint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: full success fingerprint is computed from unbound full command."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_performance_task_state(round_root, request)
+    _write_performance_outputs(round_root, request)
+    rows = _native_ap_plan_rows(request)
+    rows[0] = _with_full_command_state_binding(rows[0])
+    rows[1:] = [_native_nonready_row(row, "blocked_performance_not_success") for row in rows[1:]]
+    runner = _APRunner(plan_rows=rows, planner_returncode=1, bind_full_command_state=True)
+
+    run_ap_round(profile, task_state, round_root, runner)
+
+    state = _read_jsonl(round_root / "ap/ap_state.jsonl")
+    full = [row for row in state if row.get("stage") == "full"][-1]
+    assert "--sanity-report-json" in _read_jsonl(round_root / "ap/ap_plan_shard_0.jsonl")[0]["full_command_state_bindings"]["sanity_report"]["command_option"]
+    assert full["plan_fingerprint"] == _native_plan_fingerprint(
+        _bound_full_row(rows[0], [row for row in state if row.get("stage") == "sanity"]),
+        "full",
+    )
+    assert _read_json(task_state)["stage"] == "ap"
+
+
+@pytest.mark.parametrize(
+    "stale_writer",
+    [
+        lambda round_root, request: _write_stale_native_plan(round_root, request),
+        lambda round_root, request: (round_root / "ap/ap_plan_shard_0.jsonl").write_text("{}", encoding="utf-8"),
+        lambda round_root, request: (round_root / "ap/ap_state_shard_0.jsonl").write_text("{}", encoding="utf-8"),
+        lambda round_root, request: (round_root / "ap/ap_state.jsonl").write_text("{}", encoding="utf-8"),
+    ],
+)
+def test_ap_round_rejects_preexisting_ap_outputs_before_planner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stale_writer: Any,
+) -> None:
+    """Break caught: stale AP plan/shard/state outputs are consumed after planner rc=1."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_performance_task_state(round_root, request)
+    _write_performance_outputs(round_root, request)
+    (round_root / "ap").mkdir(parents=True, exist_ok=True)
+    stale_writer(round_root, request)
+    original_state = _read_json(task_state)
+    runner = _APRunner(planner_returncode=1, planner_writes_outputs=False)
+
+    with pytest.raises(P6APRoundAdapterError):
+        run_ap_round(profile, task_state, round_root, runner)
+
+    assert runner.calls == []
+    assert _read_json(task_state) == original_state
+
+
 @pytest.mark.parametrize(
     ("sanity_returncode", "full_returncode", "expected_stage"),
     [(6, 0, "sanity"), (0, 7, "full")],
@@ -577,6 +646,61 @@ def _native_nonready_row(row: Mapping[str, Any], terminal: str) -> dict[str, Any
     if terminal == "blocked_runner_missing":
         updated["block_reason"] = "scripts/missing.py"
     return updated
+
+
+def _with_full_command_state_binding(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        **row,
+        "full_command_state_bindings": {
+            "sanity_report": {
+                "command_option": "--sanity-report-json",
+                "sha256_command_option": "--sanity-report-sha256",
+                "state_stage": "sanity",
+                "state_status": "success",
+                "path_field": "report_path",
+                "sha256_field": "report_sha256",
+                "verify_sha256": True,
+            }
+        },
+    }
+
+
+def _bound_full_row(row: Mapping[str, Any], state_rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    bindings = row.get("full_command_state_bindings")
+    if not isinstance(bindings, Mapping):
+        return dict(row)
+    command = list(row["full_command"])
+    for spec in bindings.values():
+        state = next(
+            state_row for state_row in reversed(state_rows)
+            if state_row.get("job_id") == row["manifest_job_id"]
+            and state_row.get("stage") == spec["state_stage"]
+            and state_row.get("status") == spec["state_status"]
+            and state_row.get("plan_fingerprint") == _native_plan_fingerprint(row, str(spec["state_stage"]))
+        )
+        command = _replace_or_append_option(command, str(spec["command_option"]), str(state[spec["path_field"]]))
+        command = _replace_or_append_option(command, str(spec["sha256_command_option"]), str(state[spec["sha256_field"]]))
+    return {**row, "full_command": command}
+
+
+def _replace_or_append_option(command: Sequence[str], option: str, value: str) -> list[str]:
+    result = list(command)
+    if option in result:
+        index = result.index(option)
+        return [*result[: index + 1], value, *result[index + 2:]]
+    return [*result, option, value]
+
+
+def _write_stale_native_plan(round_root: Path, request: Mapping[str, Any]) -> None:
+    rows = [
+        _native_nonready_row(row, "blocked_performance_not_success")
+        for row in _native_ap_plan_rows(request)
+    ]
+    _write_json(round_root / "ap/ap_plan.json", {"schema_version": "stage5_ap_plan_v2", "row_count": 4, "jobs": rows})
+    (round_root / "ap/ap_plan.jsonl").write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
 
 
 def _native_ap_terminal(row: Mapping[str, Any], stage: str, ap_execution: Path) -> dict[str, Any]:
