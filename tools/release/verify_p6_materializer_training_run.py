@@ -121,6 +121,9 @@ def _require_native_finalization_leaves(paths: Mapping[str, Path]) -> None:
     finalized = _read_json_value(
         round_root / "final/stage5_feedback_v2_final.json", root=root
     )
+    final_audit = _read_json_value(
+        round_root / "final/stage5_feedback_v2_audit.json", root=root
+    )
     atomic = _read_json_value(round_root / "final/atomic_batch_audit.json", root=root)
     promoted = _read_json_value(
         round_root / "actual_feedback/stage5_feedback_v3_actual.json", root=root
@@ -131,6 +134,8 @@ def _require_native_finalization_leaves(paths: Mapping[str, Path]) -> None:
     if (
         not isinstance(finalized, list)
         or len(finalized) != 4
+        or not isinstance(final_audit, Mapping)
+        or final_audit.get("schema_version") != "stage5_feedback_batch_v2"
         or not isinstance(promoted, list)
         or len(promoted) != 4
         or not isinstance(atomic, Mapping)

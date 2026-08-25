@@ -237,6 +237,10 @@ def _write_native_completion_leaves(paths: dict[str, Any]) -> None:
         promotion_root.mkdir(parents=True, exist_ok=True)
         _write_json(final_root / "stage5_feedback_v2_final.json", [{"native": True}] * 4)
         _write_json(
+            final_root / "stage5_feedback_v2_audit.json",
+            {"schema_version": "stage5_feedback_batch_v2"},
+        )
+        _write_json(
             final_root / "atomic_batch_audit.json",
             {"schema_version": "stage5_atomic_batch_audit_v2"},
         )
@@ -371,6 +375,7 @@ def test_completion_accepts_four_round_current_run_with_shared_receipts(
     "relative_path",
     [
         "final/stage5_feedback_v2_final.json",
+        "final/stage5_feedback_v2_audit.json",
         "final/atomic_batch_audit.json",
         "actual_feedback/stage5_feedback_v3_actual.json",
         "actual_feedback/actual_feedback_batch_audit_v3.json",
