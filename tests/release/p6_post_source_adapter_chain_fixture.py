@@ -38,7 +38,6 @@ from tests.release.test_run_p6_performance_round_adapter import (
 from tests.release.test_run_p6_performance_round_adapter import (
     _plan_leaf_body as _performance_plan_body,
 )
-from tests.release.test_run_p6_quantization_round_adapter import _quant_leaf_body
 from tests.stage6 import test_p6_history_measurement as history_fixtures
 from tests.stage6.test_p6_source_reuse_measurement import _create_context
 
@@ -157,7 +156,7 @@ def _write_leaf(private_root: Path, name: str) -> PostSourceLeaf:
 
 def _leaf_body(name: str) -> str:
     bodies = {
-        "quant_contract": _quant_leaf_body(),
+        "quant_contract": _native_quant_leaf_body(),
         "performance_plan": _performance_plan_body(),
         "performance_execute": _performance_execute_body(),
         "ap_plan": _ap_plan_body(),
@@ -166,6 +165,43 @@ def _leaf_body(name: str) -> str:
         "feedback_promote": _promote_body(),
     }
     return bodies[name]
+
+
+def _native_quant_leaf_body() -> str:
+    return r'''
+from __future__ import annotations
+import hashlib
+import json
+import os
+from pathlib import Path
+import sys
+
+def sha256(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+onnx = Path(sys.argv[sys.argv.index("--onnx") + 1])
+calibration_npz = Path(sys.argv[sys.argv.index("--calibration-npz") + 1])
+calibration_summary = Path(sys.argv[sys.argv.index("--calibration-summary") + 1])
+output_path = Path(sys.argv[sys.argv.index("--output-json") + 1])
+output_path.parent.mkdir(parents=True, exist_ok=True)
+output_path.write_text(json.dumps({
+    "schema": "stage3_tvm_int8_quant_contract_v3",
+    "onnx_path": str(onnx.resolve()),
+    "onnx_sha256": sha256(onnx),
+    "calibration_npz": str(calibration_npz.resolve()),
+    "calibration_npz_sha256": sha256(calibration_npz),
+    "calibration_summary": str(calibration_summary.resolve()),
+    "calibration_summary_sha256": sha256(calibration_summary),
+    "params": {"spatial_features": {"scale": 0.5}},
+}, sort_keys=True), encoding="utf-8")
+round_root = Path(os.environ["P6_HISTORY_ROUND_OUTPUT_ROOT"])
+with (round_root / "quant-leaf.log").open("a", encoding="utf-8") as handle:
+    handle.write(json.dumps({
+        "argv": sys.argv[1:],
+        "cuda": os.environ["CUDA_VISIBLE_DEVICES"],
+        "round_root": str(round_root),
+    }, sort_keys=True) + "\n")
+'''
 
 
 def _finalize_body() -> str:

@@ -23,6 +23,14 @@ from tests.stage6.test_p6_quantization_round_adapter import (
     _write_round_request,
     _write_task_state,
 )
+from tests.stage6.p6_performance_native_fixture import (
+    native_state_row as _native_state_row,
+    native_state_rows as _native_state_rows,
+    quant_contract_path as _quant_contract_path,
+    sha256_file as _sha256_file,
+    sha256_file_or_sentinel as _sha256_file_or_sentinel,
+    write_source_and_quant_evidence as _write_source_and_quant_evidence,
+)
 
 
 class _Result:
@@ -45,6 +53,9 @@ class _PerformanceRunner:
         executor_writes_state: bool = True,
         job_count: int = 4,
         state_job_ids: Sequence[str] | None = None,
+        first_state_overrides: Mapping[str, Any] | None = None,
+        write_result_artifacts: bool = True,
+        result_payload_overrides: Mapping[str, Any] | None = None,
         raise_unexpected: bool = False,
     ) -> None:
         self.calls: list[Mapping[str, Any]] = []
@@ -60,6 +71,9 @@ class _PerformanceRunner:
         self._executor_writes_state = executor_writes_state
         self._job_count = job_count
         self._state_job_ids = tuple(state_job_ids) if state_job_ids is not None else None
+        self._first_state_overrides = dict(first_state_overrides or {})
+        self._write_result_artifacts = write_result_artifacts
+        self._result_payload_overrides = dict(result_payload_overrides or {})
         self._raise_unexpected = raise_unexpected
 
     def run(
@@ -97,12 +111,13 @@ class _PerformanceRunner:
             return result
         request = _read_json(Path(argv[argv.index("--request-json") + 1]))
         output_dir = Path(argv[argv.index("--output-dir") + 1])
+        quant_root = Path(argv[argv.index("--quant-contract-root") + 1])
         rows = request["rows"]
         manifest_ids = self._manifest_row_ids or tuple(row["manifest_job_id"] for row in rows)
         job_ids = self._job_row_ids or tuple(row["manifest_job_id"] for row in rows)
         manifest_rows = [
             {
-                **_native_manifest_row(row, row_id),
+                **_native_manifest_row(row, row_id, quant_root=quant_root),
                 **(self._first_manifest_row_overrides if index == 0 else {}),
             }
             for index, (row, row_id) in enumerate(zip(rows, manifest_ids, strict=True))
@@ -125,13 +140,14 @@ class _PerformanceRunner:
                 **self._manifest_overrides,
             },
         )
-        jobs = [
-            {
-                **_native_performance_job(row, row_id, assigned_gpu=(2, 5, 7)[index % 3]),
-                **(self._first_job_overrides if index == 0 else {}),
-            }
-            for index, (row, row_id) in enumerate(zip(rows, job_ids, strict=True))
-        ][: self._job_count]
+        jobs = _native_jobs(
+            rows,
+            job_ids,
+            output_dir,
+            quant_root,
+            self._first_job_overrides,
+            self._job_count,
+        )
         (output_dir / "performance_jobs.jsonl").write_text(
             "".join(json.dumps(job, sort_keys=True) + "\n" for job in jobs),
             encoding="utf-8",
@@ -151,21 +167,56 @@ class _PerformanceRunner:
         state_path = Path(argv[argv.index("--state-jsonl") + 1])
         state_path.parent.mkdir(parents=True, exist_ok=True)
         state_job_ids = self._state_job_ids or tuple(job["job_id"] for job in jobs)
+        native_rows = [
+            row
+            for job, job_id, status in zip(
+                jobs, state_job_ids, self._state_statuses, strict=True
+            )
+            for row in _native_state_rows(
+                job,
+                job_id,
+                status,
+                write_result=self._write_result_artifacts,
+                result_payload_overrides=self._result_payload_overrides,
+            )
+        ]
+        native_rows[0] = {**native_rows[0], **self._first_state_overrides}
         state_path.write_text(
             "".join(
-                json.dumps(_native_state_row(job_id, status), sort_keys=True) + "\n"
-                for job_id, status in zip(state_job_ids, self._state_statuses, strict=True)
+                json.dumps(row, sort_keys=True) + "\n" for row in native_rows
             ),
             encoding="utf-8",
         )
         return result
 
 
+def _native_jobs(
+    rows: Sequence[Mapping[str, Any]],
+    job_ids: Sequence[str],
+    output_dir: Path,
+    quant_root: Path,
+    first_overrides: Mapping[str, Any],
+    job_count: int,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            **_native_performance_job(
+                row,
+                row_id,
+                assigned_gpu=(2, 5, 7)[index % 3],
+                performance_root=output_dir,
+                quant_root=quant_root,
+            ),
+            **(first_overrides if index == 0 else {}),
+        }
+        for index, (row, row_id) in enumerate(zip(rows, job_ids, strict=True))
+    ][:job_count]
+
+
 def test_performance_round_plans_once_then_executes_with_historical_argv(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Break caught: planner/executor argv, order, GPU CSV, or worker count drift."""
     _set_runtime_env(monkeypatch, tmp_path)
     profile = _profile(tmp_path)
     round_root = tmp_path / "round"
@@ -198,7 +249,6 @@ def test_performance_round_accepts_native_manifest_jobs_and_state_rows(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Break caught: native Stage5/Stage3 field names are not accepted."""
     _set_runtime_env(monkeypatch, tmp_path)
     profile = _profile(tmp_path)
     round_root = tmp_path / "round"
@@ -234,7 +284,6 @@ def test_performance_round_rejects_each_stale_adapter_owned_output_before_planne
     relative_path: str,
     is_directory: bool,
 ) -> None:
-    """Break caught: a rerun silently overwrites or reuses native round output."""
     _set_runtime_env(monkeypatch, tmp_path)
     profile = _profile(tmp_path)
     round_root = tmp_path / "round"
@@ -542,9 +591,14 @@ def _write_leaf(path: Path) -> Path:
     return path
 
 
-def _native_manifest_row(row: Mapping[str, Any], row_id: str | None = None) -> dict[str, Any]:
+def _native_manifest_row(
+    row: Mapping[str, Any],
+    row_id: str | None = None,
+    *,
+    quant_root: Path | None = None,
+) -> dict[str, Any]:
     manifest_id = row_id or str(row["manifest_job_id"])
-    source_contract = _native_source_contract(row, manifest_id)
+    source_contract = _native_source_contract(row, manifest_id, quant_root=quant_root)
     return {
         **dict(row),
         "schema_version": "stage5_performance_manifest_row_v1",
@@ -567,10 +621,19 @@ def _native_performance_job(
     row_id: str | None = None,
     *,
     assigned_gpu: int = 2,
+    performance_root: Path | None = None,
+    quant_root: Path | None = None,
 ) -> dict[str, Any]:
     manifest_id = row_id or str(row["manifest_job_id"])
     runner_key = "tvm_int8" if row["q_mode"] == "int8" else "tvm_fp16"
-    source_contract = _native_source_contract(row, manifest_id)
+    source_contract = _native_source_contract(row, manifest_id, quant_root=quant_root)
+    artifact_root = performance_root / "artifacts" if performance_root else Path("/native/artifacts")
+    result_path = artifact_root / manifest_id / "result.json"
+    command = ["/native/python", "measure.py", "--gpu", str(assigned_gpu), "--out", str(result_path)]
+    if row["q_mode"] == "int8" and quant_root is not None:
+        command.extend(
+            ["--tensor-quant-params-json", str(_quant_contract_path(quant_root.parent, row))]
+        )
     return {
         "schema_version": "stage5_performance_job_v1",
         "job_id": f"{row['group_id']}|{runner_key}",
@@ -585,38 +648,40 @@ def _native_performance_job(
         "onnx_path": str(source_contract["onnx_path"]),
         "calibration_root": f"/native/calibration/{manifest_id}",
         "source_contract": source_contract,
-        "command": ["/native/python", "measure.py", "--gpu", str(assigned_gpu)],
+        "command": command,
         "assigned_gpu": assigned_gpu,
         "gpu_pool": "2,5,7",
-        "remote_artifact_root": "/native/artifacts",
-        "expected_result_json": f"/native/artifacts/{manifest_id}/result.json",
+        "remote_artifact_root": str(artifact_root),
+        "expected_result_json": str(result_path),
         "max_attempts": 2,
         "terminal_status": "pending",
     }
 
 
-def _native_source_contract(row: Mapping[str, Any], manifest_id: str) -> dict[str, Any]:
-    return {
+def _native_source_contract(
+    row: Mapping[str, Any],
+    manifest_id: str,
+    *,
+    quant_root: Path | None = None,
+) -> dict[str, Any]:
+    contract = {
         **dict(row["source_contract"]),
         "calibration_root": f"/native/calibration/{manifest_id}",
+        "onnx_sha256": _sha256_file(Path(str(row["source_contract"]["onnx_path"]))),
+        "calibration_npz_sha256": _sha256_file(
+            Path(str(row["source_contract"]["calibration_npz"]))
+        ),
+        "calibration_summary_sha256": _sha256_file(
+            Path(str(row["source_contract"]["calibration_summary"]))
+        ),
     }
-
-
-def _native_state_row(job_id: str, status: str) -> dict[str, Any]:
+    if row["q_mode"] != "int8" or quant_root is None:
+        return contract
+    quant_path = _quant_contract_path(quant_root.parent, row)
     return {
-        "schema_version": "stage3_execute_performance_plan_v3_state",
-        "job_id": job_id,
-        "attempt": 1,
-        "status": status,
-        "returncode": 0,
-        "start_time_unix": 1.0,
-        "end_time_unix": 2.0,
-        "elapsed_s": 1.0,
-        "stdout_path": f"/native/logs/{job_id}.stdout.txt",
-        "stderr_path": f"/native/logs/{job_id}.stderr.txt",
-        "result_json": f"/native/results/{job_id}.json",
-        "result_sha256": "e" * 64,
-        "failure_reasons": [],
+        **contract,
+        "tensor_quant_params_json": str(quant_path),
+        "tensor_quant_params_sha256": _sha256_file_or_sentinel(quant_path),
     }
 
 
@@ -683,6 +748,7 @@ def _expected_env(
 
 
 def _write_quantized_task_state(round_root: Path, request: Mapping[str, Any]) -> Path:
+    _write_source_and_quant_evidence(round_root, request)
     task_state = _write_task_state(round_root, request)
     state = _read_json(task_state)
     state["stage"] = "quantization"

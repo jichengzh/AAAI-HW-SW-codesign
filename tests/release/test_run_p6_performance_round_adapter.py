@@ -213,23 +213,42 @@ def _plan_leaf_imports() -> str:
     return r"""
 from __future__ import annotations
 import json
+import hashlib
 import os
 from pathlib import Path
 import sys
 
 request = json.loads(Path(sys.argv[sys.argv.index("--request-json") + 1]).read_text(encoding="utf-8"))
 output_dir = Path(sys.argv[sys.argv.index("--output-dir") + 1])
+quant_root = Path(sys.argv[sys.argv.index("--quant-contract-root") + 1])
 output_dir.mkdir(parents=True, exist_ok=True)
 rows = request["rows"]
+def sha256(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+def native_contract(row):
+    source = row["source_contract"]
+    contract = {
+        **source,
+        "onnx_sha256": sha256(source["onnx_path"]),
+        "calibration_npz_sha256": sha256(source["calibration_npz"]),
+        "calibration_summary_sha256": sha256(source["calibration_summary"]),
+        "calibration_root": source.get(
+            "calibration_root", "/native/calibration/" + row["manifest_job_id"]
+        ),
+    }
+    if row["q_mode"] == "int8":
+        path = quant_root / "x".join(str(item) for item in row["width"]) / "tensor_quant_params.json"
+        contract.update({
+            "tensor_quant_params_json": str(path),
+            "tensor_quant_params_sha256": sha256(path),
+        })
+    return contract
+
 native_rows = [
     {
         **row,
-        "source_contract": {
-            **row["source_contract"],
-            "calibration_root": row["source_contract"].get(
-                "calibration_root", "/native/calibration/" + row["manifest_job_id"]
-            ),
-        },
+        "source_contract": native_contract(row),
     }
     for row in rows
 ]
@@ -271,6 +290,7 @@ def _plan_leaf_manifest_writer() -> str:
 
 def _plan_leaf_jobs_writer() -> str:
     return r"""
+artifact_root = output_dir / "artifacts"
 (output_dir / "performance_jobs.jsonl").write_text("".join(
     json.dumps({
         "schema_version": "stage5_performance_job_v1",
@@ -286,11 +306,16 @@ def _plan_leaf_jobs_writer() -> str:
         "onnx_path": row["source_contract"]["onnx_path"],
         "calibration_root": row["source_contract"]["calibration_root"],
         "source_contract": row["source_contract"],
-        "command": ["/native/python", "measure.py", "--gpu", str(gpus[index % len(gpus)])],
+        "command": [
+            "/native/python", "measure.py", "--gpu", str(gpus[index % len(gpus)]),
+            "--out", str(artifact_root / row["manifest_job_id"] / "result.json"),
+            *(["--tensor-quant-params-json", row["source_contract"]["tensor_quant_params_json"]]
+              if row["q_mode"] == "int8" else []),
+        ],
         "assigned_gpu": gpus[index % len(gpus)],
         "gpu_pool": ",".join(str(value) for value in gpus),
-        "remote_artifact_root": "/native/artifacts",
-        "expected_result_json": "/native/artifacts/" + row["manifest_job_id"] + "/result.json",
+        "remote_artifact_root": str(artifact_root),
+        "expected_result_json": str(artifact_root / row["manifest_job_id"] / "result.json"),
         "max_attempts": 2,
         "terminal_status": "pending",
     }, sort_keys=True) + "\n"
@@ -315,6 +340,7 @@ def _execute_leaf_body() -> str:
     return r"""
 from __future__ import annotations
 import json
+import hashlib
 import os
 from pathlib import Path
 import sys
@@ -325,6 +351,15 @@ jobs = [
     if line.strip()
 ]
 state_path = Path(sys.argv[sys.argv.index("--state-jsonl") + 1])
+for row in jobs:
+    result_path = Path(row["expected_result_json"])
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    result_path.write_text(json.dumps({
+        "status": "success",
+        "numerical_finite": True,
+        "lat_p50_ms": 1.25,
+        "energy_j": 2.5,
+    }, sort_keys=True), encoding="utf-8")
 state_path.write_text("".join(
     json.dumps({
         "schema_version": "stage3_execute_performance_plan_v3_state",
@@ -337,8 +372,8 @@ state_path.write_text("".join(
         "elapsed_s": 1.0,
         "stdout_path": "/native/logs/" + row["job_id"] + ".stdout.txt",
         "stderr_path": "/native/logs/" + row["job_id"] + ".stderr.txt",
-        "result_json": "/native/results/" + row["job_id"] + ".json",
-        "result_sha256": "e" * 64,
+        "result_json": row["expected_result_json"],
+        "result_sha256": hashlib.sha256(Path(row["expected_result_json"]).read_bytes()).hexdigest(),
         "failure_reasons": [],
     }, sort_keys=True) + "\n"
     for row in jobs
@@ -354,6 +389,30 @@ with (round_root / "performance-leaves.log").open("a", encoding="utf-8") as hand
 
 
 def _write_quantized_task_state(round_root: Path, request: dict[str, object]) -> Path:
+    for row in request["rows"]:
+        source = row["source_contract"]
+        paths = (
+            (Path(source["onnx_path"]), b"onnx"),
+            (Path(source["calibration_npz"]), b"npz"),
+            (Path(source["calibration_summary"]), b"{}"),
+        )
+        for path, payload in paths:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(payload)
+        if row["q_mode"] == "int8":
+            width = "x".join(str(item) for item in row["width"])
+            quant_path = round_root / "quant_contracts" / width / "tensor_quant_params.json"
+            quant_path.parent.mkdir(parents=True, exist_ok=True)
+            _write_json(quant_path, {
+                "schema": "stage3_tvm_int8_quant_contract_v3",
+                "onnx_path": str(paths[0][0].resolve()),
+                "onnx_sha256": _sha256(paths[0][0]),
+                "calibration_npz": str(paths[1][0].resolve()),
+                "calibration_npz_sha256": _sha256(paths[1][0]),
+                "calibration_summary": str(paths[2][0].resolve()),
+                "calibration_summary_sha256": _sha256(paths[2][0]),
+                "params": {"spatial_features": {"scale": 0.5}},
+            })
     task_state = _write_task_state(round_root, request)
     state = _read_json(task_state)
     state["stage"] = "quantization"
