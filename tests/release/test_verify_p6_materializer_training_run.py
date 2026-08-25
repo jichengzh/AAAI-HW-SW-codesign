@@ -34,6 +34,7 @@ def _completed_template(tmp_path_factory: pytest.TempPathFactory) -> Iterator[di
     paths = _history_cli_fixture(live)
     result = _run_cli(paths, env=paths["env"])
     assert result.returncode == 0, result.stderr
+    _write_native_completion_leaves(paths)
     snapshot = workspace / "snapshot"
     shutil.copytree(live, snapshot, symlinks=True)
     yield {"live": live, "snapshot": snapshot, "paths": paths}
@@ -223,6 +224,29 @@ def _write_json(path: Path, payload: Any) -> None:
     )
 
 
+def _write_native_completion_leaves(paths: dict[str, Any]) -> None:
+    binding = _read_json(paths["binding"])
+    private_root = Path(binding["private_root"])
+    interface = binding["execution_interface"]
+    for round_index in range(4):
+        round_paths = _round_paths(paths, interface, private_root, round_index)
+        round_root = round_paths["round_root"]
+        final_root = round_root / "final"
+        promotion_root = round_root / "actual_feedback"
+        final_root.mkdir(parents=True, exist_ok=True)
+        promotion_root.mkdir(parents=True, exist_ok=True)
+        _write_json(final_root / "stage5_feedback_v2_final.json", [{"native": True}] * 4)
+        _write_json(
+            final_root / "atomic_batch_audit.json",
+            {"schema_version": "stage5_atomic_batch_audit_v2"},
+        )
+        _write_json(promotion_root / "stage5_feedback_v3_actual.json", [{"native": True}] * 4)
+        _write_json(
+            promotion_root / "actual_feedback_batch_audit_v3.json",
+            {"schema_version": "stage5_actual_feedback_batch_audit_v3"},
+        )
+
+
 def _round_paths(
     paths: dict[str, Any],
     interface: dict[str, Any],
@@ -341,6 +365,33 @@ def test_completion_accepts_four_round_current_run_with_shared_receipts(
     assert report.gold176_remeasured_rows == 0
     assert len({row["row_id"] for row in selected_rows}) == 16
     assert len(list(receipt_root.glob("*.json"))) < 16
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "final/stage5_feedback_v2_final.json",
+        "final/atomic_batch_audit.json",
+        "actual_feedback/stage5_feedback_v3_actual.json",
+        "actual_feedback/actual_feedback_batch_audit_v3.json",
+    ],
+)
+def test_completion_requires_native_finalization_and_promotion_leaves(
+    completed_run: dict[str, Any], relative_path: str
+) -> None:
+    binding = _read_json(completed_run["binding"])
+    round_paths = _round_paths(
+        completed_run,
+        binding["execution_interface"],
+        Path(binding["private_root"]),
+        0,
+    )
+    (round_paths["round_root"] / relative_path).unlink()
+
+    with pytest.raises(P6CoptV2XExecutionError) as captured:
+        verify_materializer_training_run(**_verify_kwargs(completed_run))
+
+    assert captured.value.failure_code == "history_execution_invalid"
 
 
 @pytest.mark.parametrize(

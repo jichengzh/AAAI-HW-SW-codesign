@@ -101,6 +101,47 @@ def _successful_feedback(rows: object) -> bool:
     return True
 
 
+def _read_json_value(path: Path, *, root: Path) -> Any:
+    """Read one regular private JSON leaf without following links."""
+    relative = path.relative_to(root)
+    current = root
+    for index, component in enumerate(relative.parts):
+        current /= component
+        mode = current.lstat().st_mode
+        if stat.S_ISLNK(mode) or (
+            index < len(relative.parts) - 1 and not stat.S_ISDIR(mode)
+        ) or (index == len(relative.parts) - 1 and not stat.S_ISREG(mode)):
+            raise ValueError
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _require_native_finalization_leaves(paths: Mapping[str, Path]) -> None:
+    root = paths["history_root"]
+    round_root = paths["round_root"]
+    finalized = _read_json_value(
+        round_root / "final/stage5_feedback_v2_final.json", root=root
+    )
+    atomic = _read_json_value(round_root / "final/atomic_batch_audit.json", root=root)
+    promoted = _read_json_value(
+        round_root / "actual_feedback/stage5_feedback_v3_actual.json", root=root
+    )
+    promotion_audit = _read_json_value(
+        round_root / "actual_feedback/actual_feedback_batch_audit_v3.json", root=root
+    )
+    if (
+        not isinstance(finalized, list)
+        or len(finalized) != 4
+        or not isinstance(promoted, list)
+        or len(promoted) != 4
+        or not isinstance(atomic, Mapping)
+        or atomic.get("schema_version") != "stage5_atomic_batch_audit_v2"
+        or not isinstance(promotion_audit, Mapping)
+        or promotion_audit.get("schema_version")
+        != "stage5_actual_feedback_batch_audit_v3"
+    ):
+        raise ValueError
+
+
 def verify_materializer_training_run(
     *,
     public_contract_path: Path,
@@ -165,6 +206,7 @@ def verify_materializer_training_run(
                 interface=interface,
                 private_root=private_root,
             )
+            _require_native_finalization_leaves(paths)
             feedback = translate_history_feedback(
                 request,
                 interface,
