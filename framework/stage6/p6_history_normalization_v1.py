@@ -32,11 +32,21 @@ from framework.stage6.p6_history_recipe_normalization_v1 import (
     SOURCE_MAP_KEYS,
     SOURCE_MAP_SCHEMA_VERSION,
     SOURCE_MAP_V2_SCHEMA_VERSION,
+    SOURCE_MAP_V3_SCHEMA_VERSION,
     _derivation_invalid,
     _invalid,
     _recipe_from_v2_source_map,
     _validate_recipe,
     _validate_source_group,
+)
+from framework.stage6.p6_post_source_adapter_profile_v1 import (
+    build_post_source_adapter_profile,
+    load_post_source_adapter_profile,
+    post_source_adapter_profile_to_mapping,
+)
+from framework.stage6.p6_post_source_leaf_binding_v1 import (
+    P6PostSourceLeafBindingError,
+    validate_post_source_leaf_binding,
 )
 from framework.stage6.p6_runner_template_validator_v1 import (
     validate_pre_provision_runner_template,
@@ -159,7 +169,7 @@ def _validate_private_source_map(
     if schema_version == SOURCE_MAP_SCHEMA_VERSION:
         if set(source_map) != set(SOURCE_MAP_KEYS):
             _invalid("source map contract is invalid")
-    elif schema_version == SOURCE_MAP_V2_SCHEMA_VERSION:
+    elif schema_version in {SOURCE_MAP_V2_SCHEMA_VERSION, SOURCE_MAP_V3_SCHEMA_VERSION}:
         if not {
             "external_training_binding",
             "execution_code_closure",
@@ -170,6 +180,14 @@ def _validate_private_source_map(
             "procedural_profile",
         }:
             _derivation_invalid("source map recipe mode is invalid")
+        if schema_version == SOURCE_MAP_V3_SCHEMA_VERSION and (
+            "post_source_leaf_binding" not in source_map
+        ):
+            _invalid("post-source leaf binding is missing")
+        if schema_version == SOURCE_MAP_V2_SCHEMA_VERSION and (
+            "post_source_leaf_binding" in source_map
+        ):
+            _invalid("post-source leaf binding requires source map v3")
     else:
         _invalid("source map contract is invalid")
     if (
@@ -192,7 +210,10 @@ def _validate_private_source_map(
     git_root = _git_root_for(resolved_history_root)
     if resolved_history_root != git_root:
         _invalid("history root is invalid")
-    recipe_v2_source = schema_version == SOURCE_MAP_V2_SCHEMA_VERSION
+    recipe_v2_source = schema_version in {
+        SOURCE_MAP_V2_SCHEMA_VERSION,
+        SOURCE_MAP_V3_SCHEMA_VERSION,
+    }
     assets = source_map.get("asset_paths")
     if not isinstance(assets, Mapping) or set(assets) != set(ASSET_LABELS):
         _invalid("asset mapping is invalid")
@@ -231,6 +252,7 @@ def _validate_private_source_map(
     execution_closure = None
     source_runner = None
     project_python = None
+    post_source_leaf_binding = None
     if recipe_v2_source:
         if runner_template_path is None:
             _invalid("runner template is required")
@@ -262,6 +284,17 @@ def _validate_private_source_map(
         project_python = extract_project_python_from_source(
             source_root.source_root / source_role.entrypoint_relative_path
         )
+        if schema_version == SOURCE_MAP_V3_SCHEMA_VERSION:
+            try:
+                post_source_leaf_binding = validate_post_source_leaf_binding(
+                    source_map.get("post_source_leaf_binding"),
+                    execution_closure=execution_closure,
+                )
+            except P6PostSourceLeafBindingError as error:
+                raise P6HistoryNormalizationError(
+                    "history_normalization_invalid",
+                    "post-source leaf binding is invalid",
+                ) from error
         if not isinstance(raw_source_group, Mapping) or not isinstance(
             raw_source_group.get("source_contract"), Mapping
         ):
@@ -305,6 +338,8 @@ def _validate_private_source_map(
         canonical["execution_closure"] = execution_closure
         canonical["source_runner"] = source_runner
         canonical["project_python"] = project_python
+    if post_source_leaf_binding is not None:
+        canonical["post_source_leaf_binding"] = post_source_leaf_binding
     if derived:
         canonical["derived_recipe"] = copy.deepcopy(recipe)
     return canonical
@@ -407,6 +442,7 @@ def _initialize_private_git_root(root: Path) -> None:
             "external-training-binding.yaml\n"
             "runner-template.yaml\n"
             "source-wrapper-profile.yaml\n"
+            "post-source-adapter-profile.yaml\n"
             "legacy.local.yaml\n"
             "runs/\n",
             encoding="utf-8",
@@ -602,6 +638,25 @@ def normalize_history_inputs(
             _atomic_write_yaml(profile_path, profile)
             render_self_contained_source_wrapper(profile, history_root=staged)
             paths["source_wrapper_profile"] = profile_path
+            if "post_source_leaf_binding" in canonical:
+                adapter_profile = build_post_source_adapter_profile(
+                    private_root=staged,
+                    project_python=canonical["project_python"],
+                    copied_role_paths=copied_roles,
+                    execution_closure=canonical["execution_closure"],
+                    leaf_binding=canonical["post_source_leaf_binding"],
+                )
+                adapter_profile_path = staged / "post-source-adapter-profile.yaml"
+                _atomic_write_yaml(
+                    adapter_profile_path,
+                    post_source_adapter_profile_to_mapping(adapter_profile),
+                )
+                loaded_profile = load_post_source_adapter_profile(
+                    adapter_profile_path, private_root=staged
+                )
+                if loaded_profile != adapter_profile:
+                    _invalid("post-source adapter profile is inconsistent")
+                paths["post_source_adapter_profile"] = adapter_profile_path
             runner_payload = render_normalized_runner_template(
                 canonical["source_runner"],
                 normalized_private_root=staged,

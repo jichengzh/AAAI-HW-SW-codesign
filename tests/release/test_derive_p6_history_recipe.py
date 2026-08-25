@@ -15,6 +15,7 @@ from tests.stage6.test_p6_history_normalization import (
     _as_v2_procedural,
     valid_private_source_map,
 )
+from tests.stage6.test_p6_post_source_adapter_profile import v3_private_source_map
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -118,6 +119,32 @@ def test_cli_loads_yaml_and_rejects_duplicate_keys(
     assert rejected.returncode == 1
     assert rejected.stderr == "history_recipe_derivation_invalid\n"
     assert not recipe_path.exists()
+
+
+def test_cli_derives_recipe_from_v3_source_map_without_private_leaf_echo(
+    tmp_path: Path,
+) -> None:
+    source_map, runner_template = v3_private_source_map(tmp_path)
+    source_path = _write_json(
+        tmp_path / "private-inputs" / "source-map-v3.json", source_map
+    )
+    recipe_path = tmp_path / "private-output" / "recipe.json"
+    recipe_path.parent.mkdir()
+
+    result = _run_cli(
+        "--source-map",
+        str(source_path),
+        "--runner-template",
+        str(runner_template),
+        "--recipe-json",
+        str(recipe_path),
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == "p6_history_recipe_derived\n"
+    assert result.stderr == ""
+    assert json.loads(recipe_path.read_text(encoding="utf-8"))["schema_version"] == RECIPE_V2
+    assert "quant-contract.leaf.py" not in recipe_path.read_text(encoding="utf-8")
 
 
 def test_cli_redacts_derivation_failure_and_preserves_existing_output(

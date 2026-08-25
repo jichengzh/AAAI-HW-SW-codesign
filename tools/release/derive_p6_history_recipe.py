@@ -31,6 +31,7 @@ from framework.stage6.p6_history_recipe_normalization_v1 import (  # noqa: E402
 
 
 SOURCE_MAP_V2 = "p6_history_normalization_source_v2"
+SOURCE_MAP_V3 = "p6_history_normalization_source_v3"
 MAX_PRIVATE_INPUT_SIZE = 4 * 1024 * 1024
 PROCEDURAL_ROLES = (
     "controller",
@@ -52,6 +53,9 @@ PROCEDURAL_SOURCE_MAP_KEYS = frozenset(
         "execution_code_closure",
     }
 )
+PROCEDURAL_SOURCE_MAP_V3_KEYS = PROCEDURAL_SOURCE_MAP_KEYS | {
+    "post_source_leaf_binding"
+}
 
 
 class _ArgumentParser(argparse.ArgumentParser):
@@ -135,10 +139,16 @@ def _load_source_map(path: Path) -> dict[str, Any]:
         payload = load_source_map_document(resolved)
     except (OSError, UnicodeError, ValueError, P6HistoryNormalizationError) as error:
         raise P6HistoryRecipeDerivationError("source map is unavailable") from error
+    schema_version = payload.get("schema_version") if isinstance(payload, dict) else None
+    expected_keys = (
+        PROCEDURAL_SOURCE_MAP_V3_KEYS
+        if schema_version == SOURCE_MAP_V3
+        else PROCEDURAL_SOURCE_MAP_KEYS
+    )
     if (
         not isinstance(payload, dict)
-        or set(payload) != set(PROCEDURAL_SOURCE_MAP_KEYS)
-        or payload.get("schema_version") != SOURCE_MAP_V2
+        or set(payload) != set(expected_keys)
+        or schema_version not in {SOURCE_MAP_V2, SOURCE_MAP_V3}
         or payload.get("recipe_mode") != "procedural_profile"
         or not isinstance(payload.get("procedural_recipe_profile"), str)
         or not isinstance(payload.get("procedural_recipe_source"), Mapping)

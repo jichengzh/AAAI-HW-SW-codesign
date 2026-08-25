@@ -730,6 +730,23 @@ def test_v2_normalizer_keeps_training_external_and_writes_all_role_runner(
     assert (implementation.parent / "normalized-wrapper-executed.txt").read_text() == "copied"
 
 
+def test_source_map_v3_requires_post_source_leaf_binding(tmp_path: Path) -> None:
+    source_map, runner = _as_v2_procedural(valid_private_source_map(tmp_path), tmp_path)
+    source_map["schema_version"] = "p6_history_normalization_source_v3"
+    private_dir = tmp_path / "private-normalized"
+
+    with pytest.raises(P6HistoryNormalizationError) as captured:
+        normalize_history_inputs(
+            source_map,
+            _history_root(source_map),
+            private_dir,
+            runner_template_path=runner,
+        )
+
+    assert captured.value.category == "history_normalization_invalid"
+    assert not private_dir.exists()
+
+
 @pytest.mark.parametrize("missing_key", ("external_training_binding", "execution_code_closure"))
 def test_v2_normalizer_requires_runtime_keys_before_destination_creation(
     tmp_path: Path, missing_key: str

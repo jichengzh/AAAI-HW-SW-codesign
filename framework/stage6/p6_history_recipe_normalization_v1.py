@@ -28,6 +28,7 @@ from framework.stage6.p6_history_recipe_profiles_v1 import (
 
 SOURCE_MAP_SCHEMA_VERSION = "p6_history_normalization_source_v1"
 SOURCE_MAP_V2_SCHEMA_VERSION = "p6_history_normalization_source_v2"
+SOURCE_MAP_V3_SCHEMA_VERSION = "p6_history_normalization_source_v3"
 RECIPE_SCHEMA_VERSION = "p6_history_dynamic_materialization_recipe_v1"
 STAGE_WIDTH_FIELDS = ("stage1_width", "stage2_width", "stage3_width")
 OUTPUT_TEMPLATE_KEYS = (
@@ -64,6 +65,12 @@ SOURCE_MAP_V2_EXPLICIT_KEYS = SOURCE_MAP_COMMON_KEYS | {
 SOURCE_MAP_V2_PROCEDURAL_KEYS = SOURCE_MAP_COMMON_KEYS | {
     "procedural_recipe_profile",
     "procedural_recipe_source",
+}
+SOURCE_MAP_V3_EXPLICIT_KEYS = SOURCE_MAP_V2_EXPLICIT_KEYS | {
+    "post_source_leaf_binding"
+}
+SOURCE_MAP_V3_PROCEDURAL_KEYS = SOURCE_MAP_V2_PROCEDURAL_KEYS | {
+    "post_source_leaf_binding"
 }
 RECIPE_KEYS = frozenset(
     {
@@ -398,8 +405,14 @@ def _recipe_from_v2_source_map(
     runner_template_path: Path | None,
 ) -> tuple[dict[str, Any], bool]:
     mode = source_map.get("recipe_mode")
+    schema_version = source_map.get("schema_version")
     if mode == "explicit_dynamic_recipe":
-        if set(source_map) != set(SOURCE_MAP_V2_EXPLICIT_KEYS):
+        expected_keys = (
+            SOURCE_MAP_V3_EXPLICIT_KEYS
+            if schema_version == SOURCE_MAP_V3_SCHEMA_VERSION
+            else SOURCE_MAP_V2_EXPLICIT_KEYS
+        )
+        if set(source_map) != set(expected_keys):
             _derivation_invalid("explicit recipe fields are inconsistent")
         try:
             return _validate_recipe(source_map.get("dynamic_materialization_recipe")), False
@@ -407,9 +420,12 @@ def _recipe_from_v2_source_map(
             raise P6HistoryNormalizationError(
                 "history_recipe_derivation_invalid", "explicit recipe is invalid"
             ) from error
-    if mode != "procedural_profile" or set(source_map) != set(
-        SOURCE_MAP_V2_PROCEDURAL_KEYS
-    ):
+    expected_keys = (
+        SOURCE_MAP_V3_PROCEDURAL_KEYS
+        if schema_version == SOURCE_MAP_V3_SCHEMA_VERSION
+        else SOURCE_MAP_V2_PROCEDURAL_KEYS
+    )
+    if mode != "procedural_profile" or set(source_map) != set(expected_keys):
         _derivation_invalid("procedural recipe fields are inconsistent")
     if runner_template_path is None:
         _derivation_invalid("runner template is required")
