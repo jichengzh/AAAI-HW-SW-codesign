@@ -22,6 +22,15 @@ from framework.stage6.p6_round_adapter_runtime_v1 import (
 
 
 TERMINAL_NATIVE_STATUSES = frozenset({"success", "confirmed_failure"})
+NATIVE_MANIFEST_SCHEMA = "stage5_performance_manifest_v2"
+NATIVE_MANIFEST_ROW_SCHEMA = "stage5_performance_manifest_row_v1"
+NATIVE_JOB_SCHEMA = "stage5_performance_job_v1"
+OWNED_NATIVE_FILES = (
+    "performance_manifest.json",
+    "performance_jobs.jsonl",
+    "performance_state.jsonl",
+)
+OWNED_NATIVE_DIRECTORIES = ("attempts", "artifacts")
 
 
 class P6PerformanceRoundAdapterError(ValueError):
@@ -48,6 +57,7 @@ def run_performance_round(
         plan_leaf = _single_leaf(context.profile, "performance_plan")
         execute_leaf = _single_leaf(context.profile, "performance_execute")
         performance_root = context.round_root / "performance"
+        _require_fresh_native_outputs(performance_root)
         _run_planner(context, plan_leaf, performance_root, runner)
         jobs = _validate_native_plan(context, performance_root)
         _run_executor(context, execute_leaf, performance_root, runner)
@@ -109,12 +119,138 @@ def _validate_native_plan(
 ) -> tuple[Mapping[str, Any], ...]:
     manifest = _read_mapping(performance_root / "performance_manifest.json")
     jobs = _read_jsonl_mappings(performance_root / "performance_jobs.jsonl")
-    expected = tuple(str(row["manifest_job_id"]) for row in context.request["rows"])
-    if tuple(_manifest_job_id(row) for row in _sequence(manifest.get("jobs"))) != expected:
+    request_rows = tuple(context.request["rows"])
+    manifest_rows = _sequence(manifest.get("jobs"))
+    if len(jobs) != 4:
         raise P6PerformanceRoundAdapterError()
-    if tuple(_manifest_job_id(row) for row in jobs) != expected:
-        raise P6PerformanceRoundAdapterError()
+    _validate_manifest_header(context, manifest, request_rows)
+    for index, (request_row, manifest_row, job) in enumerate(
+        zip(request_rows, manifest_rows, jobs, strict=True)
+    ):
+        _validate_manifest_row(request_row, manifest_row)
+        _validate_performance_job(context, index, request_row, manifest_row, job)
     return jobs
+
+
+def _require_fresh_native_outputs(performance_root: Path) -> None:
+    files = tuple(performance_root / name for name in OWNED_NATIVE_FILES)
+    directories = tuple(performance_root / name for name in OWNED_NATIVE_DIRECTORIES)
+    if any(path.is_symlink() or path.exists() for path in files):
+        raise P6PerformanceRoundAdapterError()
+    if any(_directory_has_native_entries(path) for path in directories):
+        raise P6PerformanceRoundAdapterError()
+
+
+def _directory_has_native_entries(path: Path) -> bool:
+    try:
+        if path.is_symlink():
+            return True
+        if not path.exists():
+            return False
+        if not path.is_dir():
+            return True
+        return next(path.iterdir(), None) is not None
+    except OSError:
+        raise P6PerformanceRoundAdapterError()
+
+
+def _validate_manifest_header(
+    context: RoundContext,
+    manifest: Mapping[str, Any],
+    request_rows: tuple[Mapping[str, Any], ...],
+) -> None:
+    expected = {
+        "schema_version": NATIVE_MANIFEST_SCHEMA,
+        "source_request_schema": context.request["schema_version"],
+        "source_request_sha256": context.request["measurement_request_sha256"],
+        "task_id": context.request["task_id"],
+        "task_sha256": context.request["task_sha256"],
+        "source_pool": "stage5_online_feedback",
+        "genome_count": 4,
+        "row_count": 4,
+        "group_count": len({str(row["group_id"]) for row in request_rows}),
+        "group_ids": sorted({str(row["group_id"]) for row in request_rows}),
+    }
+    if any(manifest.get(key) != value for key, value in expected.items()):
+        raise P6PerformanceRoundAdapterError()
+
+
+def _validate_manifest_row(request_row: object, native_row: object) -> None:
+    if not isinstance(request_row, Mapping) or not isinstance(native_row, Mapping):
+        raise P6PerformanceRoundAdapterError()
+    excluded = frozenset({"schema_version", "source_contract", "source_evidence_sha256"})
+    if any(native_row.get(key) != value for key, value in request_row.items() if key not in excluded):
+        raise P6PerformanceRoundAdapterError()
+    expected = {
+        "schema_version": NATIVE_MANIFEST_ROW_SCHEMA,
+        "job_id": request_row["manifest_job_id"],
+        "manifest_job_id": request_row["manifest_job_id"],
+        "split": "online_feedback",
+        "source_pool": "stage5_online_feedback",
+        "required_metrics": ["latency", "energy", "ap"],
+        "source_status": "ready",
+        "source_plan_sha256": request_row["source_evidence_sha256"],
+        "terminal_status": "pending",
+    }
+    if any(native_row.get(key) != value for key, value in expected.items()):
+        raise P6PerformanceRoundAdapterError()
+    _validate_source_contract(request_row.get("source_contract"), native_row.get("source_contract"))
+
+
+def _validate_source_contract(request_contract: object, native_contract: object) -> None:
+    if not isinstance(request_contract, Mapping) or not isinstance(native_contract, Mapping):
+        raise P6PerformanceRoundAdapterError()
+    if any(native_contract.get(key) != value for key, value in request_contract.items()):
+        raise P6PerformanceRoundAdapterError()
+
+
+def _validate_performance_job(
+    context: RoundContext,
+    index: int,
+    request_row: Mapping[str, Any],
+    manifest_row: object,
+    job: Mapping[str, Any],
+) -> None:
+    if not isinstance(manifest_row, Mapping):
+        raise P6PerformanceRoundAdapterError()
+    runner_key = _native_runner_key(request_row)
+    source_contract = manifest_row.get("source_contract")
+    if not isinstance(source_contract, Mapping):
+        raise P6PerformanceRoundAdapterError()
+    expected = {
+        "schema_version": NATIVE_JOB_SCHEMA,
+        "job_id": f"{request_row['group_id']}|{runner_key}",
+        "manifest_job_id": request_row["manifest_job_id"],
+        "group_id": request_row["group_id"],
+        "model": request_row["model"],
+        "width_key": "x".join(str(value) for value in request_row["width"]),
+        "q_mode": request_row["q_mode"],
+        "runner_key": runner_key,
+        "dispatch_key": request_row["dispatch_key"],
+        "split": "online_feedback",
+        "source_contract": source_contract,
+        "onnx_path": source_contract.get("onnx_path"),
+        "calibration_root": source_contract.get("calibration_root"),
+        "assigned_gpu": int(context.gpu_indices[index % len(context.gpu_indices)]),
+        "gpu_pool": _gpu_csv(context),
+        "max_attempts": 2,
+        "terminal_status": "pending",
+    }
+    if any(job.get(key) != value for key, value in expected.items()):
+        raise P6PerformanceRoundAdapterError()
+
+
+def _native_runner_key(row: Mapping[str, Any]) -> str:
+    mapping = {
+        ("tvm_auto", "fp16"): "tvm_fp16",
+        ("tvm_auto", "int8"): "tvm_int8",
+        ("trt_engine", "fp16"): "trt_fp16",
+        ("trt_engine", "int8"): "trt_int8",
+    }
+    try:
+        return mapping[(str(row["dispatch_key"]), str(row["q_mode"]))]
+    except (KeyError, TypeError):
+        raise P6PerformanceRoundAdapterError() from None
 
 
 def _validate_native_state(state_path: Path, jobs: tuple[Mapping[str, Any], ...]) -> None:
@@ -210,15 +346,6 @@ def _sequence(value: object) -> tuple[object, ...]:
     if not isinstance(value, list) or len(value) != 4:
         raise P6PerformanceRoundAdapterError()
     return tuple(value)
-
-
-def _manifest_job_id(row: object) -> str:
-    if not isinstance(row, Mapping):
-        raise P6PerformanceRoundAdapterError()
-    value = row.get("manifest_job_id")
-    if not isinstance(value, str) or not value:
-        raise P6PerformanceRoundAdapterError()
-    return value
 
 
 def _gpu_csv(context: RoundContext) -> str:

@@ -39,6 +39,13 @@ class _PerformanceRunner:
         manifest_row_ids: Sequence[str] | None = None,
         job_row_ids: Sequence[str] | None = None,
         manifest_field: str = "jobs",
+        manifest_overrides: Mapping[str, Any] | None = None,
+        first_manifest_row_overrides: Mapping[str, Any] | None = None,
+        first_job_overrides: Mapping[str, Any] | None = None,
+        executor_writes_state: bool = True,
+        job_count: int = 4,
+        state_job_ids: Sequence[str] | None = None,
+        raise_unexpected: bool = False,
     ) -> None:
         self.calls: list[Mapping[str, Any]] = []
         self._planner_returncode = planner_returncode
@@ -47,6 +54,13 @@ class _PerformanceRunner:
         self._manifest_row_ids = tuple(manifest_row_ids) if manifest_row_ids is not None else None
         self._job_row_ids = tuple(job_row_ids) if job_row_ids is not None else None
         self._manifest_field = manifest_field
+        self._manifest_overrides = dict(manifest_overrides or {})
+        self._first_manifest_row_overrides = dict(first_manifest_row_overrides or {})
+        self._first_job_overrides = dict(first_job_overrides or {})
+        self._executor_writes_state = executor_writes_state
+        self._job_count = job_count
+        self._state_job_ids = tuple(state_job_ids) if state_job_ids is not None else None
+        self._raise_unexpected = raise_unexpected
 
     def run(
         self,
@@ -56,6 +70,8 @@ class _PerformanceRunner:
         env: Mapping[str, str],
         shell: bool,
     ) -> _Result:
+        if self._raise_unexpected:
+            raise RuntimeError("private runner detail")
         if shell is not False:
             raise AssertionError("performance adapter must use direct argv")
         self.calls.append(
@@ -84,6 +100,13 @@ class _PerformanceRunner:
         rows = request["rows"]
         manifest_ids = self._manifest_row_ids or tuple(row["manifest_job_id"] for row in rows)
         job_ids = self._job_row_ids or tuple(row["manifest_job_id"] for row in rows)
+        manifest_rows = [
+            {
+                **_native_manifest_row(row, row_id),
+                **(self._first_manifest_row_overrides if index == 0 else {}),
+            }
+            for index, (row, row_id) in enumerate(zip(rows, manifest_ids, strict=True))
+        ]
         output_dir.mkdir(parents=True, exist_ok=True)
         _write_json(
             output_dir / "performance_manifest.json",
@@ -98,18 +121,19 @@ class _PerformanceRunner:
                 "row_count": 4,
                 "group_count": 4,
                 "group_ids": [row["group_id"] for row in rows],
-                self._manifest_field: [
-                    _native_manifest_row(row, row_id)
-                    for row, row_id in zip(rows, manifest_ids, strict=True)
-                ],
+                self._manifest_field: manifest_rows,
+                **self._manifest_overrides,
             },
         )
+        jobs = [
+            {
+                **_native_performance_job(row, row_id, assigned_gpu=(2, 5, 7)[index % 3]),
+                **(self._first_job_overrides if index == 0 else {}),
+            }
+            for index, (row, row_id) in enumerate(zip(rows, job_ids, strict=True))
+        ][: self._job_count]
         (output_dir / "performance_jobs.jsonl").write_text(
-            "".join(
-                json.dumps(_native_performance_job(row, row_id), sort_keys=True)
-                + "\n"
-                for row, row_id in zip(rows, job_ids, strict=True)
-            ),
+            "".join(json.dumps(job, sort_keys=True) + "\n" for job in jobs),
             encoding="utf-8",
         )
         return result
@@ -117,7 +141,7 @@ class _PerformanceRunner:
     def _run_executor(self, argv: Sequence[str]) -> _Result:
         result = _Result()
         result.returncode = self._executor_returncode
-        if result.returncode != 0:
+        if result.returncode != 0 or not self._executor_writes_state:
             return result
         jobs = [
             json.loads(line)
@@ -126,10 +150,11 @@ class _PerformanceRunner:
         ]
         state_path = Path(argv[argv.index("--state-jsonl") + 1])
         state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_job_ids = self._state_job_ids or tuple(job["job_id"] for job in jobs)
         state_path.write_text(
             "".join(
-                json.dumps(_native_state_row(job["job_id"], status), sort_keys=True) + "\n"
-                for job, status in zip(jobs, self._state_statuses, strict=True)
+                json.dumps(_native_state_row(job_id, status), sort_keys=True) + "\n"
+                for job_id, status in zip(state_job_ids, self._state_statuses, strict=True)
             ),
             encoding="utf-8",
         )
@@ -191,6 +216,170 @@ def test_performance_round_accepts_native_manifest_jobs_and_state_rows(
     assert set(jobs[0]) == set(_native_performance_job(request["rows"][0]))
     assert set(state[0]) == set(_native_state_row(jobs[0]["job_id"], "success"))
     assert _read_json(task_state)["stage"] == "performance"
+
+
+@pytest.mark.parametrize(
+    ("relative_path", "is_directory"),
+    [
+        ("performance_manifest.json", False),
+        ("performance_jobs.jsonl", False),
+        ("performance_state.jsonl", False),
+        ("attempts", True),
+        ("artifacts", True),
+    ],
+)
+def test_performance_round_rejects_each_stale_adapter_owned_output_before_planner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    relative_path: str,
+    is_directory: bool,
+) -> None:
+    """Break caught: a rerun silently overwrites or reuses native round output."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_quantized_task_state(round_root, request)
+    original_state = _read_json(task_state)
+    stale = round_root / "performance" / relative_path
+    stale.parent.mkdir(parents=True, exist_ok=True)
+    if is_directory:
+        stale.mkdir()
+        (stale / "stale-entry").write_text("stale", encoding="utf-8")
+    else:
+        stale.write_text("stale", encoding="utf-8")
+    runner = _PerformanceRunner()
+
+    with pytest.raises(P6PerformanceRoundAdapterError):
+        run_performance_round(profile, task_state, round_root, runner)
+
+    assert runner.calls == []
+    assert _read_json(task_state) == original_state
+
+
+def test_performance_round_rejects_complete_stale_state_when_executor_writes_nothing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: complete state from an earlier attempt advances a new round."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_quantized_task_state(round_root, request)
+    performance_root = round_root / "performance"
+    performance_root.mkdir()
+    (performance_root / "performance_manifest.json").write_text("stale", encoding="utf-8")
+    (performance_root / "performance_jobs.jsonl").write_text("stale", encoding="utf-8")
+    (performance_root / "performance_state.jsonl").write_text(
+        "".join(
+            json.dumps(
+                _native_state_row(
+                    f"{row['group_id']}|{'tvm_int8' if row['q_mode'] == 'int8' else 'tvm_fp16'}",
+                    "success",
+                ),
+                sort_keys=True,
+            )
+            + "\n"
+            for row in request["rows"]
+        ),
+        encoding="utf-8",
+    )
+    for directory in ("attempts", "artifacts"):
+        owned = performance_root / directory
+        owned.mkdir()
+        (owned / "stale-entry").write_text("stale", encoding="utf-8")
+    runner = _PerformanceRunner(executor_writes_state=False)
+
+    with pytest.raises(P6PerformanceRoundAdapterError):
+        run_performance_round(profile, task_state, round_root, runner)
+
+    assert runner.calls == []
+    assert _read_json(task_state)["stage"] == "quantization"
+
+
+def test_performance_round_allows_unrelated_file_in_performance_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Freshness is limited to the five native outputs owned by this adapter."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_quantized_task_state(round_root, request)
+    performance_root = round_root / "performance"
+    performance_root.mkdir()
+    (performance_root / "caller-note.txt").write_text("keep", encoding="utf-8")
+
+    run_performance_round(profile, task_state, round_root, _PerformanceRunner())
+
+    assert (performance_root / "caller-note.txt").read_text(encoding="utf-8") == "keep"
+    assert _read_json(task_state)["stage"] == "performance"
+
+
+@pytest.mark.parametrize(
+    "runner",
+    [
+        _PerformanceRunner(manifest_overrides={"source_request_sha256": "f" * 64}),
+        _PerformanceRunner(first_manifest_row_overrides={"model": "codriving"}),
+        _PerformanceRunner(
+            first_manifest_row_overrides={
+                "source_contract": {"onnx_path": "/drifted/model.onnx"}
+            }
+        ),
+        _PerformanceRunner(
+            first_job_overrides={
+                "source_contract": {"onnx_path": "/drifted/model.onnx"}
+            }
+        ),
+    ],
+)
+def test_performance_round_rejects_canonical_request_or_source_drift_with_stable_ids(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    runner: _PerformanceRunner,
+) -> None:
+    """Break caught: stable IDs hide request, row, or source binding drift."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_quantized_task_state(round_root, request)
+    original_state = _read_json(task_state)
+
+    with pytest.raises(P6PerformanceRoundAdapterError):
+        run_performance_round(profile, task_state, round_root, runner)
+
+    assert _read_json(task_state) == original_state
+
+
+@pytest.mark.parametrize(
+    "runner",
+    [
+        _PerformanceRunner(job_count=3),
+        _PerformanceRunner(state_job_ids=("wrong", "b", "c", "d")),
+        _PerformanceRunner(raise_unexpected=True),
+    ],
+)
+def test_performance_round_rejects_incomplete_jobs_state_drift_or_runner_exception(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    runner: _PerformanceRunner,
+) -> None:
+    """Validation and unexpected leaf failures stay fail-closed and path-free."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_quantized_task_state(round_root, request)
+    original_state = _read_json(task_state)
+
+    with pytest.raises(P6PerformanceRoundAdapterError) as error:
+        run_performance_round(profile, task_state, round_root, runner)
+
+    assert str(error.value) == "history_execution_invalid"
+    assert _read_json(task_state) == original_state
 
 
 def test_performance_round_rejects_non_native_manifest_rows_alias(
@@ -355,6 +544,7 @@ def _write_leaf(path: Path) -> Path:
 
 def _native_manifest_row(row: Mapping[str, Any], row_id: str | None = None) -> dict[str, Any]:
     manifest_id = row_id or str(row["manifest_job_id"])
+    source_contract = _native_source_contract(row, manifest_id)
     return {
         **dict(row),
         "schema_version": "stage5_performance_manifest_row_v1",
@@ -366,15 +556,23 @@ def _native_manifest_row(row: Mapping[str, Any], row_id: str | None = None) -> d
         "source_status": "ready",
         "source_evidence_path": f"/native/evidence/{manifest_id}.json",
         "source_evidence_sha256": "d" * 64,
+        "source_plan_sha256": str(row["source_evidence_sha256"]),
+        "source_contract": source_contract,
         "terminal_status": "pending",
     }
 
 
-def _native_performance_job(row: Mapping[str, Any], row_id: str | None = None) -> dict[str, Any]:
+def _native_performance_job(
+    row: Mapping[str, Any],
+    row_id: str | None = None,
+    *,
+    assigned_gpu: int = 2,
+) -> dict[str, Any]:
     manifest_id = row_id or str(row["manifest_job_id"])
     runner_key = "tvm_int8" if row["q_mode"] == "int8" else "tvm_fp16"
+    source_contract = _native_source_contract(row, manifest_id)
     return {
-        "schema_version": "stage35_gold32_performance_job_v1",
+        "schema_version": "stage5_performance_job_v1",
         "job_id": f"{row['group_id']}|{runner_key}",
         "manifest_job_id": manifest_id,
         "group_id": str(row["group_id"]),
@@ -384,16 +582,23 @@ def _native_performance_job(row: Mapping[str, Any], row_id: str | None = None) -
         "runner_key": runner_key,
         "dispatch_key": str(row["dispatch_key"]),
         "split": "online_feedback",
-        "onnx_path": str(row["source_contract"]["onnx_path"]),
+        "onnx_path": str(source_contract["onnx_path"]),
         "calibration_root": f"/native/calibration/{manifest_id}",
-        "source_contract": dict(row["source_contract"]),
-        "command": ["/native/python", "measure.py", "--gpu", "2"],
-        "assigned_gpu": 2,
+        "source_contract": source_contract,
+        "command": ["/native/python", "measure.py", "--gpu", str(assigned_gpu)],
+        "assigned_gpu": assigned_gpu,
         "gpu_pool": "2,5,7",
         "remote_artifact_root": "/native/artifacts",
         "expected_result_json": f"/native/artifacts/{manifest_id}/result.json",
         "max_attempts": 2,
         "terminal_status": "pending",
+    }
+
+
+def _native_source_contract(row: Mapping[str, Any], manifest_id: str) -> dict[str, Any]:
+    return {
+        **dict(row["source_contract"]),
+        "calibration_root": f"/native/calibration/{manifest_id}",
     }
 
 

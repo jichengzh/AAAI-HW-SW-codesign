@@ -221,6 +221,20 @@ request = json.loads(Path(sys.argv[sys.argv.index("--request-json") + 1]).read_t
 output_dir = Path(sys.argv[sys.argv.index("--output-dir") + 1])
 output_dir.mkdir(parents=True, exist_ok=True)
 rows = request["rows"]
+native_rows = [
+    {
+        **row,
+        "source_contract": {
+            **row["source_contract"],
+            "calibration_root": row["source_contract"].get(
+                "calibration_root", "/native/calibration/" + row["manifest_job_id"]
+            ),
+        },
+    }
+    for row in rows
+]
+gpus = [int(value) for value in sys.argv[sys.argv.index("--gpus") + 1].split(",")]
+group_ids = sorted({row["group_id"] for row in rows})
 """
 
 
@@ -235,8 +249,8 @@ def _plan_leaf_manifest_writer() -> str:
     "source_pool": "stage5_online_feedback",
     "genome_count": 4,
     "row_count": 4,
-    "group_count": 4,
-    "group_ids": [row["group_id"] for row in rows],
+    "group_count": len(group_ids),
+    "group_ids": group_ids,
     "jobs": [{
         **row,
         "schema_version": "stage5_performance_manifest_row_v1",
@@ -248,8 +262,9 @@ def _plan_leaf_manifest_writer() -> str:
         "source_status": "ready",
         "source_evidence_path": "/native/evidence/" + row["manifest_job_id"] + ".json",
         "source_evidence_sha256": "d" * 64,
+        "source_plan_sha256": row["source_evidence_sha256"],
         "terminal_status": "pending",
-    } for row in rows],
+    } for row in native_rows],
 }, sort_keys=True), encoding="utf-8")
 """
 
@@ -258,7 +273,7 @@ def _plan_leaf_jobs_writer() -> str:
     return r"""
 (output_dir / "performance_jobs.jsonl").write_text("".join(
     json.dumps({
-        "schema_version": "stage35_gold32_performance_job_v1",
+        "schema_version": "stage5_performance_job_v1",
         "job_id": row["group_id"] + "|" + ("tvm_int8" if row["q_mode"] == "int8" else "tvm_fp16"),
         "manifest_job_id": row["manifest_job_id"],
         "group_id": row["group_id"],
@@ -269,17 +284,17 @@ def _plan_leaf_jobs_writer() -> str:
         "dispatch_key": row["dispatch_key"],
         "split": "online_feedback",
         "onnx_path": row["source_contract"]["onnx_path"],
-        "calibration_root": "/native/calibration/" + row["manifest_job_id"],
+        "calibration_root": row["source_contract"]["calibration_root"],
         "source_contract": row["source_contract"],
-        "command": ["/native/python", "measure.py", "--gpu", "2"],
-        "assigned_gpu": 2,
-        "gpu_pool": "2,5,7",
+        "command": ["/native/python", "measure.py", "--gpu", str(gpus[index % len(gpus)])],
+        "assigned_gpu": gpus[index % len(gpus)],
+        "gpu_pool": ",".join(str(value) for value in gpus),
         "remote_artifact_root": "/native/artifacts",
         "expected_result_json": "/native/artifacts/" + row["manifest_job_id"] + "/result.json",
         "max_attempts": 2,
         "terminal_status": "pending",
     }, sort_keys=True) + "\n"
-    for row in rows
+    for index, row in enumerate(native_rows)
 ), encoding="utf-8")
 """
 
