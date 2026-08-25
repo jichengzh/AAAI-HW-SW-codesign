@@ -59,6 +59,50 @@ class _FakeLeafRunner:
         return _Result()
 
 
+class _FailingLeafRunner(_FakeLeafRunner):
+    def run(
+        self,
+        argv: Sequence[str],
+        *,
+        cwd: Path,
+        env: Mapping[str, str],
+        shell: bool,
+    ) -> _Result:
+        del argv, cwd, env, shell
+        result = _Result()
+        result.returncode = 7
+        return result
+
+
+class _SilentLeafRunner(_FakeLeafRunner):
+    def run(
+        self,
+        argv: Sequence[str],
+        *,
+        cwd: Path,
+        env: Mapping[str, str],
+        shell: bool,
+    ) -> _Result:
+        del argv, cwd, env, shell
+        return _Result()
+
+
+class _InvalidJsonLeafRunner(_FakeLeafRunner):
+    def run(
+        self,
+        argv: Sequence[str],
+        *,
+        cwd: Path,
+        env: Mapping[str, str],
+        shell: bool,
+    ) -> _Result:
+        output_path = Path(argv[argv.index("--output-json") + 1])
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text("{", encoding="utf-8")
+        del cwd, env, shell
+        return _Result()
+
+
 @pytest.mark.parametrize(
     ("q_modes", "expected_call_indices"),
     [
@@ -163,7 +207,151 @@ def test_quantization_round_keeps_state_initialized_until_native_contracts_valid
     assert _read_json(task_state) == original_state
 
 
-def _profile(tmp_path: Path) -> ValidatedPostSourceAdapterProfile:
+@pytest.mark.parametrize(
+    "mutator",
+    [
+        lambda request, state: request.update({"measurement_request_sha256": "0" * 64}),
+        lambda request, state: request["row_sha256"].update(
+            {request["rows"][0]["row_id"]: "1" * 64}
+        ),
+        lambda request, state: state.update({"stage": "quantization"}),
+        lambda request, state: state["rows"][0].update({"terminal_status": "done"}),
+    ],
+)
+def test_quantization_round_rejects_request_state_identity_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutator: Any,
+) -> None:
+    """Break caught: adapter accepts non-canonical request/state identity."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("int8", "fp16", "fp16", "fp16"))
+    task_state = _write_task_state(round_root, request)
+    state = _read_json(task_state)
+    mutator(request, state)
+    _write_json(round_root / "measurement-request.json", request)
+    _write_json(task_state, state)
+
+    with pytest.raises(P6QuantizationRoundAdapterError):
+        run_quantization_round(profile, task_state, round_root, _FakeLeafRunner())
+
+    assert _read_json(task_state) == state
+
+
+@pytest.mark.parametrize("gpu_csv", ["", "2,2,7", "2,05,7"])
+def test_quantization_round_rejects_noncanonical_gpu_csv(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    gpu_csv: str,
+) -> None:
+    """Break caught: GPU fanout accepts missing, duplicate, or noncanonical CSV."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", gpu_csv)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("int8", "fp16", "fp16", "fp16"))
+    task_state = _write_task_state(round_root, request)
+    original_state = _read_json(task_state)
+
+    with pytest.raises(P6QuantizationRoundAdapterError):
+        run_quantization_round(profile, task_state, round_root, _FakeLeafRunner())
+
+    assert _read_json(task_state) == original_state
+
+
+@pytest.mark.parametrize(
+    "runner",
+    [_FailingLeafRunner(), _SilentLeafRunner(), _InvalidJsonLeafRunner()],
+)
+def test_quantization_round_rejects_failed_or_missing_native_leaf_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    runner: _FakeLeafRunner,
+) -> None:
+    """Break caught: state advances without a successful native quant artifact."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("int8", "fp16", "fp16", "fp16"))
+    task_state = _write_task_state(round_root, request)
+    original_state = _read_json(task_state)
+
+    with pytest.raises(P6QuantizationRoundAdapterError):
+        run_quantization_round(profile, task_state, round_root, runner)
+
+    assert _read_json(task_state) == original_state
+
+
+def test_quantization_round_rejects_missing_leaf_env_without_state_advance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: leaf child starts with an incomplete deterministic env."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    monkeypatch.delenv("P6_HISTORY_RUN_MODE")
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("int8", "fp16", "fp16", "fp16"))
+    task_state = _write_task_state(round_root, request)
+    original_state = _read_json(task_state)
+
+    with pytest.raises(P6QuantizationRoundAdapterError):
+        run_quantization_round(profile, task_state, round_root, _FakeLeafRunner())
+
+    assert _read_json(task_state) == original_state
+
+
+def test_quantization_round_rejects_missing_quant_leaf_binding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: adapter proceeds without the historical quant_contract leaf."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path, leaf_name="performance_plan")
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("int8", "fp16", "fp16", "fp16"))
+    task_state = _write_task_state(round_root, request)
+    original_state = _read_json(task_state)
+
+    with pytest.raises(P6QuantizationRoundAdapterError):
+        run_quantization_round(profile, task_state, round_root, _FakeLeafRunner())
+
+    assert _read_json(task_state) == original_state
+
+
+def test_quantization_round_rejects_missing_contract_input_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: quant leaf argv is built from incomplete native inputs."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("int8", "fp16", "fp16", "fp16"))
+    request["rows"][0]["source_contract"]["calibration_npz"] = ""
+    request["row_sha256"] = {
+        row["row_id"]: _canonical_sha(row) for row in request["rows"]
+    }
+    request["measurement_request_sha256"] = _canonical_sha(
+        {key: value for key, value in request.items() if key != "measurement_request_sha256"}
+    )
+    _write_json(round_root / "measurement-request.json", request)
+    task_state = _write_task_state(round_root, request)
+    original_state = _read_json(task_state)
+
+    with pytest.raises(P6QuantizationRoundAdapterError):
+        run_quantization_round(profile, task_state, round_root, _FakeLeafRunner())
+
+    assert _read_json(task_state) == original_state
+
+
+def _profile(
+    tmp_path: Path,
+    *,
+    leaf_name: str = "quant_contract",
+) -> ValidatedPostSourceAdapterProfile:
     private_root = tmp_path / "private"
     leaf_cwd = private_root / "leaf-cwd"
     leaf_cwd.mkdir(parents=True)
@@ -177,7 +365,7 @@ def _profile(tmp_path: Path) -> ValidatedPostSourceAdapterProfile:
         adapters=(),
         leaves=(
             PostSourceLeaf(
-                name="quant_contract",
+                name=leaf_name,
                 implementation=implementation,
                 implementation_cwd=leaf_cwd,
                 sha256="0" * 64,
@@ -278,6 +466,16 @@ def _write_task_state(round_root: Path, request: Mapping[str, Any]) -> Path:
         },
     )
     return path
+
+
+def _set_runtime_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "2,5,7")
+    monkeypatch.setenv("P6_HISTORY_RUN_MODE", "bound")
+    monkeypatch.setenv("P6_HISTORY_PRIVATE_ROOT", str(tmp_path / "private"))
+    monkeypatch.setenv(
+        "P6_HISTORY_TASK_STATE", str(tmp_path / "round/state/task-state.json")
+    )
+    monkeypatch.setenv("P6_HISTORY_ROUND_OUTPUT_ROOT", str(tmp_path / "round"))
 
 
 def _quant_output(round_root: Path, width: Sequence[int]) -> Path:
