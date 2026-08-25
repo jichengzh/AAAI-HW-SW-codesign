@@ -82,6 +82,25 @@ def test_public_runner_source_contains_no_personal_absolute_path() -> None:
     assert 'parser.add_argument("--work-root", required=True)' in source
 
 
+def test_tracked_tree_contains_no_personal_absolute_paths() -> None:
+    """Ignored local evidence must never become a tracked privacy disclosure."""
+    result = subprocess.run(
+        ["git", "grep", "-Il", "-e", "/home/jichengzhi", "-e", "/exdata/"],
+        cwd=REPOSITORY_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    disclosed = {
+        path
+        for path in result.stdout.splitlines()
+        if path != Path(__file__).relative_to(REPOSITORY_ROOT).as_posix()
+    }
+
+    assert result.returncode in {0, 1}
+    assert disclosed == set()
+
+
 def test_demo_preparation_docstring_promises_explicit_output_root_only() -> None:
     source = DEMO_PREPARE.read_text(encoding="utf-8")
 

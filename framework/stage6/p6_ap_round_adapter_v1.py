@@ -60,6 +60,7 @@ def run_ap_round(
         execute_leaf = _single_leaf(context.profile, "ap_execute")
         ap_root = context.round_root / "ap"
         _require_fresh_ap_outputs(context, ap_root)
+        _require_fresh_ap_execution_reports(context.round_root / "ap_execution")
         planner_returncode = _run_planner(context, plan_leaf, ap_root, runner)
         rows = _validate_native_plan(context, ap_root, planner_returncode)
         shards = _write_plan_shards(context, ap_root, rows)
@@ -385,6 +386,15 @@ def _require_fresh_ap_outputs(context: RoundContext, ap_root: Path) -> None:
     paths.extend(ap_root / f"ap_state_shard_{index}.jsonl" for index in range(len(context.gpu_indices)))
     paths.extend(ap_root.glob("ap_state_sanity_*.jsonl") if ap_root.is_dir() else ())
     if any(path.exists() or path.is_symlink() for path in paths):
+        raise P6APRoundAdapterError()
+
+
+def _require_fresh_ap_execution_reports(ap_execution_root: Path) -> None:
+    if ap_execution_root.is_symlink():
+        raise P6APRoundAdapterError()
+    if not ap_execution_root.is_dir():
+        return
+    if any(ap_execution_root.rglob("full_ap_eval_report.json")):
         raise P6APRoundAdapterError()
 
 

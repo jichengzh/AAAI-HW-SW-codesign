@@ -49,6 +49,7 @@ class _APRunner:
         malformed_plan_json: bool = False,
         state_mutator: Any | None = None,
         bind_full_command_state: bool = False,
+        reuse_existing_reports: bool = False,
     ) -> None:
         self.calls: list[Mapping[str, Any]] = []
         self.max_active_per_gpu: dict[str, int] = {}
@@ -62,6 +63,7 @@ class _APRunner:
         self._malformed_plan_json = malformed_plan_json
         self._state_mutator = state_mutator
         self._bind_full_command_state = bind_full_command_state
+        self._reuse_existing_reports = reuse_existing_reports
 
     def run(
         self,
@@ -169,7 +171,12 @@ class _APRunner:
             for row in plan_rows
         ]
         additions = [
-            _native_ap_terminal(row, stage, Path(argv[argv.index("--artifact-root") + 1]).parents[1])
+            _native_ap_terminal(
+                row,
+                stage,
+                Path(argv[argv.index("--artifact-root") + 1]).parents[1],
+                materialize=not self._reuse_existing_reports,
+            )
             for row in terminal_rows
             if row.get("ap_terminal") == "ready"
         ]
@@ -455,6 +462,52 @@ def test_ap_round_rejects_preexisting_ap_outputs_before_planner(
     assert _read_json(task_state) == original_state
 
 
+def test_ap_round_rejects_preexisting_execution_reports_before_planner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: rc=0 shards bind fresh state to stale AP report bytes."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_performance_task_state(round_root, request)
+    _write_performance_outputs(round_root, request)
+    rows = _native_ap_plan_rows(request)
+    for row in rows:
+        _materialize_native_ap_report(row, "sanity", round_root / "ap_execution")
+        _materialize_native_ap_report(row, "full", round_root / "ap_execution")
+    original_state = _read_json(task_state)
+    runner = _APRunner(plan_rows=rows, reuse_existing_reports=True)
+
+    with pytest.raises(P6APRoundAdapterError):
+        run_ap_round(profile, task_state, round_root, runner)
+
+    assert runner.calls == []
+    assert _read_json(task_state) == original_state
+
+
+def test_ap_round_allows_empty_execution_directories_and_unrelated_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The freshness boundary covers historical report outputs, not the whole root."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_performance_task_state(round_root, request)
+    _write_performance_outputs(round_root, request)
+    empty = round_root / "ap_execution/sanity/shard_0/empty"
+    empty.mkdir(parents=True)
+    (round_root / "ap_execution/operator-note.txt").write_text("unrelated", encoding="utf-8")
+
+    run_ap_round(profile, task_state, round_root, _APRunner())
+
+    assert empty.is_dir()
+    assert _read_json(task_state)["stage"] == "ap"
+
+
 @pytest.mark.parametrize(
     ("sanity_returncode", "full_returncode", "expected_stage"),
     [(6, 0, "sanity"), (0, 7, "full")],
@@ -703,12 +756,20 @@ def _write_stale_native_plan(round_root: Path, request: Mapping[str, Any]) -> No
     )
 
 
-def _native_ap_terminal(row: Mapping[str, Any], stage: str, ap_execution: Path) -> dict[str, Any]:
+def _native_ap_terminal(
+    row: Mapping[str, Any],
+    stage: str,
+    ap_execution: Path,
+    *,
+    materialize: bool = True,
+) -> dict[str, Any]:
     job_id = str(row["manifest_job_id"])
     terminal_stage = stage
     if row.get("runner_key") == "codriving_tvm_int8_numeric_gate" and stage == "full":
         terminal_stage = "sanity"
-    report_path = _materialize_native_ap_report(row, terminal_stage, ap_execution)
+    report_path = _native_ap_report_path(row, terminal_stage, ap_execution)
+    if materialize:
+        _write_json(report_path, _native_report_payload(row, terminal_stage))
     report_sha = hashlib.sha256(report_path.read_bytes()).hexdigest()
     if row.get("runner_key") == "codriving_tvm_int8_numeric_gate" and stage == "sanity":
         status = "failed"
@@ -736,10 +797,16 @@ def _native_ap_terminal(row: Mapping[str, Any], stage: str, ap_execution: Path) 
 
 
 def _materialize_native_ap_report(row: Mapping[str, Any], stage: str, ap_execution: Path) -> Path:
+    report_path = _native_ap_report_path(row, stage, ap_execution)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(_native_report_payload(row, stage), sort_keys=True), encoding="utf-8")
+    return report_path
+
+
+def _native_ap_report_path(row: Mapping[str, Any], stage: str, ap_execution: Path) -> Path:
     command = [str(part).replace("__AP_EXECUTION__", str(ap_execution)) for part in row[f"{stage}_command"]]
     report_path = Path(command[command.index("--report-json") + 1])
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(json.dumps(_native_report_payload(row, stage), sort_keys=True), encoding="utf-8")
     return report_path
 
 

@@ -83,7 +83,16 @@ class _SilentLeafRunner(_FakeLeafRunner):
         env: Mapping[str, str],
         shell: bool,
     ) -> _Result:
-        del argv, cwd, env, shell
+        self.calls.append(
+            MappingProxyType(
+                {
+                    "argv": tuple(argv),
+                    "cwd": cwd,
+                    "env": MappingProxyType(dict(env)),
+                    "shell": shell,
+                }
+            )
+        )
         return _Result()
 
 
@@ -205,6 +214,50 @@ def test_quantization_round_keeps_state_initialized_until_native_contracts_valid
         )
 
     assert _read_json(task_state) == original_state
+
+
+def test_quantization_round_rejects_preexisting_int8_contract_before_leaf_execution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: a silent rc=0 leaf reuses a valid stale INT8 contract."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("int8", "fp16", "fp16", "fp16"))
+    task_state = _write_task_state(round_root, request)
+    original_state = _read_json(task_state)
+    stale_output = _quant_output(round_root, request["rows"][0]["width"])
+    stale_output.parent.mkdir(parents=True)
+    _write_json(stale_output, {"schema": "stage3_tvm_int8_quant_contract_v3", "scales": [9.0]})
+    runner = _SilentLeafRunner()
+
+    with pytest.raises(P6QuantizationRoundAdapterError):
+        run_quantization_round(profile, task_state, round_root, runner)
+
+    assert runner.calls == []
+    assert _read_json(task_state) == original_state
+
+
+def test_quantization_round_does_not_treat_fp16_contract_path_as_adapter_owned(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FP16 rows do not invoke quantization and do not own quant leaf targets."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "fp16", "fp16", "fp16"))
+    task_state = _write_task_state(round_root, request)
+    unrelated = _quant_output(round_root, request["rows"][0]["width"])
+    unrelated.parent.mkdir(parents=True)
+    _write_json(unrelated, {"schema": "unrelated_fp16_metadata"})
+    runner = _SilentLeafRunner()
+
+    run_quantization_round(profile, task_state, round_root, runner)
+
+    assert runner.calls == []
+    assert _read_json(task_state)["stage"] == "quantization"
 
 
 @pytest.mark.parametrize(

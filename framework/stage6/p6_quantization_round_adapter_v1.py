@@ -46,6 +46,7 @@ def run_quantization_round(
             prior_stage="initialized",
         )
         leaf = _quant_leaf(context.profile)
+        _require_fresh_int8_outputs(context)
         int8_outputs = _run_int8_leaf_calls(context, leaf, runner)
         for output_path in int8_outputs:
             _require_native_quant_contract(output_path)
@@ -71,6 +72,16 @@ def _run_int8_leaf_calls(
         outputs.append(output_path)
         int8_call_index += 1
     return tuple(outputs)
+
+
+def _require_fresh_int8_outputs(context: RoundContext) -> None:
+    targets = (
+        _quant_output_path(context.round_root, row["width"])
+        for row in context.request["rows"]
+        if row["q_mode"] == "int8"
+    )
+    if any(path.exists() or path.is_symlink() for path in targets):
+        raise P6QuantizationRoundAdapterError()
 
 
 def _run_one_leaf(
