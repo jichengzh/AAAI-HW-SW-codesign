@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 import hashlib
 import json
 import math
@@ -29,6 +30,13 @@ FAILURE_STATUSES = frozenset({"feasibility_failure", "numerical_feasibility_fail
 METRIC_KEYS = ("latency_ms", "energy_j", "ap30", "ap50", "ap70")
 PUBLIC_FAILURE_REASON = re.compile(r"^[a-z0-9_-]+$")
 Writer = Callable[[Path, Mapping[str, Any]], None]
+
+
+@dataclass(frozen=True)
+class _LegacyViews:
+    request_path: Path
+    manifest_path: Path
+    row_sha256: Mapping[str, str]
 
 
 class P6FinalizationRoundAdapterError(ValueError):
@@ -64,11 +72,17 @@ def run_finalization_round(
         _require_native_inputs(context)
         finalize = _single_leaf(profile, "feedback_finalize")
         promote = _single_leaf(profile, "feedback_promote")
-        _run_finalize(context, request_path, finalize, runner)
-        finalized = _validate_finalized(context)
-        _run_promote(context, request_path, promote, runner)
-        promoted = _validate_promoted(context, finalized)
-        result, state, completion = _project_completion(context, promoted)
+        with tempfile.TemporaryDirectory(
+            dir=context.round_root, prefix=".legacy-finalization-"
+        ) as temporary:
+            legacy = _write_legacy_views(context, request_path, Path(temporary))
+            _run_finalize(context, legacy, finalize, runner)
+            finalized = _validate_finalized(context, legacy.row_sha256)
+            _run_promote(context, legacy.request_path, promote, runner)
+            promoted = _validate_promoted(
+                context, finalized, legacy.row_sha256
+            )
+            result, state, completion = _project_completion(context, promoted)
         _publish(context, outputs, result, state, completion, publication_writer)
     except (P6FinalizationRoundAdapterError, P6RoundAdapterRuntimeError):
         _rollback_publication(context, outputs)
@@ -80,15 +94,15 @@ def run_finalization_round(
 
 def _run_finalize(
     context: RoundContext,
-    request_path: Path,
+    legacy: _LegacyViews,
     leaf: PostSourceLeaf,
     runner: LeafRunner,
 ) -> None:
     root = context.round_root
     argv = (
         str(context.profile.project_python), str(leaf.implementation),
-        "--manifest-json", str(root / "performance/performance_manifest.json"),
-        "--measurement-request-json", str(request_path),
+        "--manifest-json", str(legacy.manifest_path),
+        "--measurement-request-json", str(legacy.request_path),
         "--ap-plan-jsonl", str(root / "ap/ap_plan.jsonl"),
         "--performance-state-jsonl", str(root / "performance/performance_state.jsonl"),
         "--ap-state-jsonl", str(root / "ap/ap_state.jsonl"),
@@ -113,7 +127,10 @@ def _run_promote(
     _require_zero(runner.run(argv, cwd=leaf.implementation_cwd, env=_leaf_env(context), shell=False))
 
 
-def _validate_finalized(context: RoundContext) -> tuple[Mapping[str, Any], ...]:
+def _validate_finalized(
+    context: RoundContext,
+    legacy_row_sha256: Mapping[str, str],
+) -> tuple[Mapping[str, Any], ...]:
     root = context.round_root / "final"
     rows = _read_rows(root / "stage5_feedback_v2_final.json")
     audit = _read_mapping(root / "stage5_feedback_v2_audit.json")
@@ -130,13 +147,14 @@ def _validate_finalized(context: RoundContext) -> tuple[Mapping[str, Any], ...]:
         or atomic.get("released_feedback_rows") != list(rows)
     ):
         raise P6FinalizationRoundAdapterError()
-    _validate_native_rows(context, rows)
+    _validate_native_rows(context, rows, legacy_row_sha256)
     return rows
 
 
 def _validate_promoted(
     context: RoundContext,
     finalized: Sequence[Mapping[str, Any]],
+    legacy_row_sha256: Mapping[str, str],
 ) -> tuple[Mapping[str, Any], ...]:
     root = context.round_root / "actual_feedback"
     rows = _read_rows(root / "stage5_feedback_v3_actual.json")
@@ -148,7 +166,7 @@ def _validate_promoted(
         or tuple(_row_id(row) for row in rows) != tuple(_row_id(row) for row in finalized)
     ):
         raise P6FinalizationRoundAdapterError()
-    _validate_native_rows(context, rows)
+    _validate_native_rows(context, rows, legacy_row_sha256)
     _validate_promotion_provenance(rows, finalized, audit.get("rows"))
     return rows
 
@@ -179,6 +197,7 @@ def _validate_promotion_provenance(
 def _validate_native_rows(
     context: RoundContext,
     rows: Sequence[Mapping[str, Any]],
+    legacy_row_sha256: Mapping[str, str],
 ) -> None:
     expected = tuple(str(row["row_id"]) for row in context.request["rows"])
     if tuple(_row_id(row) for row in rows) != expected:
@@ -187,11 +206,50 @@ def _validate_native_rows(
         row_id = request_row["row_id"]
         if (
             row.get("manifest_job_id") != row_id
-            or row.get("measurement_request_row_sha256") != context.request["row_sha256"][row_id]
+            or row.get("measurement_request_row_sha256") != legacy_row_sha256[row_id]
             or row.get("source_evidence_sha256") != request_row["source_evidence_sha256"]
             or row.get("terminal_status") not in {SUCCESS_STATUS, *FAILURE_STATUSES}
         ):
             raise P6FinalizationRoundAdapterError()
+
+
+def _write_legacy_views(
+    context: RoundContext,
+    canonical_request_path: Path,
+    temporary_root: Path,
+) -> _LegacyViews:
+    if _read_mapping(canonical_request_path) != context.request:
+        raise P6FinalizationRoundAdapterError()
+    legacy_rows = [
+        {**dict(row), "schema_version": "stage5_feedback_row_v2"}
+        for row in context.request["rows"]
+    ]
+    row_sha256 = {str(row["row_id"]): _canonical_sha(row) for row in legacy_rows}
+    request_body = {
+        **{
+            key: value
+            for key, value in context.request.items()
+            if key != "measurement_request_sha256"
+        },
+        "row_sha256": row_sha256,
+        "rows": legacy_rows,
+    }
+    legacy_request = {
+        **request_body,
+        "measurement_request_sha256": _canonical_sha(request_body),
+    }
+    manifest = dict(
+        _read_mapping(context.round_root / "performance/performance_manifest.json")
+    )
+    legacy_manifest = {
+        **manifest,
+        "source_request_sha256": legacy_request["measurement_request_sha256"],
+    }
+    request_path = temporary_root / "measurement-request.json"
+    manifest_path = temporary_root / "performance-manifest.json"
+    _atomic_write_json(request_path, legacy_request)
+    _atomic_write_json(manifest_path, legacy_manifest)
+    return _LegacyViews(request_path, manifest_path, row_sha256)
 
 
 def _project_completion(

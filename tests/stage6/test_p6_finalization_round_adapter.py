@@ -128,6 +128,36 @@ class _FinalizationRunner:
         )
 
 
+class _LegacyRequestRunner(_FinalizationRunner):
+    """Model the native finalizer's stage5_feedback_row_v2 identity contract."""
+
+    def run(
+        self,
+        argv: Sequence[str],
+        *,
+        cwd: Path,
+        env: Mapping[str, str],
+        shell: bool,
+    ) -> _Result:
+        if "--manifest-json" in argv:
+            request = _read_json(
+                Path(argv[argv.index("--measurement-request-json") + 1])
+            )
+            manifest = _read_json(Path(argv[argv.index("--manifest-json") + 1]))
+            if (
+                any(
+                    row.get("schema_version") != "stage5_feedback_row_v2"
+                    for row in request["rows"]
+                )
+                or manifest.get("source_request_sha256")
+                != request.get("measurement_request_sha256")
+            ):
+                result = _Result()
+                result.returncode = 1
+                return result
+        return super().run(argv, cwd=cwd, env=env, shell=shell)
+
+
 def test_finalization_invokes_native_leaves_and_projects_existing_completion_set(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -138,8 +168,7 @@ def test_finalization_invokes_native_leaves_and_projects_existing_completion_set
     run_finalization_round(*fixture["args"], runner)
 
     assert [call["stage"] for call in runner.calls] == ["finalize", "promote"]
-    assert runner.calls[0]["argv"] == _expected_finalize_argv(fixture)
-    assert runner.calls[1]["argv"] == _expected_promote_argv(fixture)
+    _assert_native_argv(fixture, runner.calls)
     assert all(call["shell"] is False for call in runner.calls)
     assert runner.calls[0]["cwd"] == fixture["profile"].leaves[0].implementation_cwd
     assert runner.calls[1]["cwd"] == fixture["profile"].leaves[1].implementation_cwd
@@ -167,6 +196,43 @@ def test_finalization_invokes_native_leaves_and_projects_existing_completion_set
         fixture["request"], _interface(), fixture["paths"], read_json=_read_json
     )
     assert translated["rows"][0]["latency_ms"] == 2.0
+
+
+def test_finalization_uses_private_legacy_request_view_without_canonical_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catch the native schema overwrite rejecting canonical candidate rows."""
+    fixture = _fixture(tmp_path, monkeypatch)
+    canonical_request = fixture["round_root"] / "measurement-request.json"
+    canonical_manifest = fixture["round_root"] / "performance/performance_manifest.json"
+    request_bytes = canonical_request.read_bytes()
+    manifest_bytes = canonical_manifest.read_bytes()
+    runner = _LegacyRequestRunner(statuses=("measured_success_gold",) * 4)
+
+    run_finalization_round(*fixture["args"], runner)
+
+    finalize_argv = runner.calls[0]["argv"]
+    legacy_request = Path(
+        finalize_argv[finalize_argv.index("--measurement-request-json") + 1]
+    )
+    legacy_manifest = Path(finalize_argv[finalize_argv.index("--manifest-json") + 1])
+    promote_argv = runner.calls[1]["argv"]
+    assert Path(
+        promote_argv[promote_argv.index("--measurement-request-json") + 1]
+    ) == legacy_request
+    assert legacy_request != canonical_request
+    assert legacy_manifest != canonical_manifest
+    assert canonical_request.read_bytes() == request_bytes
+    assert canonical_manifest.read_bytes() == manifest_bytes
+    assert not legacy_request.exists()
+    assert not legacy_manifest.exists()
+    assert _read_json(fixture["actual_feedback"])["measurement_request_sha256"] == (
+        fixture["request"]["measurement_request_sha256"]
+    )
+    assert _read_json(fixture["actual_feedback"])["rows"][0]["row_sha256"] == (
+        fixture["request"]["row_sha256"][fixture["request"]["rows"][0]["row_id"]]
+    )
 
 
 @pytest.mark.parametrize(
@@ -369,26 +435,30 @@ def _completion_mapping(request: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _expected_finalize_argv(fixture: Mapping[str, Any]) -> tuple[str, ...]:
+def _assert_native_argv(
+    fixture: Mapping[str, Any], calls: Sequence[Mapping[str, Any]]
+) -> None:
     profile = fixture["profile"]
     root = fixture["round_root"]
-    return (
+    finalize = calls[0]["argv"]
+    promote = calls[1]["argv"]
+    legacy_manifest = Path(finalize[3])
+    legacy_request = Path(finalize[5])
+    assert legacy_manifest.parent == legacy_request.parent
+    assert legacy_manifest.parent.parent == root
+    assert legacy_manifest.parent.name.startswith(".legacy-finalization-")
+    assert finalize == (
         str(profile.project_python), str(profile.leaves[0].implementation),
-        "--manifest-json", str(root / "performance/performance_manifest.json"),
-        "--measurement-request-json", str(root / "measurement-request.json"),
+        "--manifest-json", str(legacy_manifest),
+        "--measurement-request-json", str(legacy_request),
         "--ap-plan-jsonl", str(root / "ap/ap_plan.jsonl"),
         "--performance-state-jsonl", str(root / "performance/performance_state.jsonl"),
         "--ap-state-jsonl", str(root / "ap/ap_state.jsonl"),
         "--output-dir", str(root / "final"),
     )
-
-
-def _expected_promote_argv(fixture: Mapping[str, Any]) -> tuple[str, ...]:
-    profile = fixture["profile"]
-    root = fixture["round_root"]
-    return (
+    assert promote == (
         str(profile.project_python), str(profile.leaves[1].implementation),
-        "--measurement-request-json", str(root / "measurement-request.json"),
+        "--measurement-request-json", str(legacy_request),
         "--feedback-json", str(root / "final/stage5_feedback_v2_final.json"),
         "--output-dir", str(root / "actual_feedback"),
     )
