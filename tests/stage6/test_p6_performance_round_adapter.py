@@ -38,6 +38,7 @@ class _PerformanceRunner:
         state_statuses: Sequence[str] = ("success", "success", "confirmed_failure", "success"),
         manifest_row_ids: Sequence[str] | None = None,
         job_row_ids: Sequence[str] | None = None,
+        manifest_field: str = "jobs",
     ) -> None:
         self.calls: list[Mapping[str, Any]] = []
         self._planner_returncode = planner_returncode
@@ -45,6 +46,7 @@ class _PerformanceRunner:
         self._state_statuses = tuple(state_statuses)
         self._manifest_row_ids = tuple(manifest_row_ids) if manifest_row_ids is not None else None
         self._job_row_ids = tuple(job_row_ids) if job_row_ids is not None else None
+        self._manifest_field = manifest_field
 
     def run(
         self,
@@ -80,33 +82,33 @@ class _PerformanceRunner:
         request = _read_json(Path(argv[argv.index("--request-json") + 1]))
         output_dir = Path(argv[argv.index("--output-dir") + 1])
         rows = request["rows"]
-        manifest_ids = self._manifest_row_ids or tuple(row["row_id"] for row in rows)
-        job_ids = self._job_row_ids or tuple(row["row_id"] for row in rows)
+        manifest_ids = self._manifest_row_ids or tuple(row["manifest_job_id"] for row in rows)
+        job_ids = self._job_row_ids or tuple(row["manifest_job_id"] for row in rows)
         output_dir.mkdir(parents=True, exist_ok=True)
         _write_json(
             output_dir / "performance_manifest.json",
             {
                 "schema_version": "stage5_performance_manifest_v2",
+                "source_request_schema": request["schema_version"],
+                "source_request_sha256": request["measurement_request_sha256"],
+                "task_id": request["task_id"],
+                "task_sha256": request["task_sha256"],
+                "source_pool": "stage5_online_feedback",
+                "genome_count": 4,
                 "row_count": 4,
-                "rows": [
-                    {"row_id": row_id, "manifest_job_id": row_id}
-                    for row_id in manifest_ids
+                "group_count": 4,
+                "group_ids": [row["group_id"] for row in rows],
+                self._manifest_field: [
+                    _native_manifest_row(row, row_id)
+                    for row, row_id in zip(rows, manifest_ids, strict=True)
                 ],
             },
         )
         (output_dir / "performance_jobs.jsonl").write_text(
             "".join(
-                json.dumps(
-                    {
-                        "job_id": row_id,
-                        "row_id": row_id,
-                        "manifest_job_id": row_id,
-                        "max_attempts": 2,
-                    },
-                    sort_keys=True,
-                )
+                json.dumps(_native_performance_job(row, row_id), sort_keys=True)
                 + "\n"
-                for row_id in job_ids
+                for row, row_id in zip(rows, job_ids, strict=True)
             ),
             encoding="utf-8",
         )
@@ -126,7 +128,7 @@ class _PerformanceRunner:
         state_path.parent.mkdir(parents=True, exist_ok=True)
         state_path.write_text(
             "".join(
-                json.dumps({"job_id": job["job_id"], "status": status}, sort_keys=True) + "\n"
+                json.dumps(_native_state_row(job["job_id"], status), sort_keys=True) + "\n"
                 for job, status in zip(jobs, self._state_statuses, strict=True)
             ),
             encoding="utf-8",
@@ -165,6 +167,53 @@ def test_performance_round_plans_once_then_executes_with_historical_argv(
         assert call["shell"] is False
         assert call["env"] == _expected_env(profile, tmp_path, task_state, round_root)
     assert _read_json(task_state) == {"stage": "performance", "rows": original_rows}
+
+
+def test_performance_round_accepts_native_manifest_jobs_and_state_rows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: native Stage5/Stage3 field names are not accepted."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_quantized_task_state(round_root, request)
+
+    run_performance_round(profile, task_state, round_root, _PerformanceRunner())
+
+    manifest = _read_json(round_root / "performance/performance_manifest.json")
+    jobs = _read_jsonl(round_root / "performance/performance_jobs.jsonl")
+    state = _read_jsonl(round_root / "performance/performance_state.jsonl")
+    assert "jobs" in manifest
+    assert "rows" not in manifest
+    assert set(manifest["jobs"][0]) == set(_native_manifest_row(request["rows"][0]))
+    assert set(jobs[0]) == set(_native_performance_job(request["rows"][0]))
+    assert set(state[0]) == set(_native_state_row(jobs[0]["job_id"], "success"))
+    assert _read_json(task_state)["stage"] == "performance"
+
+
+def test_performance_round_rejects_non_native_manifest_rows_alias(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: adapter accepts fabricated manifest rows instead of native jobs."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_quantized_task_state(round_root, request)
+    original_state = _read_json(task_state)
+
+    with pytest.raises(P6PerformanceRoundAdapterError):
+        run_performance_round(
+            profile,
+            task_state,
+            round_root,
+            _PerformanceRunner(manifest_field="rows"),
+        )
+
+    assert _read_json(task_state) == original_state
 
 
 @pytest.mark.parametrize(
@@ -302,6 +351,76 @@ def _write_leaf(path: Path) -> Path:
     path.write_text("# fake performance leaf\n", encoding="utf-8")
     path.chmod(0o700)
     return path
+
+
+def _native_manifest_row(row: Mapping[str, Any], row_id: str | None = None) -> dict[str, Any]:
+    manifest_id = row_id or str(row["manifest_job_id"])
+    return {
+        **dict(row),
+        "schema_version": "stage5_performance_manifest_row_v1",
+        "job_id": manifest_id,
+        "manifest_job_id": manifest_id,
+        "split": "online_feedback",
+        "source_pool": "stage5_online_feedback",
+        "required_metrics": ["latency", "energy", "ap"],
+        "source_status": "ready",
+        "source_evidence_path": f"/native/evidence/{manifest_id}.json",
+        "source_evidence_sha256": "d" * 64,
+        "terminal_status": "pending",
+    }
+
+
+def _native_performance_job(row: Mapping[str, Any], row_id: str | None = None) -> dict[str, Any]:
+    manifest_id = row_id or str(row["manifest_job_id"])
+    runner_key = "tvm_int8" if row["q_mode"] == "int8" else "tvm_fp16"
+    return {
+        "schema_version": "stage35_gold32_performance_job_v1",
+        "job_id": f"{row['group_id']}|{runner_key}",
+        "manifest_job_id": manifest_id,
+        "group_id": str(row["group_id"]),
+        "model": str(row["model"]),
+        "width_key": "x".join(str(item) for item in row["width"]),
+        "q_mode": str(row["q_mode"]),
+        "runner_key": runner_key,
+        "dispatch_key": str(row["dispatch_key"]),
+        "split": "online_feedback",
+        "onnx_path": str(row["source_contract"]["onnx_path"]),
+        "calibration_root": f"/native/calibration/{manifest_id}",
+        "source_contract": dict(row["source_contract"]),
+        "command": ["/native/python", "measure.py", "--gpu", "2"],
+        "assigned_gpu": 2,
+        "gpu_pool": "2,5,7",
+        "remote_artifact_root": "/native/artifacts",
+        "expected_result_json": f"/native/artifacts/{manifest_id}/result.json",
+        "max_attempts": 2,
+        "terminal_status": "pending",
+    }
+
+
+def _native_state_row(job_id: str, status: str) -> dict[str, Any]:
+    return {
+        "schema_version": "stage3_execute_performance_plan_v3_state",
+        "job_id": job_id,
+        "attempt": 1,
+        "status": status,
+        "returncode": 0,
+        "start_time_unix": 1.0,
+        "end_time_unix": 2.0,
+        "elapsed_s": 1.0,
+        "stdout_path": f"/native/logs/{job_id}.stdout.txt",
+        "stderr_path": f"/native/logs/{job_id}.stderr.txt",
+        "result_json": f"/native/results/{job_id}.json",
+        "result_sha256": "e" * 64,
+        "failure_reasons": [],
+    }
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
 
 
 def _expected_argv(

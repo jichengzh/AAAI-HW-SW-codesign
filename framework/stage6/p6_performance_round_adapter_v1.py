@@ -110,10 +110,9 @@ def _validate_native_plan(
     manifest = _read_mapping(performance_root / "performance_manifest.json")
     jobs = _read_jsonl_mappings(performance_root / "performance_jobs.jsonl")
     expected = tuple(str(row["manifest_job_id"]) for row in context.request["rows"])
-    manifest_jobs = manifest.get("jobs", manifest.get("rows"))
-    if tuple(_identity(row) for row in _sequence(manifest_jobs)) != expected:
+    if tuple(_manifest_job_id(row) for row in _sequence(manifest.get("jobs"))) != expected:
         raise P6PerformanceRoundAdapterError()
-    if tuple(_identity(row) for row in jobs) != expected:
+    if tuple(_manifest_job_id(row) for row in jobs) != expected:
         raise P6PerformanceRoundAdapterError()
     return jobs
 
@@ -213,10 +212,10 @@ def _sequence(value: object) -> tuple[object, ...]:
     return tuple(value)
 
 
-def _identity(row: object) -> str:
+def _manifest_job_id(row: object) -> str:
     if not isinstance(row, Mapping):
         raise P6PerformanceRoundAdapterError()
-    value = row.get("manifest_job_id", row.get("row_id"))
+    value = row.get("manifest_job_id")
     if not isinstance(value, str) or not value:
         raise P6PerformanceRoundAdapterError()
     return value

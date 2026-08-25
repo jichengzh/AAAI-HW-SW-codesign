@@ -201,6 +201,15 @@ def _write_executable(path: Path, body: str) -> Path:
 
 
 def _plan_leaf_body() -> str:
+    return (
+        _plan_leaf_imports()
+        + _plan_leaf_manifest_writer()
+        + _plan_leaf_jobs_writer()
+        + _plan_leaf_log_writer()
+    )
+
+
+def _plan_leaf_imports() -> str:
     return r"""
 from __future__ import annotations
 import json
@@ -212,20 +221,71 @@ request = json.loads(Path(sys.argv[sys.argv.index("--request-json") + 1]).read_t
 output_dir = Path(sys.argv[sys.argv.index("--output-dir") + 1])
 output_dir.mkdir(parents=True, exist_ok=True)
 rows = request["rows"]
+"""
+
+
+def _plan_leaf_manifest_writer() -> str:
+    return r"""
 (output_dir / "performance_manifest.json").write_text(json.dumps({
     "schema_version": "stage5_performance_manifest_v2",
+    "source_request_schema": request["schema_version"],
+    "source_request_sha256": request["measurement_request_sha256"],
+    "task_id": request["task_id"],
+    "task_sha256": request["task_sha256"],
+    "source_pool": "stage5_online_feedback",
+    "genome_count": 4,
     "row_count": 4,
-    "rows": [{"row_id": row["row_id"], "manifest_job_id": row["row_id"]} for row in rows],
+    "group_count": 4,
+    "group_ids": [row["group_id"] for row in rows],
+    "jobs": [{
+        **row,
+        "schema_version": "stage5_performance_manifest_row_v1",
+        "job_id": row["manifest_job_id"],
+        "manifest_job_id": row["manifest_job_id"],
+        "split": "online_feedback",
+        "source_pool": "stage5_online_feedback",
+        "required_metrics": ["latency", "energy", "ap"],
+        "source_status": "ready",
+        "source_evidence_path": "/native/evidence/" + row["manifest_job_id"] + ".json",
+        "source_evidence_sha256": "d" * 64,
+        "terminal_status": "pending",
+    } for row in rows],
 }, sort_keys=True), encoding="utf-8")
+"""
+
+
+def _plan_leaf_jobs_writer() -> str:
+    return r"""
 (output_dir / "performance_jobs.jsonl").write_text("".join(
     json.dumps({
-        "job_id": row["row_id"],
-        "row_id": row["row_id"],
-        "manifest_job_id": row["row_id"],
+        "schema_version": "stage35_gold32_performance_job_v1",
+        "job_id": row["group_id"] + "|" + ("tvm_int8" if row["q_mode"] == "int8" else "tvm_fp16"),
+        "manifest_job_id": row["manifest_job_id"],
+        "group_id": row["group_id"],
+        "model": row["model"],
+        "width_key": "x".join(str(item) for item in row["width"]),
+        "q_mode": row["q_mode"],
+        "runner_key": "tvm_int8" if row["q_mode"] == "int8" else "tvm_fp16",
+        "dispatch_key": row["dispatch_key"],
+        "split": "online_feedback",
+        "onnx_path": row["source_contract"]["onnx_path"],
+        "calibration_root": "/native/calibration/" + row["manifest_job_id"],
+        "source_contract": row["source_contract"],
+        "command": ["/native/python", "measure.py", "--gpu", "2"],
+        "assigned_gpu": 2,
+        "gpu_pool": "2,5,7",
+        "remote_artifact_root": "/native/artifacts",
+        "expected_result_json": "/native/artifacts/" + row["manifest_job_id"] + "/result.json",
         "max_attempts": 2,
+        "terminal_status": "pending",
     }, sort_keys=True) + "\n"
     for row in rows
 ), encoding="utf-8")
+"""
+
+
+def _plan_leaf_log_writer() -> str:
+    return r"""
 round_root = Path(os.environ["P6_HISTORY_ROUND_OUTPUT_ROOT"])
 with (round_root / "performance-leaves.log").open("a", encoding="utf-8") as handle:
     handle.write(json.dumps({
@@ -251,8 +311,22 @@ jobs = [
 ]
 state_path = Path(sys.argv[sys.argv.index("--state-jsonl") + 1])
 state_path.write_text("".join(
-    json.dumps({"job_id": job["job_id"], "status": "success"}, sort_keys=True) + "\n"
-    for job in jobs
+    json.dumps({
+        "schema_version": "stage3_execute_performance_plan_v3_state",
+        "job_id": row["job_id"],
+        "attempt": 1,
+        "status": "success",
+        "returncode": 0,
+        "start_time_unix": 1.0,
+        "end_time_unix": 2.0,
+        "elapsed_s": 1.0,
+        "stdout_path": "/native/logs/" + row["job_id"] + ".stdout.txt",
+        "stderr_path": "/native/logs/" + row["job_id"] + ".stderr.txt",
+        "result_json": "/native/results/" + row["job_id"] + ".json",
+        "result_sha256": "e" * 64,
+        "failure_reasons": [],
+    }, sort_keys=True) + "\n"
+    for row in jobs
 ), encoding="utf-8")
 round_root = Path(os.environ["P6_HISTORY_ROUND_OUTPUT_ROOT"])
 with (round_root / "performance-leaves.log").open("a", encoding="utf-8") as handle:
