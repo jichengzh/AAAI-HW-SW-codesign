@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
+import tempfile  # noqa: F401 - preserved public monkeypatch surface
 from typing import Any
 
 import yaml
@@ -22,10 +22,9 @@ from framework.stage6.p6_external_training_binding_v1 import (
     load_external_training_binding,
     validate_external_training_binding,
 )
-from framework.stage6.coptv2x_h800_search_v2 import (
-    P6CoptV2XContractError,
-    load_local_config,
-    load_public_contract,
+from framework.stage6.p6_full_chain_bootstrap_outputs_v1 import (
+    resolve_private_outputs,
+    validate_rendered_pair,
 )
 from framework.stage6.p6_history_binding_v1 import (
     GpuProbe,
@@ -34,7 +33,6 @@ from framework.stage6.p6_history_binding_v1 import (
     build_history_binding,
     prevalidate_private_binding_pair_destinations,
     validate_binding_recipe_consistency,
-    validate_history_execution_binding,
     validate_ready_source_contract_template,
     write_private_binding_pair,
 )
@@ -145,32 +143,21 @@ _UniqueKeyLoader.add_constructor(
 )
 
 
-def materialize_full_chain_binding(
-    legacy_local_config: Path,
-    runner_template: Path,
-    local_output_root: Path,
-    binding_output: Path,
-    config_output: Path,
-    gpu_probe: GpuProbe,
-    *,
-    source_wrapper_profile: Path | None = None,
-    external_training_binding: Path | None = None,
-    post_source_adapter_profile: Path | None = None,
-) -> dict[str, Any]:
-    """Validate private inputs and atomically materialize one binding/config pair."""
-    output_root, binding_path, config_path = _resolve_private_outputs(
-        local_output_root, binding_output, config_output
-    )
+def _prevalidate_pair(binding_path: Path, config_path: Path) -> None:
     try:
         prevalidate_private_binding_pair_destinations(
-            binding_path,
-            config_path,
-            REPOSITORY_ROOT,
+            binding_path, config_path, REPOSITORY_ROOT
         )
     except P6HistoryBindingError as error:
         raise FullChainBootstrapError(
             error.category, "private pair destination is unsafe"
         ) from error
+
+
+def _validated_bootstrap_source(
+    legacy_local_config: Path,
+    runner_template: Path,
+) -> tuple[_LegacyLocator, Path, Mapping[str, Any] | None, Mapping[str, Any], bool]:
     locator = _load_legacy_local_locator(legacy_local_config)
     root = _unique_common_history_root(locator)
     expected_recipe_path = _validate_expected_recipe_location(locator, root)
@@ -186,6 +173,20 @@ def materialize_full_chain_binding(
     recipe_v2 = (
         isinstance(recipe, Mapping) and recipe.get("schema_version") == RECIPE_V2
     )
+    return locator, root, expected_recipe, source_contract, recipe_v2
+
+
+def _validate_bootstrap_external(
+    source_contract: Mapping[str, Any],
+    *,
+    recipe_v2: bool,
+    source_wrapper_profile: Path | None,
+    external_training_binding: Path | None,
+    root: Path,
+    output_root: Path,
+    binding_path: Path,
+    config_path: Path,
+) -> None:
     if recipe_v2 and (
         source_wrapper_profile is None or external_training_binding is None
     ):
@@ -208,6 +209,15 @@ def materialize_full_chain_binding(
             raise FullChainBootstrapError(
                 error.category, "external training binding is invalid"
             ) from error
+
+
+def _validate_bootstrap_profiles(
+    *,
+    root: Path,
+    runner_template: Path,
+    source_wrapper_profile: Path | None,
+    post_source_adapter_profile: Path | None,
+) -> None:
     if source_wrapper_profile is not None:
         try:
             profile = load_source_wrapper_profile(source_wrapper_profile)
@@ -241,6 +251,13 @@ def materialize_full_chain_binding(
             raise FullChainBootstrapError(
                 category, "post-source adapter profile is invalid"
             ) from error
+
+
+def _validated_runner_interface(
+    runner_template: Path,
+    root: Path,
+    source_wrapper_profile: Path | None,
+) -> tuple[Any, Mapping[str, Any], dict[str, Any]]:
     try:
         validated_template = validate_pre_provision_runner_template(
             runner_template,
@@ -263,8 +280,19 @@ def materialize_full_chain_binding(
     interface = _render_runner_interface(
         root, validated_template.execution_interface
     )
+    return validated_template, stage1_scan, interface
+
+
+def _build_private_binding(
+    *,
+    root: Path,
+    locator: _LegacyLocator,
+    validated_template: Any,
+    interface: Mapping[str, Any],
+    gpu_probe: GpuProbe,
+) -> dict[str, Any]:
     try:
-        binding = build_history_binding(
+        return build_history_binding(
             root,
             component_paths={
                 role: str(path)
@@ -288,14 +316,24 @@ def materialize_full_chain_binding(
             else error.category
         )
         raise FullChainBootstrapError(category, "history binding is invalid") from error
-    config = _render_full_chain_local_config(
-        locator,
-        stage1_scan,
-        root,
+
+
+def _publish_bootstrap_pair(
+    *,
+    binding: Mapping[str, Any],
+    config: Mapping[str, Any],
+    output_root: Path,
+    expected_recipe: Mapping[str, Any] | None,
+    binding_path: Path,
+    config_path: Path,
+) -> None:
+    validate_rendered_pair(
+        binding,
+        config,
         output_root,
-        binding_path,
+        public_contract_path=PUBLIC_CONTRACT_PATH,
+        error_factory=FullChainBootstrapError,
     )
-    _validate_rendered_pair(binding, config, output_root)
     try:
         validate_binding_recipe_consistency(binding, expected_recipe)
     except P6HistoryBindingError as error:
@@ -304,16 +342,91 @@ def materialize_full_chain_binding(
         ) from error
     try:
         write_private_binding_pair(
-            binding,
-            config,
-            binding_path,
-            config_path,
-            REPOSITORY_ROOT,
+            binding, config, binding_path, config_path, REPOSITORY_ROOT
         )
     except P6HistoryBindingError as error:
         raise FullChainBootstrapError(
             error.category, "private pair could not be written"
         ) from error
+
+
+def _validated_bootstrap_runtime(
+    source_contract: Mapping[str, Any],
+    *,
+    recipe_v2: bool,
+    source_wrapper_profile: Path | None,
+    external_training_binding: Path | None,
+    post_source_adapter_profile: Path | None,
+    root: Path,
+    output_root: Path,
+    binding_path: Path,
+    config_path: Path,
+    runner_template: Path,
+) -> tuple[Any, Mapping[str, Any], dict[str, Any]]:
+    _validate_bootstrap_external(
+        source_contract,
+        recipe_v2=recipe_v2,
+        source_wrapper_profile=source_wrapper_profile,
+        external_training_binding=external_training_binding,
+        root=root,
+        output_root=output_root,
+        binding_path=binding_path,
+        config_path=config_path,
+    )
+    _validate_bootstrap_profiles(
+        root=root,
+        runner_template=runner_template,
+        source_wrapper_profile=source_wrapper_profile,
+        post_source_adapter_profile=post_source_adapter_profile,
+    )
+    return _validated_runner_interface(runner_template, root, source_wrapper_profile)
+
+
+def materialize_full_chain_binding(
+    legacy_local_config: Path, runner_template: Path, local_output_root: Path,
+    binding_output: Path, config_output: Path, gpu_probe: GpuProbe,
+    *,
+    source_wrapper_profile: Path | None = None, external_training_binding: Path | None = None,
+    post_source_adapter_profile: Path | None = None,
+) -> dict[str, Any]:
+    """Validate private inputs and atomically materialize one binding/config pair."""
+    output_root, binding_path, config_path = resolve_private_outputs(
+        local_output_root, binding_output, config_output, error_factory=FullChainBootstrapError
+    )
+    _prevalidate_pair(binding_path, config_path)
+    locator, root, expected_recipe, source_contract, recipe_v2 = (
+        _validated_bootstrap_source(legacy_local_config, runner_template)
+    )
+    validated_template, stage1_scan, interface = _validated_bootstrap_runtime(
+        source_contract,
+        recipe_v2=recipe_v2,
+        source_wrapper_profile=source_wrapper_profile,
+        external_training_binding=external_training_binding,
+        post_source_adapter_profile=post_source_adapter_profile,
+        root=root,
+        output_root=output_root,
+        binding_path=binding_path,
+        config_path=config_path,
+        runner_template=runner_template,
+    )
+    binding = _build_private_binding(
+        root=root,
+        locator=locator,
+        validated_template=validated_template,
+        interface=interface,
+        gpu_probe=gpu_probe,
+    )
+    config = _render_full_chain_local_config(
+        locator, stage1_scan, root, output_root, binding_path
+    )
+    _publish_bootstrap_pair(
+        binding=binding,
+        config=config,
+        output_root=output_root,
+        expected_recipe=expected_recipe,
+        binding_path=binding_path,
+        config_path=config_path,
+    )
     return binding
 
 
@@ -676,94 +789,6 @@ def _render_full_chain_local_config(
         },
         "local_output_root": str(local_output_root),
     }
-
-
-def _validate_rendered_pair(
-    binding: Mapping[str, Any],
-    config: Mapping[str, Any],
-    local_output_root: Path,
-) -> None:
-    try:
-        validate_history_execution_binding(binding)
-        contract = load_public_contract(PUBLIC_CONTRACT_PATH)
-        descriptor, raw_path = tempfile.mkstemp(
-            dir=local_output_root,
-            prefix=".p6-full-chain-local.",
-            suffix=".json",
-        )
-        path = Path(raw_path)
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                json.dump(config, handle, ensure_ascii=True, allow_nan=False)
-                handle.flush()
-                os.fsync(handle.fileno())
-            load_local_config(path, contract)
-        finally:
-            path.unlink(missing_ok=True)
-    except P6HistoryBindingError as error:
-        raise FullChainBootstrapError(
-            "execution_interface_unavailable", "rendered binding is invalid"
-        ) from error
-    except (OSError, P6CoptV2XContractError, TypeError, ValueError) as error:
-        raise FullChainBootstrapError(
-            "local_config_invalid", "rendered local config is invalid"
-        ) from error
-
-
-def _resolve_private_outputs(
-    raw_root: Path,
-    raw_binding: Path,
-    raw_config: Path,
-) -> tuple[Path, Path, Path]:
-    if (
-        not all(isinstance(path, Path) and path.is_absolute() for path in (
-            raw_root,
-            raw_binding,
-            raw_config,
-        ))
-        or raw_root.is_symlink()
-    ):
-        raise FullChainBootstrapError(
-            "unsafe_destination", "private output paths are invalid"
-        )
-    try:
-        root = raw_root.resolve(strict=True)
-    except OSError as error:
-        raise FullChainBootstrapError(
-            "unsafe_destination", "private output root is unavailable"
-        ) from error
-    if not root.is_dir():
-        raise FullChainBootstrapError(
-            "unsafe_destination", "private output root is invalid"
-        )
-    destinations: list[Path] = []
-    for raw_path in (raw_binding, raw_config):
-        if raw_path.is_symlink():
-            raise FullChainBootstrapError(
-                "unsafe_destination", "private output path is unsafe"
-            )
-        try:
-            parent = raw_path.parent.resolve(strict=True)
-            destination = (parent / raw_path.name).resolve(strict=False)
-        except OSError as error:
-            raise FullChainBootstrapError(
-                "unsafe_destination", "private output path is unavailable"
-            ) from error
-        if not _is_relative_to(destination, root) or destination == root:
-            raise FullChainBootstrapError(
-                "unsafe_destination", "private output escapes its root"
-            )
-        destinations.append(destination)
-    if destinations[0] == destinations[1]:
-        raise FullChainBootstrapError(
-            "unsafe_destination", "private output paths must differ"
-        )
-    stage1_manifest = root / "stage1_partition_manifest.json"
-    if stage1_manifest in destinations:
-        raise FullChainBootstrapError(
-            "unsafe_destination", "private output path is reserved"
-        )
-    return root, destinations[0], destinations[1]
 
 
 def _is_relative_to(path: Path, parent: Path) -> bool:

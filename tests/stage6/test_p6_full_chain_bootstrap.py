@@ -11,6 +11,9 @@ import pytest
 import yaml
 
 import framework.stage6.p6_full_chain_bootstrap_v1 as bootstrap
+from framework.stage6.p6_full_chain_bootstrap_outputs_v1 import (
+    resolve_private_outputs,
+)
 import framework.stage6.p6_runner_template_validator_v1 as runner_template_validator
 from framework.stage6.coptv2x_h800_search_v2 import (
     PublicP6CoptV2XContract,
@@ -1118,3 +1121,53 @@ def test_nonignored_repository_output_is_rejected_before_validation_temporary(
     assert captured.value.category == "unsafe_destination"
     assert temporary_calls == []
     assert tuple(output_root.iterdir()) == ()
+
+
+@pytest.mark.parametrize(
+    ("mutation", "detail"),
+    (
+        ("missing_root", "private output root is unavailable"),
+        ("file_root", "private output root is invalid"),
+        ("symlink_leaf", "private output path is unsafe"),
+        ("missing_parent", "private output path is unavailable"),
+        ("escape", "private output escapes its root"),
+        ("same_leaf", "private output paths must differ"),
+    ),
+)
+def test_private_output_resolution_preserves_failure_categories(
+    tmp_path: Path,
+    mutation: str,
+    detail: str,
+) -> None:
+    root = tmp_path / "outputs"
+    root.mkdir()
+    binding = root / "binding.json"
+    config = root / "local.yaml"
+    if mutation == "missing_root":
+        root = tmp_path / "missing"
+        binding, config = root / "binding.json", root / "local.yaml"
+    elif mutation == "file_root":
+        root = tmp_path / "root-file"
+        root.write_text("not-a-directory", encoding="utf-8")
+        binding, config = root / "binding.json", root / "local.yaml"
+    elif mutation == "symlink_leaf":
+        target = root / "target.json"
+        target.write_text("{}", encoding="utf-8")
+        binding.symlink_to(target)
+    elif mutation == "missing_parent":
+        config = root / "missing" / "local.yaml"
+    elif mutation == "escape":
+        binding = tmp_path / "outside.json"
+    elif mutation == "same_leaf":
+        config = binding
+
+    with pytest.raises(FullChainBootstrapError) as captured:
+        resolve_private_outputs(
+            root,
+            binding,
+            config,
+            error_factory=FullChainBootstrapError,
+        )
+
+    assert captured.value.category == "unsafe_destination"
+    assert captured.value.detail == detail

@@ -4,12 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import copy
-import json
-import os
 from pathlib import Path
 import shutil
 import subprocess
-import sys
 import tempfile
 from typing import Any
 
@@ -17,15 +14,18 @@ import yaml
 
 from framework.stage6.p6_external_training_binding_v1 import (
     bind_external_training_contract,
-    external_training_binding_to_mapping,
     validate_external_training_binding,
 )
 from framework.stage6.p6_history_execution_closure_v1 import (
-    copy_execution_closure,
-    render_normalized_runner_template,
     validate_execution_closure_manifest,
-    validate_normalized_runner_closure,
     validate_source_runner_roles,
+)
+from framework.stage6.p6_history_normalization_staging_v1 import (
+    copy_private_tree,
+    publish_normalized_history,
+    stage_base_history,
+    stage_recipe_v2_history,
+    validate_destination_external,
 )
 from framework.stage6.p6_history_recipe_normalization_v1 import (
     P6HistoryNormalizationError,
@@ -39,14 +39,6 @@ from framework.stage6.p6_history_recipe_normalization_v1 import (
     _validate_recipe,
     _validate_source_group,
 )
-from framework.stage6.p6_post_source_adapter_profile_v1 import (
-    build_post_source_adapter_profile,
-    load_post_source_adapter_profile,
-    post_source_adapter_profile_to_mapping,
-)
-from framework.stage6.p6_post_source_wrapper_template_v1 import (
-    render_post_source_adapter_wrappers,
-)
 from framework.stage6.p6_post_source_leaf_binding_v1 import (
     P6PostSourceLeafBindingError,
     validate_post_source_leaf_binding,
@@ -56,7 +48,6 @@ from framework.stage6.p6_runner_template_validator_v1 import (
 )
 from framework.stage6.p6_source_wrapper_profile_v1 import (
     extract_project_python_from_source,
-    render_self_contained_source_wrapper,
 )
 
 
@@ -160,12 +151,7 @@ def _resolve_existing_json(raw_path: object, history_root: Path, label: str) -> 
     return resolved
 
 
-def _validate_private_source_map(
-    source_map: Mapping[str, Any],
-    history_root: Path,
-    *,
-    runner_template_path: Path | None = None,
-) -> dict[str, Any]:
+def _validate_source_map_schema(source_map: Mapping[str, Any]) -> tuple[str, bool]:
     if not isinstance(source_map, Mapping):
         _invalid("source map contract is invalid")
     schema_version = source_map.get("schema_version")
@@ -193,6 +179,15 @@ def _validate_private_source_map(
             _invalid("post-source leaf binding requires source map v3")
     else:
         _invalid("source map contract is invalid")
+    return schema_version, schema_version in {
+        SOURCE_MAP_V2_SCHEMA_VERSION,
+        SOURCE_MAP_V3_SCHEMA_VERSION,
+    }
+
+
+def _canonical_history_root(
+    source_map: Mapping[str, Any], history_root: Path
+) -> tuple[Path, Path]:
     if (
         not isinstance(history_root, Path)
         or not history_root.is_absolute()
@@ -213,10 +208,16 @@ def _validate_private_source_map(
     git_root = _git_root_for(resolved_history_root)
     if resolved_history_root != git_root:
         _invalid("history root is invalid")
-    recipe_v2_source = schema_version in {
-        SOURCE_MAP_V2_SCHEMA_VERSION,
-        SOURCE_MAP_V3_SCHEMA_VERSION,
-    }
+    return resolved_history_root, git_root
+
+
+def _canonical_assets(
+    source_map: Mapping[str, Any],
+    resolved_history_root: Path,
+    git_root: Path,
+    *,
+    recipe_v2_source: bool,
+) -> dict[str, Path]:
     assets = source_map.get("asset_paths")
     if not isinstance(assets, Mapping) or set(assets) != set(ASSET_LABELS):
         _invalid("asset mapping is invalid")
@@ -234,6 +235,12 @@ def _validate_private_source_map(
             for path in canonical_assets.values()
         ):
             _invalid("asset mapping escapes history root")
+    return canonical_assets
+
+
+def _canonical_inputs(
+    source_map: Mapping[str, Any], resolved_history_root: Path
+) -> dict[str, Path]:
     raw_inputs = source_map.get("input_sources")
     if not isinstance(raw_inputs, Mapping) or set(raw_inputs) != set(INPUT_NAMES):
         _invalid("input source mapping is invalid")
@@ -243,69 +250,92 @@ def _validate_private_source_map(
     }
     if len(set(canonical_inputs.values())) != len(INPUT_NAMES):
         _invalid("input source paths must be unique")
+    return canonical_inputs
+
+
+def _source_recipe(
+    source_map: Mapping[str, Any],
+    schema_version: str,
+    resolved_history_root: Path,
+    runner_template_path: Path | None,
+) -> tuple[Mapping[str, Any], bool]:
     if schema_version == SOURCE_MAP_SCHEMA_VERSION:
-        recipe = _validate_recipe(source_map.get("dynamic_materialization_recipe"))
-        derived = False
-    else:
-        recipe, derived = _recipe_from_v2_source_map(
-            source_map, resolved_history_root, runner_template_path
+        return _validate_recipe(source_map.get("dynamic_materialization_recipe")), False
+    return _recipe_from_v2_source_map(
+        source_map, resolved_history_root, runner_template_path
+    )
+
+
+def _execution_runtime(
+    source_map: Mapping[str, Any],
+    resolved_history_root: Path,
+    runner_template_path: Path | None,
+) -> tuple[Any, Any, Any, Path]:
+    if runner_template_path is None:
+        _invalid("runner template is required")
+    external_training = validate_external_training_binding(
+        source_map.get("external_training_binding"),
+        code_toolchain_root=resolved_history_root,
+        local_output_root=resolved_history_root / ".p6-normalization-output-sentinel",
+        reserved_paths=(),
+    )
+    execution_closure = validate_execution_closure_manifest(
+        source_map.get("execution_code_closure"),
+        source_history_root=resolved_history_root,
+        external_training=external_training,
+    )
+    source_runner = validate_pre_provision_runner_template(
+        runner_template_path,
+        resolved_history_root,
+        require_exact_history_environment=True,
+    )
+    validate_source_runner_roles(source_runner, execution_closure)
+    source_role = next(
+        role for role in execution_closure.roles if role.role == "source_materializer"
+    )
+    source_root = next(
+        root
+        for root in execution_closure.roots
+        if root.closure_id == source_role.closure_id
+    )
+    project_python = extract_project_python_from_source(
+        source_root.source_root / source_role.entrypoint_relative_path
+    )
+    return external_training, execution_closure, source_runner, project_python
+
+
+def _post_source_binding(
+    source_map: Mapping[str, Any], schema_version: str, execution_closure: Any
+) -> Any:
+    if schema_version != SOURCE_MAP_V3_SCHEMA_VERSION:
+        return None
+    try:
+        return validate_post_source_leaf_binding(
+            source_map.get("post_source_leaf_binding"),
+            execution_closure=execution_closure,
         )
-    raw_source_group = copy.deepcopy(source_map.get("source_contract"))
-    external_training = None
-    execution_closure = None
-    source_runner = None
-    project_python = None
-    post_source_leaf_binding = None
-    if recipe_v2_source:
-        if runner_template_path is None:
-            _invalid("runner template is required")
-        external_training = validate_external_training_binding(
-            source_map.get("external_training_binding"),
-            code_toolchain_root=resolved_history_root,
-            local_output_root=resolved_history_root / ".p6-normalization-output-sentinel",
-            reserved_paths=(),
-        )
-        execution_closure = validate_execution_closure_manifest(
-            source_map.get("execution_code_closure"),
-            source_history_root=resolved_history_root,
-            external_training=external_training,
-        )
-        source_runner = validate_pre_provision_runner_template(
-            runner_template_path,
-            resolved_history_root,
-            require_exact_history_environment=True,
-        )
-        validate_source_runner_roles(source_runner, execution_closure)
-        source_role = next(
-            role for role in execution_closure.roles if role.role == "source_materializer"
-        )
-        source_root = next(
-            root
-            for root in execution_closure.roots
-            if root.closure_id == source_role.closure_id
-        )
-        project_python = extract_project_python_from_source(
-            source_root.source_root / source_role.entrypoint_relative_path
-        )
-        if schema_version == SOURCE_MAP_V3_SCHEMA_VERSION:
-            try:
-                post_source_leaf_binding = validate_post_source_leaf_binding(
-                    source_map.get("post_source_leaf_binding"),
-                    execution_closure=execution_closure,
-                )
-            except P6PostSourceLeafBindingError as error:
-                raise P6HistoryNormalizationError(
-                    "history_normalization_invalid",
-                    "post-source leaf binding is invalid",
-                ) from error
-        if not isinstance(raw_source_group, Mapping) or not isinstance(
-            raw_source_group.get("source_contract"), Mapping
-        ):
-            _invalid("source contract is invalid")
-        raw_source_group = copy.deepcopy(dict(raw_source_group))
-        raw_source_group["source_contract"] = bind_external_training_contract(
-            raw_source_group["source_contract"], external_training
-        )
+    except P6PostSourceLeafBindingError as error:
+        raise P6HistoryNormalizationError(
+            "history_normalization_invalid",
+            "post-source leaf binding is invalid",
+        ) from error
+
+
+def _bind_source_group(raw_source_group: object, external_training: Any) -> dict[str, Any]:
+    if not isinstance(raw_source_group, Mapping) or not isinstance(
+        raw_source_group.get("source_contract"), Mapping
+    ):
+        _invalid("source contract is invalid")
+    bound = copy.deepcopy(dict(raw_source_group))
+    bound["source_contract"] = bind_external_training_contract(
+        bound["source_contract"], external_training
+    )
+    return bound
+
+
+def _with_derived_recipe(
+    raw_source_group: object, recipe: Mapping[str, Any], *, derived: bool
+) -> object:
     if derived:
         if not isinstance(raw_source_group, Mapping):
             _derivation_invalid("source contract is invalid")
@@ -320,8 +350,16 @@ def _validate_private_source_map(
         raw_source_group["source_contract"][
             "dynamic_materialization_recipe"
         ] = copy.deepcopy(recipe)
+    return raw_source_group
+
+
+def _validated_source_group(
+    raw_source_group: object,
+    recipe: Mapping[str, Any],
+    schema_version: str,
+) -> Mapping[str, Any]:
     try:
-        source_group = _validate_source_group(raw_source_group, recipe)
+        return _validate_source_group(raw_source_group, recipe)
     except P6HistoryNormalizationError as error:
         if schema_version == SOURCE_MAP_V2_SCHEMA_VERSION:
             raise P6HistoryNormalizationError(
@@ -329,14 +367,28 @@ def _validate_private_source_map(
                 "source contract recipe is inconsistent",
             ) from error
         raise
+
+
+def _canonical_source_map(
+    *,
+    resolved_history_root: Path,
+    canonical_assets: Mapping[str, Path],
+    canonical_inputs: Mapping[str, Path],
+    source_group: Mapping[str, Any],
+    recipe: Mapping[str, Any],
+    runtime: tuple[Any, Any, Any, Path] | None,
+    post_source_leaf_binding: Any,
+    derived: bool,
+) -> dict[str, Any]:
     canonical = {
         "history_root": resolved_history_root,
-        "asset_paths": canonical_assets,
-        "input_sources": canonical_inputs,
+        "asset_paths": dict(canonical_assets),
+        "input_sources": dict(canonical_inputs),
         "source_contract": source_group,
         "dynamic_materialization_recipe": recipe,
     }
-    if recipe_v2_source:
+    if runtime is not None:
+        external_training, execution_closure, source_runner, project_python = runtime
         canonical["external_training"] = external_training
         canonical["execution_closure"] = execution_closure
         canonical["source_runner"] = source_runner
@@ -346,6 +398,48 @@ def _validate_private_source_map(
     if derived:
         canonical["derived_recipe"] = copy.deepcopy(recipe)
     return canonical
+
+
+def _validate_private_source_map(
+    source_map: Mapping[str, Any],
+    history_root: Path,
+    *,
+    runner_template_path: Path | None = None,
+) -> dict[str, Any]:
+    schema_version, recipe_v2_source = _validate_source_map_schema(source_map)
+    resolved_root, git_root = _canonical_history_root(source_map, history_root)
+    assets = _canonical_assets(
+        source_map, resolved_root, git_root, recipe_v2_source=recipe_v2_source
+    )
+    inputs = _canonical_inputs(source_map, resolved_root)
+    recipe, derived = _source_recipe(
+        source_map, schema_version, resolved_root, runner_template_path
+    )
+    raw_source_group = copy.deepcopy(source_map.get("source_contract"))
+    runtime = None
+    post_source_leaf_binding = None
+    if recipe_v2_source:
+        runtime = _execution_runtime(source_map, resolved_root, runner_template_path)
+        post_source_leaf_binding = _post_source_binding(
+            source_map, schema_version, runtime[1]
+        )
+        raw_source_group = _bind_source_group(raw_source_group, runtime[0])
+    raw_source_group = _with_derived_recipe(
+        raw_source_group, recipe, derived=derived
+    )
+    source_group = _validated_source_group(
+        raw_source_group, recipe, schema_version
+    )
+    return _canonical_source_map(
+        resolved_history_root=resolved_root,
+        canonical_assets=assets,
+        canonical_inputs=inputs,
+        source_group=source_group,
+        recipe=recipe,
+        runtime=runtime,
+        post_source_leaf_binding=post_source_leaf_binding,
+        derived=derived,
+    )
 
 
 def _git_check_ignored(repository: Path, path: Path) -> bool:
@@ -394,176 +488,6 @@ def _validate_private_destination(private_dir: Path) -> Path:
     return destination
 
 
-def _copy_json_inputs(input_sources: Mapping[str, Path], inputs_dir: Path) -> dict[str, Path]:
-    inputs_dir.mkdir(parents=True)
-    paths: dict[str, Path] = {}
-    for name in INPUT_NAMES:
-        destination = inputs_dir / f"{name}.json"
-        shutil.copyfile(input_sources[name], destination, follow_symlinks=False)
-        json.loads(destination.read_text(encoding="utf-8"))
-        paths[name] = destination
-    return paths
-
-
-def _copy_private_tree(source: Path, destination: Path) -> None:
-    if _contains_symlink_component(source):
-        _invalid("private asset source is invalid")
-    destination.mkdir(parents=True)
-    for raw_path in source.rglob("*"):
-        if _contains_symlink_component(raw_path):
-            _invalid("private asset source contains a symlink")
-        relative = raw_path.relative_to(source)
-        target = destination / relative
-        if raw_path.is_dir():
-            target.mkdir()
-        elif raw_path.is_file():
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(raw_path, target, follow_symlinks=False)
-            shutil.copymode(raw_path, target, follow_symlinks=False)
-        else:
-            _invalid("private asset source contains an unsupported entry")
-
-
-def _initialize_private_git_root(root: Path) -> None:
-    try:
-        completed = subprocess.run(
-            ["git", "-C", str(root), "init", "-q"],
-            shell=False,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError) as error:
-        raise P6HistoryNormalizationError(
-            "history_normalization_invalid", "private root initialization failed"
-        ) from error
-    if completed.returncode != 0:
-        _invalid("private root initialization failed")
-    try:
-        (root / ".git" / "info" / "exclude").write_text(
-            "external-training-binding.yaml\n"
-            "runner-template.yaml\n"
-            "source-wrapper-profile.yaml\n"
-            "post-source-adapter-profile.yaml\n"
-            "legacy.local.yaml\n"
-            "runs/\n",
-            encoding="utf-8",
-        )
-    except OSError as error:
-        raise P6HistoryNormalizationError(
-            "history_normalization_invalid", "private root initialization failed"
-        ) from error
-
-
-def _build_registry_v1(source_group: Mapping[str, Any]) -> dict[str, Any]:
-    return {
-        "schema_version": REGISTRY_SCHEMA_VERSION,
-        "groups": [copy.deepcopy(dict(source_group))],
-    }
-
-
-def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
-    serialized = (
-        json.dumps(
-            payload,
-            ensure_ascii=True,
-            allow_nan=False,
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n"
-    )
-    _atomic_write_text(path, serialized)
-
-
-def _atomic_write_yaml(path: Path, payload: Mapping[str, Any]) -> None:
-    _atomic_write_text(path, yaml.safe_dump(dict(payload), sort_keys=False))
-
-
-def _atomic_write_text(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor = -1
-    temporary_path: Path | None = None
-    try:
-        descriptor, temporary_name = tempfile.mkstemp(
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-        )
-        temporary_path = Path(temporary_name)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            descriptor = -1
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary_path, path)
-        temporary_path = None
-    finally:
-        if descriptor >= 0:
-            os.close(descriptor)
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
-
-
-def _legacy_locator(
-    paths: Mapping[str, Path],
-    private_root: Path,
-    *,
-    expected_recipe_path: Path | None = None,
-    recipe_v2: bool = False,
-) -> dict[str, Any]:
-    python_executable = str(Path(sys.executable).resolve(strict=True))
-    locator = {
-        "schema_version": LEGACY_SCHEMA_VERSION,
-        "target": "h800",
-        "asset_paths": {
-            "training-data": str(private_root / "inputs"),
-            "model-init": str(paths["registry"]),
-            "toolchain": str(
-                private_root / ("execution-closure" if recipe_v2 else "toolchain")
-            ),
-        },
-        "local_input_paths": {name: str(paths[name]) for name in INPUT_NAMES},
-        "candidate_source_mode": "framework_stage2_search_space",
-        "stage2_search_space_path": str(private_root / "stage1_partition_manifest.json"),
-        "source_registry_step": {
-            "name": "build_source_registry",
-            "argv": [
-                python_executable,
-                str(REPOSITORY_ROOT / "tools/release/build_p6_history_registry.py"),
-                "--binding",
-                "{binding}",
-                "--pyramid-candidate-plan",
-                "{pyramid_candidate_plan}",
-                "--source-registry-json",
-                "{source_registry_json}",
-                "--local-output-root",
-                "{local_output_root}",
-            ],
-        },
-        "measurement_step": {
-            "name": "measure_batch",
-            "argv": [
-                python_executable,
-                str(REPOSITORY_ROOT / "tools/release/measure_p6_history_batch.py"),
-                "--binding",
-                "{binding}",
-                "--measurement-request",
-                "{measurement_request}",
-                "--feedback-json",
-                "{feedback_json}",
-                "--round-output-root",
-                "{round_output_root}",
-            ],
-        },
-        "local_output_root": str(private_root / "runs"),
-    }
-    if expected_recipe_path is not None:
-        locator["history_recipe_derivation_path"] = str(expected_recipe_path)
-    return locator
-
-
 def normalize_history_inputs(
     source_map: Mapping[str, Any],
     history_root: Path,
@@ -576,21 +500,9 @@ def normalize_history_inputs(
     destination = _validate_private_destination(private_dir)
     try:
         canonical = _validate_private_source_map(
-            source_map,
-            history_root,
-            runner_template_path=runner_template_path,
+            source_map, history_root, runner_template_path=runner_template_path
         )
-        if "external_training" in canonical:
-            validate_external_training_binding(
-                external_training_binding_to_mapping(
-                    canonical["external_training"]
-                ),
-                code_toolchain_root=destination,
-                local_output_root=(
-                    destination.parent / f".{destination.name}.runtime-output"
-                ),
-                reserved_paths=(),
-            )
+        validate_destination_external(canonical, destination)
         staged = Path(
             tempfile.mkdtemp(
                 dir=destination.parent,
@@ -598,118 +510,23 @@ def normalize_history_inputs(
                 suffix=".staging",
             )
         )
-        _initialize_private_git_root(staged)
-        paths = _copy_json_inputs(canonical["input_sources"], staged / "inputs")
-        registry_path = staged / "registry" / "candidate-source-registry.json"
-        _atomic_write_json(registry_path, _build_registry_v1(canonical["source_contract"]))
-        paths["registry"] = registry_path
+        paths = stage_base_history(canonical, staged)
         recipe_v2_source = "external_training" in canonical
-        post_source_wrapper_paths = None
         if recipe_v2_source:
-            copied_roles = copy_execution_closure(
-                canonical["execution_closure"], staged_private_root=staged
-            )
-            external_path = staged / "external-training-binding.yaml"
-            _atomic_write_yaml(
-                external_path,
-                external_training_binding_to_mapping(canonical["external_training"]),
-            )
-            paths["external_training_binding"] = external_path
-            source_role = next(
-                role
-                for role in canonical["execution_closure"].roles
-                if role.role == "source_materializer"
-            )
-            source_closure_root = next(
-                root
-                for root in canonical["execution_closure"].roots
-                if root.closure_id == source_role.closure_id
-            )
-            profile = {
-                "schema_version": "p6_private_source_wrapper_profile_v2",
-                "wrapper_kind": "repo_cwd_exec_v1",
-                "destination_relative_path": (
-                    "documented-stage5-chain/"
-                    "stage5_materialize_round_sources_v1.sh"
-                ),
-                "implementation_relative_path": copied_roles[
-                    "source_materializer"
-                ].relative_to(staged).as_posix(),
-                "implementation_cwd_relative_path": source_closure_root.destination_relative_root.as_posix(),
-                "project_python": str(canonical["project_python"]),
-            }
-            profile_path = staged / "source-wrapper-profile.yaml"
-            _atomic_write_yaml(profile_path, profile)
-            render_self_contained_source_wrapper(profile, history_root=staged)
-            paths["source_wrapper_profile"] = profile_path
-            if "post_source_leaf_binding" in canonical:
-                adapter_profile = build_post_source_adapter_profile(
-                    private_root=staged,
-                    project_python=canonical["project_python"],
-                    copied_role_paths=copied_roles,
-                    execution_closure=canonical["execution_closure"],
-                    leaf_binding=canonical["post_source_leaf_binding"],
-                )
-                adapter_profile_path = staged / "post-source-adapter-profile.yaml"
-                _atomic_write_yaml(
-                    adapter_profile_path,
-                    post_source_adapter_profile_to_mapping(adapter_profile),
-                )
-                loaded_profile = load_post_source_adapter_profile(
-                    adapter_profile_path, private_root=staged
-                )
-                if loaded_profile != adapter_profile:
-                    _invalid("post-source adapter profile is inconsistent")
-                post_source_wrapper_paths = render_post_source_adapter_wrappers(
-                    loaded_profile,
-                    private_root=staged,
-                )
-                paths["post_source_adapter_profile"] = adapter_profile_path
-            runner_payload = render_normalized_runner_template(
-                canonical["source_runner"],
-                normalized_private_root=staged,
-                copied_role_paths=copied_roles,
-                post_source_wrapper_paths=post_source_wrapper_paths,
-            )
-            runner_path = staged / "runner-template.yaml"
-            _atomic_write_yaml(runner_path, runner_payload)
-            paths["runner_template"] = runner_path
-            validate_normalized_runner_closure(
-                runner_path,
-                normalized_private_root=staged,
-                expected_closure=canonical["execution_closure"],
-                post_source_wrapper_paths=post_source_wrapper_paths,
-            )
+            paths = stage_recipe_v2_history(canonical, staged, paths)
         else:
-            _copy_private_tree(
+            copy_private_tree(
                 canonical["asset_paths"]["toolchain"], staged / "toolchain"
             )
-        if "derived_recipe" in canonical:
-            derivation_path = staged / "derivation" / "recipe.json"
-            _atomic_write_json(derivation_path, canonical["derived_recipe"])
-            paths["derivation_recipe"] = derivation_path
-        public_paths = {
-            name: destination / path.relative_to(staged)
-            for name, path in paths.items()
-        }
-        legacy_path = staged / "legacy.local.yaml"
-        _atomic_write_yaml(
-            legacy_path,
-            _legacy_locator(
-                public_paths,
-                destination,
-                expected_recipe_path=public_paths.get("derivation_recipe"),
-                recipe_v2=recipe_v2_source,
-            ),
+        result = publish_normalized_history(
+            canonical,
+            staged,
+            destination,
+            paths,
+            recipe_v2_source=recipe_v2_source,
         )
-        paths["legacy"] = legacy_path
-        relative_paths = {
-            name: path.relative_to(staged)
-            for name, path in paths.items()
-        }
-        os.replace(staged, destination)
         staged = None
-        return {name: destination / relative for name, relative in relative_paths.items()}
+        return result
     except P6HistoryNormalizationError:
         raise
     except (OSError, TypeError, ValueError, yaml.YAMLError) as error:
