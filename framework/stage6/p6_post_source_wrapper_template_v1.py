@@ -10,8 +10,13 @@ import tempfile
 
 from framework.stage6.p6_history_binding_v1 import EXPECTED_HISTORY_ENV_KEYS
 from framework.stage6.p6_post_source_adapter_profile_v1 import (
+    PROFILE_SCHEMA_VERSION_V2,
     POST_SOURCE_ADAPTER_STAGES,
     ValidatedPostSourceAdapterProfile,
+)
+from framework.stage6.p6_python_runtime_v1 import (
+    P6PythonRuntimeError,
+    validate_adapter_python,
 )
 
 
@@ -108,7 +113,7 @@ def _wrapper_text(
         }
         for leaf in profile.leaves
     }
-    return _SCRIPT_TEMPLATE.format(
+    rendered = _SCRIPT_TEMPLATE.format(
         stage=stage,
         private_root=str(declared_private_root or profile.private_root),
         project_python=str(profile.project_python),
@@ -119,6 +124,90 @@ def _wrapper_text(
         expected_adapter=expected_adapter,
         expected_leaves=expected_leaves,
     )
+    if profile.schema_version != PROFILE_SCHEMA_VERSION_V2:
+        return rendered
+    try:
+        adapter_python = validate_adapter_python(profile.adapter_python)
+    except P6PythonRuntimeError as error:
+        raise P6PostSourceWrapperError() from error
+    return _v2_wrapper_text(
+        rendered,
+        adapter_python=adapter_python,
+        project_python=profile.project_python,
+        schema_version=profile.schema_version,
+    )
+
+
+def _v2_wrapper_text(
+    rendered: str,
+    *,
+    adapter_python: Path,
+    project_python: Path,
+    schema_version: str,
+) -> str:
+    rendered = _replace_once(
+        rendered,
+        f"PROJECT_PYTHON = Path({str(project_python)!r})\n",
+        (
+            f"PROJECT_PYTHON = Path({str(project_python)!r})\n"
+            f"ADAPTER_PYTHON = Path({str(adapter_python)!r})\n"
+            f"PROFILE_SCHEMA_VERSION = {schema_version!r}\n"
+        ),
+    )
+    rendered = _replace_once(
+        rendered,
+        "def _profile_payload() -> dict:\n",
+        _V2_ADAPTER_PYTHON_RUNTIME + "def _profile_payload() -> dict:\n",
+    )
+    rendered = _v2_wrapper_profile_checks(rendered)
+    rendered = _replace_once(
+        rendered,
+        "values['PATH'] = os.pathsep.join((str(PROJECT_PYTHON.parent), '/usr/bin', '/bin'))",
+        "values['PATH'] = os.pathsep.join((str(ADAPTER_PYTHON.parent), '/usr/bin', '/bin'))",
+    )
+    rendered = _replace_once(
+        rendered,
+        "        if not _valid_profile(_profile_payload()):\n",
+        (
+            "        if not _valid_adapter_python_runtime():\n"
+            "            return 1\n"
+            "        if not _valid_profile(_profile_payload()):\n"
+        ),
+    )
+    return _replace_once(
+        rendered,
+        "            str(PROJECT_PYTHON),\n            str(ADAPTER_IMPLEMENTATION),\n",
+        "            str(ADAPTER_PYTHON),\n            str(ADAPTER_IMPLEMENTATION),\n",
+    )
+
+
+def _v2_wrapper_profile_checks(rendered: str) -> str:
+    rendered = _replace_once(
+        rendered,
+        "    if payload.get('project_python') != str(PROJECT_PYTHON):\n",
+        (
+            "    if payload.get('schema_version') != PROFILE_SCHEMA_VERSION:\n"
+            "        return False\n"
+            "    if payload.get('project_python') != str(PROJECT_PYTHON):\n"
+        ),
+    )
+    rendered = _replace_once(
+        rendered,
+        "        return False\n    if _sha256(ADAPTER_IMPLEMENTATION) != ADAPTER_SHA256:\n",
+        (
+            "        return False\n"
+            "    if payload.get('adapter_python') != str(ADAPTER_PYTHON):\n"
+            "        return False\n"
+            "    if _sha256(ADAPTER_IMPLEMENTATION) != ADAPTER_SHA256:\n"
+        ),
+    )
+    return rendered
+
+
+def _replace_once(rendered: str, old: str, new: str) -> str:
+    if rendered.count(old) != 1:
+        raise P6PostSourceWrapperError()
+    return rendered.replace(old, new)
 
 
 def _private_root(
@@ -205,6 +294,48 @@ def _write_executable(path: Path, text: str) -> None:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
     path.chmod(stat.S_IRWXU)
+
+
+_V2_ADAPTER_PYTHON_RUNTIME = '''def _valid_adapter_python_runtime() -> bool:
+    import stat
+
+    try:
+        anchor = Path(ADAPTER_PYTHON.anchor)
+        components = (ADAPTER_PYTHON, *ADAPTER_PYTHON.parents)
+        if any(item != anchor and item.is_symlink() for item in components):
+            return False
+        info = ADAPTER_PYTHON.lstat()
+        if (
+            ADAPTER_PYTHON.resolve(strict=True) != ADAPTER_PYTHON
+            or not stat.S_ISREG(info.st_mode)
+            or info.st_nlink != 1
+            or not os.access(ADAPTER_PYTHON, os.X_OK)
+        ):
+            return False
+        completed = subprocess.run(
+            [
+                str(ADAPTER_PYTHON),
+                '-c',
+                "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')",
+            ],
+            shell=False,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        parts = completed.stdout.rstrip('\\n').split('.')
+        version = tuple(int(part) for part in parts)
+        return (
+            completed.returncode == 0
+            and len(version) == 2
+            and version >= (3, 10)
+        )
+    except Exception:
+        return False
+
+
+'''
 
 
 _SCRIPT_TEMPLATE = """#!/usr/bin/python3

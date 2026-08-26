@@ -55,12 +55,19 @@ def install_adapter_chain(private_root: Path) -> Mapping[str, Path]:
     _copy_runtime(private_root)
     adapters = tuple(_copy_adapter(private_root, stage) for stage in POST_SOURCE_ADAPTER_STAGES)
     leaves = tuple(_write_leaf(private_root, name) for name in POST_SOURCE_LEAF_NAMES)
+    project_python = private_root / "historical-env/bin/python3.9"
+    project_python.parent.mkdir(parents=True)
+    project_python.write_text(
+        "#!/bin/sh\nexec /usr/bin/python3.10 \"$@\"\n", encoding="utf-8"
+    )
+    project_python.chmod(0o700)
     profile = ValidatedPostSourceAdapterProfile(
-        "p6_post_source_adapter_profile_v1",
+        "p6_post_source_adapter_profile_v2",
         private_root.resolve(strict=True),
-        Path(sys.executable).resolve(strict=True),
+        project_python,
         adapters,
         leaves,
+        adapter_python=Path(sys.executable).resolve(strict=True),
     )
     profile_path = private_root / "post-source-adapter-profile.yaml"
     profile_path.write_text(

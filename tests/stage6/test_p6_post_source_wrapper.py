@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import shutil
 import subprocess
 from typing import Any
 
@@ -108,6 +109,76 @@ def _profile_fixture(
         encoding="utf-8",
     )
     return private_root, profile_path, profile
+
+
+def _dual_runtime_profile_fixture(
+    tmp_path: Path,
+) -> tuple[Path, Path, ValidatedPostSourceAdapterProfile]:
+    private_root = tmp_path / "private-root"
+    private_root.mkdir()
+    subprocess.run(["git", "init", "-q", str(private_root)], check=True)
+    cwd = private_root / "execution-closure" / "history"
+    adapter_python = tmp_path / "adapter-env/bin/python3.10"
+    adapter_python.parent.mkdir(parents=True)
+    shutil.copyfile("/usr/bin/python3.10", adapter_python)
+    adapter_python.chmod(0o700)
+    project_python = tmp_path / "project-env/bin/python3.9"
+    _write_executable(
+        project_python,
+        "#!/bin/sh\nexec /usr/bin/python3.10 \"$@\"\n",
+    )
+    adapters = tuple(
+        PostSourceAdapter(
+            stage,
+            _write_executable(cwd / f"{stage}.py", _help_adapter_body(stage)),
+            cwd,
+        )
+        for stage in POST_SOURCE_ADAPTER_STAGES
+    )
+    leaves = tuple(
+        PostSourceLeaf(
+            name,
+            _write_executable(
+                cwd / "leaves" / f"{name}.py",
+                f"#!/usr/bin/env python3\n# {name}\n",
+            ),
+            cwd,
+            _sha256(cwd / "leaves" / f"{name}.py"),
+        )
+        for name in POST_SOURCE_LEAF_NAMES
+    )
+    profile = ValidatedPostSourceAdapterProfile(
+        "p6_post_source_adapter_profile_v2",
+        private_root,
+        project_python,
+        adapters,
+        leaves,
+        adapter_python=adapter_python,
+    )
+    profile_path = private_root / "post-source-adapter-profile.yaml"
+    profile_path.write_text(
+        yaml.safe_dump(post_source_adapter_profile_to_mapping(profile), sort_keys=False),
+        encoding="utf-8",
+    )
+    return private_root, profile_path, profile
+
+
+def _help_adapter_body(stage: str) -> str:
+    return f"""#!/usr/bin/env python3
+import json
+import os
+from pathlib import Path
+import sys
+
+profile_flag = sys.argv.index("--profile")
+if sys.argv[profile_flag + 2:] != ["--help"]:
+    raise SystemExit(41)
+Path.cwd().joinpath("{stage}-help.json").write_text(json.dumps({{
+    "argv0": sys.executable,
+    "path": os.environ["PATH"],
+    "profile": sys.argv[profile_flag + 1],
+}}), encoding="utf-8")
+"""
 
 
 def _history_env(private_root: Path) -> dict[str, str]:
@@ -274,6 +345,74 @@ def test_generated_wrappers_execute_profile_adapters_with_unchanged_stage_argv(
             "cwd": str(next(item.implementation_cwd for item in profile.adapters if item.stage == stage)),
             "stage": stage,
         }
+
+
+def test_v2_wrappers_use_adapter_python_for_all_public_no_role_help_calls(
+    tmp_path: Path,
+) -> None:
+    private_root, profile_path, profile = _dual_runtime_profile_fixture(tmp_path)
+
+    wrappers = render_post_source_adapter_wrappers(profile, private_root=private_root)
+
+    for stage, wrapper in wrappers.items():
+        completed = _run_wrapper(wrapper, private_root, ["--help"])
+        assert completed.returncode == 0, completed.stderr
+        adapter_cwd = next(
+            item.implementation_cwd
+            for item in profile.adapters
+            if item.stage == stage
+        )
+        report = json.loads(
+            adapter_cwd.joinpath(f"{stage}-help.json").read_text(encoding="utf-8")
+        )
+        assert report == {
+            "argv0": str(profile.adapter_python),
+            "path": f"{profile.adapter_python.parent}:/usr/bin:/bin",
+            "profile": str(profile_path),
+        }
+        wrapper_text = wrapper.read_text(encoding="utf-8")
+        assert f"ADAPTER_PYTHON = Path({str(profile.adapter_python)!r})" in wrapper_text
+        assert f"PROJECT_PYTHON = Path({str(profile.project_python)!r})" in wrapper_text
+
+
+@pytest.mark.parametrize("mutation", ("profile", "symlink", "hardlink", "permission", "version"))
+def test_v2_wrapper_rejects_adapter_python_drift_before_public_adapter(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    private_root, profile_path, profile = _dual_runtime_profile_fixture(tmp_path)
+    wrapper = render_post_source_adapter_wrappers(profile, private_root=private_root)[
+        "quantization"
+    ]
+    assert profile.adapter_python is not None
+    adapter_python = profile.adapter_python
+    if mutation == "profile":
+        payload = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
+        payload["adapter_python"] = "/usr/bin/python3.10"
+        profile_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    elif mutation == "symlink":
+        target = adapter_python.with_name("real-python3.10")
+        adapter_python.rename(target)
+        adapter_python.symlink_to(target.name)
+    elif mutation == "hardlink":
+        adapter_python.with_name("second-python3.10").hardlink_to(adapter_python)
+    elif mutation == "permission":
+        adapter_python.chmod(0o600)
+    else:
+        adapter_python.write_text(
+            "#!/bin/sh\nprintf '3.9\\n'\n", encoding="utf-8"
+        )
+        adapter_python.chmod(0o700)
+
+    completed = _run_wrapper(wrapper, private_root, ["--help"])
+
+    assert completed.returncode == 1
+    adapter_cwd = next(
+        item.implementation_cwd
+        for item in profile.adapters
+        if item.stage == "quantization"
+    )
+    assert not (adapter_cwd / "quantization-help.json").exists()
 
 
 def test_wrapper_rejects_extra_incoming_environment_key(tmp_path: Path) -> None:

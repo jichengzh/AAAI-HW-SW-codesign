@@ -22,6 +22,7 @@ from tests.p6_source_wrapper_support import write_test_project_python
 from tests.stage6.test_p6_history_normalization import _recipe_v2
 from tests.stage6.test_p6_post_source_adapter_profile import (
     v3_private_source_map,
+    v4_private_source_map,
 )
 
 
@@ -382,6 +383,36 @@ def _v3_valid_args(tmp_path: Path) -> tuple[tuple[str, ...], dict[str, Path]]:
     return args, normalized
 
 
+def _v4_valid_args(tmp_path: Path) -> tuple[tuple[str, ...], dict[str, Path]]:
+    source_map, runner = v4_private_source_map(tmp_path)
+    private_dir = tmp_path / "v4-private-normalized"
+    normalized = normalize_history_inputs(
+        source_map,
+        Path(str(source_map["history_root"])),
+        private_dir,
+        runner_template_path=runner,
+    )
+    output_root = tmp_path / "v4-private-output"
+    output_root.mkdir()
+    args = (
+        "--legacy-local-config",
+        str(normalized["legacy"]),
+        "--runner-template",
+        str(normalized["runner_template"]),
+        "--local-output-root",
+        str(output_root),
+        "--binding-output",
+        str(output_root / "binding.json"),
+        "--config-output",
+        str(output_root / "p6.local.yaml"),
+        "--source-wrapper-profile",
+        str(normalized["source_wrapper_profile"]),
+        "--external-training-binding",
+        str(normalized["external_training_binding"]),
+    )
+    return args, normalized
+
+
 def _alternate_post_source_entrypoint(root: Path, stage: str) -> str:
     relative = {
         "quantization": "private-runner/bin/alternate-quantize-private",
@@ -710,10 +741,28 @@ def test_cli_requires_post_source_adapter_profile_for_v3_recipe_v2_without_pair(
     assert not (tmp_path / "v3-private-output" / "p6.local.yaml").exists()
 
 
-def test_cli_accepts_post_source_adapter_profile_for_v3_recipe_v2(
+def test_cli_rejects_v1_post_source_profile_before_writing_pair(
     tmp_path: Path,
 ) -> None:
     args, normalized = _v3_valid_args(tmp_path)
+
+    result = _run_cli(
+        tmp_path,
+        *args,
+        "--post-source-adapter-profile",
+        str(normalized["post_source_adapter_profile"]),
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "history_execution_invalid\n"
+    assert not (tmp_path / "v3-private-output" / "binding.json").exists()
+
+
+def test_cli_accepts_v2_post_source_profile_for_v4_recipe_v2(
+    tmp_path: Path,
+) -> None:
+    args, normalized = _v4_valid_args(tmp_path)
 
     result = _run_cli(
         tmp_path,
@@ -735,10 +784,10 @@ def test_cli_rejects_v3_runner_not_bound_to_generated_post_source_wrappers(
     tmp_path: Path,
     stage: str,
 ) -> None:
-    args, normalized = _v3_valid_args(tmp_path)
+    args, normalized = _v4_valid_args(tmp_path)
     _replace_runner_post_source_entrypoint(
         normalized["runner_template"],
-        private_root=tmp_path / "v3-private-normalized",
+        private_root=tmp_path / "v4-private-normalized",
         stage=stage,
     )
 
@@ -752,8 +801,8 @@ def test_cli_rejects_v3_runner_not_bound_to_generated_post_source_wrappers(
     assert result.returncode == 1
     assert result.stdout == ""
     assert result.stderr == "history_normalization_invalid\n"
-    assert not (tmp_path / "v3-private-output" / "binding.json").exists()
-    assert not (tmp_path / "v3-private-output" / "p6.local.yaml").exists()
+    assert not (tmp_path / "v4-private-output" / "binding.json").exists()
+    assert not (tmp_path / "v4-private-output" / "p6.local.yaml").exists()
 
 
 def test_cli_does_not_overwrite_differing_source_marker_or_write_pair(

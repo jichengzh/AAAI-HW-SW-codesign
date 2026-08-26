@@ -19,9 +19,14 @@ from framework.stage6.p6_post_source_leaf_binding_v1 import (
     POST_SOURCE_LEAF_NAMES,
     ValidatedPostSourceLeafBinding,
 )
+from framework.stage6.p6_python_runtime_v1 import (
+    P6PythonRuntimeError,
+    validate_adapter_python,
+)
 
 
 PROFILE_SCHEMA_VERSION = "p6_post_source_adapter_profile_v1"
+PROFILE_SCHEMA_VERSION_V2 = "p6_post_source_adapter_profile_v2"
 RUNNER_INTERFACE_SCHEMA_VERSION = "p6_history_runner_interface_v1"
 POST_SOURCE_ADAPTER_STAGES: tuple[str, ...] = (
     "quantization",
@@ -40,6 +45,7 @@ PROFILE_KEYS = frozenset(
         "leaves",
     }
 )
+PROFILE_V2_KEYS = PROFILE_KEYS | {"adapter_python"}
 IMPLEMENTATION_KEYS = frozenset(
     {"implementation_relative_path", "implementation_cwd_relative_path"}
 )
@@ -64,11 +70,15 @@ class PostSourceAdapter:
 
 @dataclass(frozen=True)
 class ValidatedPostSourceAdapterProfile:
-    schema_version: Literal["p6_post_source_adapter_profile_v1"]
+    schema_version: Literal[
+        "p6_post_source_adapter_profile_v1",
+        "p6_post_source_adapter_profile_v2",
+    ]
     private_root: Path
     project_python: Path
     adapters: tuple[PostSourceAdapter, ...]
     leaves: tuple[PostSourceLeaf, ...]
+    adapter_python: Path | None = None
 
 
 class P6PostSourceAdapterProfileError(ValueError):
@@ -109,6 +119,7 @@ def build_post_source_adapter_profile(
     copied_role_paths: Mapping[str, Path],
     execution_closure: P6ValidatedExecutionClosure,
     leaf_binding: ValidatedPostSourceLeafBinding,
+    adapter_python: Path | None = None,
 ) -> ValidatedPostSourceAdapterProfile:
     """Build the immutable normalized profile from copied closure paths."""
     root = _private_root(private_root)
@@ -121,12 +132,18 @@ def build_post_source_adapter_profile(
     leaves = tuple(_leaf(leaf, closure_roots) for leaf in leaf_binding.leaves)
     if len({leaf.implementation for leaf in leaves}) != len(leaves):
         _invalid()
+    validated_adapter_python = _adapter_python(adapter_python)
     return ValidatedPostSourceAdapterProfile(
-        schema_version=PROFILE_SCHEMA_VERSION,
+        schema_version=(
+            PROFILE_SCHEMA_VERSION_V2
+            if validated_adapter_python is not None
+            else PROFILE_SCHEMA_VERSION
+        ),
         private_root=root,
         project_python=python,
         adapters=adapters,
         leaves=leaves,
+        adapter_python=validated_adapter_python,
     )
 
 
@@ -136,8 +153,8 @@ def post_source_adapter_profile_to_mapping(
     """Serialize a validated profile without private absolute implementation paths."""
     if not isinstance(profile, ValidatedPostSourceAdapterProfile):
         _invalid()
-    return {
-        "schema_version": PROFILE_SCHEMA_VERSION,
+    payload = {
+        "schema_version": profile.schema_version,
         "target": dict(TARGET_PROFILE),
         "runner_interface_schema_version": RUNNER_INTERFACE_SCHEMA_VERSION,
         "project_python": str(profile.project_python),
@@ -153,6 +170,16 @@ def post_source_adapter_profile_to_mapping(
             for leaf in profile.leaves
         },
     }
+    if profile.schema_version == PROFILE_SCHEMA_VERSION:
+        if profile.adapter_python is not None:
+            _invalid()
+        return payload
+    if profile.schema_version != PROFILE_SCHEMA_VERSION_V2:
+        _invalid()
+    adapter_python = _adapter_python(profile.adapter_python)
+    if adapter_python is None:
+        _invalid()
+    return {**payload, "adapter_python": str(adapter_python)}
 
 
 def load_post_source_adapter_profile(
@@ -163,23 +190,48 @@ def load_post_source_adapter_profile(
     """Load one ignored normalized post-source adapter profile."""
     root = _private_root(private_root)
     payload = _load_profile_payload(path, root)
+    schema_version = payload.get("schema_version")
+    expected_keys = (
+        PROFILE_KEYS
+        if schema_version == PROFILE_SCHEMA_VERSION
+        else PROFILE_V2_KEYS
+        if schema_version == PROFILE_SCHEMA_VERSION_V2
+        else frozenset()
+    )
     if (
-        set(payload) != PROFILE_KEYS
-        or payload.get("schema_version") != PROFILE_SCHEMA_VERSION
+        set(payload) != expected_keys
         or payload.get("target") != TARGET_PROFILE
         or payload.get("runner_interface_schema_version") != RUNNER_INTERFACE_SCHEMA_VERSION
     ):
         _invalid()
     project_python = _project_python(payload.get("project_python"))
+    adapter_python = (
+        _adapter_python(payload.get("adapter_python"))
+        if schema_version == PROFILE_SCHEMA_VERSION_V2
+        else None
+    )
     adapters = _load_adapters(payload.get("adapters"), root)
     leaves = _load_leaves(payload.get("leaves"), root)
     return ValidatedPostSourceAdapterProfile(
-        PROFILE_SCHEMA_VERSION,
+        schema_version,
         root,
         project_python,
         adapters,
         leaves,
+        adapter_python,
     )
+
+
+def require_post_source_adapter_profile_v2(
+    profile: ValidatedPostSourceAdapterProfile,
+) -> None:
+    """Require the schema-honest public-adapter runtime contract."""
+    if (
+        not isinstance(profile, ValidatedPostSourceAdapterProfile)
+        or profile.schema_version != PROFILE_SCHEMA_VERSION_V2
+        or profile.adapter_python is None
+    ):
+        _invalid()
 
 
 def _adapter(
@@ -340,6 +392,15 @@ def _project_python(raw: object) -> Path:
     if resolved != path or not _executable_file(resolved):
         _invalid()
     return resolved
+
+
+def _adapter_python(raw: object) -> Path | None:
+    if raw is None:
+        return None
+    try:
+        return validate_adapter_python(raw)
+    except P6PythonRuntimeError as error:
+        raise P6PostSourceAdapterProfileError() from error
 
 
 def _relative_path(raw: object) -> Path:

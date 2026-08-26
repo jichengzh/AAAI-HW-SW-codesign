@@ -29,6 +29,7 @@ from framework.stage6.p6_history_recipe_profiles_v1 import (
 SOURCE_MAP_SCHEMA_VERSION = "p6_history_normalization_source_v1"
 SOURCE_MAP_V2_SCHEMA_VERSION = "p6_history_normalization_source_v2"
 SOURCE_MAP_V3_SCHEMA_VERSION = "p6_history_normalization_source_v3"
+SOURCE_MAP_V4_SCHEMA_VERSION = "p6_history_normalization_source_v4"
 RECIPE_SCHEMA_VERSION = "p6_history_dynamic_materialization_recipe_v1"
 STAGE_WIDTH_FIELDS = ("stage1_width", "stage2_width", "stage3_width")
 OUTPUT_TEMPLATE_KEYS = (
@@ -72,6 +73,8 @@ SOURCE_MAP_V3_EXPLICIT_KEYS = SOURCE_MAP_V2_EXPLICIT_KEYS | {
 SOURCE_MAP_V3_PROCEDURAL_KEYS = SOURCE_MAP_V2_PROCEDURAL_KEYS | {
     "post_source_leaf_binding"
 }
+SOURCE_MAP_V4_EXPLICIT_KEYS = SOURCE_MAP_V3_EXPLICIT_KEYS | {"adapter_python"}
+SOURCE_MAP_V4_PROCEDURAL_KEYS = SOURCE_MAP_V3_PROCEDURAL_KEYS | {"adapter_python"}
 RECIPE_KEYS = frozenset(
     {
         "schema_version",
@@ -406,11 +409,7 @@ def _recipe_from_v2_source_map(
 ) -> tuple[dict[str, Any], bool]:
     mode, schema_version = source_map.get("recipe_mode"), source_map.get("schema_version")
     if mode == "explicit_dynamic_recipe":
-        expected_keys = (
-            SOURCE_MAP_V3_EXPLICIT_KEYS
-            if schema_version == SOURCE_MAP_V3_SCHEMA_VERSION
-            else SOURCE_MAP_V2_EXPLICIT_KEYS
-        )
+        expected_keys = _recipe_source_map_keys(schema_version, explicit=True)
         if set(source_map) != set(expected_keys):
             _derivation_invalid("explicit recipe fields are inconsistent")
         try:
@@ -419,11 +418,7 @@ def _recipe_from_v2_source_map(
             raise P6HistoryNormalizationError(
                 "history_recipe_derivation_invalid", "explicit recipe is invalid"
             ) from error
-    expected_keys = (
-        SOURCE_MAP_V3_PROCEDURAL_KEYS
-        if schema_version == SOURCE_MAP_V3_SCHEMA_VERSION
-        else SOURCE_MAP_V2_PROCEDURAL_KEYS
-    )
+    expected_keys = _recipe_source_map_keys(schema_version, explicit=False)
     if mode != "procedural_profile" or set(source_map) != set(expected_keys):
         _derivation_invalid("procedural recipe fields are inconsistent")
     if runner_template_path is None:
@@ -448,3 +443,11 @@ def _recipe_from_v2_source_map(
             "history_recipe_derivation_invalid", "procedural recipe derivation failed"
         ) from error
     return recipe, True
+
+
+def _recipe_source_map_keys(schema_version: object, *, explicit: bool) -> frozenset[str]:
+    if schema_version == SOURCE_MAP_V4_SCHEMA_VERSION:
+        return SOURCE_MAP_V4_EXPLICIT_KEYS if explicit else SOURCE_MAP_V4_PROCEDURAL_KEYS
+    if schema_version == SOURCE_MAP_V3_SCHEMA_VERSION:
+        return SOURCE_MAP_V3_EXPLICIT_KEYS if explicit else SOURCE_MAP_V3_PROCEDURAL_KEYS
+    return SOURCE_MAP_V2_EXPLICIT_KEYS if explicit else SOURCE_MAP_V2_PROCEDURAL_KEYS

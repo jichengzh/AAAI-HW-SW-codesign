@@ -49,10 +49,7 @@ from framework.stage6.p6_runner_template_validator_v1 import (
     RunnerTemplateValidationError,
     validate_pre_provision_runner_template,
 )
-from framework.stage6.p6_post_source_adapter_profile_v1 import (
-    P6PostSourceAdapterProfileError,
-    load_post_source_adapter_profile,
-)
+from framework.stage6 import p6_post_source_adapter_profile_v1 as post_source_profile
 from framework.stage6.p6_post_source_wrapper_template_v1 import (
     P6PostSourceWrapperError,
     validate_post_source_adapter_wrappers,
@@ -232,10 +229,11 @@ def _validate_bootstrap_profiles(
         )
     if post_source_adapter_profile is not None:
         try:
-            profile = load_post_source_adapter_profile(
+            profile = post_source_profile.load_post_source_adapter_profile(
                 post_source_adapter_profile,
                 private_root=root,
             )
+            post_source_profile.require_post_source_adapter_profile_v2(profile)
             wrapper_paths = validate_post_source_adapter_wrappers(profile, private_root=root)
             validate_post_source_wrapper_runner_binding(
                 runner_template,
@@ -244,7 +242,7 @@ def _validate_bootstrap_profiles(
             )
         except (
             P6ExecutionClosureError,
-            P6PostSourceAdapterProfileError,
+            post_source_profile.P6PostSourceAdapterProfileError,
             P6PostSourceWrapperError,
         ) as error:
             category = getattr(error, "category", "history_execution_invalid")

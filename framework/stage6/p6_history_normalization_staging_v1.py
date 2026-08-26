@@ -310,6 +310,7 @@ def _stage_post_source_wrappers(
         copied_role_paths=copied_roles,
         execution_closure=canonical["execution_closure"],
         leaf_binding=canonical["post_source_leaf_binding"],
+        adapter_python=canonical.get("adapter_python"),
     )
     profile_path = staged / "post-source-adapter-profile.yaml"
     _atomic_write_yaml(

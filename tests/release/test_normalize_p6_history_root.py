@@ -19,7 +19,7 @@ from tests.stage6.test_p6_history_normalization import (
     _as_v2_procedural,
     valid_private_source_map,
 )
-from tests.stage6.test_p6_post_source_adapter_profile import v3_private_source_map
+from tests.stage6.test_p6_post_source_adapter_profile import v4_private_source_map
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -66,12 +66,12 @@ def test_cli_normalizes_absolute_private_source_map_without_private_echo(
     assert legacy["schema_version"] == "p6_h800_coptv2x_local_v2"
 
 
-def test_cli_publishes_v3_wrappers_bound_to_final_private_root(
+def test_cli_publishes_v4_wrappers_bound_to_final_private_root(
     tmp_path: Path,
 ) -> None:
-    source_map, runner = v3_private_source_map(tmp_path)
-    map_path = _write_source_map(tmp_path / "private-source-map-v3.json", source_map)
-    private_dir = tmp_path / "normalized-private-v3"
+    source_map, runner = v4_private_source_map(tmp_path)
+    map_path = _write_source_map(tmp_path / "private-source-map-v4.json", source_map)
+    private_dir = tmp_path / "normalized-private-v4"
 
     result = _run_cli(
         "--source-map",

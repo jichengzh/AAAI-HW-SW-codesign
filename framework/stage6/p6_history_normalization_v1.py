@@ -33,6 +33,7 @@ from framework.stage6.p6_history_recipe_normalization_v1 import (
     SOURCE_MAP_SCHEMA_VERSION,
     SOURCE_MAP_V2_SCHEMA_VERSION,
     SOURCE_MAP_V3_SCHEMA_VERSION,
+    SOURCE_MAP_V4_SCHEMA_VERSION,
     _derivation_invalid,
     _invalid,
     _recipe_from_v2_source_map,
@@ -42,6 +43,10 @@ from framework.stage6.p6_history_recipe_normalization_v1 import (
 from framework.stage6.p6_post_source_leaf_binding_v1 import (
     P6PostSourceLeafBindingError,
     validate_post_source_leaf_binding,
+)
+from framework.stage6.p6_python_runtime_v1 import (
+    P6PythonRuntimeError,
+    validate_adapter_python,
 )
 from framework.stage6.p6_runner_template_validator_v1 import (
     validate_pre_provision_runner_template,
@@ -158,7 +163,11 @@ def _validate_source_map_schema(source_map: Mapping[str, Any]) -> tuple[str, boo
     if schema_version == SOURCE_MAP_SCHEMA_VERSION:
         if set(source_map) != set(SOURCE_MAP_KEYS):
             _invalid("source map contract is invalid")
-    elif schema_version in {SOURCE_MAP_V2_SCHEMA_VERSION, SOURCE_MAP_V3_SCHEMA_VERSION}:
+    elif schema_version in {
+        SOURCE_MAP_V2_SCHEMA_VERSION,
+        SOURCE_MAP_V3_SCHEMA_VERSION,
+        SOURCE_MAP_V4_SCHEMA_VERSION,
+    }:
         if not {
             "external_training_binding",
             "execution_code_closure",
@@ -169,7 +178,10 @@ def _validate_source_map_schema(source_map: Mapping[str, Any]) -> tuple[str, boo
             "procedural_profile",
         }:
             _derivation_invalid("source map recipe mode is invalid")
-        if schema_version == SOURCE_MAP_V3_SCHEMA_VERSION and (
+        if schema_version in {
+            SOURCE_MAP_V3_SCHEMA_VERSION,
+            SOURCE_MAP_V4_SCHEMA_VERSION,
+        } and (
             "post_source_leaf_binding" not in source_map
         ):
             _invalid("post-source leaf binding is missing")
@@ -182,6 +194,7 @@ def _validate_source_map_schema(source_map: Mapping[str, Any]) -> tuple[str, boo
     return schema_version, schema_version in {
         SOURCE_MAP_V2_SCHEMA_VERSION,
         SOURCE_MAP_V3_SCHEMA_VERSION,
+        SOURCE_MAP_V4_SCHEMA_VERSION,
     }
 
 
@@ -307,7 +320,10 @@ def _execution_runtime(
 def _post_source_binding(
     source_map: Mapping[str, Any], schema_version: str, execution_closure: Any
 ) -> Any:
-    if schema_version != SOURCE_MAP_V3_SCHEMA_VERSION:
+    if schema_version not in {
+        SOURCE_MAP_V3_SCHEMA_VERSION,
+        SOURCE_MAP_V4_SCHEMA_VERSION,
+    }:
         return None
     try:
         return validate_post_source_leaf_binding(
@@ -318,6 +334,18 @@ def _post_source_binding(
         raise P6HistoryNormalizationError(
             "history_normalization_invalid",
             "post-source leaf binding is invalid",
+        ) from error
+
+
+def _adapter_runtime(source_map: Mapping[str, Any], schema_version: str) -> Path | None:
+    if schema_version != SOURCE_MAP_V4_SCHEMA_VERSION:
+        return None
+    try:
+        return validate_adapter_python(source_map.get("adapter_python"))
+    except P6PythonRuntimeError as error:
+        raise P6HistoryNormalizationError(
+            "history_normalization_invalid",
+            "adapter Python is invalid",
         ) from error
 
 
@@ -378,6 +406,7 @@ def _canonical_source_map(
     recipe: Mapping[str, Any],
     runtime: tuple[Any, Any, Any, Path] | None,
     post_source_leaf_binding: Any,
+    adapter_python: Path | None,
     derived: bool,
 ) -> dict[str, Any]:
     canonical = {
@@ -395,6 +424,8 @@ def _canonical_source_map(
         canonical["project_python"] = project_python
     if post_source_leaf_binding is not None:
         canonical["post_source_leaf_binding"] = post_source_leaf_binding
+    if adapter_python is not None:
+        canonical["adapter_python"] = adapter_python
     if derived:
         canonical["derived_recipe"] = copy.deepcopy(recipe)
     return canonical
@@ -418,11 +449,13 @@ def _validate_private_source_map(
     raw_source_group = copy.deepcopy(source_map.get("source_contract"))
     runtime = None
     post_source_leaf_binding = None
+    adapter_python = None
     if recipe_v2_source:
         runtime = _execution_runtime(source_map, resolved_root, runner_template_path)
         post_source_leaf_binding = _post_source_binding(
             source_map, schema_version, runtime[1]
         )
+        adapter_python = _adapter_runtime(source_map, schema_version)
         raw_source_group = _bind_source_group(raw_source_group, runtime[0])
     raw_source_group = _with_derived_recipe(
         raw_source_group, recipe, derived=derived
@@ -438,6 +471,7 @@ def _validate_private_source_map(
         recipe=recipe,
         runtime=runtime,
         post_source_leaf_binding=post_source_leaf_binding,
+        adapter_python=adapter_python,
         derived=derived,
     )
 

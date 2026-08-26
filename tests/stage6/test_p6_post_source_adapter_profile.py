@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import os
 from pathlib import Path
+import stat
 from typing import Any, Callable
 
 import pytest
@@ -73,6 +75,13 @@ def v3_private_source_map(tmp_path: Path) -> tuple[dict[str, Any], Path]:
     return source_map, runner
 
 
+def v4_private_source_map(tmp_path: Path) -> tuple[dict[str, Any], Path]:
+    source_map, runner = v3_private_source_map(tmp_path)
+    source_map["schema_version"] = "p6_history_normalization_source_v4"
+    source_map["adapter_python"] = "/usr/bin/python3.10"
+    return source_map, runner
+
+
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -127,6 +136,132 @@ def test_v3_normalizer_writes_ignored_post_source_adapter_profile(
             "implementation_relative_path"
         ]
         assert leaf.sha256 == _sha256(leaf.implementation)
+
+
+def test_v4_normalizer_writes_two_runtime_profile_without_changing_source_wrapper(
+    tmp_path: Path,
+) -> None:
+    source_map, runner = v4_private_source_map(tmp_path)
+    private_dir = tmp_path / "private-normalized"
+
+    paths = normalize_history_inputs(
+        source_map,
+        _history_root(source_map),
+        private_dir,
+        runner_template_path=runner,
+    )
+
+    post_source = yaml.safe_load(
+        paths["post_source_adapter_profile"].read_text(encoding="utf-8")
+    )
+    source_wrapper = yaml.safe_load(
+        paths["source_wrapper_profile"].read_text(encoding="utf-8")
+    )
+    assert post_source["schema_version"] == "p6_post_source_adapter_profile_v2"
+    assert post_source["adapter_python"] == "/usr/bin/python3.10"
+    assert post_source["project_python"] == source_wrapper["project_python"]
+    assert Path(post_source["project_python"]).name == "python3.9"
+
+    loaded = load_post_source_adapter_profile(
+        paths["post_source_adapter_profile"], private_root=private_dir
+    )
+    assert loaded.adapter_python == Path("/usr/bin/python3.10")
+    assert loaded.project_python == Path(post_source["project_python"])
+
+
+def test_v3_rejects_adapter_python_as_an_extra_key_and_remains_profile_v1(
+    tmp_path: Path,
+) -> None:
+    source_map, runner = v3_private_source_map(tmp_path)
+    source_map["adapter_python"] = "/usr/bin/python3.10"
+    destination = tmp_path / "bad-v3"
+
+    with pytest.raises(P6HistoryNormalizationError):
+        normalize_history_inputs(
+            source_map,
+            _history_root(source_map),
+            destination,
+            runner_template_path=runner,
+        )
+
+    assert not destination.exists()
+
+    source_map.pop("adapter_python")
+    paths = normalize_history_inputs(
+        source_map,
+        _history_root(source_map),
+        tmp_path / "good-v3",
+        runner_template_path=runner,
+    )
+    payload = yaml.safe_load(paths["post_source_adapter_profile"].read_text())
+    assert payload["schema_version"] == "p6_post_source_adapter_profile_v1"
+    assert "adapter_python" not in payload
+
+
+def _bad_adapter_python(tmp_path: Path, kind: str) -> object:
+    if kind == "relative":
+        return "bin/python3"
+    executable = tmp_path / f"{kind}-python3"
+    executable.write_text(
+        "#!/bin/sh\nprintf '3.9\\n'\n", encoding="utf-8"
+    )
+    executable.chmod(0o700)
+    if kind == "symlink":
+        alias = tmp_path / "linked-python3"
+        alias.symlink_to(executable.name)
+        return str(alias)
+    if kind == "hardlink":
+        linked = tmp_path / "hardlinked-python3"
+        os.link(executable, linked)
+        return str(executable)
+    if kind == "nonexec":
+        executable.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    return str(executable)
+
+
+@pytest.mark.parametrize(
+    "kind", ("relative", "symlink", "hardlink", "nonexec", "python39")
+)
+def test_v4_rejects_invalid_adapter_python_before_publication(
+    tmp_path: Path,
+    kind: str,
+) -> None:
+    source_map, runner = v4_private_source_map(tmp_path)
+    adapter_python = _bad_adapter_python(tmp_path, kind)
+    source_map["adapter_python"] = adapter_python
+    destination = tmp_path / f"invalid-{kind}"
+    with pytest.raises(P6HistoryNormalizationError):
+        normalize_history_inputs(
+            source_map,
+            _history_root(source_map),
+            destination,
+            runner_template_path=runner,
+        )
+
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize("mutation", ("missing", "extra"))
+def test_v4_requires_exact_source_map_keys(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    source_map, runner = v4_private_source_map(tmp_path)
+    if mutation == "missing":
+        source_map.pop("adapter_python")
+    else:
+        source_map["unexpected"] = "rejected"
+    destination = tmp_path / mutation
+
+    with pytest.raises(P6HistoryNormalizationError):
+        normalize_history_inputs(
+            source_map,
+            _history_root(source_map),
+            destination,
+            runner_template_path=runner,
+        )
+
+    assert not destination.exists()
 
 
 def test_v2_normalizer_omits_post_source_adapter_profile(
