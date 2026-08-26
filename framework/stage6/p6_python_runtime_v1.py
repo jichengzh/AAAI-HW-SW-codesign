@@ -51,12 +51,13 @@ def validate_adapter_python(raw: object) -> Path:
 def _require_supported_version(path: Path) -> None:
     try:
         completed = subprocess.run(
-            [str(path), "-c", _VERSION_PROBE],
+            [str(path), "-I", "-S", "-c", _VERSION_PROBE],
             shell=False,
             check=False,
             capture_output=True,
             text=True,
             timeout=10,
+            env={},
         )
         version = _parse_version(completed.stdout)
     except (OSError, subprocess.SubprocessError, ValueError) as error:

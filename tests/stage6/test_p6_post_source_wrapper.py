@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+from importlib.machinery import SourceFileLoader
+import importlib.util
 import json
 from pathlib import Path
 import shutil
 import subprocess
+from types import ModuleType
 from typing import Any
 
 import pytest
@@ -314,6 +317,15 @@ def _run_wrapper(
     )
 
 
+def _load_generated_wrapper(path: Path) -> ModuleType:
+    loader = SourceFileLoader("generated_p6_wrapper", str(path))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_generated_wrappers_execute_profile_adapters_with_unchanged_stage_argv(
     tmp_path: Path,
 ) -> None:
@@ -373,6 +385,66 @@ def test_v2_wrappers_use_adapter_python_for_all_public_no_role_help_calls(
         wrapper_text = wrapper.read_text(encoding="utf-8")
         assert f"ADAPTER_PYTHON = Path({str(profile.adapter_python)!r})" in wrapper_text
         assert f"PROJECT_PYTHON = Path({str(profile.project_python)!r})" in wrapper_text
+
+
+def test_v2_embedded_probe_uses_isolated_direct_argv(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private_root, _, profile = _dual_runtime_profile_fixture(tmp_path)
+    wrapper = render_post_source_adapter_wrappers(profile, private_root=private_root)[
+        "quantization"
+    ]
+    module = _load_generated_wrapper(wrapper)
+    observed: dict[str, Any] = {}
+
+    def record_probe(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        observed.update({"argv": argv, **kwargs})
+        return subprocess.CompletedProcess(argv, 0, "3.10\n", "")
+
+    monkeypatch.setattr(module.subprocess, "run", record_probe)
+
+    assert module._valid_adapter_python_runtime() is True
+    assert observed["argv"][:4] == [str(profile.adapter_python), "-I", "-S", "-c"]
+    assert len(observed["argv"]) == 5
+    assert observed["env"] == {}
+    assert {
+        key: observed[key]
+        for key in ("shell", "check", "capture_output", "text", "timeout")
+    } == {
+        "shell": False,
+        "check": False,
+        "capture_output": True,
+        "text": True,
+        "timeout": 10,
+    }
+
+
+@pytest.mark.parametrize("poison", ("pythonpath", "pythonhome"))
+def test_v2_embedded_probe_ignores_ambient_python_startup_configuration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    poison: str,
+) -> None:
+    private_root, _, profile = _dual_runtime_profile_fixture(tmp_path)
+    wrapper = render_post_source_adapter_wrappers(profile, private_root=private_root)[
+        "quantization"
+    ]
+    module = _load_generated_wrapper(wrapper)
+    if poison == "pythonpath":
+        poison_root = tmp_path / "poison"
+        poison_root.mkdir()
+        poison_root.joinpath("sitecustomize.py").write_text(
+            "raise SystemExit('poisoned Python startup')\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("PYTHONPATH", str(poison_root))
+        monkeypatch.delenv("PYTHONHOME", raising=False)
+    else:
+        monkeypatch.delenv("PYTHONPATH", raising=False)
+        monkeypatch.setenv("PYTHONHOME", str(tmp_path / "missing-python-home"))
+
+    assert module._valid_adapter_python_runtime() is True
 
 
 @pytest.mark.parametrize("mutation", ("profile", "symlink", "hardlink", "permission", "version"))

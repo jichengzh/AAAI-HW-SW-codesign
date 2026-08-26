@@ -315,6 +315,8 @@ _V2_ADAPTER_PYTHON_RUNTIME = '''def _valid_adapter_python_runtime() -> bool:
         completed = subprocess.run(
             [
                 str(ADAPTER_PYTHON),
+                '-I',
+                '-S',
                 '-c',
                 "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')",
             ],
@@ -323,6 +325,7 @@ _V2_ADAPTER_PYTHON_RUNTIME = '''def _valid_adapter_python_runtime() -> bool:
             capture_output=True,
             text=True,
             timeout=10,
+            env={},
         )
         parts = completed.stdout.rstrip('\\n').split('.')
         version = tuple(int(part) for part in parts)
