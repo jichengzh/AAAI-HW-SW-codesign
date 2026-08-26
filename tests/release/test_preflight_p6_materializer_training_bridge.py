@@ -39,7 +39,7 @@ from tests.stage6.test_p6_history_normalization import (
     _as_v2_procedural,
     valid_private_source_map,
 )
-from tests.stage6.test_p6_post_source_adapter_profile import v4_private_source_map
+from tests.stage6.test_p6_post_source_adapter_profile import v5_private_source_map
 
 
 def _build_preflight_inputs(root: Path) -> dict[str, Path]:
@@ -78,8 +78,8 @@ def _build_preflight_inputs(root: Path) -> dict[str, Path]:
     }
 
 
-def _build_v4_preflight_inputs(root: Path) -> dict[str, Path]:
-    source_map, source_runner = v4_private_source_map(root)
+def _build_v5_preflight_inputs(root: Path) -> dict[str, Path]:
+    source_map, source_runner = v5_private_source_map(root)
     private_root = root / "normalized-private-root"
     normalized = normalize_history_inputs(
         source_map,
@@ -332,10 +332,10 @@ def test_preflight_accepts_regenerated_training_binding_without_process_or_gpu(
     assert report.gpu_probe_count == 0
 
 
-def test_preflight_requires_profile_argument_for_v4_recipe_v2(
+def test_preflight_requires_profile_argument_for_v5_recipe_v2(
     tmp_path: Path,
 ) -> None:
-    inputs = _build_v4_preflight_inputs(tmp_path)
+    inputs = _build_v5_preflight_inputs(tmp_path)
     post_source_profile = inputs.pop("post_source_adapter_profile_path")
 
     with pytest.raises(P6CoptV2XExecutionError):
@@ -352,12 +352,13 @@ def test_preflight_rejects_v1_profile_before_runner_role_validation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    inputs = _build_v4_preflight_inputs(tmp_path)
+    inputs = _build_v5_preflight_inputs(tmp_path)
     payload = yaml.safe_load(
         inputs["post_source_adapter_profile_path"].read_text(encoding="utf-8")
     )
     payload["schema_version"] = "p6_post_source_adapter_profile_v1"
     payload.pop("adapter_python")
+    payload.pop("adapter_dependency_root_relative_path")
     v1_profile = _post_source_private_root(inputs) / "legacy-v1-profile.yaml"
     v1_profile.write_text(yaml.safe_dump(payload), encoding="utf-8")
     runner_validation_calls = 0
@@ -395,15 +396,58 @@ def test_preflight_rejects_v1_profile_before_runner_role_validation(
     assert wrapper_validation_calls == 0
 
 
+def test_preflight_rejects_v2_profile_before_wrapper_or_runner_validation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inputs = _build_v5_preflight_inputs(tmp_path)
+    payload = yaml.safe_load(
+        inputs["post_source_adapter_profile_path"].read_text(encoding="utf-8")
+    )
+    payload["schema_version"] = "p6_post_source_adapter_profile_v2"
+    payload.pop("adapter_dependency_root_relative_path")
+    v2_profile = _post_source_private_root(inputs) / "legacy-v2-profile.yaml"
+    v2_profile.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    inputs["post_source_adapter_profile_path"] = v2_profile
+    wrapper_validation_calls = 0
+    runner_validation_calls = 0
+
+    def record_wrapper_validation(*_args: Any, **_kwargs: Any) -> dict[str, Path]:
+        nonlocal wrapper_validation_calls
+        wrapper_validation_calls += 1
+        return {}
+
+    def record_runner_validation(*_args: Any, **_kwargs: Any) -> None:
+        nonlocal runner_validation_calls
+        runner_validation_calls += 1
+
+    monkeypatch.setattr(
+        preflight_module,
+        "validate_post_source_adapter_wrappers",
+        record_wrapper_validation,
+    )
+    monkeypatch.setattr(
+        preflight_module,
+        "validate_post_source_wrapper_runner_binding",
+        record_runner_validation,
+    )
+
+    with pytest.raises(P6CoptV2XExecutionError):
+        preflight_materializer_training_bridge(**inputs)
+
+    assert wrapper_validation_calls == 0
+    assert runner_validation_calls == 0
+
+
 @pytest.mark.parametrize(
     "stage",
     ["quantization", "performance", "ap", "finalization"],
 )
-def test_preflight_rejects_v4_runner_not_bound_to_generated_post_source_wrappers(
+def test_preflight_rejects_v5_runner_not_bound_to_generated_post_source_wrappers(
     tmp_path: Path,
     stage: str,
 ) -> None:
-    inputs = _build_v4_preflight_inputs(tmp_path)
+    inputs = _build_v5_preflight_inputs(tmp_path)
     _replace_runner_post_source_entrypoint(inputs, stage=stage)
 
     with pytest.raises(P6CoptV2XExecutionError):
@@ -413,7 +457,7 @@ def test_preflight_rejects_v4_runner_not_bound_to_generated_post_source_wrappers
 def test_preflight_rejects_tampered_generated_post_source_wrapper_bytes(
     tmp_path: Path,
 ) -> None:
-    inputs = _build_v4_preflight_inputs(tmp_path)
+    inputs = _build_v5_preflight_inputs(tmp_path)
     wrapper = _post_source_private_root(inputs) / "private-runner/bin/quantize-private"
     _write_executable(wrapper, "#!/usr/bin/python3\nraise SystemExit(0)\n")
 
@@ -523,10 +567,10 @@ def test_preflight_cli_emits_only_allowlisted_public_fields(
     assert set(json.loads(output.out)) == set(P6MaterializerPreflightReport.__dataclass_fields__)
 
 
-def test_preflight_cli_accepts_v4_post_source_adapter_profile(
+def test_preflight_cli_accepts_v5_post_source_adapter_profile(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    inputs = _build_v4_preflight_inputs(tmp_path)
+    inputs = _build_v5_preflight_inputs(tmp_path)
     result = main(
         [
             "--contract",

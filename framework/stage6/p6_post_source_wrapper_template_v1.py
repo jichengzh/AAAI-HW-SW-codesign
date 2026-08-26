@@ -11,6 +11,8 @@ import tempfile
 from framework.stage6.p6_history_binding_v1 import EXPECTED_HISTORY_ENV_KEYS
 from framework.stage6.p6_post_source_adapter_profile_v1 import (
     PROFILE_SCHEMA_VERSION_V2,
+    PROFILE_SCHEMA_VERSION_V3,
+    PROFILE_V3_KEYS,
     POST_SOURCE_ADAPTER_STAGES,
     ValidatedPostSourceAdapterProfile,
 )
@@ -113,18 +115,37 @@ def _wrapper_text(
         expected_adapter=expected_adapter,
         expected_leaves=expected_leaves,
     )
-    if profile.schema_version != PROFILE_SCHEMA_VERSION_V2:
+    if profile.schema_version not in {
+        PROFILE_SCHEMA_VERSION_V2,
+        PROFILE_SCHEMA_VERSION_V3,
+    }:
         return rendered
     try:
         adapter_python = validate_adapter_python(profile.adapter_python)
     except P6PythonRuntimeError as error:
         raise P6PostSourceWrapperError() from error
-    return _v2_wrapper_text(
+    runtime_rendered = _v2_wrapper_text(
         rendered,
         adapter_python=adapter_python,
         project_python=profile.project_python,
         schema_version=profile.schema_version,
     )
+    if profile.schema_version == PROFILE_SCHEMA_VERSION_V2:
+        return runtime_rendered
+    dependency_root = _dependency_root_relative_path(profile)
+    return _v3_wrapper_text(runtime_rendered, dependency_root=dependency_root)
+
+
+def _dependency_root_relative_path(
+    profile: ValidatedPostSourceAdapterProfile,
+) -> Path:
+    root = profile.adapter_dependency_root
+    if not isinstance(root, Path):
+        raise P6PostSourceWrapperError()
+    try:
+        return root.relative_to(profile.private_root)
+    except ValueError as error:
+        raise P6PostSourceWrapperError() from error
 
 
 def _expected_leaves(
@@ -184,6 +205,64 @@ def _v2_wrapper_text(
         rendered,
         "            str(PROJECT_PYTHON),\n            str(ADAPTER_IMPLEMENTATION),\n",
         "            str(ADAPTER_PYTHON),\n            str(ADAPTER_IMPLEMENTATION),\n",
+    )
+
+
+def _v3_wrapper_text(rendered: str, *, dependency_root: Path) -> str:
+    rendered = _replace_once(
+        rendered,
+        f"PROFILE_SCHEMA_VERSION = {PROFILE_SCHEMA_VERSION_V3!r}\n",
+        (
+            f"PROFILE_SCHEMA_VERSION = {PROFILE_SCHEMA_VERSION_V3!r}\n"
+            f"ADAPTER_DEPENDENCY_ROOT = PRIVATE_ROOT / {dependency_root.as_posix()!r}\n"
+            f"ADAPTER_DEPENDENCY_ROOT_RELATIVE_PATH = {dependency_root.as_posix()!r}\n"
+            f"EXPECTED_PROFILE_KEYS = {tuple(sorted(PROFILE_V3_KEYS))!r}\n"
+        ),
+    )
+    rendered = _replace_once(
+        rendered,
+        "def _profile_payload() -> dict:\n",
+        _V3_ADAPTER_DEPENDENCY_RUNTIME + "def _profile_payload() -> dict:\n",
+    )
+    rendered = _v3_wrapper_profile_checks(rendered)
+    rendered = _replace_once(
+        rendered,
+        "values['PYTHONPATH'] = os.pathsep.join((str(ADAPTER_CWD), str(PRIVATE_ROOT)))",
+        (
+            "values['PYTHONPATH'] = os.pathsep.join((str(ADAPTER_CWD), "
+            "str(ADAPTER_DEPENDENCY_ROOT), str(PRIVATE_ROOT)))"
+        ),
+    )
+    return _replace_once(
+        rendered,
+        "        if not _valid_adapter_python_runtime():\n",
+        (
+            "        if not _valid_adapter_dependency_root():\n"
+            "            return 1\n"
+            "        if not _valid_adapter_python_runtime():\n"
+        ),
+    )
+
+
+def _v3_wrapper_profile_checks(rendered: str) -> str:
+    rendered = _replace_once(
+        rendered,
+        "    if payload.get('schema_version') != PROFILE_SCHEMA_VERSION:\n",
+        (
+            "    if set(payload) != set(EXPECTED_PROFILE_KEYS):\n"
+            "        return False\n"
+            "    if payload.get('schema_version') != PROFILE_SCHEMA_VERSION:\n"
+        ),
+    )
+    return _replace_once(
+        rendered,
+        "    if _sha256(ADAPTER_IMPLEMENTATION) != ADAPTER_SHA256:\n",
+        (
+            "    if payload.get('adapter_dependency_root_relative_path') != "
+            "ADAPTER_DEPENDENCY_ROOT_RELATIVE_PATH:\n"
+            "        return False\n"
+            "    if _sha256(ADAPTER_IMPLEMENTATION) != ADAPTER_SHA256:\n"
+        ),
     )
 
 
@@ -339,6 +418,22 @@ _V2_ADAPTER_PYTHON_RUNTIME = '''def _valid_adapter_python_runtime() -> bool:
             completed.returncode == 0
             and len(version) == 2
             and version >= (3, 10)
+        )
+    except Exception:
+        return False
+
+
+'''
+
+
+_V3_ADAPTER_DEPENDENCY_RUNTIME = '''def _valid_adapter_dependency_root() -> bool:
+    try:
+        anchor = Path(ADAPTER_DEPENDENCY_ROOT.anchor)
+        components = (ADAPTER_DEPENDENCY_ROOT, *ADAPTER_DEPENDENCY_ROOT.parents)
+        return (
+            not any(item != anchor and item.is_symlink() for item in components)
+            and ADAPTER_DEPENDENCY_ROOT.resolve(strict=True) == ADAPTER_DEPENDENCY_ROOT
+            and ADAPTER_DEPENDENCY_ROOT.is_dir()
         )
     except Exception:
         return False

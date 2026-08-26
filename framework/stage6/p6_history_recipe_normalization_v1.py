@@ -30,6 +30,7 @@ SOURCE_MAP_SCHEMA_VERSION = "p6_history_normalization_source_v1"
 SOURCE_MAP_V2_SCHEMA_VERSION = "p6_history_normalization_source_v2"
 SOURCE_MAP_V3_SCHEMA_VERSION = "p6_history_normalization_source_v3"
 SOURCE_MAP_V4_SCHEMA_VERSION = "p6_history_normalization_source_v4"
+SOURCE_MAP_V5_SCHEMA_VERSION = "p6_history_normalization_source_v5"
 RECIPE_SCHEMA_VERSION = "p6_history_dynamic_materialization_recipe_v1"
 STAGE_WIDTH_FIELDS = ("stage1_width", "stage2_width", "stage3_width")
 OUTPUT_TEMPLATE_KEYS = (
@@ -75,6 +76,12 @@ SOURCE_MAP_V3_PROCEDURAL_KEYS = SOURCE_MAP_V2_PROCEDURAL_KEYS | {
 }
 SOURCE_MAP_V4_EXPLICIT_KEYS = SOURCE_MAP_V3_EXPLICIT_KEYS | {"adapter_python"}
 SOURCE_MAP_V4_PROCEDURAL_KEYS = SOURCE_MAP_V3_PROCEDURAL_KEYS | {"adapter_python"}
+SOURCE_MAP_V5_EXPLICIT_KEYS = SOURCE_MAP_V4_EXPLICIT_KEYS | {
+    "adapter_dependency_closure_id"
+}
+SOURCE_MAP_V5_PROCEDURAL_KEYS = SOURCE_MAP_V4_PROCEDURAL_KEYS | {
+    "adapter_dependency_closure_id"
+}
 RECIPE_KEYS = frozenset(
     {
         "schema_version",
@@ -446,6 +453,8 @@ def _recipe_from_v2_source_map(
 
 
 def _recipe_source_map_keys(schema_version: object, *, explicit: bool) -> frozenset[str]:
+    if schema_version == SOURCE_MAP_V5_SCHEMA_VERSION:
+        return SOURCE_MAP_V5_EXPLICIT_KEYS if explicit else SOURCE_MAP_V5_PROCEDURAL_KEYS
     if schema_version == SOURCE_MAP_V4_SCHEMA_VERSION:
         return SOURCE_MAP_V4_EXPLICIT_KEYS if explicit else SOURCE_MAP_V4_PROCEDURAL_KEYS
     if schema_version == SOURCE_MAP_V3_SCHEMA_VERSION:

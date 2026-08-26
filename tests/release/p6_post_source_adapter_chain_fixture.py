@@ -61,13 +61,16 @@ def install_adapter_chain(private_root: Path) -> Mapping[str, Path]:
         "#!/bin/sh\nexec /usr/bin/python3.10 \"$@\"\n", encoding="utf-8"
     )
     project_python.chmod(0o700)
+    dependency_root = private_root / "execution-closure/dependency-overlay"
+    dependency_root.mkdir(parents=True)
     profile = ValidatedPostSourceAdapterProfile(
-        "p6_post_source_adapter_profile_v2",
+        "p6_post_source_adapter_profile_v3",
         private_root.resolve(strict=True),
         project_python,
         adapters,
         leaves,
         adapter_python=Path(sys.executable).resolve(strict=True),
+        adapter_dependency_root=dependency_root,
     )
     profile_path = private_root / "post-source-adapter-profile.yaml"
     profile_path.write_text(
@@ -116,6 +119,14 @@ def assert_adapter_leaf_chain(
     )
     finalization = _read_jsonl(history_round / "finalization-leaves.log")
     assert [row["leaf"] for row in finalization] == ["finalize", "promote"]
+    leaf_runtime = _read_jsonl(history_round / "leaf-runtime.log")
+    assert {row["leaf"] for row in leaf_runtime} == set(POST_SOURCE_LEAF_NAMES)
+    private_root = Path(binding["private_root"])
+    expected_path = f"{private_root / 'historical-env/bin'}:/usr/bin:/bin"
+    expected_pythonpath = f"{private_root}:{private_root / 'tools/release'}"
+    assert all(row["path"] == expected_path for row in leaf_runtime)
+    assert all(row["pythonpath"] == expected_pythonpath for row in leaf_runtime)
+    assert all("dependency-overlay" not in row["pythonpath"] for row in leaf_runtime)
     feedback = _read_json(history_round / "actual-feedback.json")
     assert len(feedback["rows"]) == 4
     metrics = {"latency_ms", "energy_j", "ap30", "ap50", "ap70"}
@@ -156,9 +167,27 @@ def _write_leaf(private_root: Path, name: str) -> PostSourceLeaf:
     leaf_root = private_root / "historical-leaves"
     leaf_root.mkdir(exist_ok=True)
     path = leaf_root / f"{name}.py"
-    path.write_text(f"#!{sys.executable}\n{_leaf_body(name)}", encoding="utf-8")
+    path.write_text(
+        f"#!{sys.executable}\n{_leaf_body(name)}{_leaf_runtime_audit_body(name)}",
+        encoding="utf-8",
+    )
     path.chmod(0o700)
     return PostSourceLeaf(name, path, leaf_root, hashlib.sha256(path.read_bytes()).hexdigest())
+
+
+def _leaf_runtime_audit_body(name: str) -> str:
+    return f'''\n
+import json as _runtime_json
+import os as _runtime_os
+from pathlib import Path as _RuntimePath
+import sys as _runtime_sys
+with (_RuntimePath(_runtime_os.environ["P6_HISTORY_ROUND_OUTPUT_ROOT"]) / "leaf-runtime.log").open("a", encoding="utf-8") as _runtime_handle:
+    _runtime_handle.write(_runtime_json.dumps({{
+        "leaf": {name!r},
+        "path": _runtime_os.environ["PATH"],
+        "pythonpath": _runtime_os.environ["PYTHONPATH"],
+    }}, sort_keys=True) + "\\n")
+'''
 
 
 def _leaf_body(name: str) -> str:

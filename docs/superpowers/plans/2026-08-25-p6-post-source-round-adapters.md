@@ -10,6 +10,11 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-25-p6-post-source-round-adapters-design.md`
 
+> **A4 recovery amendment:** The original Tasks 1–7 record the incremental
+> v3/v4 source-map and v1/v2 profile implementation. Where their schema wording
+> conflicts with Task 7A or Task 8, the source-map v5/profile v3 contract below
+> governs the official real path. Older schemas remain compatibility surfaces.
+
 ## Global Constraints
 
 - Preserve Pyramid/H800/TVM, Gold176 cold start, four rounds, four rows per round, and the five metrics.
@@ -23,6 +28,9 @@
 - New or split production files stay below 800 lines; changed functions stay below 50 lines.
 - Generated/private profiles, paths, GPU identities, logs, artifacts, and metrics remain Git-ignored and are never copied into tracked fixtures.
 - No real SSH, GPU, Stage1, controller, training, or measurement before all implementation and review gates pass.
+- Keep `p6_execution_code_closure_v1` unchanged. Bind the already copied
+  dependency overlay explicitly to public adapters only; do not introduce a
+  generic dependency manager or alter the seven historical leaf environments.
 
 ---
 
@@ -493,7 +501,8 @@ git commit -m "feat: finalize P6 historical measurement rounds"
 - Modify: `tests/release/test_p6_history_execution_adapters.py`
 - Modify: `tests/release/test_p6_source_reuse_lifecycle.py`
 - Modify: `tests/stage6/test_p6_source_reuse_measurement.py`
-- Modify only surfaced normalization/provision/release fixtures that require source-map v3 or the new profile.
+- Modify only surfaced normalization fixtures affected by source-map v3 and
+  provision/release fixtures affected by the new profile.
 - Document: append implementation evidence to the plan-specific ignored SDD reports, not a new top-level tracked document.
 
 **Interfaces:**
@@ -573,6 +582,60 @@ git commit -m "test: verify P6 post-source adapter chain"
 
 ---
 
+### Task 7A: Bind the Existing Public-Adapter Dependency Overlay
+
+**Files:**
+- Modify: `framework/stage6/p6_history_recipe_normalization_v1.py`
+- Modify: `framework/stage6/p6_history_normalization_v1.py`
+- Modify: `framework/stage6/p6_history_normalization_staging_v1.py`
+- Modify: `framework/stage6/p6_post_source_adapter_profile_v1.py`
+- Modify: `framework/stage6/p6_post_source_wrapper_template_v1.py`
+- Modify: `tools/release/derive_p6_history_recipe.py`
+- Modify only directly affected normalization, wrapper, provision, preflight,
+  and integration tests.
+
+**Interfaces:**
+- Consumes: source-map v5 with required
+  `adapter_dependency_closure_id`, the unchanged
+  `p6_execution_code_closure_v1`, and a declared copied closure root.
+- Produces: profile v3 with required
+  `adapter_dependency_root_relative_path` and wrappers whose public-adapter
+  `PYTHONPATH` is exactly adapter cwd, dependency root, private root.
+
+- [ ] **Step 1: Write schema and wrapper RED tests**
+
+Assert v5 rejects a missing or unknown dependency closure id.
+Assert profile v3 rejects a missing, escaping, or mismatched dependency-root
+relative path. Reproduce the A4 boundary with a public adapter import available
+only from the declared copied overlay: the old wrapper fails and the v3 wrapper
+must pass. Assert no ambient import path is used.
+
+- [ ] **Step 2: Preserve compatibility and leaf isolation**
+
+Keep source-map v1 through v4 and profile v1/v2 loading behavior unchanged.
+Require profile v3 for official real provision and preflight without adding a
+source-map input or re-deriving its closure id at either boundary. Assert all
+seven historical leaves still run under `project_python` with their existing
+child environment and never receive the public-adapter dependency root.
+
+- [ ] **Step 3: Implement the minimum schema-honest binding**
+
+Extend source-map v4 to v5 only by the required closure-id field. Resolve its
+copied root through the unchanged execution closure, prove that binding during
+normalization, and serialize only its normalized relative path in profile v3.
+Extend profile v2 to v3 only by that required relative-path field. Render the
+public adapter child environment with the exact ordered three-part `PYTHONPATH`;
+add no lookup, installation, retry, fallback, or package-management behavior.
+
+- [ ] **Step 4: Verify and review before deployment**
+
+Run focused RED/GREEN tests, changed-module branch coverage at or above 80%,
+Stage6/release tests, the full repository suite, Ruff, compile, diff, privacy,
+file-size, and function-size gates. Run sequential SPEC, QUALITY, MLE, and
+security reviews and resolve every load-bearing finding before creating A5.
+
+---
+
 ### Task 8: Fresh Private Deployment and Real Four-Round Experiment
 
 **Files:**
@@ -580,12 +643,18 @@ git commit -m "test: verify P6 post-source adapter chain"
 - Modify no tracked production file during deployment or execution.
 
 **Interfaces:**
-- Consumes: exact clean reviewed HEAD from Task 7 and existing official derive/normalize/provision/preflight/run/verifier CLIs.
+- Consumes: exact clean reviewed HEAD from Task 7A and existing official derive/normalize/provision/preflight/run/verifier CLIs.
 - Produces: a fresh ignored locator and, on success, a verifier-accepted four-round/16-row real run.
 
 - [ ] **Step 1: Build a wholly fresh private source root**
 
-Create a new absent prefix. Copy the exact reviewed HEAD archive, dependency overlay, and historical leaf closure without reusing any prior normalized/output root. Author a v3 ignored source map whose leaf binding points to renamed dependency-only copies of the seven historical leaf scripts. Preserve exact leaf bytes and closure digests.
+Preserve A1 through A4 as frozen evidence. Create a wholly fresh A5 absent
+prefix. Copy the exact reviewed HEAD archive, dependency overlay, and historical
+leaf closure without reusing any prior normalized/output root. Author a v5
+ignored source map whose required `adapter_dependency_closure_id` selects the
+declared overlay root and whose leaf binding points to renamed dependency-only
+copies of the seven historical leaf scripts. Preserve exact leaf bytes and
+closure digests.
 
 - [ ] **Step 2: Run official derive and normalize**
 
@@ -603,7 +672,10 @@ python tools/release/normalize_p6_history_root.py \
   --runner-template "$P6_ADAPTER_SOURCE_RUNNER"
 ```
 
-The shell variables are loaded from one mode-0600 ignored operator locator. Before each command, resolve every value to an absolute existing parent or required-absent destination.
+The shell variables are loaded from one mode-0600 ignored operator locator.
+Before each command, resolve every value to an absolute existing parent or
+required-absent destination. Require normalization to emit profile v3 with the
+dependency root represented only as a normalized relative path.
 
 - [ ] **Step 3: Provision and run zero-process preflight**
 
@@ -627,7 +699,14 @@ python tools/release/preflight_p6_materializer_training_bridge.py \
   --external-training-binding "$P6_ADAPTER_EXTERNAL_TRAINING"
 ```
 
-Require accepted four-round training mode, zero historical processes, zero GPU probe side effects, exact wrapper/profile bytes, exact reviewed code archive digest, and absent controller/output leaves.
+Require accepted four-round training mode and a supplied profile v3 path.
+Provision and preflight prove that profile exists and is internally consistent,
+that every generated wrapper exists and matches its profile-derived expected
+bytes, and that each wrapper embeds the same supplied profile path. They do not
+receive the source map or re-derive its closure id. Also require unchanged
+historical leaf environments, zero historical processes, zero GPU probe side
+effects, exact reviewed code archive digest, and absent controller/output
+leaves.
 
 - [ ] **Step 4: Run real prelaunch gates**
 

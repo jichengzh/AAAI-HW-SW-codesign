@@ -34,6 +34,7 @@ from framework.stage6.p6_history_recipe_normalization_v1 import (
     SOURCE_MAP_V2_SCHEMA_VERSION,
     SOURCE_MAP_V3_SCHEMA_VERSION,
     SOURCE_MAP_V4_SCHEMA_VERSION,
+    SOURCE_MAP_V5_SCHEMA_VERSION,
     _derivation_invalid,
     _invalid,
     _recipe_from_v2_source_map,
@@ -167,6 +168,7 @@ def _validate_source_map_schema(source_map: Mapping[str, Any]) -> tuple[str, boo
         SOURCE_MAP_V2_SCHEMA_VERSION,
         SOURCE_MAP_V3_SCHEMA_VERSION,
         SOURCE_MAP_V4_SCHEMA_VERSION,
+        SOURCE_MAP_V5_SCHEMA_VERSION,
     }:
         if not {
             "external_training_binding",
@@ -181,6 +183,7 @@ def _validate_source_map_schema(source_map: Mapping[str, Any]) -> tuple[str, boo
         if schema_version in {
             SOURCE_MAP_V3_SCHEMA_VERSION,
             SOURCE_MAP_V4_SCHEMA_VERSION,
+            SOURCE_MAP_V5_SCHEMA_VERSION,
         } and (
             "post_source_leaf_binding" not in source_map
         ):
@@ -195,6 +198,7 @@ def _validate_source_map_schema(source_map: Mapping[str, Any]) -> tuple[str, boo
         SOURCE_MAP_V2_SCHEMA_VERSION,
         SOURCE_MAP_V3_SCHEMA_VERSION,
         SOURCE_MAP_V4_SCHEMA_VERSION,
+        SOURCE_MAP_V5_SCHEMA_VERSION,
     }
 
 
@@ -323,6 +327,7 @@ def _post_source_binding(
     if schema_version not in {
         SOURCE_MAP_V3_SCHEMA_VERSION,
         SOURCE_MAP_V4_SCHEMA_VERSION,
+        SOURCE_MAP_V5_SCHEMA_VERSION,
     }:
         return None
     try:
@@ -338,7 +343,7 @@ def _post_source_binding(
 
 
 def _adapter_runtime(source_map: Mapping[str, Any], schema_version: str) -> Path | None:
-    if schema_version != SOURCE_MAP_V4_SCHEMA_VERSION:
+    if schema_version not in {SOURCE_MAP_V4_SCHEMA_VERSION, SOURCE_MAP_V5_SCHEMA_VERSION}:
         return None
     try:
         return validate_adapter_python(source_map.get("adapter_python"))
@@ -347,6 +352,22 @@ def _adapter_runtime(source_map: Mapping[str, Any], schema_version: str) -> Path
             "history_normalization_invalid",
             "adapter Python is invalid",
         ) from error
+
+
+def _adapter_dependency_root_relative_path(
+    source_map: Mapping[str, Any], schema_version: str, execution_closure: Any
+) -> Path | None:
+    if schema_version != SOURCE_MAP_V5_SCHEMA_VERSION:
+        return None
+    closure_id = source_map.get("adapter_dependency_closure_id")
+    if not isinstance(closure_id, str):
+        _invalid("adapter dependency closure is invalid")
+    matches = tuple(
+        root for root in execution_closure.roots if root.closure_id == closure_id
+    )
+    if len(matches) != 1:
+        _invalid("adapter dependency closure is invalid")
+    return matches[0].destination_relative_root
 
 
 def _bind_source_group(raw_source_group: object, external_training: Any) -> dict[str, Any]:
@@ -407,6 +428,7 @@ def _canonical_source_map(
     runtime: tuple[Any, Any, Any, Path] | None,
     post_source_leaf_binding: Any,
     adapter_python: Path | None,
+    adapter_dependency_root_relative_path: Path | None,
     derived: bool,
 ) -> dict[str, Any]:
     canonical = {
@@ -426,6 +448,10 @@ def _canonical_source_map(
         canonical["post_source_leaf_binding"] = post_source_leaf_binding
     if adapter_python is not None:
         canonical["adapter_python"] = adapter_python
+    if adapter_dependency_root_relative_path is not None:
+        canonical["adapter_dependency_root_relative_path"] = (
+            adapter_dependency_root_relative_path
+        )
     if derived:
         canonical["derived_recipe"] = copy.deepcopy(recipe)
     return canonical
@@ -450,12 +476,16 @@ def _validate_private_source_map(
     runtime = None
     post_source_leaf_binding = None
     adapter_python = None
+    adapter_dependency_root_relative_path = None
     if recipe_v2_source:
         runtime = _execution_runtime(source_map, resolved_root, runner_template_path)
         post_source_leaf_binding = _post_source_binding(
             source_map, schema_version, runtime[1]
         )
         adapter_python = _adapter_runtime(source_map, schema_version)
+        adapter_dependency_root_relative_path = _adapter_dependency_root_relative_path(
+            source_map, schema_version, runtime[1]
+        )
         raw_source_group = _bind_source_group(raw_source_group, runtime[0])
     raw_source_group = _with_derived_recipe(
         raw_source_group, recipe, derived=derived
@@ -472,6 +502,7 @@ def _validate_private_source_map(
         runtime=runtime,
         post_source_leaf_binding=post_source_leaf_binding,
         adapter_python=adapter_python,
+        adapter_dependency_root_relative_path=adapter_dependency_root_relative_path,
         derived=derived,
     )
 

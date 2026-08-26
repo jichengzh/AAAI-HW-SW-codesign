@@ -130,18 +130,45 @@ not alter their bytes or digest. Legacy source maps without the leaf binding
 retain their existing behavior but cannot pass the real post-source adapter
 preflight.
 
+### A4 dependency-overlay recovery contract
+
+The first four private deployment roots are frozen evidence and are never
+repaired or relaunched in place. A4 established that the dedicated public
+adapter interpreter is correct, but its child import path did not include the
+already copied dependency overlay. The correction is an explicit binding of
+that existing closure root, not a dependency resolver or a generic environment
+manager.
+
+`p6_execution_code_closure_v1` remains unchanged. Source-map schema v5 extends
+v4 with exactly one required field:
+
+```yaml
+schema_version: p6_history_normalization_source_v5
+adapter_dependency_closure_id: <one declared execution-closure root id>
+```
+
+The closure id must identify exactly one root already declared in the v1
+execution closure. Normalization resolves the copied counterpart beneath the
+normalized private root and proves that closure-id-to-destination binding before
+serializing the destination's relative path. It does not accept a separate
+absolute dependency path. Source-map schemas v1 through v4 retain their
+existing load behavior, but only v5 carries the dependency identity required
+to produce the official real-run adapter profile.
+
 ### Post-source adapter profile
 
 Normalization writes one ignored profile beneath the normalized private root:
 
 ```yaml
-schema_version: p6_post_source_adapter_profile_v1
+schema_version: p6_post_source_adapter_profile_v3
 target:
   model: pyramid
   hardware: h800
   backend: tvm_auto
 runner_interface_schema_version: p6_history_runner_interface_v1
 project_python: <canonical private executable>
+adapter_python: <canonical public-adapter executable>
+adapter_dependency_root_relative_path: <normalized relative closure root>
 adapters:
   quantization:
     implementation_relative_path: <normalized relative path>
@@ -168,6 +195,12 @@ private root. The declared copied leaf bytes must match the profile digest.
 historical source-materializer implementation's unique literal
 `PY=${PY:-...}` assignment.
 
+Profile v3 extends v2 with the required
+`adapter_dependency_root_relative_path`. Profile schemas v1 and v2 remain
+loadable for their existing compatibility surfaces. The official real
+post-source deployment requires v3; it must not infer the dependency root from
+the ambient environment or silently fall back to a v1/v2 profile.
+
 The profile does not contain row IDs, candidate IDs, source paths, GPU UUIDs,
 metrics, requests, output paths, or round-specific state.
 
@@ -176,9 +209,11 @@ metrics, requests, output paths, or round-specific state.
 Normalization renders four small private wrappers. A wrapper:
 
 1. verifies the exact five incoming environment keys;
-2. invokes the copied tracked adapter implementation with the canonical
-   project Python, the ignored profile, and the unchanged stage argv;
-3. supplies deterministic `PATH` and `PYTHONPATH` derived from the profile;
+2. invokes the copied tracked adapter implementation with the profile-bound
+   public adapter Python, the ignored profile, and the unchanged stage argv;
+3. supplies deterministic `PATH` and an ordered three-part `PYTHONPATH` of
+   adapter implementation cwd, adapter dependency root, and normalized private
+   root;
 4. uses direct argv and returns the adapter's exact exit code.
 
 `p6_history_runner_interface_v1` remains unchanged. The four post-source
@@ -207,8 +242,10 @@ Each adapter:
 - returns nonzero on adapter, CLI, schema, identity, or missing-output errors.
 
 The wrapper's incoming process boundary still has exactly the five keys. The
-deterministic `PATH` and `PYTHONPATH` exist only in the adapter/leaf child
-environment constructed from the private profile.
+three-part `PYTHONPATH` exists only in the public adapter child environment.
+When an adapter invokes any of the seven historical leaves, it continues to
+use `project_python` and the existing leaf environment construction; the
+adapter dependency root is not propagated to those leaf processes.
 
 Historical leaf nonzero is a round execution failure. Candidate-level
 `feasibility_failure` and `numerical_feasibility_failure` are accepted only
@@ -346,12 +383,15 @@ completion files.
 
 Before a real role runs, preflight additionally proves:
 
-- runner interface v1 and all four generated wrappers match their expected
-  bytes;
-- the ignored adapter profile is present and internally consistent;
+- the supplied official profile path exists, loads as schema v3, and is
+  internally consistent;
+- runner interface v1 is present and internally consistent;
+- every generated wrapper exists, matches the bytes expected from that profile,
+  and embeds the same supplied profile path;
 - the four copied adapter implementations and seven copied historical leaf
   scripts match the normalized execution closure;
-- the canonical project Python exists and is executable;
+- the canonical project and public-adapter Python executables exist and match
+  the profile;
 - round adapter output roots and final completion leaves are absent; and
 - historical process and GPU counters remain zero during preflight.
 
@@ -385,9 +425,11 @@ Stage1, source training, or the controller.
   identities still execute;
 - four synthetic rounds yield 16 unique terminal rows with zero Gold176
   overlap;
-- recipe-v2 normalization, provisioning, preflight, and verifier all consume
-  the new profile and generated v1 interface; legacy non-training fixtures retain their
-  existing behavior;
+- recipe-v2 normalization consumes source-map v5 and emits profile v3;
+  provisioning and preflight require that profile plus the generated v1
+  interface, while the verifier retains its existing completion contract;
+  legacy source-map v1-v4 and profile v1-v2 fixtures retain their existing
+  behavior;
 - changed production modules achieve at least 80% branch coverage;
 - Stage6, release, Ruff, compile, diff, privacy, file-size, and function-size
   gates pass with no skip or xfail added.
@@ -396,8 +438,8 @@ Stage1, source training, or the controller.
 
 After implementation and sequential SPEC, QUALITY, MLE, and security review:
 
-1. rebuild normalization, deployment, and output roots from the exact reviewed
-   commit;
+1. preserve A1 through A4 as frozen evidence, then build a wholly fresh A5
+   normalization, deployment, and output root from the exact reviewed commit;
 2. run official derive, normalize, real-policy provision, and zero-process
    preflight;
 3. verify the ControlMaster, module origins, canonical GPU double snapshots,

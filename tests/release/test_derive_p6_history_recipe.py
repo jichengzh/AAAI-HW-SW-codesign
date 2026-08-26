@@ -18,6 +18,7 @@ from tests.stage6.test_p6_history_normalization import (
 from tests.stage6.test_p6_post_source_adapter_profile import (
     v3_private_source_map,
     v4_private_source_map,
+    v5_private_source_map,
 )
 
 
@@ -175,6 +176,62 @@ def test_cli_derives_recipe_from_exact_v4_source_map_without_runtime_echo(
     assert json.loads(text)["schema_version"] == RECIPE_V2
     assert "adapter_python" not in text
     assert "/usr/bin/python3.10" not in text
+
+
+def test_cli_derives_recipe_from_exact_v5_source_map_without_dependency_echo(
+    tmp_path: Path,
+) -> None:
+    source_map, runner_template = v5_private_source_map(tmp_path)
+    source_path = _write_json(
+        tmp_path / "private-inputs" / "source-map-v5.json", source_map
+    )
+    recipe_path = tmp_path / "private-output" / "recipe.json"
+    recipe_path.parent.mkdir()
+
+    result = _run_cli(
+        "--source-map",
+        str(source_path),
+        "--runner-template",
+        str(runner_template),
+        "--recipe-json",
+        str(recipe_path),
+    )
+
+    assert result.returncode == 0
+    text = recipe_path.read_text(encoding="utf-8")
+    assert json.loads(text)["schema_version"] == RECIPE_V2
+    assert "adapter_dependency_closure_id" not in text
+    assert "dependency-overlay" not in text
+
+
+@pytest.mark.parametrize("mutation", ("missing", "extra"))
+def test_cli_rejects_nonexact_v5_source_map_keys(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    source_map, runner_template = v5_private_source_map(tmp_path)
+    if mutation == "missing":
+        source_map.pop("adapter_dependency_closure_id")
+    else:
+        source_map["unexpected"] = "rejected"
+    source_path = _write_json(
+        tmp_path / "private-inputs" / f"source-map-v5-{mutation}.json", source_map
+    )
+    recipe_path = tmp_path / "private-output" / "recipe.json"
+    recipe_path.parent.mkdir()
+
+    result = _run_cli(
+        "--source-map",
+        str(source_path),
+        "--runner-template",
+        str(runner_template),
+        "--recipe-json",
+        str(recipe_path),
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == "history_recipe_derivation_invalid\n"
+    assert not recipe_path.exists()
 
 
 @pytest.mark.parametrize("mutation", ("missing", "extra"))

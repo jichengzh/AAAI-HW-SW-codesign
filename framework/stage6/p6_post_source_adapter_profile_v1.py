@@ -27,6 +27,7 @@ from framework.stage6.p6_python_runtime_v1 import (
 
 PROFILE_SCHEMA_VERSION = "p6_post_source_adapter_profile_v1"
 PROFILE_SCHEMA_VERSION_V2 = "p6_post_source_adapter_profile_v2"
+PROFILE_SCHEMA_VERSION_V3 = "p6_post_source_adapter_profile_v3"
 RUNNER_INTERFACE_SCHEMA_VERSION = "p6_history_runner_interface_v1"
 POST_SOURCE_ADAPTER_STAGES: tuple[str, ...] = (
     "quantization",
@@ -46,6 +47,7 @@ PROFILE_KEYS = frozenset(
     }
 )
 PROFILE_V2_KEYS = PROFILE_KEYS | {"adapter_python"}
+PROFILE_V3_KEYS = PROFILE_V2_KEYS | {"adapter_dependency_root_relative_path"}
 IMPLEMENTATION_KEYS = frozenset(
     {"implementation_relative_path", "implementation_cwd_relative_path"}
 )
@@ -73,12 +75,14 @@ class ValidatedPostSourceAdapterProfile:
     schema_version: Literal[
         "p6_post_source_adapter_profile_v1",
         "p6_post_source_adapter_profile_v2",
+        "p6_post_source_adapter_profile_v3",
     ]
     private_root: Path
     project_python: Path
     adapters: tuple[PostSourceAdapter, ...]
     leaves: tuple[PostSourceLeaf, ...]
     adapter_python: Path | None = None
+    adapter_dependency_root: Path | None = None
 
 
 class P6PostSourceAdapterProfileError(ValueError):
@@ -120,6 +124,7 @@ def build_post_source_adapter_profile(
     execution_closure: P6ValidatedExecutionClosure,
     leaf_binding: ValidatedPostSourceLeafBinding,
     adapter_python: Path | None = None,
+    adapter_dependency_root_relative_path: Path | None = None,
 ) -> ValidatedPostSourceAdapterProfile:
     """Build the immutable normalized profile from copied closure paths."""
     root = _private_root(private_root)
@@ -133,9 +138,16 @@ def build_post_source_adapter_profile(
     if len({leaf.implementation for leaf in leaves}) != len(leaves):
         _invalid()
     validated_adapter_python = _adapter_python(adapter_python)
+    dependency_root = _adapter_dependency_root(
+        root, adapter_dependency_root_relative_path
+    )
+    if dependency_root is not None and validated_adapter_python is None:
+        _invalid()
     return ValidatedPostSourceAdapterProfile(
         schema_version=(
-            PROFILE_SCHEMA_VERSION_V2
+            PROFILE_SCHEMA_VERSION_V3
+            if dependency_root is not None
+            else PROFILE_SCHEMA_VERSION_V2
             if validated_adapter_python is not None
             else PROFILE_SCHEMA_VERSION
         ),
@@ -144,6 +156,7 @@ def build_post_source_adapter_profile(
         adapters=adapters,
         leaves=leaves,
         adapter_python=validated_adapter_python,
+        adapter_dependency_root=dependency_root,
     )
 
 
@@ -171,15 +184,39 @@ def post_source_adapter_profile_to_mapping(
         },
     }
     if profile.schema_version == PROFILE_SCHEMA_VERSION:
-        if profile.adapter_python is not None:
+        if (
+            profile.adapter_python is not None
+            or profile.adapter_dependency_root is not None
+        ):
             _invalid()
         return payload
-    if profile.schema_version != PROFILE_SCHEMA_VERSION_V2:
+    if profile.schema_version not in {
+        PROFILE_SCHEMA_VERSION_V2,
+        PROFILE_SCHEMA_VERSION_V3,
+    }:
         _invalid()
     adapter_python = _adapter_python(profile.adapter_python)
     if adapter_python is None:
         _invalid()
-    return {**payload, "adapter_python": str(adapter_python)}
+    runtime_payload = {**payload, "adapter_python": str(adapter_python)}
+    if profile.schema_version == PROFILE_SCHEMA_VERSION_V2:
+        if profile.adapter_dependency_root is not None:
+            _invalid()
+        return runtime_payload
+    return _v3_profile_mapping(profile, runtime_payload)
+
+
+def _v3_profile_mapping(
+    profile: ValidatedPostSourceAdapterProfile,
+    runtime_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    dependency_root = _profile_dependency_root(profile)
+    return {
+        **runtime_payload,
+        "adapter_dependency_root_relative_path": dependency_root.relative_to(
+            profile.private_root
+        ).as_posix(),
+    }
 
 
 def load_post_source_adapter_profile(
@@ -196,6 +233,8 @@ def load_post_source_adapter_profile(
         if schema_version == PROFILE_SCHEMA_VERSION
         else PROFILE_V2_KEYS
         if schema_version == PROFILE_SCHEMA_VERSION_V2
+        else PROFILE_V3_KEYS
+        if schema_version == PROFILE_SCHEMA_VERSION_V3
         else frozenset()
     )
     if (
@@ -207,7 +246,14 @@ def load_post_source_adapter_profile(
     project_python = _project_python(payload.get("project_python"))
     adapter_python = (
         _adapter_python(payload.get("adapter_python"))
-        if schema_version == PROFILE_SCHEMA_VERSION_V2
+        if schema_version in {PROFILE_SCHEMA_VERSION_V2, PROFILE_SCHEMA_VERSION_V3}
+        else None
+    )
+    dependency_root = (
+        _adapter_dependency_root(
+            root, _relative_path(payload.get("adapter_dependency_root_relative_path"))
+        )
+        if schema_version == PROFILE_SCHEMA_VERSION_V3
         else None
     )
     adapters = _load_adapters(payload.get("adapters"), root)
@@ -219,6 +265,7 @@ def load_post_source_adapter_profile(
         adapters,
         leaves,
         adapter_python,
+        dependency_root,
     )
 
 
@@ -230,6 +277,19 @@ def require_post_source_adapter_profile_v2(
         not isinstance(profile, ValidatedPostSourceAdapterProfile)
         or profile.schema_version != PROFILE_SCHEMA_VERSION_V2
         or profile.adapter_python is None
+    ):
+        _invalid()
+
+
+def require_post_source_adapter_profile_v3(
+    profile: ValidatedPostSourceAdapterProfile,
+) -> None:
+    """Require the public-adapter dependency-overlay runtime contract."""
+    if (
+        not isinstance(profile, ValidatedPostSourceAdapterProfile)
+        or profile.schema_version != PROFILE_SCHEMA_VERSION_V3
+        or profile.adapter_python is None
+        or profile.adapter_dependency_root is None
     ):
         _invalid()
 
@@ -401,6 +461,27 @@ def _adapter_python(raw: object) -> Path | None:
         return validate_adapter_python(raw)
     except P6PythonRuntimeError as error:
         raise P6PostSourceAdapterProfileError() from error
+
+
+def _adapter_dependency_root(root: Path, raw: object) -> Path | None:
+    if raw is None:
+        return None
+    relative = _relative_path(raw.as_posix()) if isinstance(raw, Path) else _relative_path(raw)
+    return _private_path(root, relative, want_dir=True)
+
+
+def _profile_dependency_root(profile: ValidatedPostSourceAdapterProfile) -> Path:
+    root = profile.adapter_dependency_root
+    if not isinstance(root, Path):
+        _invalid()
+    try:
+        relative = root.relative_to(profile.private_root)
+    except ValueError:
+        _invalid()
+    validated = _adapter_dependency_root(profile.private_root, relative)
+    if validated is None:
+        _invalid()
+    return validated
 
 
 def _relative_path(raw: object) -> Path:

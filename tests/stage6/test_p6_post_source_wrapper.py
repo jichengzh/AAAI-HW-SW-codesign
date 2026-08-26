@@ -4,6 +4,7 @@ import hashlib
 from importlib.machinery import SourceFileLoader
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -166,6 +167,37 @@ def _dual_runtime_profile_fixture(
     return private_root, profile_path, profile
 
 
+def _dependency_runtime_profile_fixture(
+    tmp_path: Path,
+) -> tuple[Path, Path, ValidatedPostSourceAdapterProfile]:
+    private_root, _, v2_profile = _dual_runtime_profile_fixture(tmp_path)
+    dependency_root = private_root / "execution-closure/dependency-overlay"
+    dependency_root.mkdir()
+    dependency_root.joinpath("lightgbm.py").write_text(
+        "OVERLAY_MARKER = 'test-only-lightgbm'\n", encoding="utf-8"
+    )
+    for adapter in v2_profile.adapters:
+        adapter.implementation.write_text(
+            _dependency_help_adapter_body(adapter.stage), encoding="utf-8"
+        )
+        adapter.implementation.chmod(0o700)
+    profile = ValidatedPostSourceAdapterProfile(
+        "p6_post_source_adapter_profile_v3",
+        v2_profile.private_root,
+        v2_profile.project_python,
+        v2_profile.adapters,
+        v2_profile.leaves,
+        adapter_python=v2_profile.adapter_python,
+        adapter_dependency_root=dependency_root,
+    )
+    profile_path = private_root / "post-source-adapter-profile.yaml"
+    profile_path.write_text(
+        yaml.safe_dump(post_source_adapter_profile_to_mapping(profile), sort_keys=False),
+        encoding="utf-8",
+    )
+    return private_root, profile_path, profile
+
+
 def _help_adapter_body(stage: str) -> str:
     return f"""#!/usr/bin/env python3
 import json
@@ -180,6 +212,25 @@ Path.cwd().joinpath("{stage}-help.json").write_text(json.dumps({{
     "argv0": sys.executable,
     "path": os.environ["PATH"],
     "profile": sys.argv[profile_flag + 1],
+}}), encoding="utf-8")
+"""
+
+
+def _dependency_help_adapter_body(stage: str) -> str:
+    return f"""#!/usr/bin/env python3
+import json
+import lightgbm
+import os
+from pathlib import Path
+import sys
+
+profile_flag = sys.argv.index("--profile")
+if sys.argv[profile_flag + 2:] != ["--help"]:
+    raise SystemExit(41)
+Path.cwd().joinpath("{stage}-help.json").write_text(json.dumps({{
+    "argv0": sys.executable,
+    "marker": lightgbm.OVERLAY_MARKER,
+    "pythonpath": os.environ["PYTHONPATH"],
 }}), encoding="utf-8")
 """
 
@@ -385,6 +436,97 @@ def test_v2_wrappers_use_adapter_python_for_all_public_no_role_help_calls(
         wrapper_text = wrapper.read_text(encoding="utf-8")
         assert f"ADAPTER_PYTHON = Path({str(profile.adapter_python)!r})" in wrapper_text
         assert f"PROJECT_PYTHON = Path({str(profile.project_python)!r})" in wrapper_text
+
+
+def test_v3_wrappers_import_declared_dependency_for_all_public_no_role_help_calls(
+    tmp_path: Path,
+) -> None:
+    private_root, _, profile = _dependency_runtime_profile_fixture(tmp_path)
+
+    wrappers = render_post_source_adapter_wrappers(profile, private_root=private_root)
+
+    for stage, wrapper in wrappers.items():
+        completed = _run_wrapper(wrapper, private_root, ["--help"])
+        assert completed.returncode == 0, completed.stderr
+        adapter_cwd = next(
+            item.implementation_cwd
+            for item in profile.adapters
+            if item.stage == stage
+        )
+        report = json.loads(
+            adapter_cwd.joinpath(f"{stage}-help.json").read_text(encoding="utf-8")
+        )
+        assert report == {
+            "argv0": str(profile.adapter_python),
+            "marker": "test-only-lightgbm",
+            "pythonpath": os.pathsep.join(
+                (
+                    str(adapter_cwd),
+                    str(profile.adapter_dependency_root),
+                    str(private_root),
+                )
+            ),
+        }
+        wrapper_text = wrapper.read_text(encoding="utf-8")
+        assert "ADAPTER_DEPENDENCY_ROOT = PRIVATE_ROOT / " in wrapper_text
+
+
+@pytest.mark.parametrize("mutation", ("profile", "symlink"))
+def test_v3_wrapper_rejects_dependency_root_drift_before_public_adapter(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    private_root, profile_path, profile = _dependency_runtime_profile_fixture(tmp_path)
+    wrapper = render_post_source_adapter_wrappers(profile, private_root=private_root)[
+        "quantization"
+    ]
+    assert profile.adapter_dependency_root is not None
+    dependency_root = profile.adapter_dependency_root
+    if mutation == "profile":
+        payload = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
+        payload["adapter_dependency_root_relative_path"] = "execution-closure/history"
+        profile_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    else:
+        target = dependency_root.with_name("dependency-overlay-real")
+        dependency_root.rename(target)
+        dependency_root.symlink_to(target.name, target_is_directory=True)
+
+    completed = _run_wrapper(wrapper, private_root, ["--help"])
+
+    assert completed.returncode == 1
+    adapter_cwd = next(
+        item.implementation_cwd
+        for item in profile.adapters
+        if item.stage == "quantization"
+    )
+    assert not (adapter_cwd / "quantization-help.json").exists()
+
+
+@pytest.mark.parametrize("mutation", ("unknown", "missing"))
+def test_v3_wrapper_rejects_nonexact_profile_keys_before_public_adapter(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    private_root, profile_path, profile = _dependency_runtime_profile_fixture(tmp_path)
+    wrapper = render_post_source_adapter_wrappers(profile, private_root=private_root)[
+        "quantization"
+    ]
+    payload = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
+    if mutation == "unknown":
+        payload["unexpected"] = "must-not-reach-adapter"
+    else:
+        payload.pop("target")
+    profile_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+
+    completed = _run_wrapper(wrapper, private_root, ["--help"])
+
+    assert completed.returncode == 1
+    adapter_cwd = next(
+        item.implementation_cwd
+        for item in profile.adapters
+        if item.stage == "quantization"
+    )
+    assert not (adapter_cwd / "quantization-help.json").exists()
 
 
 def test_v2_embedded_probe_uses_isolated_direct_argv(

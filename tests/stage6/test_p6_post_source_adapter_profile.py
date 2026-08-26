@@ -82,6 +82,27 @@ def v4_private_source_map(tmp_path: Path) -> tuple[dict[str, Any], Path]:
     return source_map, runner
 
 
+def v5_private_source_map(tmp_path: Path) -> tuple[dict[str, Any], Path]:
+    source_map, runner = v4_private_source_map(tmp_path)
+    history_root = _history_root(source_map)
+    dependency_root = history_root / "adapter-dependency-source"
+    dependency_root.mkdir()
+    dependency_root.joinpath("lightgbm.py").write_text(
+        "OVERLAY_MARKER = 'test-only-lightgbm'\n", encoding="utf-8"
+    )
+    source_map["execution_code_closure"]["roots"].append(
+        {
+            "closure_id": "dependency-overlay",
+            "source_root": str(dependency_root),
+            "destination_relative_root": "execution-closure/dependency-overlay",
+            "sha256": _tree_sha(dependency_root),
+        }
+    )
+    source_map["schema_version"] = "p6_history_normalization_source_v5"
+    source_map["adapter_dependency_closure_id"] = "dependency-overlay"
+    return source_map, runner
+
+
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -167,6 +188,90 @@ def test_v4_normalizer_writes_two_runtime_profile_without_changing_source_wrappe
     )
     assert loaded.adapter_python == Path("/usr/bin/python3.10")
     assert loaded.project_python == Path(post_source["project_python"])
+
+
+def test_v5_normalizer_selects_declared_verified_dependency_root_for_profile_v3(
+    tmp_path: Path,
+) -> None:
+    source_map, runner = v5_private_source_map(tmp_path)
+    private_dir = tmp_path / "private-normalized"
+
+    paths = normalize_history_inputs(
+        source_map,
+        _history_root(source_map),
+        private_dir,
+        runner_template_path=runner,
+    )
+
+    payload = yaml.safe_load(paths["post_source_adapter_profile"].read_text())
+    assert payload["schema_version"] == "p6_post_source_adapter_profile_v3"
+    assert payload["adapter_dependency_root_relative_path"] == (
+        "execution-closure/dependency-overlay"
+    )
+    loaded = load_post_source_adapter_profile(
+        paths["post_source_adapter_profile"], private_root=private_dir
+    )
+    assert loaded.adapter_dependency_root == (
+        private_dir / "execution-closure/dependency-overlay"
+    )
+
+
+@pytest.mark.parametrize("mutation", ("missing", "extra", "unknown"))
+def test_v5_requires_exact_keys_and_known_dependency_closure_id(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    source_map, runner = v5_private_source_map(tmp_path)
+    if mutation == "missing":
+        source_map.pop("adapter_dependency_closure_id")
+    elif mutation == "extra":
+        source_map["unexpected"] = "rejected"
+    else:
+        source_map["adapter_dependency_closure_id"] = "unknown-overlay"
+    destination = tmp_path / mutation
+
+    with pytest.raises(P6HistoryNormalizationError):
+        normalize_history_inputs(
+            source_map,
+            _history_root(source_map),
+            destination,
+            runner_template_path=runner,
+        )
+
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize("mutation", ("absolute", "escape", "missing", "symlink"))
+def test_profile_v3_rejects_invalid_dependency_root_relative_path(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    source_map, runner = v5_private_source_map(tmp_path)
+    private_dir = tmp_path / "private-normalized"
+    paths = normalize_history_inputs(
+        source_map,
+        _history_root(source_map),
+        private_dir,
+        runner_template_path=runner,
+    )
+    payload = yaml.safe_load(paths["post_source_adapter_profile"].read_text())
+    dependency_root = private_dir / "execution-closure/dependency-overlay"
+    if mutation == "absolute":
+        payload["adapter_dependency_root_relative_path"] = str(dependency_root)
+    elif mutation == "escape":
+        payload["adapter_dependency_root_relative_path"] = "../dependency-overlay"
+    elif mutation == "missing":
+        payload["adapter_dependency_root_relative_path"] = "execution-closure/missing"
+    else:
+        target = dependency_root.with_name("dependency-overlay-real")
+        dependency_root.rename(target)
+        dependency_root.symlink_to(target.name, target_is_directory=True)
+    bad_profile = private_dir / f"bad-{mutation}-profile.yaml"
+
+    with pytest.raises(P6PostSourceAdapterProfileError):
+        load_post_source_adapter_profile(
+            _write_profile(bad_profile, payload), private_root=private_dir
+        )
 
 
 def test_v3_rejects_adapter_python_as_an_extra_key_and_remains_profile_v1(

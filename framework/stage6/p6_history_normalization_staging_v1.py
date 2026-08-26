@@ -311,6 +311,9 @@ def _stage_post_source_wrappers(
         execution_closure=canonical["execution_closure"],
         leaf_binding=canonical["post_source_leaf_binding"],
         adapter_python=canonical.get("adapter_python"),
+        adapter_dependency_root_relative_path=canonical.get(
+            "adapter_dependency_root_relative_path"
+        ),
     )
     profile_path = staged / "post-source-adapter-profile.yaml"
     _atomic_write_yaml(

@@ -45,7 +45,7 @@ from framework.stage6.p6_runner_template_validator_v1 import (  # noqa: E402
 )
 from framework.stage6.p6_post_source_adapter_profile_v1 import (  # noqa: E402
     load_post_source_adapter_profile,
-    require_post_source_adapter_profile_v2,
+    require_post_source_adapter_profile_v3,
 )
 from framework.stage6.p6_post_source_wrapper_template_v1 import (  # noqa: E402
     validate_post_source_adapter_wrappers,
@@ -104,7 +104,7 @@ def _validate_post_source_profile(
             raise ValueError
         return
     profile = load_post_source_adapter_profile(profile_path, private_root=private_root)
-    require_post_source_adapter_profile_v2(profile)
+    require_post_source_adapter_profile_v3(profile)
     wrapper_paths = validate_post_source_adapter_wrappers(
         profile,
         private_root=private_root,

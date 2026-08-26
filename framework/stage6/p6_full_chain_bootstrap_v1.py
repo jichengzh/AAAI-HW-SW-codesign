@@ -233,7 +233,7 @@ def _validate_bootstrap_profiles(
                 post_source_adapter_profile,
                 private_root=root,
             )
-            post_source_profile.require_post_source_adapter_profile_v2(profile)
+            post_source_profile.require_post_source_adapter_profile_v3(profile)
             wrapper_paths = validate_post_source_adapter_wrappers(profile, private_root=root)
             validate_post_source_wrapper_runner_binding(
                 runner_template,
