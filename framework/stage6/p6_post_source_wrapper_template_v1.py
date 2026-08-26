@@ -101,18 +101,7 @@ def _wrapper_text(
             profile.private_root
         ).as_posix(),
     }
-    expected_leaves = {
-        leaf.name: {
-            "implementation_relative_path": leaf.implementation.relative_to(
-                profile.private_root
-            ).as_posix(),
-            "implementation_cwd_relative_path": leaf.implementation_cwd.relative_to(
-                profile.private_root
-            ).as_posix(),
-            "sha256": leaf.sha256,
-        }
-        for leaf in profile.leaves
-    }
+    expected_leaves = _expected_leaves(profile)
     rendered = _SCRIPT_TEMPLATE.format(
         stage=stage,
         private_root=str(declared_private_root or profile.private_root),
@@ -136,6 +125,23 @@ def _wrapper_text(
         project_python=profile.project_python,
         schema_version=profile.schema_version,
     )
+
+
+def _expected_leaves(
+    profile: ValidatedPostSourceAdapterProfile,
+) -> dict[str, dict[str, str]]:
+    return {
+        leaf.name: {
+            "implementation_relative_path": leaf.implementation.relative_to(
+                profile.private_root
+            ).as_posix(),
+            "implementation_cwd_relative_path": leaf.implementation_cwd.relative_to(
+                profile.private_root
+            ).as_posix(),
+            "sha256": leaf.sha256,
+        }
+        for leaf in profile.leaves
+    }
 
 
 def _v2_wrapper_text(
