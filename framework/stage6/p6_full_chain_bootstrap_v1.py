@@ -55,7 +55,7 @@ from framework.stage6.p6_post_source_adapter_profile_v1 import (
 )
 from framework.stage6.p6_post_source_wrapper_template_v1 import (
     P6PostSourceWrapperError,
-    render_post_source_adapter_wrappers,
+    validate_post_source_adapter_wrappers,
 )
 from framework.stage6.p6_source_wrapper_profile_v1 import (
     P6SourceWrapperProfileError,
@@ -236,7 +236,7 @@ def _validate_bootstrap_profiles(
                 post_source_adapter_profile,
                 private_root=root,
             )
-            wrapper_paths = render_post_source_adapter_wrappers(profile, private_root=root)
+            wrapper_paths = validate_post_source_adapter_wrappers(profile, private_root=root)
             validate_post_source_wrapper_runner_binding(
                 runner_template,
                 normalized_private_root=root,

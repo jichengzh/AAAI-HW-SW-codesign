@@ -513,7 +513,7 @@ def normalize_history_inputs(
         paths = stage_base_history(canonical, staged)
         recipe_v2_source = "external_training" in canonical
         if recipe_v2_source:
-            paths = stage_recipe_v2_history(canonical, staged, paths)
+            paths = stage_recipe_v2_history(canonical, staged, destination, paths)
         else:
             copy_private_tree(
                 canonical["asset_paths"]["toolchain"], staged / "toolchain"

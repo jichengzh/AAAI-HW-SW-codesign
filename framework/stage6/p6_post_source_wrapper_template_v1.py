@@ -34,15 +34,31 @@ def render_post_source_adapter_wrappers(
     profile: ValidatedPostSourceAdapterProfile,
     *,
     private_root: Path,
+    declared_private_root: Path | None = None,
 ) -> Mapping[str, Path]:
     """Render four deterministic wrappers from one validated adapter profile."""
     root = _private_root(profile, private_root)
+    declared_root = _declared_private_root(profile, declared_private_root)
     wrappers: dict[str, Path] = {}
     for stage in POST_SOURCE_ADAPTER_STAGES:
         path = root / WRAPPER_RELATIVE_PATHS[stage]
-        _write_executable(path, _wrapper_text(profile, stage))
+        _write_executable(
+            path,
+            _wrapper_text(profile, stage, declared_private_root=declared_root),
+        )
         wrappers[stage] = path
     return wrappers
+
+
+def expected_post_source_wrapper_bytes_from_profile(
+    profile: ValidatedPostSourceAdapterProfile,
+) -> Mapping[str, bytes]:
+    """Return exact final wrapper bytes for one loaded private profile."""
+    _private_root(profile, profile.private_root)
+    return {
+        stage: _wrapper_text(profile, stage).encode("utf-8")
+        for stage in POST_SOURCE_ADAPTER_STAGES
+    }
 
 
 def validate_post_source_adapter_wrappers(
@@ -52,18 +68,25 @@ def validate_post_source_adapter_wrappers(
 ) -> Mapping[str, Path]:
     """Prove existing generated wrapper bytes match the profile/template."""
     root = _private_root(profile, private_root)
+    expected_bytes = expected_post_source_wrapper_bytes_from_profile(profile)
     wrappers: dict[str, Path] = {}
     for stage in POST_SOURCE_ADAPTER_STAGES:
         path = root / WRAPPER_RELATIVE_PATHS[stage]
-        if not _single_link_executable(path) or path.read_text(encoding="utf-8") != _wrapper_text(
-            profile, stage
+        if (
+            not _single_link_executable(path)
+            or path.read_bytes() != expected_bytes[stage]
         ):
             raise P6PostSourceWrapperError()
         wrappers[stage] = path
     return wrappers
 
 
-def _wrapper_text(profile: ValidatedPostSourceAdapterProfile, stage: str) -> str:
+def _wrapper_text(
+    profile: ValidatedPostSourceAdapterProfile,
+    stage: str,
+    *,
+    declared_private_root: Path | None = None,
+) -> str:
     adapter = next(item for item in profile.adapters if item.stage == stage)
     expected_adapter = {
         "implementation_relative_path": adapter.implementation.relative_to(
@@ -87,7 +110,7 @@ def _wrapper_text(profile: ValidatedPostSourceAdapterProfile, stage: str) -> str
     }
     return _SCRIPT_TEMPLATE.format(
         stage=stage,
-        private_root=str(profile.private_root),
+        private_root=str(declared_private_root or profile.private_root),
         project_python=str(profile.project_python),
         adapter_path=expected_adapter["implementation_relative_path"],
         adapter_cwd=expected_adapter["implementation_cwd_relative_path"],
@@ -111,6 +134,23 @@ def _private_root(
     if root != profile.private_root:
         raise P6PostSourceWrapperError()
     return root
+
+
+def _declared_private_root(
+    profile: ValidatedPostSourceAdapterProfile,
+    raw: Path | None,
+) -> Path:
+    if raw is None:
+        return profile.private_root
+    if not isinstance(raw, Path) or not raw.is_absolute():
+        raise P6PostSourceWrapperError()
+    try:
+        declared = raw.resolve(strict=False)
+    except OSError as error:
+        raise P6PostSourceWrapperError() from error
+    if declared != raw or declared.exists():
+        raise P6PostSourceWrapperError()
+    return declared
 
 
 def _sha256(path: Path) -> str:

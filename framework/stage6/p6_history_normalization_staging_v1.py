@@ -297,7 +297,10 @@ def _stage_source_wrapper(
 
 
 def _stage_post_source_wrappers(
-    canonical: Mapping[str, Any], staged: Path, copied_roles: Mapping[str, Path]
+    canonical: Mapping[str, Any],
+    staged: Path,
+    destination: Path,
+    copied_roles: Mapping[str, Path],
 ) -> tuple[Path | None, Mapping[str, Path] | None]:
     if "post_source_leaf_binding" not in canonical:
         return None, None
@@ -319,6 +322,7 @@ def _stage_post_source_wrappers(
     wrapper_paths = render_post_source_adapter_wrappers(
         loaded_profile,
         private_root=staged,
+        declared_private_root=destination,
     )
     return profile_path, wrapper_paths
 
@@ -347,7 +351,10 @@ def _stage_runner_template(
 
 
 def stage_recipe_v2_history(
-    canonical: Mapping[str, Any], staged: Path, paths: Mapping[str, Path]
+    canonical: Mapping[str, Any],
+    staged: Path,
+    destination: Path,
+    paths: Mapping[str, Path],
 ) -> dict[str, Path]:
     copied_roles = copy_execution_closure(
         canonical["execution_closure"], staged_private_root=staged
@@ -359,7 +366,7 @@ def stage_recipe_v2_history(
     )
     source_profile = _stage_source_wrapper(canonical, staged, copied_roles)
     adapter_profile, wrapper_paths = _stage_post_source_wrappers(
-        canonical, staged, copied_roles
+        canonical, staged, destination, copied_roles
     )
     runner_path = _stage_runner_template(canonical, staged, copied_roles, wrapper_paths)
     staged_paths = {

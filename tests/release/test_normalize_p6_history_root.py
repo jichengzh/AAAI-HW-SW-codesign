@@ -9,10 +9,17 @@ import sys
 import yaml
 import pytest
 
+from framework.stage6.p6_post_source_adapter_profile_v1 import (
+    load_post_source_adapter_profile,
+)
+from framework.stage6.p6_post_source_wrapper_template_v1 import (
+    validate_post_source_adapter_wrappers,
+)
 from tests.stage6.test_p6_history_normalization import (
     _as_v2_procedural,
     valid_private_source_map,
 )
+from tests.stage6.test_p6_post_source_adapter_profile import v3_private_source_map
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -57,6 +64,32 @@ def test_cli_normalizes_absolute_private_source_map_without_private_echo(
     assert result.stderr == ""
     legacy = yaml.safe_load((private_dir / "legacy.local.yaml").read_text())
     assert legacy["schema_version"] == "p6_h800_coptv2x_local_v2"
+
+
+def test_cli_publishes_v3_wrappers_bound_to_final_private_root(
+    tmp_path: Path,
+) -> None:
+    source_map, runner = v3_private_source_map(tmp_path)
+    map_path = _write_source_map(tmp_path / "private-source-map-v3.json", source_map)
+    private_dir = tmp_path / "normalized-private-v3"
+
+    result = _run_cli(
+        "--source-map",
+        str(map_path),
+        "--history-root",
+        source_map["history_root"],
+        "--private-dir",
+        str(private_dir),
+        "--runner-template",
+        str(runner),
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == "p6_history_root_normalized\n"
+    assert result.stderr == ""
+    profile_path = private_dir / "post-source-adapter-profile.yaml"
+    profile = load_post_source_adapter_profile(profile_path, private_root=private_dir)
+    validate_post_source_adapter_wrappers(profile, private_root=private_dir)
 
 
 def test_cli_rejects_relative_source_map_without_private_echo(tmp_path: Path) -> None:
