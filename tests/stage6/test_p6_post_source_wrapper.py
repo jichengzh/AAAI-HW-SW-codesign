@@ -322,6 +322,38 @@ def test_existing_wrapper_validator_rejects_tampered_or_missing_wrapper_bytes(
         validate_post_source_adapter_wrappers(profile, private_root=private_root)
 
 
+def test_existing_wrapper_validator_rejects_exact_byte_wrapper_symlink(
+    tmp_path: Path,
+) -> None:
+    private_root, _, profile = _profile_fixture(tmp_path)
+    wrapper = render_post_source_adapter_wrappers(profile, private_root=private_root)[
+        "quantization"
+    ]
+    linked_target = private_root / "exact-wrapper-target"
+    linked_target.write_bytes(wrapper.read_bytes())
+    linked_target.chmod(0o700)
+    wrapper.unlink()
+    wrapper.symlink_to(linked_target)
+
+    with pytest.raises(P6PostSourceWrapperError):
+        validate_post_source_adapter_wrappers(profile, private_root=private_root)
+
+
+def test_existing_wrapper_validator_rejects_symlinked_wrapper_parent(
+    tmp_path: Path,
+) -> None:
+    private_root, _, profile = _profile_fixture(tmp_path)
+    wrapper = render_post_source_adapter_wrappers(profile, private_root=private_root)[
+        "quantization"
+    ]
+    real_parent = private_root / "real-wrapper-bin"
+    wrapper.parent.rename(real_parent)
+    wrapper.parent.symlink_to(real_parent, target_is_directory=True)
+
+    with pytest.raises(P6PostSourceWrapperError):
+        validate_post_source_adapter_wrappers(profile, private_root=private_root)
+
+
 def test_existing_wrapper_validator_rejects_wrong_profile_or_root(
     tmp_path: Path,
 ) -> None:

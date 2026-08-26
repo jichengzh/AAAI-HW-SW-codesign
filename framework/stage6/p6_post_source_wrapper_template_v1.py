@@ -164,10 +164,20 @@ def _sha256(path: Path) -> str:
 
 def _single_link_executable(path: Path) -> bool:
     try:
-        info = path.stat()
-        return path.is_file() and info.st_nlink == 1 and os.access(path, os.X_OK)
+        if _contains_symlink_component(path):
+            return False
+        info = path.lstat()
+        return stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and os.access(path, os.X_OK)
     except OSError:
         return False
+
+
+def _contains_symlink_component(path: Path) -> bool:
+    anchor = Path(path.anchor)
+    return any(
+        component != anchor and component.is_symlink()
+        for component in (path, *path.parents)
+    )
 
 
 def _write_executable(path: Path, text: str) -> None:
