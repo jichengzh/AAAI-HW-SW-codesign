@@ -556,7 +556,58 @@ def test_binding_preserves_private_cuda_policy_existing_order(
     assert binding["gpu_policy"]["indices"] == list(policy_indices)
 
 
-@pytest.mark.parametrize("policy", ("17,17,23", "17,19", "17,19,x", "-1,19,23"))
+def test_binding_accepts_two_gpu_policy_and_double_probes_exact_order(
+    tmp_path: Path,
+) -> None:
+    """Freezes two-card admission without sorting or weakening the UUID policy."""
+    policy_indices = tuple(record.index for record in reversed(_gpu_records()[:2]))
+    policy_csv = ",".join(str(index) for index in policy_indices)
+    history_root = _history_root(tmp_path)
+    manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    environment = manifest["environment"]
+    values = environment["values"]
+    cuda_policy = values["CUDA_VISIBLE_DEVICES"]
+    manifest = {
+        **manifest,
+        "environment": {
+            **environment,
+            "values": {
+                **values,
+                "CUDA_VISIBLE_DEVICES": {**cuda_policy, "value": policy_csv},
+            },
+        },
+    }
+    _write_json(manifest_path, manifest)
+    records = _gpu_records(indices=policy_indices)
+    probe = _probe(records)
+
+    binding = discover_history_binding(history_root, probe)
+
+    assert probe.calls == [policy_indices, policy_indices]
+    assert binding["gpu_policy"] == {
+        "indices": list(policy_indices),
+        "uuid_by_index": {
+            str(index): f"GPU-fixture-{index}" for index in policy_indices
+        },
+        "model": "h800",
+        "maximum_occupancy": 0.05,
+    }
+
+
+def _noncanonical_private_cuda_policies() -> tuple[str, ...]:
+    first, second = (record.index for record in _gpu_records()[:2])
+    return (
+        "",
+        f"{first},{first}",
+        f"{first},{second},x",
+        f"-1,{second}",
+        f"0{first},{second}",
+        f"{first}, {second}",
+    )
+
+
+@pytest.mark.parametrize("policy", _noncanonical_private_cuda_policies())
 def test_binding_rejects_noncanonical_private_cuda_policy(
     tmp_path: Path,
     policy: str,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import json
 import re
 from pathlib import Path
@@ -14,7 +15,17 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 HANDOFF = REPOSITORY_ROOT / "docs/AAAI27_RELEASE_AUDIT.md"
 
 
+_TWO_GPU_INDEX_PAIR = r"(?<![{\d,])\d+\s*,\s*\d+(?!\d)(?!\s*,\s*\d)"
 _TRACKED_GPU_POLICY_DISCLOSURES = (
+    re.compile(
+        rf"(?:CUDA_VISIBLE_DEVICES[^\n]*?{_TWO_GPU_INDEX_PAIR}|"
+        rf"nvidia-smi[^\n]*?--id[^\n]*?{_TWO_GPU_INDEX_PAIR}|"
+        rf"--gpus[^\n]*?{_TWO_GPU_INDEX_PAIR}|"
+        rf"gpu_policy[^\n]*?[\"']indices[\"']\s*:\s*\[\s*"
+        rf"{_TWO_GPU_INDEX_PAIR}\s*\]|"
+        rf"(?:GPU indices|GPU编号|显卡编号)\s*[:：=]?\s*\[?\s*"
+        rf"{_TWO_GPU_INDEX_PAIR}\s*\]?)"
+    ),
     re.compile(
         r"CUDA_VISIBLE_DEVICES[^\n]{0,120}[\"']\d\s*,\s*\d\s*,\s*\d[\"']"
     ),
@@ -411,6 +422,44 @@ def test_p6_public_disclosure_guard_allows_policy_prohibitions() -> None:
 def test_tracked_surface_has_no_fixed_private_gpu_policy_disclosure() -> None:
     """Catches fixed P6 device policies leaking into tracked source or prose."""
     assert _tracked_gpu_policy_disclosures() == []
+
+
+def _synthetic_two_gpu_csv() -> str:
+    return ",".join(str(index) for index in range(101, 105, 2))
+
+
+@pytest.mark.parametrize(
+    "render",
+    (
+        lambda csv: f'CUDA_VISIBLE_DEVICES="{csv}"',
+        lambda csv: f"nvidia-smi --id={csv}",
+        lambda csv: f"runner --gpus {csv}",
+        lambda csv: f'"gpu_policy": {{"indices": [{csv}]}}',
+        lambda csv: f"GPU indices: {csv}",
+        lambda csv: f"GPU编号：{csv}",
+        lambda csv: f"显卡编号={csv}",
+    ),
+)
+def test_gpu_policy_guard_matches_two_gpu_execution_contexts(
+    render: Callable[[str], str],
+) -> None:
+    leaked_policy = render(_synthetic_two_gpu_csv())
+
+    assert any(pattern.search(leaked_policy) for pattern in _TRACKED_GPU_POLICY_DISCLOSURES)
+
+
+@pytest.mark.parametrize(
+    "audit_text",
+    (
+        "GPU count is 2; four rounds remain pending.",
+        "The GPU audit contains 101 checks and 103 assertions.",
+        "显卡审计记录了两次独立准入检查。",
+    ),
+)
+def test_two_gpu_guard_does_not_match_unlabelled_audit_numbers(audit_text: str) -> None:
+    assert not any(
+        pattern.search(audit_text) for pattern in _TRACKED_GPU_POLICY_DISCLOSURES
+    )
 
 
 def test_p6_boundary_scope_includes_adjacent_non_p6_paragraphs() -> None:

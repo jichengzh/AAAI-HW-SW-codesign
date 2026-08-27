@@ -34,6 +34,10 @@ from framework.stage6.p6_history_feedback_validation_v1 import (
     P6HistoryFeedbackValidationError,
     translate_history_feedback,
 )
+from framework.stage6.p6_gpu_policy_v1 import (
+    canonical_gpu_indices,
+    parse_gpu_indices_csv,
+)
 from framework.stage6.p6_history_source_materialization_v1 import (
     P6HistorySourceMaterializationError,
     build_source_invocations,
@@ -408,19 +412,14 @@ def _validate_binding_runtime(
         uuid_by_index = raw_policy.get("uuid_by_index")
         if (
             not isinstance(raw_indices, list)
-            or len(raw_indices) != 3
-            or any(isinstance(index, bool) or not isinstance(index, int) for index in raw_indices)
-            or len(set(raw_indices)) != 3
-            or any(index < 0 for index in raw_indices)
             or raw_policy.get("model") != "h800"
             or raw_policy.get("maximum_occupancy") != MAX_GPU_OCCUPANCY
             or not isinstance(uuid_by_index, Mapping)
-            or set(uuid_by_index) != {str(index) for index in raw_indices}
         ):
             raise ValueError
-        indices: tuple[int, int, int] = (
-            raw_indices[0], raw_indices[1], raw_indices[2]
-        )
+        indices = canonical_gpu_indices(raw_indices)
+        if set(uuid_by_index) != {str(index) for index in indices}:
+            raise ValueError
         raw_uuids = [uuid_by_index[str(index)] for index in indices]
         if any(not isinstance(uuid, str) for uuid in raw_uuids):
             raise ValueError
@@ -479,7 +478,7 @@ def _validate_interface_gpu_policy(
 ) -> None:
     try:
         raw_value = interface["environment"]["values"]["CUDA_VISIBLE_DEVICES"]["value"]
-        interface_indices = tuple(int(part) for part in raw_value.split(","))
+        interface_indices = parse_gpu_indices_csv(raw_value)
         if interface_indices != policy["indices"]:
             raise ValueError
     except (KeyError, TypeError, ValueError):

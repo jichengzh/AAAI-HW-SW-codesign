@@ -21,6 +21,7 @@ sys.path = [
 ]
 
 from framework.stage1_bridge import load_stage2_search_space  # noqa: E402
+from framework.stage6.p6_gpu_policy_v1 import canonical_gpu_indices  # noqa: E402
 from framework.stage6.coptv2x_h800_search_v2 import (  # noqa: E402
     P6CoptV2XContractError,
     PublicP6CoptV2XContract,
@@ -82,14 +83,9 @@ def _gpu_query_argv(indices: tuple[int, ...]) -> tuple[str, ...]:
 
 
 def _validate_indices(indices: tuple[int, ...]) -> None:
-    if (
-        not isinstance(indices, tuple)
-        or len(indices) != 3
-        or any(isinstance(index, bool) or not isinstance(index, int) for index in indices)
-        or len(set(indices)) != 3
-        or any(index < 0 for index in indices)
-    ):
+    if not isinstance(indices, tuple):
         raise ValueError("canonical GPU indices required")
+    canonical_gpu_indices(indices)
 
 
 def _parse_gpu_records(output: str) -> tuple[GpuRecord, ...]:

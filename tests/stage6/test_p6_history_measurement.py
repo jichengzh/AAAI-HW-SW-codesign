@@ -19,6 +19,7 @@ from framework.stage6.p6_history_binding_v1 import (
 from framework.stage6.p6_history_measurement_v1 import (
     P6HistoryMeasurementError,
     _render_environment,
+    _validate_interface_gpu_policy,
     run_history_measurement_batch,
 )
 from framework.stage6.p6_history_recipe_profiles_v1 import SHARED_SOURCE_PATH_KEYS
@@ -50,7 +51,7 @@ def _executable(path: Path) -> str:
 
 
 def _binding(
-    private_root: Path, *, gpu_indices: tuple[int, int, int] = SYNTHETIC_GPU_INDICES
+    private_root: Path, *, gpu_indices: tuple[int, ...] = SYNTHETIC_GPU_INDICES
 ) -> dict[str, Any]:
     component_root = private_root / "components"
     components = {
@@ -340,7 +341,7 @@ def _unprojected_recipe_v2_request(local_output_root: Path) -> dict[str, Any]:
 
 def _records(
     *,
-    indices: tuple[int, int, int] = SYNTHETIC_GPU_INDICES,
+    indices: tuple[int, ...] = SYNTHETIC_GPU_INDICES,
     model: str = "NVIDIA H800 80GB HBM3",
     occupancy: float = 0.0,
     drift_index: int | None = None,
@@ -736,6 +737,60 @@ def test_measurement_preserves_private_gpu_policy_existing_order(
     assert [call.argv[8] for call in source_calls] == ["107", "103", "101", "107"]
 
 
+def test_measurement_executes_exact_two_gpu_policy_with_double_admission(
+    tmp_path: Path,
+) -> None:
+    """Freezes exact synthetic policy matching and two admission probes."""
+    policy_indices = SYNTHETIC_GPU_INDICES[:2]
+    policy_csv = ",".join(str(index) for index in policy_indices)
+    private_root = tmp_path / "private"
+    private_root.mkdir()
+    round_root = private_root / "controller-round"
+    round_root.mkdir()
+    request = _request()
+    runner = FakeRunner(request)
+    records = _records(indices=policy_indices)
+    probe = FakeProbe(records, records)
+
+    feedback = run_history_measurement_batch(
+        request,
+        _binding(private_root, gpu_indices=policy_indices),
+        round_root,
+        runner,
+        probe,
+    )
+
+    source_calls = [
+        call
+        for call in runner.calls
+        if Path(call.argv[0]).name == "stage5_materialize_round_sources_v1.sh"
+    ]
+    assert probe.calls == [policy_indices, policy_indices]
+    assert [call.argv[8] for call in source_calls] == [
+        str(policy_indices[index % len(policy_indices)]) for index in range(4)
+    ]
+    assert all(call.env["CUDA_VISIBLE_DEVICES"] == policy_csv for call in runner.calls)
+    assert len(feedback["rows"]) == 4
+
+
+def test_interface_gpu_policy_rejects_noncanonical_csv_alias() -> None:
+    """A leading-zero private CSV must not alias the canonical policy tuple."""
+    policy_indices = SYNTHETIC_GPU_INDICES[:2]
+    noncanonical_csv = f"0{policy_indices[0]},{policy_indices[1]}"
+    interface = {
+        "environment": {
+            "values": {
+                "CUDA_VISIBLE_DEVICES": {"value": noncanonical_csv},
+            }
+        }
+    }
+
+    with pytest.raises(P6HistoryMeasurementError) as raised:
+        _validate_interface_gpu_policy(interface, {"indices": policy_indices})
+
+    assert raised.value.category == "history_execution_invalid"
+
+
 def test_runtime_rejects_policy_that_differs_from_execution_interface_before_probe(
     tmp_path: Path,
 ) -> None:
@@ -831,8 +886,8 @@ def test_public_binding_projection_does_not_expose_private_gpu_policy(tmp_path: 
 @pytest.mark.parametrize(
     "indices",
     (
+        [],
         [101, 101, 107],
-        [101, 103],
         [101, True, 107],
         [101, "103", 107],
         [-1, 103, 107],

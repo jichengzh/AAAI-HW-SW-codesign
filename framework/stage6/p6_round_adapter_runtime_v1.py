@@ -11,6 +11,7 @@ from pathlib import Path
 import tempfile
 from typing import Any, Protocol
 
+from framework.stage6.p6_gpu_policy_v1 import parse_gpu_indices_csv
 from framework.stage6.p6_post_source_adapter_profile_v1 import (
     ValidatedPostSourceAdapterProfile,
 )
@@ -172,17 +173,11 @@ def _validate_state_identity(
 
 
 def _ordered_gpu_indices() -> tuple[str, ...]:
-    raw = os.environ.get("CUDA_VISIBLE_DEVICES")
-    if not isinstance(raw, str) or not raw:
+    try:
+        indices = parse_gpu_indices_csv(os.environ.get("CUDA_VISIBLE_DEVICES"))
+    except ValueError:
         _invalid()
-    parts = tuple(raw.split(","))
-    if (
-        len(parts) != 3
-        or len(set(parts)) != 3
-        or any(not part.isdigit() or str(int(part)) != part for part in parts)
-    ):
-        _invalid()
-    return parts
+    return tuple(str(index) for index in indices)
 
 
 def _existing_directory(path: Path) -> Path:

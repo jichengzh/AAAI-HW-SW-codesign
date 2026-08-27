@@ -15,6 +15,7 @@ from framework.stage5.genome_contract_v1 import (
     validate_structure_identity,
 )
 from framework.stage5.production_search_v1 import validate_source_contract
+from framework.stage6.p6_gpu_policy_v1 import canonical_gpu_indices
 from framework.stage6.p6_history_binding_v1 import MAX_GPU_OCCUPANCY
 from framework.stage6.p6_history_recipe_profiles_v1 import (
     RECIPE_V2,
@@ -330,7 +331,7 @@ def _validated_group_id(raw_group_id: object) -> str:
     return raw_group_id
 
 
-def _validated_gpu_indices(policy: Mapping[str, Any]) -> tuple[int, int, int]:
+def _validated_gpu_indices(policy: Mapping[str, Any]) -> tuple[int, ...]:
     if not isinstance(policy, Mapping) or set(policy) != {
         "indices",
         "uuid_by_index",
@@ -342,18 +343,14 @@ def _validated_gpu_indices(policy: Mapping[str, Any]) -> tuple[int, int, int]:
     if (
         not isinstance(raw_indices, Sequence)
         or isinstance(raw_indices, (str, bytes))
-        or len(raw_indices) != 3
-        or any(
-            isinstance(index, bool) or not isinstance(index, int)
-            for index in raw_indices
-        )
     ):
         _invalid()
-    indices = tuple(raw_indices)
+    try:
+        indices = canonical_gpu_indices(raw_indices)
+    except ValueError:
+        _invalid()
     if (
-        len(set(indices)) != len(indices)
-        or any(index < 0 for index in indices)
-        or policy.get("model") != "h800"
+        policy.get("model") != "h800"
         or policy.get("maximum_occupancy") != MAX_GPU_OCCUPANCY
     ):
         _invalid()
@@ -369,7 +366,7 @@ def _validated_gpu_indices(policy: Mapping[str, Any]) -> tuple[int, int, int]:
     uuids = tuple(uuid.strip() for uuid in raw_uuids)
     if any(not uuid for uuid in uuids) or len(set(uuids)) != len(uuids):
         _invalid()
-    return (indices[0], indices[1], indices[2])
+    return indices
 
 
 def _validated_invocations(

@@ -13,8 +13,7 @@ from framework.stage6.p6_history_source_materialization_v1 import (
 )
 
 
-def _gpu_policy() -> dict[str, object]:
-    indices = (101, 103, 107)
+def _gpu_policy(indices: tuple[int, ...] = (101, 103, 107)) -> dict[str, object]:
     return {
         "indices": list(indices),
         "uuid_by_index": {
@@ -115,10 +114,39 @@ def test_source_invocations_dedupe_canonical_group_order_and_round_robin_policy(
     )
 
 
+def test_source_invocations_round_robin_four_groups_across_two_gpus(
+    tmp_path: Path,
+) -> None:
+    """Freezes round-robin scheduling under a two-card synthetic policy."""
+    materializer = _executable(tmp_path / "source-materializer")
+    groups = (
+        "pyramid|29x53x101",
+        "pyramid|17x31x63",
+        "pyramid|31x59x103",
+        "pyramid|23x47x95",
+    )
+    default_policy = _gpu_policy()
+    two_gpu_indices = tuple(default_policy["indices"][:2])
+
+    invocations = build_source_invocations(
+        tmp_path / "request.json",
+        groups,
+        source_materializer=materializer,
+        validated_gpu_policy=_gpu_policy(two_gpu_indices),
+    )
+
+    assert [argv[6] for argv in invocations] == sorted(groups)
+    assert [argv[8] for argv in invocations] == [
+        str(two_gpu_indices[index % len(two_gpu_indices)]) for index in range(4)
+    ]
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
+        "empty_gpu",
         "duplicate_gpu",
+        "negative_gpu",
         "nonpolicy_uuid",
         "duplicate_uuid",
         "malformed_index",
@@ -131,22 +159,42 @@ def test_source_invocations_reject_malformed_or_nonpolicy_gpu_policy(
 ) -> None:
     """Catches invocation planning from anything except the validated binding policy."""
     policy = _gpu_policy()
-    if mutation == "duplicate_gpu":
-        policy["indices"] = [101, 101, 107]
+    if mutation == "empty_gpu":
+        policy = {**policy, "indices": [], "uuid_by_index": {}}
+    elif mutation == "duplicate_gpu":
+        policy = {**policy, "indices": [101, 101, 107]}
+    elif mutation == "negative_gpu":
+        policy = {
+            **policy,
+            "indices": [-1, 103],
+            "uuid_by_index": {
+                "-1": "GPU-synthetic-negative",
+                "103": "GPU-synthetic-103",
+            },
+        }
     elif mutation == "nonpolicy_uuid":
-        policy["uuid_by_index"] = {
-            "101": "GPU-synthetic-101",
-            "103": "GPU-synthetic-103",
-            "109": "GPU-synthetic-109",
+        policy = {
+            **policy,
+            "uuid_by_index": {
+                "101": "GPU-synthetic-101",
+                "103": "GPU-synthetic-103",
+                "109": "GPU-synthetic-109",
+            },
         }
     elif mutation == "duplicate_uuid":
-        policy["uuid_by_index"]["103"] = " GPU-synthetic-101 "
+        policy = {
+            **policy,
+            "uuid_by_index": {
+                **policy["uuid_by_index"],
+                "103": " GPU-synthetic-101 ",
+            },
+        }
     elif mutation == "malformed_index":
-        policy["indices"] = [101, True, 107]
+        policy = {**policy, "indices": [101, True, 107]}
     elif mutation == "wrong_model":
-        policy["model"] = "h100"
+        policy = {**policy, "model": "h100"}
     else:
-        policy["maximum_occupancy"] = 0.5
+        policy = {**policy, "maximum_occupancy": 0.5}
 
     with pytest.raises(P6HistorySourceMaterializationError) as captured:
         build_source_invocations(

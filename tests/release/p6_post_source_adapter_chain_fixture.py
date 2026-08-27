@@ -279,7 +279,7 @@ output.mkdir(parents=True, exist_ok=True)
 (output / "atomic_batch_audit.json").write_text(json.dumps({"schema_version": "stage5_atomic_batch_audit_v2", "feedback_released": True, "batch_quarantined": False, "budget_consumed": 4, "released_feedback_rows": rows}, sort_keys=True), encoding="utf-8")
 round_root = Path(os.environ["P6_HISTORY_ROUND_OUTPUT_ROOT"])
 with (round_root / "finalization-leaves.log").open("a", encoding="utf-8") as handle:
-    handle.write(json.dumps({"leaf": "finalize", "argv": sys.argv[1:]}, sort_keys=True) + "\n")
+    handle.write(json.dumps({"leaf": "finalize", "argv": sys.argv[1:], "cuda": os.environ["CUDA_VISIBLE_DEVICES"]}, sort_keys=True) + "\n")
 '''
 
 
@@ -321,7 +321,7 @@ output.mkdir(parents=True, exist_ok=True)
 (output / "actual_feedback_batch_audit_v3.json").write_text(json.dumps({"schema_version": "stage5_actual_feedback_batch_audit_v3", "promoted_row_count": 4, "silent_surrogate_fallback_count": 0, "rows": audit_rows}, sort_keys=True), encoding="utf-8")
 round_root = Path(os.environ["P6_HISTORY_ROUND_OUTPUT_ROOT"])
 with (round_root / "finalization-leaves.log").open("a", encoding="utf-8") as handle:
-    handle.write(json.dumps({"leaf": "promote", "argv": sys.argv[1:]}, sort_keys=True) + "\n")
+    handle.write(json.dumps({"leaf": "promote", "argv": sys.argv[1:], "cuda": os.environ["CUDA_VISIBLE_DEVICES"]}, sort_keys=True) + "\n")
 '''
 
 

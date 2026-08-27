@@ -15,6 +15,7 @@ from typing import Any, Protocol
 from types import MappingProxyType
 
 from framework.stage5.production_search_v1 import validate_source_contract
+from framework.stage6.p6_gpu_policy_v1 import parse_gpu_indices_csv
 from framework.stage6.p6_history_recipe_profiles_v1 import RECIPE_V2
 from framework.stage6.p6_history_training_contract_v1 import (
     validate_recipe_v2_training_template,
@@ -937,26 +938,18 @@ def _freeze_mapping(payload: Mapping[str, Any]) -> Mapping[str, Any]:
     return MappingProxyType(frozen)
 
 
-def _private_gpu_indices(interface: Mapping[str, Any]) -> tuple[int, int, int]:
+def _private_gpu_indices(interface: Mapping[str, Any]) -> tuple[int, ...]:
     try:
         value = interface["environment"]["values"]["CUDA_VISIBLE_DEVICES"][
             "value"
         ]
-        parts = tuple(value.split(","))
-        indices = tuple(int(part) for part in parts)
+        return parse_gpu_indices_csv(value)
     except (KeyError, TypeError, ValueError):
         raise _execution_interface_error() from None
-    if (
-        len(indices) != 3
-        or len(set(indices)) != 3
-        or any(index < 0 for index in indices)
-    ):
-        raise _execution_interface_error()
-    return (indices[0], indices[1], indices[2])
 
 
 def _probe_snapshot(
-    gpu_probe: GpuProbe, indices: tuple[int, int, int]
+    gpu_probe: GpuProbe, indices: tuple[int, ...]
 ) -> tuple[GpuRecord, ...]:
     try:
         snapshot = gpu_probe.snapshot(indices)
@@ -968,7 +961,7 @@ def _probe_snapshot(
 
 
 def _validate_gpu_snapshot(
-    snapshot: tuple[GpuRecord, ...], indices: tuple[int, int, int]
+    snapshot: tuple[GpuRecord, ...], indices: tuple[int, ...]
 ) -> dict[str, str]:
     if len(snapshot) != len(indices) or any(
         not isinstance(record, GpuRecord) for record in snapshot

@@ -659,6 +659,17 @@ def test_gpu_query_argv_preserves_supplied_private_policy_order() -> None:
     )
 
 
+def test_gpu_query_argv_accepts_two_gpu_policy_in_supplied_order() -> None:
+    policy_indices = SYNTHETIC_GPU_INDICES[:2]
+
+    assert measurement_cli._gpu_query_argv(policy_indices) == (
+        "nvidia-smi",
+        "--id=" + ",".join(str(index) for index in policy_indices),
+        "--query-gpu=index,uuid,name,memory.used,memory.total",
+        "--format=csv,noheader,nounits",
+    )
+
+
 def test_gpu_probe_returns_records_in_supplied_private_policy_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -697,8 +708,7 @@ def test_gpu_probe_returns_records_in_supplied_private_policy_order(
     "indices",
     [
         pytest.param([23, 19, 17], id="non-tuple"),
-        pytest.param((23, 19), id="too-few"),
-        pytest.param((23, 19, 17, 11), id="too-many"),
+        pytest.param((), id="empty"),
         pytest.param((23, 19, 23), id="duplicate"),
         pytest.param((True, 19, 17), id="bool"),
         pytest.param((23, "19", 17), id="non-int"),
