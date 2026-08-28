@@ -1,15 +1,4 @@
-"""Stage1 子流程 B — 每模型 trace adapter (薄, 声明 trace 边界).
-
-设计文档: §1 (trace_adapter 形式) + §3 S0。
-每个 adapter 声明: 稠密 trace 核入口 / 跳过的不可 trace 模块 / 输出头(冻结) / 语义桶。
-模型无关核 graph_scan.py 只认 TraceAdapter 接口, 不认具体模型。
-
-4 个模型 (事实来自 multi_agent/model/*_structure_audit_v1.md + 源码核实):
-  - codriving       : centerpointcodriving (V2Xverse), ResNetBEV(BasicBlock, 无 grouped), cls3/reg24
-  - pyramid_lidar   : HeterPyramidCollab m1 (HEAL), ResNeXt g=32, cls2/reg14/dir4, 复用 depgraph_pyramid
-  - pyramid_camera  : HeterPyramidSingle m2 (HEAL), LSS 不可 trace → 从 backbone_m2(128ch) 起 trace, 仅 OPV2V ckpt
-  - v2xvit          : HeterModelBaseline (HEAL), 仅剪 backbone(transformer 不入图), 复用 depgraph_v2xvit
-"""
+"""Thin per-model adapters declaring Stage1 trace and evidence boundaries."""
 from __future__ import annotations
 
 import os
@@ -22,6 +11,9 @@ from typing import Any, Mapping
 
 import torch
 import torch.nn as nn
+
+from framework.stage1.formal_checkpoint_snapshot import FormalCheckpointSnapshot
+from framework.stage1.formal_trace_build import FormalTraceBuildMixin, _formal_build_inputs
 
 _REPO = Path(os.environ.get("STAGE1_REPO_ROOT", Path(__file__).resolve().parents[2]))
 _HEAL = Path(os.environ.get("HEAL_ROOT", _REPO.parent / "HEAL"))
@@ -40,6 +32,22 @@ def _first_conv_in_channels(module: nn.Module, default: int = 64) -> int:
         if isinstance(m, nn.Conv2d):
             return m.in_channels
     return default
+
+
+def _build_v2xvit_formal_model(
+    checkpoint_path: Path, loaded_model_config: Any, device: str
+) -> nn.Module:
+    from opencood.hypes_yaml.yaml_utils import load_general_params
+    from opencood.tools import train_utils
+
+    hypes = load_general_params(loaded_model_config)
+    hypes["validate_dir"] = hypes["test_dir"]
+    model = train_utils.create_model(hypes)
+    state = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+    if isinstance(state, dict) and "model_state_dict" in state:
+        state = state["model_state_dict"]
+    model.load_state_dict(state)
+    return model.to(device).eval()
 
 
 def _generic_bucket(name: str) -> str:
@@ -181,18 +189,11 @@ class TraceContext:
     def __post_init__(self) -> None:
         object.__setattr__(self, "example_inputs", tuple(self.example_inputs))
         object.__setattr__(self, "loaded_config", _deep_freeze(self.loaded_config))
-        object.__setattr__(
-            self, "checkpoint_evidence", _deep_freeze(self.checkpoint_evidence)
-        )
-        object.__setattr__(
-            self, "materializer_sources", tuple(self.materializer_sources)
-        )
+        object.__setattr__(self, "checkpoint_evidence", _deep_freeze(self.checkpoint_evidence))
+        object.__setattr__(self, "materializer_sources", tuple(self.materializer_sources))
         object.__setattr__(self, "trace_modules", _deep_freeze(self.trace_modules))
-        object.__setattr__(
-            self,
-            "dataflow_relations",
-            tuple(_deep_freeze(relation) for relation in self.dataflow_relations),
-        )
+        relations = tuple(_deep_freeze(item) for item in self.dataflow_relations)
+        object.__setattr__(self, "dataflow_relations", relations)
 
 
 @dataclass(frozen=True)
@@ -271,11 +272,7 @@ def _source_dataflow_relation(
     return relation
 
 
-# ---------------------------------------------------------------------------
-# 基类
-# ---------------------------------------------------------------------------
-
-class TraceAdapter:
+class TraceAdapter(FormalTraceBuildMixin):
     name: str = "base"
     model_class: str = ""
     config_path: str = ""
@@ -284,9 +281,20 @@ class TraceAdapter:
     skipped_modules: list[str] = []
     skipped_subgraphs: list[dict] = []
     trace_note: str = ""
+    formal_config_root: Path | None = None
+    formal_checkpoint_root: Path | None = None
+    formal_scenario_root: Path = _REPO / "configs" / "stage1"
 
-    def build_trace_net(self, device: str) -> tuple[nn.Module, torch.Tensor]:
+    def build_trace_net(
+        self,
+        device: str,
+        checkpoint_authority: FormalCheckpointSnapshot | None = None,
+        loaded_model_config: Any | None = None,
+    ) -> tuple[nn.Module, torch.Tensor]:
         raise NotImplementedError
+
+    def resolved_checkpoint_path(self) -> Path:
+        return Path(self.ckpt_path)
 
     def build_trace_context(
         self,
@@ -357,15 +365,14 @@ class TraceAdapter:
         return out
 
 
-# ---------------------------------------------------------------------------
-# 1. CoDriving (V2Xverse)
-# ---------------------------------------------------------------------------
-
 class CoDrivingAdapter(TraceAdapter):
     name = "codriving"
     model_class = "centerpointcodriving"
     config_path = str(_V2XVERSE / "opencood/hypes_yaml/v2xverse/codriving_multiclass_config.yaml")
     ckpt_path = str(_V2XVERSE_CKPT_ROOT / "codriving/perception/net_epoch_bestval_at16.pth")
+    formal_config_root = _V2XVERSE / "opencood" / "hypes_yaml" / "v2xverse"
+    formal_checkpoint_root = _V2XVERSE_CKPT_ROOT / "codriving" / "perception"
+    model_config_import_root = _V2XVERSE
     ckpt_status = "ok"
     skipped_modules = ["pillar_vfe (sparse VFE)", "scatter (sparse)", "fusion_net (CoDriving, 0-param, channel-preserving)"]
     trace_note = "trace 核 = backbone(ResNetBEV) → shrink_conv → cls/reg heads; 入口 = scatter 稠密输出"
@@ -386,13 +393,27 @@ class CoDrivingAdapter(TraceAdapter):
                 feat = self.shrink_conv(feat)
             return self.cls_head(feat), self.reg_head(feat)
 
-    def build_trace_net(self, device):
+    def build_trace_net(
+        self,
+        device: str,
+        checkpoint_authority: FormalCheckpointSnapshot | None = None,
+        loaded_model_config: Any | None = None,
+    ):
         _add_path(str(_V2XVERSE))
         from opencood.hypes_yaml.yaml_utils import load_yaml
         from opencood.models.center_point_codriving import centerpointcodriving
-        hypes = load_yaml(self.config_path)
+        hypes = (
+            loaded_model_config
+            if loaded_model_config is not None
+            else load_yaml(self.config_path)
+        )
         full = centerpointcodriving(hypes["model"]["args"])
-        raw = torch.load(self.ckpt_path, map_location="cpu")
+        checkpoint_path = (
+            checkpoint_authority.loader_path
+            if checkpoint_authority is not None
+            else self.resolved_checkpoint_path()
+        )
+        raw = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
         sd = raw.get("model_state_dict", raw) if isinstance(raw, dict) else raw
         if isinstance(sd, dict) and "state_dict" in sd:
             sd = sd["state_dict"]
@@ -438,26 +459,48 @@ class CoDrivingAdapter(TraceAdapter):
         )
 
 
-# ---------------------------------------------------------------------------
-# 2. Pyramid-LiDAR (HEAL m1) — 复用 depgraph_pyramid
-# ---------------------------------------------------------------------------
-
 class PyramidLidarAdapter(TraceAdapter):
     name = "pyramid_lidar"
     model_class = "HeterPyramidCollab"
     _ckpt_dir = str(_HEAL_CKPT_ROOT / "stage1/Pyramid_DAIR_m1_base_2023_08_14_11_42_29")
     config_path = _ckpt_dir + "/config.yaml"
     ckpt_path = _ckpt_dir + "/net_epoch_bestval_at23.pth"
+    formal_config_root = Path(_ckpt_dir)
+    formal_checkpoint_root = Path(_ckpt_dir)
+    model_config_import_root = _HEAL
     ckpt_status = "ok"
     skipped_modules = ["encoder_m1 (PointPillar VFE, sparse)", "collab fusion warp_affine (channel-preserving)"]
     trace_note = "复用 PyramidFullTraceNet: backbone_m1→aligner→pyramid_backbone(ResNeXt g=32)→single_head→deblocks→shrink→cls/reg/dir"
 
-    def build_trace_net(self, device):
+    def resolved_checkpoint_path(self) -> Path:
+        if Path(self.ckpt_path).is_file():
+            return Path(self.ckpt_path)
+        _add_path(str(_REPO))
+        from tools.configurable.depgraph_pyramid import find_ckpt
+
+        return Path(find_ckpt(self._ckpt_dir))
+
+    def build_trace_net(
+        self,
+        device: str,
+        checkpoint_authority: FormalCheckpointSnapshot | None = None,
+        loaded_model_config: Any | None = None,
+    ):
         _add_path(str(_REPO))
         _add_path(str(_HEAL))
-        from tools.configurable.depgraph_pyramid import build_full, PyramidFullTraceNet, find_ckpt
-        ckpt = self.ckpt_path if Path(self.ckpt_path).is_file() else find_ckpt(self._ckpt_dir)
-        full = build_full(self.config_path, ckpt, device)
+        from tools.configurable.depgraph_pyramid import build_full, PyramidFullTraceNet
+        checkpoint_path = (
+            checkpoint_authority.loader_path
+            if checkpoint_authority is not None
+            else self.resolved_checkpoint_path()
+        )
+        ckpt = str(checkpoint_path)
+        if loaded_model_config is None:
+            full = build_full(self.config_path, ckpt, device)
+        else:
+            full = build_full(
+                self.config_path, ckpt, device, loaded_hypes=loaded_model_config
+            )
         net = PyramidFullTraceNet(full).to(device).eval()
         cin = _first_conv_in_channels(net.backbone_m1, 64)
         x = torch.randn(1, cin, 128, 256, device=device)
@@ -502,16 +545,15 @@ class PyramidLidarAdapter(TraceAdapter):
         )
 
 
-# ---------------------------------------------------------------------------
-# 3. Pyramid-Camera (HEAL m2) — LSS 不可 trace, 从 backbone_m2 起
-# ---------------------------------------------------------------------------
-
 class PyramidCameraAdapter(TraceAdapter):
     name = "pyramid_camera"
     model_class = "HeterPyramidSingle (m2)"
     _ckpt_dir = str(_HEAL_CKPT_ROOT / "stage2/m2_alignto_m1")
     config_path = _ckpt_dir + "/config.yaml"
     ckpt_path = _ckpt_dir + "/net_epoch25.pth"
+    formal_config_root = Path(_ckpt_dir)
+    formal_checkpoint_root = Path(_ckpt_dir)
+    model_config_import_root = _HEAL
     ckpt_status = "opv2v_only_no_dair"   # ⚠️ 无 DAIR camera ckpt, 仅 OPV2V
     skipped_modules = ["encoder_m2 (LiftSplatShoot: geometry proj + voxel scatter + QuickCumsum, 不可 trace)"]
     trace_note = ("LSS encoder 不可 trace → trace 核从 backbone_m2(BEV 入口)起: "
@@ -546,20 +588,34 @@ class PyramidCameraAdapter(TraceAdapter):
                 return (cls, reg, dir_, *[o for o in occ])
             return cls, reg, dir_
 
-    def build_trace_net(self, device):
+    def build_trace_net(
+        self,
+        device: str,
+        checkpoint_authority: FormalCheckpointSnapshot | None = None,
+        loaded_model_config: Any | None = None,
+    ):
         _add_path(str(_REPO))
         _add_path(str(_HEAL))
         os.chdir(str(_HEAL))
         from opencood.hypes_yaml.yaml_utils import load_yaml
         from opencood.models.heter_pyramid_single import HeterPyramidSingle
-        hypes = load_yaml(self.config_path)
+        formal_inputs = _formal_build_inputs(
+            checkpoint_authority, loaded_model_config
+        )
+        hypes = (
+            formal_inputs[1]
+            if formal_inputs is not None
+            else load_yaml(self.config_path)
+        )
         full = HeterPyramidSingle(hypes["model"]["args"])
-        raw = torch.load(self.ckpt_path, map_location="cpu")
+        checkpoint_path = (
+            formal_inputs[0] if formal_inputs is not None else self.ckpt_path
+        )
+        raw = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
         sd = raw.get("model_state_dict", raw) if isinstance(raw, dict) else raw
         miss, unexp = full.load_state_dict(sd, strict=False)
         print(f"  [ckpt pyramid_camera] missing={len(miss)} unexpected={len(unexp)}")
         full = full.to(device).eval()
-        # 探测 modality 名 (camera 一般是 m2)
         modality = "m2"
         if not hasattr(full, f"backbone_{modality}"):
             for cand in ("m2", "m1", "m3", "m4"):
@@ -573,8 +629,6 @@ class PyramidCameraAdapter(TraceAdapter):
 
     def ignored_layers(self, net):
         ign = [net.cls_head, net.reg_head, net.dir_head]
-        # aligner_m2 (ConvNeXt channel_align + LayerNorm): torch_pruning 不更新
-        # LayerNorm normalized_shape → 结构化剪枝后 forward 崩; v0 整体冻结。
         ign.append(net.aligner)
         for i in range(getattr(net.pyramid_backbone, "num_levels", 3)):
             sh = getattr(net.pyramid_backbone, f"single_head_{i}", None)
@@ -582,10 +636,6 @@ class PyramidCameraAdapter(TraceAdapter):
                 ign.append(sh)
         return ign
 
-
-# ---------------------------------------------------------------------------
-# 4. F-Cooper (HEAL HeterBaseline MaxFusion)
-# ---------------------------------------------------------------------------
 
 class FCooperAdapter(TraceAdapter):
     name = "fcooper"
@@ -596,16 +646,32 @@ class FCooperAdapter(TraceAdapter):
     )
     config_path = _ckpt_dir + "/config.yaml"
     ckpt_path = _ckpt_dir + "/net_epoch_bestval_at23.pth"
+    formal_config_root = Path(_ckpt_dir)
+    formal_checkpoint_root = Path(_ckpt_dir)
+    model_config_import_root = _HEAL
     ckpt_status = "ok"
     skipped_modules = [
         "encoder_m1 (PointPillar VFE, sparse)",
         "fusion_net (MaxFusion: parameter-free max pooling)",
     ]
 
-    def build_trace_net(self, device):
+    def build_trace_net(
+        self,
+        device: str,
+        checkpoint_authority: FormalCheckpointSnapshot | None = None,
+        loaded_model_config: Any | None = None,
+    ):
         from framework.stage1.auto_trace import get_auto_adapter
 
-        return get_auto_adapter(self.name).build_trace_net(device)
+        auto_adapter = get_auto_adapter(self.name)
+        if loaded_model_config is None:
+            return auto_adapter.build_trace_net(
+                device, checkpoint_authority=checkpoint_authority
+            )
+        return auto_adapter.build_trace_net(
+            device, checkpoint_authority=checkpoint_authority,
+            loaded_model_config=loaded_model_config,
+        )
 
     def ignored_layers(self, net):
         from framework.stage1.auto_trace import get_auto_adapter
@@ -626,9 +692,7 @@ class FCooperAdapter(TraceAdapter):
             )
             for index, _ in enumerate(filters)
         )
-        deblock_sequence = (
-            "model.args.m1.backbone_args.num_upsample_filter"
-        )
+        deblock_sequence = "model.args.m1.backbone_args.num_upsample_filter"
         _config_sequence(loaded_config, deblock_sequence)
         output_sequence = "model.args.m1.shrink_header.dim"
         _config_sequence(loaded_config, output_sequence)
@@ -664,25 +728,39 @@ class FCooperAdapter(TraceAdapter):
         )
 
 
-# ---------------------------------------------------------------------------
-# 5. V2X-ViT (HEAL) — 复用 depgraph_v2xvit, 仅剪 backbone (transformer 不入图)
-# ---------------------------------------------------------------------------
-
 class V2XViTAdapter(TraceAdapter):
     name = "v2xvit"
     model_class = "HeterModelBaseline (+ V2XTransformer)"
     _ckpt_dir = str(_HEAL_CKPT_ROOT / "baselines_hf/HeterBaseline_DAIR_lidar_v2xvit_2023_09_09_11_19_26")
     config_path = _ckpt_dir + "/config.yaml"
     ckpt_path = _ckpt_dir + "/net_epoch_bestval_at17.pth"
+    formal_config_root = Path(_ckpt_dir)
+    formal_checkpoint_root = Path(_ckpt_dir)
+    model_config_import_root = _HEAL
     ckpt_status = "ok"
     skipped_modules = ["encoder_m1 (PointPillar VFE, sparse)", "fusion_net (V2XTransformer: HMSA+MSwin, multi-agent, 不可 trace → 不剪)"]
     trace_note = "复用 V2XViTBackboneTraceNet: 仅 backbone_m1→shrinker_m1→cls/reg/dir; transformer 融合整体不入图(仅剪 backbone, 依据 A-2 授权 + dims_pruning §8.6)"
 
-    def build_trace_net(self, device):
+    def build_trace_net(
+        self,
+        device: str,
+        checkpoint_authority: FormalCheckpointSnapshot | None = None,
+        loaded_model_config: Any | None = None,
+    ):
         _add_path(str(_REPO))
         _add_path(str(_HEAL))
-        from tools.configurable.depgraph_v2xvit import build_model, V2XViTBackboneTraceNet
-        full = build_model(device)
+        from tools.configurable.depgraph_v2xvit import (
+            V2XViTBackboneTraceNet,
+            build_model,
+        )
+        formal_inputs = _formal_build_inputs(
+            checkpoint_authority, loaded_model_config
+        )
+        full = (
+            build_model(device)
+            if formal_inputs is None
+            else _build_v2xvit_formal_model(*formal_inputs, device)
+        )
         net = V2XViTBackboneTraceNet(full).to(device).eval()
         cin = _first_conv_in_channels(net.backbone_m1, 64)
         x = torch.randn(1, cin, 256, 512, device=device)
@@ -690,7 +768,6 @@ class V2XViTAdapter(TraceAdapter):
 
     def ignored_layers(self, net):
         ign = [net.cls_head, net.reg_head, net.dir_head]
-        # shrinker 输出层 ignored (保持 fusion 输入 256ch)
         for nm, m in net.shrinker_m1.named_modules():
             if isinstance(m, nn.Conv2d) and "double_conv.2" in nm:
                 ign.append(m)
@@ -699,15 +776,9 @@ class V2XViTAdapter(TraceAdapter):
         return ign
 
 
-# ---------------------------------------------------------------------------
-# 注册表
-# ---------------------------------------------------------------------------
-
 REGISTRY = {
-    "codriving": CoDrivingAdapter,
-    "fcooper": FCooperAdapter,
-    "pyramid_lidar": PyramidLidarAdapter,
-    "pyramid_camera": PyramidCameraAdapter,
+    "codriving": CoDrivingAdapter, "fcooper": FCooperAdapter,
+    "pyramid_lidar": PyramidLidarAdapter, "pyramid_camera": PyramidCameraAdapter,
     "v2xvit": V2XViTAdapter,
 }
 
@@ -719,14 +790,7 @@ def get_adapter(name: str) -> TraceAdapter:
 
 
 __all__ = [
-    "CoDrivingAdapter",
-    "ConfigWriteTarget",
-    "FCooperAdapter",
-    "MaterializerParameterSource",
-    "PyramidLidarAdapter",
-    "REGISTRY",
-    "ScanScenario",
-    "TraceAdapter",
-    "TraceContext",
-    "get_adapter",
+    "CoDrivingAdapter", "ConfigWriteTarget", "FCooperAdapter",
+    "MaterializerParameterSource", "PyramidLidarAdapter", "REGISTRY",
+    "ScanScenario", "TraceAdapter", "TraceContext", "get_adapter",
 ]

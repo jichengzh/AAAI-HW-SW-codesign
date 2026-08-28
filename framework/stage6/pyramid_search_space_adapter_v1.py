@@ -159,9 +159,7 @@ def build_pyramid_candidate_plan(search_space: Mapping[str, Any]) -> dict[str, A
     if not isinstance(hardware_target, Mapping):
         _fail("H800 hardware target is required")
     hardware_name = hardware_target.get("name")
-    if not isinstance(hardware_name, str) or not (
-        hardware_name == "h800" or hardware_name.startswith("h800_")
-    ):
+    if not _is_h800_name(hardware_name):
         _fail("H800 hardware target is required")
 
     hardware_candidates = search_space.get("hardware_candidates")
@@ -181,6 +179,15 @@ def build_pyramid_candidate_plan(search_space: Mapping[str, Any]) -> dict[str, A
         _fail("TVM hardware candidate is required")
 
     return _build_formal_candidate_plan(search_space, hardware_name)
+
+
+def _is_h800_name(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    normalized = "_".join(value.casefold().strip().split())
+    if normalized.startswith("nvidia_"):
+        normalized = normalized.removeprefix("nvidia_")
+    return normalized == "h800" or normalized.startswith("h800_")
 
 
 def build_pyramid_structure_plan(search_space: Mapping[str, Any]) -> dict[str, Any]:

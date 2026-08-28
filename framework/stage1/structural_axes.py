@@ -107,7 +107,7 @@ def build_structural_axis_inputs(
     group_provenance = validate_group_manifest(
         groups, group_manifest, scenario_evidence, source_relations
     )
-    checkpoint_digest, checkpoint_widths = _checkpoint_width_evidence(
+    checkpoint_digest, config_file_digest, checkpoint_widths = _checkpoint_width_evidence(
         trace_context.checkpoint_evidence)
     resolved = tuple(
         _resolve_materializer_source(source, trace_context, groups, checkpoint_widths)
@@ -116,9 +116,8 @@ def build_structural_axis_inputs(
     _reject_duplicate_physical_axes(resolved)
     return seal_scanner_inputs(
         _scanner_input_payload(
-            trace_context, groups, resolved, scenario_evidence,
-            group_manifest or {}, group_provenance, checkpoint_digest,
-            source_relations,
+            trace_context, groups, resolved, scenario_evidence, group_manifest or {},
+            group_provenance, checkpoint_digest, config_file_digest, source_relations,
         )
     )
 
@@ -131,22 +130,17 @@ def _scanner_input_payload(
     group_manifest: Mapping[str, Any],
     group_provenance: Mapping[str, str],
     checkpoint_digest: str,
+    config_file_digest: str | None,
     source_relations: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
     scenario_digest = canonical_digest(scenario_evidence)
     config_digest = canonical_digest(trace_context.loaded_config)
-    authority_sources, derived_relations, bindings = resolved_binding_authority(
-        resolved
-    )
+    authority_sources, derived_relations, bindings = resolved_binding_authority(resolved)
     base_widths = _base_width_authority(resolved, authority_sources, bindings)
-    base_provenance = {
-        "source": "trace_context.config_checkpoint_depgraph",
-        "config_digest": config_digest,
-        "checkpoint_digest": checkpoint_digest,
-    }
+    base_provenance = _base_provenance(config_digest, checkpoint_digest, config_file_digest)
     scanner_evidence = formal_scanner_evidence_payload(
-        groups, group_manifest, scenario_evidence, authority_sources,
-        bindings, base_widths, base_provenance,
+        groups, group_manifest, scenario_evidence, authority_sources, bindings,
+        base_widths, base_provenance,
     )
     return {
         "prune_groups": [dict(group) for group in groups],
@@ -170,6 +164,21 @@ def _scanner_input_payload(
             "scan_manifest_digest": canonical_digest(scanner_evidence),
         },
     }
+
+
+def _base_provenance(
+    config_digest: str,
+    checkpoint_digest: str,
+    config_file_digest: str | None,
+) -> dict[str, str]:
+    provenance = {
+        "source": "trace_context.config_checkpoint_depgraph",
+        "config_digest": config_digest,
+        "checkpoint_digest": checkpoint_digest,
+    }
+    if config_file_digest is not None:
+        provenance["config_file_digest"] = config_file_digest
+    return provenance
 
 
 def _base_width_authority(
@@ -201,13 +210,9 @@ def _resolve_materializer_source(
     checkpoint_width = _checkpoint_module_width(checkpoint_widths, module_path)
     group = _matching_depgraph_group(groups, module_path)
     depgraph_width = _positive_int(group.get("cur_width"), "DepGraph cur_width")
-    _require_equal_widths(
-        base_width=base_width,
-        module_width=module_width,
-        checkpoint_width=checkpoint_width,
-        depgraph_width=depgraph_width,
-        axis_id=source.axis_id,
-    )
+    _require_equal_widths(base_width=base_width, module_width=module_width,
+                          checkpoint_width=checkpoint_width,
+                          depgraph_width=depgraph_width, axis_id=source.axis_id)
     relation = _matching_dataflow_relation(
         context.dataflow_relations, source.axis_id, module_path, group["group_id"]
     )
@@ -391,7 +396,7 @@ def _module_width(module: Any, mutation_kind: str) -> int:
 
 def _checkpoint_width_evidence(
     checkpoint_evidence: Mapping[str, Any],
-) -> tuple[str, Mapping[str, Any]]:
+) -> tuple[str, str | None, Mapping[str, Any]]:
     digest = str(checkpoint_evidence.get("digest") or "")
     if (
         len(digest) != 64
@@ -401,7 +406,14 @@ def _checkpoint_width_evidence(
     widths = checkpoint_evidence.get("module_widths")
     if not isinstance(widths, Mapping) or not widths:
         raise ValueError("checkpoint evidence module_widths are required")
-    return digest, widths
+    config_file_digest = checkpoint_evidence.get("config_file_digest")
+    if config_file_digest is not None and (
+        not isinstance(config_file_digest, str)
+        or len(config_file_digest) != 64
+        or any(character not in "0123456789abcdef" for character in config_file_digest)
+    ):
+        raise ValueError("config file evidence digest is invalid")
+    return digest, config_file_digest, widths
 
 
 def _checkpoint_module_width(
@@ -507,10 +519,9 @@ def derive_structural_axes(raw_scan: Mapping[str, Any]) -> StructuralAxisBundle:
 
     axis_bindings = _bindings_by_axis(bindings)
     axes = [
-        _derive_axis(axis_id, axis_bindings, dataflow, base_widths,
-                     constraints, prune_groups, relation_rows,
-                     scanner_provenance, str(inputs["scanner_input_digest"]),
-                     scenario_evidence)
+        _derive_axis(axis_id, axis_bindings, dataflow, base_widths, constraints,
+                     prune_groups, relation_rows, scanner_provenance,
+                     str(inputs["scanner_input_digest"]), scenario_evidence)
         for axis_id in _ordered_axis_ids(dataflow, axis_bindings)
     ]
     validate_derived_references(axes)
@@ -564,9 +575,8 @@ def _derive_axis(
     axis_kind = _axis_kind(axis_id, bindings)
     if axis_kind == "free":
         require_free_interface_proof(axis_id, bindings, relation_rows)
-    provenance = axis_provenance(axis_id, axis_kind, bindings,
-                                 dataflow.get(axis_id, ()), scanner_provenance,
-                                 scanner_input_digest)
+    provenance = axis_provenance(axis_id, axis_kind, bindings, dataflow.get(axis_id, ()),
+                                 scanner_provenance, scanner_input_digest)
     return StructuralAxis(
         axis_id=axis_id,
         dense_stage=_dense_stage(axis_id),
@@ -726,10 +736,8 @@ def _member_binding(
             raise ValueError("member transform exceeds member base width")
     return AxisMemberBinding(
         b1_group_id=b1_group_id,
-        module_path=_text(
-            group.get("root_layer", group.get("module_path")),
-            "prune_groups.root_layer",
-        ),
+        module_path=_text(group.get("root_layer", group.get("module_path")),
+                          "prune_groups.root_layer"),
         canonical_to_member_num=num,
         canonical_to_member_den=den,
         materializer_param=_text(binding.get("param"), "materializer_bindings.param"),
@@ -772,8 +780,6 @@ def _positive_int(value: object, field_name: str) -> int:
     return parsed
 
 
-__all__ = [
-    "AxisMemberBinding", "StructuralAxis", "StructuralAxisBundle",
-    "axis_to_dict", "axis_to_scanner_dict", "build_structural_axis_inputs",
-    "derive_structural_axes",
-]
+__all__ = ["AxisMemberBinding", "StructuralAxis", "StructuralAxisBundle",
+           "axis_to_dict", "axis_to_scanner_dict", "build_structural_axis_inputs",
+           "derive_structural_axes"]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 
 import pytest
 
@@ -12,7 +13,7 @@ from framework.stage1.formal_scan_contract import (
     validate_formal_request,
 )
 from framework.stage1.graph_scan import extract_prune_groups, scan
-from framework.stage1.structural_axes import derive_structural_axes
+from framework.stage1.structural_axes import _scanner_input_payload, derive_structural_axes
 
 
 def _scenario() -> ScanScenario:
@@ -55,9 +56,46 @@ def test_formal_manifest_fields_do_not_fallback_missing_graph_policy() -> None:
     ]
 
 
+def test_formal_manifest_fields_apply_all_policy_to_each_real_quant_unit() -> None:
+    scenario = ScanScenario(
+        hardware_precisions=("FP16", "INT8"),
+        backend_precisions=("FP16", "INT8"),
+        compression_modes=("fp16", "int8"),
+        graph_quant_unit_policy={"all": ("FP16", "INT8")},
+        alignment={"default_round_to": 8, "default_min_width": 8},
+    )
+
+    fields = formal_manifest_fields(
+        scenario,
+        [
+            {"unit": "backbone", "quantizable": True},
+            {"unit": "neck", "quantizable": True},
+        ],
+    )
+
+    assert fields["quant_units"] == [
+        {
+            "id": "backbone",
+            "legal_precisions": ["FP16", "INT8"],
+            "quantizable": True,
+        },
+        {
+            "id": "neck",
+            "legal_precisions": ["FP16", "INT8"],
+            "quantizable": True,
+        },
+    ]
+
+
 @pytest.mark.parametrize(
     "function",
-    [scan, extract_prune_groups, derive_structural_axes],
+    [scan, extract_prune_groups, derive_structural_axes, _scanner_input_payload],
 )
 def test_changed_stage1_functions_stay_within_50_lines(function: object) -> None:
     assert len(inspect.getsource(function).splitlines()) <= 50
+
+
+def test_structural_axes_file_stays_below_production_size_limit() -> None:
+    path = Path("framework/stage1/structural_axes.py")
+
+    assert len(path.read_text(encoding="utf-8").splitlines()) <= 790

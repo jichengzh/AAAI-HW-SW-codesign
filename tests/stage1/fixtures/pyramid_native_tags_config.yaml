@@ -1,0 +1,26 @@
+model:
+  args:
+    fusion_backbone:
+      num_filters: [64, 128, 256]
+    shrink_header:
+      dim: [256]
+    m1:
+      encoder_args:
+        point_pillar_scatter:
+          grid_size: !!python/object/apply:numpy.core.multiarray._reconstruct
+            args:
+              - !!python/name:numpy.ndarray ''
+              - !!python/tuple [0]
+              - !!binary |
+                  Yg==
+            state: !!python/tuple
+              - 1
+              - !!python/tuple [3]
+              - !!python/object/apply:numpy.dtype
+                args: [i8, false, true]
+                state: !!python/tuple [3, <, null, null, null, -1, -1, 0]
+              - false
+              - !!binary |
+                  AAIAAAAAAAAAAQAAAAAAAAEAAAAAAAAA
+noise_setting: !!python/object/apply:collections.OrderedDict
+  - - [add_noise, false]

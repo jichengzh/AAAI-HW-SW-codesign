@@ -33,9 +33,9 @@ def validate_formal_request(
         return False
     if not isinstance(scenario, ScanScenario):
         raise TypeError("scenario must be a ScanScenario instance")
-    if not isinstance(loaded_config, Mapping) or not isinstance(
-        checkpoint_evidence, Mapping
-    ):
+    if loaded_config is None and checkpoint_evidence is None:
+        return True
+    if not isinstance(loaded_config, Mapping) or not isinstance(checkpoint_evidence, Mapping):
         raise ValueError(
             "formal graph scan requires scanner-owned loaded_config and "
             "checkpoint_evidence"
@@ -143,9 +143,7 @@ def formal_manifest_fields(
         "quant_units": [
             {
                 "id": unit["unit"],
-                "legal_precisions": list(
-                    scenario.graph_quant_unit_policy.get(unit["unit"], ())
-                ),
+                "legal_precisions": list(_quant_policy(scenario, unit["unit"])),
                 "quantizable": bool(unit.get("quantizable", True)),
             }
             for unit in quant_units
@@ -153,8 +151,27 @@ def formal_manifest_fields(
     }
 
 
+def formal_hardware_summary(summary: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep semantic hardware capability fields and omit file provenance."""
+
+    fields = (
+        "name", "arch", "schema_validated", "has_dla", "dla_op_whitelist",
+        "int8_align", "fp16_align", "alignment_enforcement", "legal_bits",
+        "legal_granularity_w", "per_channel_act", "symmetric_only",
+        "mem_capacity_gb",
+    )
+    return {field: summary[field] for field in fields if field in summary}
+
+
+def _quant_policy(scenario: ScanScenario, unit: str) -> tuple[str, ...]:
+    return scenario.graph_quant_unit_policy.get(
+        unit, scenario.graph_quant_unit_policy.get("all", ())
+    )
+
+
 __all__ = [
     "formal_axis_payload",
+    "formal_hardware_summary",
     "formal_manifest_fields",
     "validate_formal_request",
 ]

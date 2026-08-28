@@ -33,6 +33,7 @@ import torch
 import torch.nn as nn
 
 from framework.stage1.adapters import TraceAdapter, _add_path, _generic_bucket
+from framework.stage1.formal_checkpoint_snapshot import FormalCheckpointSnapshot
 from framework.stage1.trace_plan import (
     TraceBoundaryDetector,
     WrapperSynthesizer,
@@ -154,8 +155,23 @@ class AutoTraceAdapter(TraceAdapter):
     # TraceAdapter 接口实现
     # -----------------------------------------------------------------------
 
-    def build_trace_net(self, device: str):
-        net = self._build_fn(self.config_path, self.ckpt_path, device)
+    def build_trace_net(
+        self,
+        device: str,
+        checkpoint_authority: FormalCheckpointSnapshot | None = None,
+        loaded_model_config: dict | None = None,
+    ):
+        checkpoint_path = (
+            checkpoint_authority.loader_path
+            if checkpoint_authority is not None
+            else Path(self.ckpt_path)
+        )
+        if loaded_model_config is None:
+            net = self._build_fn(self.config_path, str(checkpoint_path), device)
+        else:
+            net = self._build_fn(
+                self.config_path, str(checkpoint_path), device, loaded_model_config
+            )
         if hasattr(net, "_stage1_trace_plan"):
             self.trace_plan = getattr(net, "_stage1_trace_plan")
         x = torch.zeros(self._bev_shape, device=device)
@@ -339,7 +355,7 @@ def _build_codriving(config_path: str, ckpt_path: str, device: str) -> nn.Module
     from opencood.models.center_point_codriving import centerpointcodriving
     hypes = load_yaml(config_path)
     full = centerpointcodriving(hypes["model"]["args"])
-    raw = torch.load(ckpt_path, map_location="cpu")
+    raw = torch.load(ckpt_path, map_location="cpu", weights_only=True)
     sd = raw.get("model_state_dict", raw) if isinstance(raw, dict) else raw
     miss, unexp = full.load_state_dict(sd, strict=False)
     print(f"  [ckpt codriving] missing={len(miss)} unexpected={len(unexp)}")
@@ -391,7 +407,7 @@ def _build_pyramid_camera(config_path: str, ckpt_path: str, device: str) -> nn.M
 
     hypes = load_yaml(config_path)
     full = HeterPyramidSingle(hypes["model"]["args"])
-    raw = torch.load(ckpt_path, map_location="cpu")
+    raw = torch.load(ckpt_path, map_location="cpu", weights_only=True)
     sd = raw.get("model_state_dict", raw) if isinstance(raw, dict) else raw
     miss, unexp = full.load_state_dict(sd, strict=False)
     print(f"  [ckpt pyramid_camera] missing={len(miss)} unexpected={len(unexp)}")
@@ -423,13 +439,22 @@ def _infer_heter_model_key(config_path: str, model_args: Optional[dict] = None) 
     return Path(config_path).stem or "heter_baseline"
 
 
-def _load_heter_baseline_full_model(config_path: str, ckpt_path: str, device: str) -> tuple[nn.Module, dict, str]:
+def _load_heter_baseline_full_model(
+    config_path: str,
+    ckpt_path: str,
+    device: str,
+    loaded_model_config: dict | None = None,
+) -> tuple[nn.Module, dict, str]:
     """Load a HEAL HeterModelBaseline full model without making trace decisions."""
 
     _use_heal_opencood()
     os.chdir(str(_HEAL))
     from opencood.hypes_yaml.yaml_utils import load_yaml
-    hypes = load_yaml(config_path)
+    hypes = (
+        loaded_model_config
+        if loaded_model_config is not None
+        else load_yaml(config_path)
+    )
     model_args = hypes["model"]["args"]
     model_key = _infer_heter_model_key(config_path, model_args)
     if "disconet" in model_args or model_key == "disconet":
@@ -437,7 +462,7 @@ def _load_heter_baseline_full_model(config_path: str, ckpt_path: str, device: st
     from opencood.models.heter_model_baseline import HeterModelBaseline
     full = HeterModelBaseline(model_args)
     if ckpt_path and Path(ckpt_path).is_file():
-        raw = torch.load(ckpt_path, map_location="cpu")
+        raw = torch.load(ckpt_path, map_location="cpu", weights_only=True)
         sd = raw.get("model_state_dict", raw) if isinstance(raw, dict) else raw
         miss, unexp = full.load_state_dict(sd, strict=False)
         print(f"  [ckpt {Path(config_path).parent.name}] missing={len(miss)} unexpected={len(unexp)}")
@@ -446,13 +471,24 @@ def _load_heter_baseline_full_model(config_path: str, ckpt_path: str, device: st
     return full.to(device).eval(), hypes, model_key
 
 
-def _build_heter_baseline(config_path: str, ckpt_path: str, device: str) -> nn.Module:
+def _build_heter_baseline(
+    config_path: str,
+    ckpt_path: str,
+    device: str,
+    loaded_model_config: dict | None = None,
+) -> nn.Module:
     """Build an auto-detected dense candidate from a full HeterModelBaseline."""
 
-    full, _hypes, model_key = _load_heter_baseline_full_model(config_path, ckpt_path, device)
+    full, hypes, model_key = _load_heter_baseline_full_model(
+        config_path, ckpt_path, device, loaded_model_config
+    )
     ckpt_status = "ok" if ckpt_path and Path(ckpt_path).is_file() else "missing_architecture_scan_only"
     try:
-        input_shape = _infer_heter_bev_shape(config_path)
+        input_shape = (
+            _infer_heter_bev_shape(config_path)
+            if loaded_model_config is None
+            else _infer_heter_bev_shape(config_path, hypes)
+        )
     except Exception:
         input_shape = None
     trace_plan = TraceBoundaryDetector().detect(
@@ -468,11 +504,17 @@ def _build_heter_baseline(config_path: str, ckpt_path: str, device: str) -> nn.M
     return net
 
 
-def _infer_heter_bev_shape(config_path: str) -> tuple:
+def _infer_heter_bev_shape(
+    config_path: str, loaded_model_config: dict | None = None
+) -> tuple:
     """从 HEAL hetes_yaml 推断 BEV scatter 输出形状 (1, C, H, W)."""
     _add_path(str(_HEAL))
     from opencood.hypes_yaml.yaml_utils import load_yaml
-    hypes = load_yaml(config_path)
+    hypes = (
+        loaded_model_config
+        if loaded_model_config is not None
+        else load_yaml(config_path)
+    )
     # 找 lidar 模态的 encoder_args
     enc = None
     for modality_cfg in (hypes.get("heter") or {}).get("modality_setting", {}).values():

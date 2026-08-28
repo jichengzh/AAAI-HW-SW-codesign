@@ -110,10 +110,16 @@ class PyramidFullTraceNet(nn.Module):
 # 2. 模型实例化
 # ---------------------------------------------------------------------------
 
-def build_full(hypes_path: str, ckpt_path: str, device: str) -> HeterPyramidCollab:
-    hypes = load_yaml(hypes_path)
+def build_full(
+    hypes_path: str,
+    ckpt_path: str,
+    device: str,
+    *,
+    loaded_hypes: dict | None = None,
+) -> HeterPyramidCollab:
+    hypes = loaded_hypes if loaded_hypes is not None else load_yaml(hypes_path)
     model = HeterPyramidCollab(hypes["model"]["args"])
-    raw = torch.load(ckpt_path, map_location="cpu")
+    raw = torch.load(ckpt_path, map_location="cpu", weights_only=True)
     sd = raw.get("model_state_dict", raw)
     if "state_dict" in sd:
         sd = sd["state_dict"]

@@ -115,7 +115,7 @@ def build_model(device: str) -> HeterModelBaseline:
 
     model = train_utils.create_model(hypes)
     ckpt_path = str(CKPT_DIR / CKPT_FILE)
-    state = torch.load(ckpt_path, map_location="cpu")
+    state = torch.load(ckpt_path, map_location="cpu", weights_only=True)
     if isinstance(state, dict) and "model_state_dict" in state:
         state = state["model_state_dict"]  # ISS-005: unwrap if wrapped
         print("[ckpt] WARNING: wrapped format detected, unwrapped")

@@ -8,7 +8,6 @@ separability verdict.
 """
 from __future__ import annotations
 
-import copy
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
@@ -21,158 +20,33 @@ try:
 except Exception:  # noqa: BLE001
     tp = None
 
-
-TRACE_PLAN_SCHEMA = "stage1_trace_plan_v1"
-
-HETER_BASELINE_MODELS = {"fcooper", "attfuse", "where2comm", "v2vnet", "disconet"}
-
-_DENSE_NAME_HINTS = (
-    "backbone",
-    "resnet",
-    "base_bev_backbone",
-    "pyramid_backbone",
-    "neck",
-    "deblock",
-    "shrink",
-    "shrinker",
+from framework.stage1.trace_plan_support import (
+    HETER_BASELINE_MODELS,
+    TRACE_PLAN_SCHEMA,
+    _ATTENTION_HINTS,
+    _FUSION_HINTS,
+    _FrozenModuleKeyMap,
+    _POSTPROCESS_HINTS,
+    _ROUTING_HINTS,
+    _SPARSE_HINTS,
+    _TRAINING_HINTS,
+    _as_list,
+    _extend_checkpoint_module_key_map,
+    _get_module_by_path,
+    _has_any,
+    _is_under_any,
+    _module_path,
+    _param_count,
+    _sort_paths,
+    _text_for,
+    generic_candidates,
+    heter_candidates,
+    heter_rejections,
+    legacy_trace_plan_from_manifest_impl,
+    plan_from_candidates,
+    tag_record,
+    validate_boundary,
 )
-
-_HEAD_NAME_HINTS = (
-    "cls_head",
-    "reg_head",
-    "dir_head",
-    "single_head",
-    "occ_head",
-    "occupancy",
-    "aux_head",
-)
-
-_SPARSE_HINTS = (
-    "pillar_vfe",
-    "vfe",
-    "voxel",
-    "scatter",
-    "sparse",
-    "quickcumsum",
-    "quicksum",
-    "cumsum",
-    "lift",
-    "splat",
-    "geometry",
-)
-
-_FUSION_HINTS = (
-    "fusion",
-    "fuse",
-    "warp",
-    "affine",
-    "pairwise_t_matrix",
-    "record_len",
-    "collab",
-    "maxfusion",
-)
-
-_ATTENTION_HINTS = (
-    "attention",
-    "attfusion",
-    "transformer",
-    "hmsa",
-    "mswin",
-    "attfuse",
-)
-
-_ROUTING_HINTS = (
-    "where2comm",
-    "v2v",
-    "v2vnet",
-    "disco",
-    "communication",
-    "routing",
-    "message_passing",
-)
-
-_POSTPROCESS_HINTS = (
-    "postprocess",
-    "post_process",
-    "nms",
-    "decode",
-    "box_coder",
-    "proposal",
-)
-
-_TRAINING_HINTS = (
-    "loss",
-    "assigner",
-    "target",
-    "metric",
-    "eval",
-)
-
-
-def _as_list(value: Any) -> list[Any]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return value
-    return [value]
-
-
-def _module_path(module_path: str) -> str:
-    return module_path or "<root>"
-
-
-def _text_for(path: str, type_name: str, class_name: str = "") -> str:
-    return f"{path} {type_name} {class_name}".lower()
-
-
-def _has_any(text: str, hints: Iterable[str]) -> bool:
-    return any(hint in text for hint in hints)
-
-
-def _param_count(module: nn.Module, *, recurse: bool) -> int:
-    return int(sum(p.numel() for p in module.parameters(recurse=recurse)))
-
-
-def _is_descendant(path: str, parent: str) -> bool:
-    return path != parent and path.startswith(parent + ".")
-
-
-def _is_under_any(path: str, parents: Iterable[str]) -> bool:
-    return any(_is_descendant(path, parent) for parent in parents)
-
-
-def _sort_paths(paths: Iterable[str]) -> list[str]:
-    return sorted(set(paths), key=lambda p: (p.count("."), p))
-
-
-def _get_module_by_path(model: nn.Module, path: str) -> nn.Module:
-    if not path:
-        return model
-    module: nn.Module = model
-    for part in path.split("."):
-        if isinstance(module, nn.ModuleDict) and part in module:
-            module = module[part]
-        elif part.isdigit() and isinstance(module, (nn.Sequential, nn.ModuleList)):
-            module = module[int(part)]
-        else:
-            module = getattr(module, part)
-    return module
-
-
-def _tensor_shapes(value: Any) -> list[list[int]]:
-    if torch.is_tensor(value):
-        return [list(value.shape)]
-    if isinstance(value, dict):
-        out: list[list[int]] = []
-        for item in value.values():
-            out.extend(_tensor_shapes(item))
-        return out
-    if isinstance(value, (list, tuple)):
-        out = []
-        for item in value:
-            out.extend(_tensor_shapes(item))
-        return out
-    return []
 
 
 @dataclass
@@ -240,60 +114,7 @@ class HeuristicTagger:
     """Conservative module tags used by TraceBoundaryDetector."""
 
     def tag(self, record: ModuleRecord) -> ModuleRecord:
-        text = _text_for(record.path, record.type_name, record.class_name)
-        tags: set[str] = set(record.tags)
-        reasons: list[str] = list(record.reasons)
-
-        if any(op in record.class_name for op in ("Conv2d", "ConvTranspose2d", "Linear", "BatchNorm2d")):
-            tags.add("dense_op")
-            reasons.append("module type is a dense torch op")
-        if _has_any(text, _DENSE_NAME_HINTS):
-            tags.add("dense_path_candidate")
-            reasons.append("name matches dense backbone/neck/shrinker hints")
-        if _has_any(text, _HEAD_NAME_HINTS):
-            tags.add("head_candidate")
-            tags.add("ignored_candidate")
-            tags.add("dense_path_candidate")
-            reasons.append("name matches output head hints")
-        if _has_any(text, _SPARSE_HINTS):
-            tags.add("skipped_candidate")
-            tags.add("sparse_or_geometry_preprocess")
-            reasons.append("name/type matches sparse or geometry preprocess hints")
-        if _has_any(text, _ATTENTION_HINTS):
-            tags.add("skipped_candidate")
-            tags.add("attention_or_routing_fusion")
-            reasons.append("name/type matches attention or transformer hints")
-        if _has_any(text, _ROUTING_HINTS):
-            tags.add("skipped_candidate")
-            tags.add("attention_or_routing_fusion")
-            reasons.append("name/type matches routing or message-passing hints")
-        if _has_any(text, _FUSION_HINTS):
-            tags.add("skipped_candidate")
-            tags.add("fusion_or_alignment")
-            reasons.append("name/type matches fusion or alignment hints")
-        if _has_any(text, _POSTPROCESS_HINTS):
-            tags.add("skipped_candidate")
-            tags.add("postprocess_or_decode")
-            reasons.append("name/type matches postprocess/decode hints")
-        if _has_any(text, _TRAINING_HINTS):
-            tags.add("skipped_candidate")
-            tags.add("training_or_eval_only")
-            reasons.append("name/type matches training/eval-only hints")
-        if not tags and record.n_children == 0 and record.params_recursive > 0:
-            tags.add("unknown_param_leaf")
-            reasons.append("parameterized leaf did not match known Stage1 boundary hints")
-
-        return ModuleRecord(
-            path=record.path,
-            type_name=record.type_name,
-            class_name=record.class_name,
-            depth=record.depth,
-            n_children=record.n_children,
-            params_direct=record.params_direct,
-            params_recursive=record.params_recursive,
-            tags=sorted(tags),
-            reasons=sorted(set(reasons)),
-        )
+        return tag_record(record, ModuleRecord)
 
     def tag_many(self, records: Iterable[ModuleRecord]) -> list[ModuleRecord]:
         return [self.tag(record) for record in records]
@@ -400,47 +221,19 @@ class DensePathFinder:
             _skip_ref(tagger, records_by_path[path], model_name=model_name)
             for path in top_skip_paths
         ]
-
-        rejected = []
-        if backbone not in records_by_path:
-            rejected.append(
-                {
-                    "candidate_id": f"heter_baseline_dense_{modality}",
-                    "status": "rejected",
-                    "failed_at": "module_tree_scan",
-                    "error": f"missing {backbone}",
-                    "suggested_override": "provide a manual dense entry or model-specific boundary override",
-                }
-            )
-        if not included_paths:
-            rejected.append(
-                {
-                    "candidate_id": "heter_baseline_dense_core",
-                    "status": "rejected",
-                    "failed_at": "candidate_selection",
-                    "error": "no backbone/shrinker/head dense path was found",
-                    "suggested_override": "review module names or add a detector plugin",
-                }
-            )
-
-        candidates = []
-        if included_paths:
-            candidates.append(
-                TraceCandidate(
-                    candidate_id=f"heter_baseline_dense_{modality}",
-                    entry="post_scatter_bev",
-                    input_shape=input_shape,
-                    included_modules=included_paths,
-                    ignored_layers=ignored_paths,
-                    skipped_subgraphs=[item["name"] for item in skipped],
-                    confidence="medium",
-                    selection_reason=(
-                        "HeterModelBaseline dense path selected from module tree: "
-                        f"{backbone} -> {shrinker if shrinker in included_paths else 'heads'}."
-                    ),
-                    wrapper_kind="heter_baseline_dense_path",
-                )
-            )
+        rejected = heter_rejections(
+            backbone, modality, included_paths, records_by_path
+        )
+        candidates = heter_candidates(
+            TraceCandidate,
+            backbone=backbone,
+            shrinker=shrinker,
+            modality=modality,
+            input_shape=input_shape,
+            included_paths=included_paths,
+            ignored_paths=ignored_paths,
+            skipped=skipped,
+        )
         return candidates, skipped, rejected
 
     def _find_generic(
@@ -472,32 +265,13 @@ class DensePathFinder:
             and "ignored_candidate" in record.tags
             and not _is_under_any(record.path, skipped_paths)
         ]
-        rejected = []
-        candidates = []
-        if included_paths:
-            candidates.append(
-                TraceCandidate(
-                    candidate_id="generic_dense_path",
-                    entry="unknown_dense_entry",
-                    input_shape=input_shape,
-                    included_modules=_sort_paths(included_paths),
-                    ignored_layers=_sort_paths(ignored_paths),
-                    skipped_subgraphs=[item["name"] for item in skipped],
-                    confidence="medium",
-                    selection_reason="generic dense path hints from module names",
-                    wrapper_kind="module_path",
-                )
-            )
-        else:
-            rejected.append(
-                {
-                    "candidate_id": "generic_dense_path",
-                    "status": "rejected",
-                    "failed_at": "candidate_selection",
-                    "error": "generic detector found no dense path candidate",
-                    "suggested_override": "add a detector plugin or provide a manual TraceAdapter fallback",
-                }
-            )
+        candidates, rejected = generic_candidates(
+            TraceCandidate,
+            input_shape=input_shape,
+            included_paths=included_paths,
+            ignored_paths=ignored_paths,
+            skipped=skipped,
+        )
         return candidates, skipped, rejected
 
 
@@ -529,10 +303,30 @@ class GeneratedTraceWrapper(nn.Module):
         self.head_path_names = list(head_paths)
         self.body = nn.ModuleDict()
         self.heads = nn.ModuleDict()
+        checkpoint_module_key_map: dict[str, str] = {}
         for path in body_paths:
-            self.body[self._alias(path)] = _get_module_by_path(full_model, path)
+            alias = self._alias(path)
+            module = _get_module_by_path(full_model, path)
+            self.body[alias] = module
+            _extend_checkpoint_module_key_map(
+                checkpoint_module_key_map,
+                wrapper_root=f"body.{alias}",
+                source_root=path,
+                source_module=module,
+            )
         for path in head_paths:
-            self.heads[self._alias(path)] = _get_module_by_path(full_model, path)
+            alias = self._alias(path)
+            module = _get_module_by_path(full_model, path)
+            self.heads[alias] = module
+            _extend_checkpoint_module_key_map(
+                checkpoint_module_key_map,
+                wrapper_root=f"heads.{alias}",
+                source_root=path,
+                source_module=module,
+            )
+        self.checkpoint_module_key_map = _FrozenModuleKeyMap(
+            tuple(checkpoint_module_key_map.items())
+        )
 
     @staticmethod
     def _alias(path: str) -> str:
@@ -587,69 +381,13 @@ class BoundaryValidator:
         ignored_layers: list[nn.Module] | None = None,
         run_prune: bool = True,
     ) -> dict[str, Any]:
-        result: dict[str, Any] = {
-            "full_model_load_sanity": "not_applicable_wrapper_only",
-            "wrapper_forward_dryrun": "pending",
-            "output_shape_sanity": "pending",
-            "depgraph_build": "pending",
-            "prune_dryrun": "pending" if run_prune else "skipped",
-            "interface_invariant_check": "pending",
-            "latency_coverage_annotation": "trace_net_only",
-        }
-        with torch.no_grad():
-            outputs = wrapper(example_input)
-        out_shapes = _tensor_shapes(outputs)
-        result["wrapper_forward_dryrun"] = "ok"
-        result["output_shape_sanity"] = "ok" if out_shapes else "no_tensor_output"
-        result["out_shapes"] = out_shapes
-        result["interface_invariant_check"] = "ok" if out_shapes else "needs_review"
-
-        if tp is None:
-            result["depgraph_build"] = "unavailable_torch_pruning"
-            result["prune_dryrun"] = "unavailable_torch_pruning"
-            return result
-
-        ignored_layers = ignored_layers or []
-        dg = tp.DependencyGraph().build_dependency(wrapper, example_inputs=example_input)
-        groups = list(
-            dg.get_all_groups(
-                root_module_types=[nn.Conv2d, nn.ConvTranspose2d, nn.Linear],
-                ignored_layers=ignored_layers,
-            )
+        return validate_boundary(
+            wrapper,
+            example_input,
+            ignored_layers=ignored_layers,
+            run_prune=run_prune,
+            pruning_module=tp,
         )
-        result["depgraph_build"] = "ok"
-        result["n_prunable_groups"] = len(groups)
-
-        if not run_prune:
-            return result
-
-        wrapper2 = copy.deepcopy(wrapper)
-        x2 = example_input.detach().clone()
-        ignored2 = [
-            _get_module_by_path(wrapper2, name)
-            for name, _module in wrapper.named_modules()
-            if any(_module is ignored for ignored in ignored_layers)
-        ]
-        try:
-            pruner = tp.pruner.MetaPruner(
-                wrapper2,
-                x2,
-                importance=tp.importance.MagnitudeImportance(p=1),
-                pruning_ratio=0.5,
-                round_to=32,
-                global_pruning=False,
-                iterative_steps=1,
-                ignored_layers=ignored2,
-            )
-            pruner.step()
-            with torch.no_grad():
-                pruned_outputs = wrapper2(x2)
-            result["prune_dryrun"] = "ok"
-            result["pruned_out_shapes"] = _tensor_shapes(pruned_outputs)
-        except Exception as e:  # noqa: BLE001
-            result["prune_dryrun"] = "fail"
-            result["prune_error"] = f"{type(e).__name__}: {str(e)[:200]}"
-        return result
 
 
 def _module_ref(records_by_path: dict[str, ModuleRecord], path: str, role: str, reason: str) -> dict[str, Any]:
@@ -742,21 +480,10 @@ class TraceBoundaryDetector:
             model_name=model_key,
             input_shape=input_shape,
         )
-        if model_key in HETER_BASELINE_MODELS or _infer_modality(records_by_path):
-            return self._plan_from_candidates(
-                records=records,
-                records_by_path=records_by_path,
-                full_model=full_model,
-                model_name=model_key,
-                config_path=config_path,
-                ckpt_path=ckpt_path,
-                ckpt_status=_ckpt_status_from_path(ckpt_path, ckpt_status),
-                manual_override_used=manual_override_used,
-                detector_name="TraceBoundaryDetector.heter_baseline_v1",
-                candidates=candidates,
-                skipped=skipped,
-                rejected=rejected,
-            )
+        is_heter = model_key in HETER_BASELINE_MODELS or _infer_modality(
+            records_by_path
+        )
+        detector_kind = "heter_baseline" if is_heter else "generic"
         return self._plan_from_candidates(
             records=records,
             records_by_path=records_by_path,
@@ -766,7 +493,7 @@ class TraceBoundaryDetector:
             ckpt_path=ckpt_path,
             ckpt_status=_ckpt_status_from_path(ckpt_path, ckpt_status),
             manual_override_used=manual_override_used,
-            detector_name="TraceBoundaryDetector.generic_v1",
+            detector_name=f"TraceBoundaryDetector.{detector_kind}_v1",
             candidates=candidates,
             skipped=skipped,
             rejected=rejected,
@@ -788,80 +515,21 @@ class TraceBoundaryDetector:
         skipped: list[dict[str, Any]],
         rejected: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        selected = candidates[0] if candidates else None
-        blocking_skip = any(item.get("full_model_verdict_blocker") for item in skipped)
-        has_missing_ckpt = "missing" in str(ckpt_status)
-        review_reasons = []
-        if skipped:
-            review_reasons.append("skipped_subgraphs_require_user_review")
-        if blocking_skip:
-            review_reasons.append("fusion_attention_or_routing_boundary_not_closed")
-        if has_missing_ckpt:
-            review_reasons.append("missing_checkpoint_architecture_only")
-        if rejected:
-            review_reasons.append("candidate_rejection_present")
-
-        if selected is None:
-            selected_candidate = {
-                "candidate_id": "no_dense_candidate",
-                "status": "no_candidate",
-                "entry": "unknown",
-                "input_shape": None,
-                "included_modules": [],
-                "ignored_layers": [],
-                "skipped_subgraphs": [item["name"] for item in skipped],
-                "selection_reason": "no candidate generated by DensePathFinder",
-                "wrapper_kind": "none",
-                "validation": {
-                    "full_model_module_tree_scan": "ok",
-                    "wrapper_forward_dryrun": "not_run_no_candidate",
-                    "depgraph_build": "not_run_no_candidate",
-                    "prune_dryrun": "not_run_no_candidate",
-                },
-            }
-            included_paths = []
-            ignored_paths = []
-            trace_confidence = "low"
-        else:
-            selected_candidate = selected.to_dict()
-            selected_candidate["status"] = "selected" if not rejected else "selected_with_rejections"
-            selected_candidate["validation"] = {
-                "full_model_module_tree_scan": "ok",
-                "wrapper_forward_dryrun": "pending_graph_scan",
-                "depgraph_build": "pending_graph_scan",
-                "prune_dryrun": "pending_graph_scan",
-            }
-            included_paths = list(selected.included_modules)
-            ignored_paths = list(selected.ignored_layers)
-            trace_confidence = selected.confidence if not rejected else "low"
-
-        return {
-            "schema": TRACE_PLAN_SCHEMA,
-            "model": model_name,
-            "model_class": type(full_model).__name__,
-            "config_path": config_path,
-            "ckpt_path": ckpt_path,
-            "ckpt_status": ckpt_status,
-            "detector": detector_name,
-            "manual_override_used": bool(manual_override_used),
-            "trace_confidence": trace_confidence,
-            "coverage_scope": "dense_core_only" if skipped else "full_dense_path_candidate",
-            "review_required": bool(review_reasons),
-            "review_reasons": sorted(set(review_reasons)),
-            "candidates": [candidate.to_dict() for candidate in candidates],
-            "selected_candidate": selected_candidate,
-            "included_modules": [
-                _module_ref(records_by_path, path, "included", "selected dense trace path")
-                for path in included_paths
-            ],
-            "ignored_layers": [
-                _module_ref(records_by_path, path, "ignored", "head/interface layer kept in forward but ignored by pruning")
-                for path in ignored_paths
-            ],
-            "skipped_subgraphs": skipped,
-            "rejected_candidates": rejected,
-            "module_inventory": [record.to_dict() for record in records],
-        }
+        return plan_from_candidates(
+            records=records,
+            records_by_path=records_by_path,
+            full_model=full_model,
+            model_name=model_name,
+            config_path=config_path,
+            ckpt_path=ckpt_path,
+            ckpt_status=ckpt_status,
+            manual_override_used=manual_override_used,
+            detector_name=detector_name,
+            candidates=candidates,
+            skipped=skipped,
+            rejected=rejected,
+            module_ref=_module_ref,
+        )
 
 
 def attach_runtime_validation(
@@ -901,85 +569,7 @@ def attach_runtime_validation(
 
 def legacy_trace_plan_from_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
     """Normalize old adapter manifests into the TracePlan schema."""
-
-    trace = dict(manifest.get("trace", {}) or {})
-    model = str(manifest.get("model") or "unknown")
-    skipped = []
-    for idx, item in enumerate(_as_list(trace.get("skipped_subgraphs"))):
-        if isinstance(item, dict):
-            skipped.append(dict(item))
-    for idx, raw in enumerate(_as_list(trace.get("skipped_modules"))):
-        text = str(raw)
-        low = text.lower()
-        if any(key in low for key in _ATTENTION_HINTS + _ROUTING_HINTS):
-            typ, blocker, gate = "attention_or_routing_fusion", True, "attention_fusion_coverage_anchor"
-            if any(key in low for key in _ROUTING_HINTS):
-                gate = "routing_fusion_coverage_anchor"
-        elif any(key in low for key in _FUSION_HINTS):
-            if "maxfusion" in low or "max pooling" in low:
-                typ, blocker, gate = "fusion_or_alignment", False, "maxfusion_coverage_anchor"
-            else:
-                typ, blocker, gate = "fusion_or_alignment", True, "routing_fusion_coverage_anchor"
-        elif any(key in low for key in _SPARSE_HINTS):
-            typ, blocker, gate = "sparse_or_geometry_preprocess", False, "trace_sparse_frontend_boundary"
-        else:
-            typ, blocker, gate = "custom_untraced_subgraph", True, "custom_subgraph_coverage_gate"
-        skipped.append(
-            {
-                "name": text.split("(", 1)[0].strip() or f"skipped_{idx}",
-                "type": typ,
-                "description": text,
-                "full_model_verdict_blocker": blocker,
-                "blocker_gate": gate,
-                "source": "legacy_trace_adapter_manifest",
-            }
-        )
-
-    ckpt_status = str(manifest.get("ckpt_status") or "unknown")
-    review_reasons = ["legacy_adapter_boundary_requires_review"]
-    if "missing" in ckpt_status:
-        review_reasons.append("missing_checkpoint_architecture_only")
-    if any(item.get("full_model_verdict_blocker") for item in skipped):
-        review_reasons.append("fusion_attention_or_routing_boundary_not_closed")
-    return {
-        "schema": TRACE_PLAN_SCHEMA,
-        "model": model,
-        "model_class": manifest.get("model_class") or "",
-        "config_path": manifest.get("config") or manifest.get("config_path") or "",
-        "ckpt_path": manifest.get("ckpt") or manifest.get("ckpt_path") or "",
-        "ckpt_status": ckpt_status,
-        "detector": "legacy_trace_adapter_manifest_normalizer",
-        "manual_override_used": True,
-        "trace_confidence": "low" if "missing" in ckpt_status else "medium",
-        "coverage_scope": "dense_core_only" if skipped else "trace_adapter_scope",
-        "review_required": True,
-        "review_reasons": sorted(set(review_reasons)),
-        "selected_candidate": {
-            "candidate_id": "legacy_trace_adapter_boundary",
-            "status": "selected_legacy",
-            "entry": "trace_adapter_declared_entry",
-            "input_shape": trace.get("entry_shape"),
-            "included_modules": [],
-            "ignored_layers": [],
-            "skipped_subgraphs": [item.get("name") for item in skipped],
-            "selection_reason": "normalized from existing TraceAdapter manifest fields",
-            "validation": {
-                "full_model_module_tree_scan": "not_available_legacy_manifest",
-                "wrapper_forward_dryrun": "already_run_by_graph_scan" if manifest.get("scan_status") else "unknown",
-                "depgraph_build": "already_run_by_graph_scan" if manifest.get("view_b1_prune_groups") else "unknown",
-                "prune_dryrun": (
-                    str((manifest.get("checks", {}) or {}).get("dryrun_prune05", {}).get("status"))
-                    if isinstance(manifest.get("checks"), dict)
-                    else "unknown"
-                ),
-            },
-        },
-        "included_modules": [],
-        "ignored_layers": [],
-        "skipped_subgraphs": skipped,
-        "rejected_candidates": [],
-        "module_inventory": [],
-    }
+    return legacy_trace_plan_from_manifest_impl(manifest)
 
 
 __all__ = [

@@ -1,19 +1,4 @@
-"""Stage1 子流程 B — 网络计算图扫描与分区 (模型无关核).
-
-设计文档: multi_agent/methods/design/stage1_graph_scan_partition_v1.md §3
-原型: tools/configurable/depgraph_pyramid.py (PyramidFullTraceNet / build_dependency /
-      module_bucket / run_global_prune 的 forward sanity) 抽象上提为此模型无关核。
-
-流程 S1-S6:
-  S1 build_dependency (DepGraph)
-  S2 extract_prune_groups  (视图① B1 — 以依赖组为准, 抓跨模块残差耦合)
-  S3 extract_quant_units   (视图② B2 — 语义桶 = 完整依赖组并集)
-  S4 tag_routing           (视图③ D  — 逐节点 op-type × 硬件 op 白名单, D↔B2 传播边)
-  S5 stats_and_validate    (参数分布 + dry-run 0.5 剪 forward sanity)
-  S6 assemble + 写 partition yaml
-
-剪枝对象锁定 channel (设计裁剪: 不做 2:4/element)。
-"""
+"""Stage1 model-independent graph scan and partition pipeline."""
 from __future__ import annotations
 
 import math
@@ -29,18 +14,30 @@ from framework.stage1.hardware_scan import HwCapability
 from framework.stage1.adapters import ScanScenario, TraceAdapter
 from framework.stage1.formal_scan_contract import (
     formal_axis_payload,
+    formal_hardware_summary,
     formal_manifest_fields,
     validate_formal_request,
+)
+from framework.stage1.formal_scan_evidence import (
+    load_formal_scan_evidence,
+    validate_scenario_hardware,
+)
+from framework.stage1.formal_checkpoint_snapshot import (
+    FormalCheckpointSnapshot,
+    scanner_owned_checkpoint_snapshot,
+)
+from framework.stage1.formal_config_snapshot import (
+    FormalConfigSnapshot,
+    scanner_owned_config_snapshot,
+)
+from framework.stage1.formal_trace_build import (
+    adapter_trace_net,
+    formal_model_import_transaction,
 )
 from framework.stage1.trace_plan import attach_runtime_validation
 
 _PRUNABLE_TYPES = (nn.Conv2d, nn.ConvTranspose2d, nn.Linear, nn.BatchNorm2d)
 _ROOT_TYPES = [nn.Conv2d, nn.ConvTranspose2d, nn.Linear]
-
-
-# ---------------------------------------------------------------------------
-# 小工具
-# ---------------------------------------------------------------------------
 
 def n_params(m: nn.Module) -> int:
     return sum(p.numel() for p in m.parameters())
@@ -463,27 +460,32 @@ def _build_pruner(net, x, ratio, ignored):
     )
 
 
-def stats_and_validate(adapter: TraceAdapter, prune_groups, hw: HwCapability,
-                       device: str) -> dict:
-    # 参数分布 (按桶)
-    net, x = adapter.build_trace_net(device)
+def stats_and_validate(
+    adapter: TraceAdapter,
+    prune_groups,
+    hw: HwCapability,
+    device: str,
+    checkpoint_authority: FormalCheckpointSnapshot | None = None,
+    config_authority: FormalConfigSnapshot | None = None,
+    loaded_model_config: Any | None = None,
+) -> dict:
+    net, x, _ = adapter_trace_net(
+        adapter, device, checkpoint_authority, config_authority, loaded_model_config
+    )
     total = n_params(net)
     dist: dict[str, int] = {}
     for n, m in net.named_modules():
         if isinstance(m, _PRUNABLE_TYPES):
             dist[adapter.semantic_bucket(n)] = dist.get(adapter.semantic_bucket(n), 0) + n_params(m)
     param_dist = {k: round(v / total, 4) for k, v in sorted(dist.items())}
-
     checks = {"params_total": int(total), "param_dist": param_dist}
-
-    # 一致性: floor 后 %round_to
     bad = [g["group_id"] for g in prune_groups
            if g["width_floor"] % g["round_to_int8"] != 0 and g["grouped_conv_g"] == 1]
     checks["all_floor_mod_round_to"] = (len(bad) == 0)
     checks["floor_violations"] = bad or None
-
-    # dry-run 0.5 剪 + forward sanity (复用 depgraph run_global_prune 逻辑)
-    net2, x2 = adapter.build_trace_net(device)
+    net2, x2, _ = adapter_trace_net(
+        adapter, device, checkpoint_authority, config_authority, loaded_model_config
+    )
     ignored2 = adapter.ignored_layers(net2)
     p_before = n_params(net2)
     try:
@@ -577,8 +579,15 @@ def _adapter_trace_plan(adapter: TraceAdapter, device: str) -> Any:
         return _failed_trace_plan(adapter, error)
 
 
-def _build_trace_graph(adapter: TraceAdapter, device: str) -> dict[str, Any]:
-    net, x = adapter.build_trace_net(device)
+def _build_trace_graph(
+    adapter: TraceAdapter,
+    device: str,
+    checkpoint_authority: FormalCheckpointSnapshot | None = None,
+    config_authority: FormalConfigSnapshot | None = None,
+) -> dict[str, Any]:
+    net, x, loaded_model_config = adapter_trace_net(
+        adapter, device, checkpoint_authority, config_authority
+    )
     trace_plan = _adapter_trace_plan(adapter, device)
     ignored = adapter.ignored_layers(net)
     with torch.no_grad():
@@ -594,7 +603,9 @@ def _build_trace_graph(adapter: TraceAdapter, device: str) -> dict[str, Any]:
     return {
         "net": net, "x": x, "output": output, "depgraph": depgraph,
         "ignored": ignored, "n_groups_raw": n_groups_raw,
-        "trace_plan": trace_plan,
+        "trace_plan": trace_plan, "checkpoint_authority": checkpoint_authority,
+        "config_authority": config_authority,
+        "loaded_model_config": loaded_model_config,
     }
 
 
@@ -619,7 +630,15 @@ def _build_scan_views(
 
 
 def _run_scan_validation(adapter, hw, device, trace, views) -> tuple[dict, Any]:
-    checks = stats_and_validate(adapter, views["b1"], hw, device)
+    checks = stats_and_validate(
+        adapter,
+        views["b1"],
+        hw,
+        device,
+        trace["checkpoint_authority"],
+        trace["config_authority"],
+        trace["loaded_model_config"],
+    )
     trace_plan = attach_runtime_validation(
         trace["trace_plan"],
         forward_status="ok",
@@ -658,24 +677,24 @@ def _scan_latency(
 
 
 def _manifest_core(
-    adapter, hw, trace, views, checks, trace_plan, latency, skipped_subgraphs
+    adapter, hw, trace, views, checks, trace_plan, latency, skipped_subgraphs,
+    formal: bool,
 ) -> dict:
-    return {
+    core = {
         "schema": "stage1_partition_manifest_v1",
         "stage": "stage1_partition",
         "model": adapter.name,
         "model_class": adapter.model_class,
-        "config": adapter.config_path,
-        "ckpt": adapter.ckpt_path,
         "ckpt_status": adapter.ckpt_status,
-        "hw_capability": hw.summary(),
+        "hw_capability": (
+            formal_hardware_summary(hw.summary()) if formal else hw.summary()
+        ),
         "trace": {
             "entry_shape": list(trace["x"].shape),
             "skipped_modules": adapter.skipped_modules,
             "skipped_subgraphs": skipped_subgraphs,
             "note": adapter.trace_note,
         },
-        "trace_plan": trace_plan,
         "prune_object": "channel",   # 设计裁剪: 锁定, 不搜 2:4/element
         "stats": {"params_total": checks["params_total"], "param_dist": checks["param_dist"]},
         "search_space_summary": {
@@ -695,19 +714,37 @@ def _manifest_core(
         "checks": {k: v for k, v in checks.items() if k not in ("params_total", "param_dist")},
         "scan_status": "ok" if checks["dryrun_prune05"].get("status") == "ok" else "partial",
     }
-
-
-def scan(adapter: TraceAdapter, hw: HwCapability, device: str = "cpu",
-         profile_latency_mode: str = "auto",
-         lat_warmup: int = 30, lat_measure: int = 100,
-         scenario: ScanScenario | None = None,
-         loaded_config: Mapping[str, Any] | None = None,
-         checkpoint_evidence: Mapping[str, Any] | None = None) -> dict:
-    """跑完整 Stage1 子流程 B + 汇合 A → 返回 partition manifest dict。"""
-    validate_formal_request(scenario, loaded_config, checkpoint_evidence)
-    print(f"[scan] {adapter.name}  device={device}  hw={hw.name}")
-    print(f"       torch {torch.__version__}  tp {tp.__version__}")
-    trace = _build_trace_graph(adapter, device)
+    if not formal:
+        core.update({
+            "config": adapter.config_path,
+            "ckpt": adapter.ckpt_path,
+            "trace_plan": trace_plan,
+        })
+    return core
+def _scan_with_authority(
+    adapter: TraceAdapter,
+    hw: HwCapability,
+    device: str,
+    profile_latency_mode: str,
+    lat_warmup: int,
+    lat_measure: int,
+    scenario: ScanScenario | None,
+    loaded_config: Mapping[str, Any] | None,
+    checkpoint_evidence: Mapping[str, Any] | None,
+    checkpoint_authority: FormalCheckpointSnapshot | None,
+    config_authority: FormalConfigSnapshot | None,
+) -> dict:
+    trace = _build_trace_graph(
+        adapter, device, checkpoint_authority, config_authority
+    )
+    if checkpoint_authority is not None:
+        loaded_config, checkpoint_evidence = load_formal_scan_evidence(
+            adapter,
+            trace["net"],
+            checkpoint_authority=checkpoint_authority,
+            config_authority=config_authority,
+            loaded_model_config=trace["loaded_model_config"],
+        )
     views = _build_scan_views(
         adapter, hw, trace, scenario, loaded_config, checkpoint_evidence
     )
@@ -718,13 +755,40 @@ def scan(adapter: TraceAdapter, hw: HwCapability, device: str = "cpu",
         trace, skipped_subgraphs,
     )
     core = _manifest_core(
-        adapter, hw, trace, views, checks, trace_plan, latency, skipped_subgraphs
+        adapter, hw, trace, views, checks, trace_plan, latency, skipped_subgraphs,
+        scenario is not None,
     )
     return {
         **core,
         **formal_manifest_fields(scenario, views["b2"]),
         **views["scanner_axes"],
     }
+
+
+def scan(adapter: TraceAdapter, hw: HwCapability, device: str = "cpu",
+         profile_latency_mode: str = "auto",
+         lat_warmup: int = 30, lat_measure: int = 100,
+         scenario: ScanScenario | None = None,
+         loaded_config: Mapping[str, Any] | None = None,
+         checkpoint_evidence: Mapping[str, Any] | None = None) -> dict:
+    """跑完整 Stage1 子流程 B + 汇合 A → 返回 partition manifest dict。"""
+    validate_formal_request(scenario, loaded_config, checkpoint_evidence)
+    if scenario is not None:
+        validate_scenario_hardware(scenario, hw)
+    print(f"[scan] {adapter.name}  device={device}  hw={hw.name}")
+    print(f"       torch {torch.__version__}  tp {tp.__version__}")
+    arguments = (
+        adapter, hw, device, profile_latency_mode, lat_warmup, lat_measure,
+        scenario, loaded_config, checkpoint_evidence,
+    )
+    if scenario is not None and loaded_config is None:
+        with (
+            scanner_owned_checkpoint_snapshot(adapter) as authority,
+            scanner_owned_config_snapshot(adapter) as config_authority,
+            formal_model_import_transaction(adapter),
+        ):
+            return _scan_with_authority(*arguments, authority, config_authority)
+    return _scan_with_authority(*arguments, None, None)
 
 
 __all__ = ["scan", "extract_prune_groups", "extract_quant_units", "tag_routing",

@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import FrozenInstanceError
+import inspect
+from pathlib import Path
+import sys
+from types import ModuleType
 
 import pytest
 import torch
@@ -12,12 +17,32 @@ from framework.stage1.adapters import (
     CoDrivingAdapter,
     FCooperAdapter,
     MaterializerParameterSource,
+    PyramidCameraAdapter,
     PyramidLidarAdapter,
+    REGISTRY,
     ScanScenario,
     TraceAdapter,
     TraceContext,
+    V2XViTAdapter,
     get_adapter,
 )
+from framework.stage1.auto_trace import AutoTraceAdapter
+from framework.stage1.formal_checkpoint_snapshot import (
+    scanner_owned_checkpoint_snapshot,
+)
+
+
+@contextmanager
+def _checkpoint_authority(tmp_path: Path):
+    checkpoint = tmp_path / "authority.pth"
+    checkpoint.write_bytes(b"scanner-owned-checkpoint")
+
+    class _AuthorityAdapter:
+        ckpt_path = str(checkpoint)
+        formal_checkpoint_root = tmp_path
+
+    with scanner_owned_checkpoint_snapshot(_AuthorityAdapter()) as authority:
+        yield authority
 
 
 def test_trace_context_contains_evidence_but_no_width_or_count_oracle() -> None:
@@ -259,3 +284,360 @@ def test_fcooper_is_registered_and_declares_config_driven_neck_sources() -> None
         (target.selector, target.transform)
         for target in by_axis["neck.output"].write_targets
     ) == (("model.args.in_head", "identity"),)
+
+
+@pytest.mark.parametrize(
+    "adapter",
+    [adapter_type() for adapter_type in REGISTRY.values()],
+    ids=tuple(REGISTRY),
+)
+def test_paper_adapter_contract_accepts_one_checkpoint_authority(
+    adapter: TraceAdapter,
+) -> None:
+    signature = inspect.signature(adapter.build_trace_net)
+    formal_signature = inspect.signature(adapter.build_formal_trace_net)
+
+    signature.bind("cpu", checkpoint_authority=None)
+    formal_signature.bind(
+        "cpu", checkpoint_authority=None, loaded_model_config=None
+    )
+
+
+@pytest.mark.parametrize("adapter_name", tuple(REGISTRY))
+def test_registered_adapter_formal_dispatch_reuses_both_authorities(
+    adapter_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = get_adapter(adapter_name)
+    checkpoint_authority = object()
+    loaded_model_config = {"model": {"args": {}}}
+    calls = []
+
+    def build_trace_net(
+        device,
+        checkpoint_authority=None,
+        loaded_model_config=None,
+    ):
+        calls.append((device, checkpoint_authority, loaded_model_config))
+        return nn.Conv2d(4, 4, 1), torch.ones(1, 4, 2, 2)
+
+    monkeypatch.setattr(adapter, "build_trace_net", build_trace_net)
+
+    _net, _inputs, returned_config = adapter.build_formal_trace_net(
+        "cpu",
+        checkpoint_authority=checkpoint_authority,
+        loaded_model_config=loaded_model_config,
+    )
+
+    assert calls == [("cpu", checkpoint_authority, loaded_model_config)]
+    assert returned_config is loaded_model_config
+
+
+def test_auto_trace_adapter_uses_supplied_checkpoint_authority(
+    tmp_path: Path,
+) -> None:
+    calls: list[tuple[str, str, str]] = []
+
+    def build(config_path: str, checkpoint_path: str, device: str) -> nn.Module:
+        calls.append((config_path, checkpoint_path, device))
+        return nn.Conv2d(4, 4, 1)
+
+    adapter = AutoTraceAdapter(
+        name="paper",
+        model_class="PaperModel",
+        config_path="/config.yaml",
+        ckpt_path="/default.pth",
+        build_fn=build,
+        bev_shape=(1, 4, 2, 2),
+    )
+
+    with _checkpoint_authority(tmp_path) as authority:
+        expected_path = str(authority.loader_path)
+        adapter.build_trace_net("cpu", checkpoint_authority=authority)
+
+    assert calls == [("/config.yaml", expected_path, "cpu")]
+
+
+def test_codriving_loads_supplied_resolved_checkpoint_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[Path] = []
+
+    class _Backbone(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.conv = nn.Conv2d(4, 4, 1)
+
+        def forward(self, payload):
+            return {"spatial_features_2d": self.conv(payload["spatial_features"])}
+
+    class _Full(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.backbone = _Backbone()
+            self.shrink_flag = False
+            self.cls_head = nn.Conv2d(4, 2, 1)
+            self.reg_head = nn.Conv2d(4, 4, 1)
+
+    opencood = ModuleType("opencood")
+    opencood.__path__ = []  # type: ignore[attr-defined]
+    hypes_yaml = ModuleType("opencood.hypes_yaml")
+    hypes_yaml.__path__ = []  # type: ignore[attr-defined]
+    yaml_utils = ModuleType("opencood.hypes_yaml.yaml_utils")
+    yaml_utils.load_yaml = lambda _path: pytest.fail("config must be reused")  # type: ignore[attr-defined]
+    models = ModuleType("opencood.models")
+    models.__path__ = []  # type: ignore[attr-defined]
+    centerpoint = ModuleType("opencood.models.center_point_codriving")
+    centerpoint.centerpointcodriving = lambda _args: _Full()  # type: ignore[attr-defined]
+    for name, module in {
+        "opencood": opencood,
+        "opencood.hypes_yaml": hypes_yaml,
+        "opencood.hypes_yaml.yaml_utils": yaml_utils,
+        "opencood.models": models,
+        "opencood.models.center_point_codriving": centerpoint,
+    }.items():
+        monkeypatch.setitem(sys.modules, name, module)
+
+    def load_checkpoint(path: Path, *, map_location: str, weights_only: bool):
+        assert map_location == "cpu"
+        assert weights_only is True
+        calls.append(path)
+        return {}
+
+    monkeypatch.setattr(torch, "load", load_checkpoint)
+    loaded_model_config = {"model": {"args": {}}}
+
+    with _checkpoint_authority(tmp_path) as authority:
+        expected_path = authority.loader_path
+        _, _, returned_config = CoDrivingAdapter().build_formal_trace_net(
+            "cpu",
+            checkpoint_authority=authority,
+            loaded_model_config=loaded_model_config,
+        )
+
+    assert calls == [expected_path]
+    assert returned_config is loaded_model_config
+
+
+def test_pyramid_loads_supplied_resolved_checkpoint_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, object]] = []
+
+    class _PyramidTrace(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.backbone_m1 = nn.Sequential(nn.Conv2d(4, 4, 1))
+
+    dependency = ModuleType("tools.configurable.depgraph_pyramid")
+
+    def build_full(
+        config_path: str,
+        checkpoint_path: str,
+        device: str,
+        *,
+        loaded_hypes: object | None = None,
+    ) -> object:
+        del config_path, device
+        calls.append((checkpoint_path, loaded_hypes))
+        return object()
+
+    dependency.build_full = build_full  # type: ignore[attr-defined]
+    dependency.PyramidFullTraceNet = lambda _full: _PyramidTrace()  # type: ignore[attr-defined]
+    monkeypatch.setitem(
+        sys.modules, "tools.configurable.depgraph_pyramid", dependency
+    )
+
+    loaded_model_config = {"model": {"args": {}}}
+    with _checkpoint_authority(tmp_path) as authority:
+        expected_path = str(authority.loader_path)
+        _, _, returned_config = PyramidLidarAdapter().build_formal_trace_net(
+            "cpu",
+            checkpoint_authority=authority,
+            loaded_model_config=loaded_model_config,
+        )
+
+    assert calls == [(expected_path, loaded_model_config)]
+    assert returned_config is loaded_model_config
+
+
+def test_fcooper_delegates_supplied_checkpoint_authority_to_auto_adapter(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[object, object]] = []
+
+    class _Auto:
+        def build_trace_net(
+            self,
+            device,
+            checkpoint_authority=None,
+            loaded_model_config=None,
+        ):
+            del device
+            calls.append((checkpoint_authority, loaded_model_config))
+            return nn.Conv2d(4, 4, 1), torch.ones(1, 4, 2, 2)
+
+    monkeypatch.setattr(
+        "framework.stage1.auto_trace.get_auto_adapter", lambda _name: _Auto()
+    )
+
+    loaded_model_config = {"model": {"args": {}}}
+    with _checkpoint_authority(tmp_path) as authority:
+        _, _, returned_config = FCooperAdapter().build_formal_trace_net(
+            "cpu",
+            checkpoint_authority=authority,
+            loaded_model_config=loaded_model_config,
+        )
+
+    assert calls == [(authority, loaded_model_config)]
+    assert returned_config is loaded_model_config
+
+
+def test_pyramid_camera_formal_build_uses_only_scanner_owned_authorities(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[object, object]] = []
+
+    class _Backbone(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.conv = nn.Conv2d(4, 4, 1)
+
+        def forward(self, payload):
+            return {"spatial_features_2d": self.conv(payload["spatial_features"])}
+
+    class _Pyramid(nn.Module):
+        num_levels = 0
+
+        def forward_single(self, value):
+            return value, []
+
+    class _Full(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.backbone_m2 = _Backbone()
+            self.aligner_m2 = nn.Identity()
+            self.pyramid_backbone = _Pyramid()
+            self.shrink_flag = False
+            self.cls_head = nn.Conv2d(4, 2, 1)
+            self.reg_head = nn.Conv2d(4, 4, 1)
+            self.dir_head = nn.Conv2d(4, 2, 1)
+
+    yaml_utils = ModuleType("opencood.hypes_yaml.yaml_utils")
+    yaml_utils.load_yaml = lambda _path: pytest.fail("ambient config fallback")  # type: ignore[attr-defined]
+    pyramid_model = ModuleType("opencood.models.heter_pyramid_single")
+    model_args = {"camera": "scanner-owned"}
+    pyramid_model.HeterPyramidSingle = (  # type: ignore[attr-defined]
+        lambda args: calls.append(("config", args)) or _Full()
+    )
+    monkeypatch.setitem(sys.modules, "opencood.hypes_yaml.yaml_utils", yaml_utils)
+    monkeypatch.setitem(
+        sys.modules, "opencood.models.heter_pyramid_single", pyramid_model
+    )
+    monkeypatch.setattr("framework.stage1.adapters.os.chdir", lambda _path: None)
+
+    def load_checkpoint(path, *, map_location, weights_only):
+        calls.append((path, (map_location, weights_only)))
+        return {}
+
+    monkeypatch.setattr(torch, "load", load_checkpoint)
+    loaded_model_config = {"model": {"args": model_args}}
+    with _checkpoint_authority(tmp_path) as authority:
+        expected_path = authority.loader_path
+        _net, _inputs, returned_config = (
+            PyramidCameraAdapter().build_formal_trace_net(
+                "cpu",
+                checkpoint_authority=authority,
+                loaded_model_config=loaded_model_config,
+            )
+        )
+
+    assert calls == [
+        ("config", model_args),
+        (expected_path, ("cpu", True)),
+    ]
+    assert returned_config is loaded_model_config
+
+
+def test_v2xvit_formal_build_uses_only_scanner_owned_authorities(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, object]] = []
+
+    class _Full(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.backbone_m1 = nn.Sequential(nn.Conv2d(4, 4, 1))
+            self.shrinker_m1 = nn.Identity()
+            self.shrink_flag = False
+            self.cls_head = nn.Conv2d(4, 2, 1)
+            self.reg_head = nn.Conv2d(4, 4, 1)
+            self.dir_head = nn.Conv2d(4, 2, 1)
+
+        def load_state_dict(self, state_dict, strict=True):
+            calls.append(("state", (state_dict, strict)))
+            return (), ()
+
+    class _Trace(nn.Module):
+        def __init__(self, full: _Full) -> None:
+            super().__init__()
+            self.backbone_m1 = full.backbone_m1
+            self.shrinker_m1 = full.shrinker_m1
+            self.has_shrink = False
+            self.cls_head = full.cls_head
+            self.reg_head = full.reg_head
+            self.dir_head = full.dir_head
+
+    dependency = ModuleType("tools.configurable.depgraph_v2xvit")
+    dependency.build_model = lambda _device: pytest.fail("ambient model fallback")  # type: ignore[attr-defined]
+    dependency.V2XViTBackboneTraceNet = _Trace  # type: ignore[attr-defined]
+    monkeypatch.setitem(
+        sys.modules, "tools.configurable.depgraph_v2xvit", dependency
+    )
+    yaml_utils = ModuleType("opencood.hypes_yaml.yaml_utils")
+
+    def load_general_params(config):
+        calls.append(("config", config))
+        return config
+
+    yaml_utils.load_general_params = load_general_params  # type: ignore[attr-defined]
+    train_utils = ModuleType("opencood.tools.train_utils")
+    train_utils.create_model = (  # type: ignore[attr-defined]
+        lambda config: calls.append(("model", config)) or _Full()
+    )
+    opencood_tools = ModuleType("opencood.tools")
+    opencood_tools.train_utils = train_utils  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "opencood.hypes_yaml.yaml_utils", yaml_utils)
+    monkeypatch.setitem(sys.modules, "opencood.tools", opencood_tools)
+    monkeypatch.setitem(sys.modules, "opencood.tools.train_utils", train_utils)
+
+    def load_checkpoint(path, *, map_location, weights_only):
+        calls.append(("checkpoint", (path, map_location, weights_only)))
+        return {"model_state_dict": {"scanner": "owned"}}
+
+    monkeypatch.setattr(torch, "load", load_checkpoint)
+    loaded_model_config = {
+        "model": {"args": {}},
+        "test_dir": "scanner-test-dir",
+    }
+    with _checkpoint_authority(tmp_path) as authority:
+        expected_path = authority.loader_path
+        _net, _inputs, returned_config = V2XViTAdapter().build_formal_trace_net(
+            "cpu",
+            checkpoint_authority=authority,
+            loaded_model_config=loaded_model_config,
+        )
+
+    assert calls == [
+        ("config", loaded_model_config),
+        ("model", loaded_model_config),
+        ("checkpoint", (expected_path, "cpu", True)),
+        ("state", ({"scanner": "owned"}, True)),
+    ]
+    assert loaded_model_config["validate_dir"] == "scanner-test-dir"
+    assert returned_config is loaded_model_config

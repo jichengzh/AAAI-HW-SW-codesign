@@ -64,8 +64,10 @@ from tools.release.derive_p6_history_recipe import main as derive_recipe_main
 from tools.release.preflight_p6_materializer_training_bridge import (
     preflight_materializer_training_bridge,
 )
+import tools.release.render_p6_stage1_launcher as stage1_launcher_renderer
 from tools.release.render_p6_stage1_launcher import (
     P6Stage1LauncherRenderError,
+    main as render_stage1_launcher_main,
     render_stage1_launcher,
 )
 
@@ -311,6 +313,7 @@ def _write_synthetic_real_stage1_launcher(
     *,
     schema_key: str = "schema",
     hardware_via_symlink: bool = False,
+    scenario_path: Path | None = None,
 ) -> Path:
     private_bin = root / "private-runner" / "bin"
     private_bin.mkdir(parents=True, exist_ok=True)
@@ -321,15 +324,34 @@ import argparse
 import json
 from pathlib import Path
 
-parser = argparse.ArgumentParser()
+class _ArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        del message
+        self.exit(2, "argument_error\\n")
+
+
+parser = _ArgumentParser()
 parser.add_argument("--hardware", required=True)
 parser.add_argument("--output", required=True)
 parser.add_argument("--device", required=True)
+parser.add_argument("--scenario", required=True)
 parser.add_argument("--stage1-repo-root", required=True)
 parser.add_argument("--heal-root", required=True)
 parser.add_argument("--heal-checkpoint-root", required=True)
 args = parser.parse_args()
-assert args.device == "cuda:0"
+expected_scenario = (
+    Path(__file__).resolve().parents[2]
+    / "public-code"
+    / "configs"
+    / "stage1"
+    / "p6_h800_formal_scan.yaml"
+)
+if args.device != "cuda:0":
+    raise SystemExit("invalid device")
+if Path(args.scenario) != expected_scenario:
+    raise SystemExit("invalid scenario path")
+if expected_scenario.read_text(encoding="utf-8") != "scenario-version: original\\n":
+    raise SystemExit("invalid scenario content")
 
 
 def run_real_stage1_scan(*, output_path: Path) -> None:
@@ -355,21 +377,27 @@ run_real_stage1_scan(output_path=Path(args.output))
     if hardware_via_symlink:
         hardware_root = root / "outside-hardware"
         hardware = hardware_root / "hardware" / "h800.yaml"
-        hardware.parent.mkdir(parents=True)
+        hardware.parent.mkdir(parents=True, exist_ok=True)
         public_code.mkdir()
         (public_code / "configs").symlink_to(hardware_root, target_is_directory=True)
     else:
         hardware = public_code / "configs" / "hardware" / "h800.yaml"
-        hardware.parent.mkdir(parents=True)
+        hardware.parent.mkdir(parents=True, exist_ok=True)
     hardware.write_text("name: NVIDIA H800\n", encoding="utf-8")
-    (root / "dependency-overlay").mkdir()
+    tracked_scenario = (
+        public_code / "configs" / "stage1" / "p6_h800_formal_scan.yaml"
+    )
+    tracked_scenario.parent.mkdir(parents=True, exist_ok=True)
+    tracked_scenario.write_text("scenario-version: original\n", encoding="utf-8")
+    (root / "dependency-overlay").mkdir(exist_ok=True)
     for name in ("heal", "checkpoints"):
-        (root / name).mkdir()
+        (root / name).mkdir(exist_ok=True)
     return render_stage1_launcher(
         output_path=private_bin / "stage1-launch-real-private.sh",
         tooling_python=Path(sys.executable).resolve(strict=True),
         heal_root=root / "heal",
         heal_checkpoint_root=root / "checkpoints",
+        scenario_path=scenario_path or tracked_scenario,
     )
 
 
@@ -666,6 +694,211 @@ def test_real_stage1_launcher_accepts_mapper_schema_without_external_execution(
         "model": "pyramid_lidar",
         "scan_status": "ok",
     }
+
+
+def test_stage1_launcher_uses_tracked_public_code_scenario(
+    tmp_path: Path,
+) -> None:
+    launcher = _write_synthetic_real_stage1_launcher(tmp_path / "history")
+    output_root = tmp_path / "output"
+    output_root.mkdir()
+    manifest = output_root / "stage1_partition_manifest.json"
+
+    completed = subprocess.run(
+        [str(launcher), str(manifest), str(output_root)],
+        cwd=tmp_path,
+        env={"PATH": os.environ["PATH"]},
+        shell=False,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    tracked_scenario = (
+        tmp_path
+        / "history"
+        / "public-code"
+        / "configs"
+        / "stage1"
+        / "p6_h800_formal_scan.yaml"
+    )
+    assert tracked_scenario.read_text(encoding="utf-8") == "scenario-version: original\n"
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_stage1_launcher_rolls_back_launcher_when_temporary_write_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    history_root = tmp_path / "history"
+    real_mkstemp = stage1_launcher_renderer.tempfile.mkstemp
+    calls = 0
+
+    def fail_launcher_temporary(*args: Any, **kwargs: Any) -> tuple[int, str]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError("synthetic launcher write failure")
+        return real_mkstemp(*args, **kwargs)
+
+    monkeypatch.setattr(
+        stage1_launcher_renderer.tempfile, "mkstemp", fail_launcher_temporary
+    )
+    with pytest.raises(P6Stage1LauncherRenderError):
+        _write_synthetic_real_stage1_launcher(history_root)
+
+    private_runner = history_root / "private-runner"
+    assert not (private_runner / "bin" / "stage1-launch-real-private.sh").exists()
+    assert not tuple(private_runner.rglob("*.tmp"))
+    assert (
+        history_root
+        / "public-code"
+        / "configs"
+        / "stage1"
+        / "p6_h800_formal_scan.yaml"
+    ).is_file()
+
+    monkeypatch.setattr(stage1_launcher_renderer.tempfile, "mkstemp", real_mkstemp)
+    assert _write_synthetic_real_stage1_launcher(history_root).is_file()
+
+
+def test_stage1_launcher_rejects_scenario_outside_public_code_closure(
+    tmp_path: Path,
+) -> None:
+    external_scenario = tmp_path / "external-scenario.yaml"
+    external_scenario.write_text("scenario-version: original\n", encoding="utf-8")
+
+    with pytest.raises(P6Stage1LauncherRenderError):
+        _write_synthetic_real_stage1_launcher(
+            tmp_path / "history", scenario_path=external_scenario
+        )
+
+
+def test_stage1_launcher_renderer_cli_reports_stable_success_and_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert render_stage1_launcher_main(
+        [
+            "--output",
+            "relative-output",
+            "--tooling-python",
+            str(tmp_path / "python"),
+            "--heal-root",
+            str(tmp_path / "heal"),
+            "--heal-checkpoint-root",
+            str(tmp_path / "checkpoints"),
+            "--scenario",
+            str(tmp_path / "scenario.yaml"),
+        ]
+    ) == 1
+    assert "stage1_launcher_render_invalid" in capsys.readouterr().err
+
+    monkeypatch.setattr(
+        stage1_launcher_renderer,
+        "render_stage1_launcher",
+        lambda **_kwargs: tmp_path / "launcher.sh",
+    )
+    assert render_stage1_launcher_main(
+        [
+            "--output",
+            str(tmp_path / "output"),
+            "--tooling-python",
+            str(tmp_path / "python"),
+            "--heal-root",
+            str(tmp_path / "heal"),
+            "--heal-checkpoint-root",
+            str(tmp_path / "checkpoints"),
+            "--scenario",
+            str(tmp_path / "scenario.yaml"),
+        ]
+    ) == 0
+    assert capsys.readouterr().out == "p6_stage1_launcher_rendered\n"
+
+
+def test_stage1_launcher_never_overwrites_destination_created_after_planning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    history_root = tmp_path / "history"
+    private_bin = history_root / "private-runner" / "bin"
+    destination = private_bin / "stage1-launch-real-private.sh"
+    real_mkstemp = stage1_launcher_renderer.tempfile.mkstemp
+    calls = 0
+
+    def create_destination_after_planning(
+        *args: Any, **kwargs: Any
+    ) -> tuple[int, str]:
+        nonlocal calls
+        calls += 1
+        result = real_mkstemp(*args, **kwargs)
+        if calls == 1:
+            destination.write_text("attacker-owned\n", encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(
+        stage1_launcher_renderer.tempfile,
+        "mkstemp",
+        create_destination_after_planning,
+    )
+    with pytest.raises(P6Stage1LauncherRenderError):
+        _write_synthetic_real_stage1_launcher(history_root)
+
+    assert destination.read_text(encoding="utf-8") == "attacker-owned\n"
+    assert not (history_root / "private-runner" / "stage1-scenario.yaml").exists()
+
+
+def test_stage1_launcher_removes_linked_destination_when_publication_open_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    history_root = tmp_path / "history"
+    destination = (
+        history_root / "private-runner" / "bin" / "stage1-launch-real-private.sh"
+    )
+    real_open = stage1_launcher_renderer.os.open
+
+    def fail_linked_destination_open(
+        path: str | bytes | os.PathLike[str], *args: Any, **kwargs: Any
+    ) -> int:
+        if Path(path) == destination:
+            raise OSError("synthetic publication open failure")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(stage1_launcher_renderer.os, "open", fail_linked_destination_open)
+    with pytest.raises(P6Stage1LauncherRenderError):
+        _write_synthetic_real_stage1_launcher(history_root)
+
+    assert not destination.exists()
+    monkeypatch.setattr(stage1_launcher_renderer.os, "open", real_open)
+    assert _write_synthetic_real_stage1_launcher(history_root).is_file()
+
+
+def test_stage1_launcher_closes_mismatched_publication_fd_and_removes_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    history_root = tmp_path / "history"
+    destination = (
+        history_root / "private-runner" / "bin" / "stage1-launch-real-private.sh"
+    )
+    replacement = tmp_path / "unrelated-publication-target"
+    replacement.write_text("unrelated\n", encoding="utf-8")
+    real_open = stage1_launcher_renderer.os.open
+
+    def open_unrelated_file(
+        path: str | bytes | os.PathLike[str], *args: Any, **kwargs: Any
+    ) -> int:
+        if Path(path) == destination:
+            return real_open(replacement, *args, **kwargs)
+        return real_open(path, *args, **kwargs)
+
+    before_descriptors = len(tuple(Path("/proc/self/fd").iterdir()))
+    monkeypatch.setattr(stage1_launcher_renderer.os, "open", open_unrelated_file)
+    with pytest.raises(P6Stage1LauncherRenderError):
+        _write_synthetic_real_stage1_launcher(history_root)
+    after_descriptors = len(tuple(Path("/proc/self/fd").iterdir()))
+
+    assert after_descriptors == before_descriptors
+    assert not destination.exists()
+    monkeypatch.setattr(stage1_launcher_renderer.os, "open", real_open)
+    assert _write_synthetic_real_stage1_launcher(history_root).is_file()
 
 
 def test_real_stage1_launcher_rejects_schema_version_when_python_is_optimized(

@@ -8,18 +8,22 @@ import copy
 import importlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import sys
 import tempfile
 from typing import Any
 
 import yaml
 
+from framework.stage1.structural_axis_digest import scanner_structural_axes_digest
+from framework.stage1_bridge import load_stage2_search_space
+
 
 MODEL_NAME = "pyramid_lidar"
 SCHEMA = "stage1_partition_manifest_v1"
 STAGE = "stage1_partition"
 MAX_MANIFEST_BYTES = 16 * 1024 * 1024
+_STAGE1_ENV_KEYS = ("STAGE1_REPO_ROOT", "HEAL_ROOT", "HEAL_CKPT_ROOT")
 
 
 class P6Stage1BridgeError(ValueError):
@@ -35,22 +39,29 @@ def build_p6_stage1_partition_manifest(
     hardware_path: Path,
     device: str,
     environment: Mapping[str, str],
-    scanner: Callable[[str, Path, str, Mapping[str, str]], Mapping[str, Any]],
+    scanner: Callable[
+        [str, Path, str, Mapping[str, str], Path], Mapping[str, Any]
+    ],
+    *,
+    scenario_path: Path,
 ) -> dict[str, Any]:
     """Run Stage1 scanning, validate the P6 manifest contract, and write JSON."""
     try:
         _validate_output_path(output_path)
         _validate_input_file(hardware_path)
+        scenario_path = _validate_input_file(scenario_path)
         _validate_h800_hardware_yaml(hardware_path)
         manifest = scanner(
             MODEL_NAME,
             hardware_path,
             device,
             copy.deepcopy(dict(environment)),
+            scenario_path,
         )
         if not _is_p6_stage1_manifest(manifest):
             raise P6Stage1BridgeError()
         owned_manifest = copy.deepcopy(dict(manifest))
+        _validate_strict_stage2_contract(owned_manifest, output_path.parent)
         _atomic_write_json(output_path, owned_manifest)
     except P6Stage1BridgeError:
         raise
@@ -64,28 +75,37 @@ def run_real_stage1_scan(
     hardware_path: Path,
     device: str,
     environment: Mapping[str, str],
+    scenario_path: Path,
 ) -> Mapping[str, Any]:
     """Adapter that invokes the repository Stage1 graph scanner."""
     stage1_root = _validate_directory_env(environment, "STAGE1_REPO_ROOT")
     heal_root = _validate_directory_env(environment, "HEAL_ROOT")
     heal_checkpoint_root = _validate_directory_env(environment, "HEAL_CKPT_ROOT")
-    os.environ.update(
-        {
-            "STAGE1_REPO_ROOT": str(stage1_root),
-            "HEAL_ROOT": str(heal_root),
-            "HEAL_CKPT_ROOT": str(heal_checkpoint_root),
-        }
-    )
-    if str(stage1_root) not in sys.path:
-        sys.path.insert(0, str(stage1_root))
-
     try:
-        with _supplied_stage1_imports(stage1_root):
-            adapters = importlib.import_module("framework.stage1.adapters")
-            graph_scan = importlib.import_module("framework.stage1.graph_scan")
-            hardware_scan = importlib.import_module("framework.stage1.hardware_scan")
-            hardware = hardware_scan.HwCapability.from_yaml(hardware_path)
-            return graph_scan.scan(adapters.get_adapter(model_name), hardware, device=device)
+        with _temporary_stage1_process_state(
+            stage1_root, heal_root, heal_checkpoint_root
+        ):
+            with _supplied_stage1_imports(stage1_root):
+                adapters = importlib.import_module("framework.stage1.adapters")
+                graph_scan = importlib.import_module("framework.stage1.graph_scan")
+                hardware_scan = importlib.import_module("framework.stage1.hardware_scan")
+                formal_evidence = importlib.import_module(
+                    "framework.stage1.formal_scan_evidence"
+                )
+                hardware = hardware_scan.HwCapability.from_yaml(hardware_path)
+                adapter = adapters.get_adapter(model_name)
+                scenario = formal_evidence.load_scan_scenario(
+                    scenario_path,
+                    trusted_root=adapter.formal_scenario_root,
+                )
+                formal_evidence.validate_scenario_hardware(scenario, hardware)
+                return graph_scan.scan(
+                    adapter,
+                    hardware,
+                    device=device,
+                    scenario=scenario,
+                    profile_latency_mode="off",
+                )
     except P6Stage1BridgeError:
         raise
     except Exception as error:  # noqa: BLE001 - CLI must expose only stable category.
@@ -93,10 +113,50 @@ def run_real_stage1_scan(
 
 
 @contextmanager
+def _temporary_stage1_process_state(
+    stage1_root: Path,
+    heal_root: Path,
+    heal_checkpoint_root: Path,
+) -> Any:
+    """Restore only process state temporarily owned by this real scan."""
+    values = {
+        "STAGE1_REPO_ROOT": str(stage1_root),
+        "HEAL_ROOT": str(heal_root),
+        "HEAL_CKPT_ROOT": str(heal_checkpoint_root),
+    }
+    prior_values = {key: os.environ.get(key) for key in _STAGE1_ENV_KEYS}
+    missing_keys = {key for key in _STAGE1_ENV_KEYS if key not in os.environ}
+    inserted_path = None
+    try:
+        os.environ.update(values)
+        if str(stage1_root) not in sys.path:
+            inserted_path = str(stage1_root)
+            sys.path.insert(0, inserted_path)
+        yield
+    finally:
+        for key in _STAGE1_ENV_KEYS:
+            if key in missing_keys:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = prior_values[key] or ""
+        if inserted_path is not None:
+            for index, value in enumerate(sys.path):
+                if value is inserted_path:
+                    sys.path.pop(index)
+                    break
+
+
+@contextmanager
 def _supplied_stage1_imports(stage1_root: Path) -> Any:
     framework_dir = stage1_root / "framework"
     stage1_dir = framework_dir / "stage1"
-    for module_name in ("__init__", "adapters", "graph_scan", "hardware_scan"):
+    for module_name in (
+        "__init__",
+        "adapters",
+        "formal_scan_evidence",
+        "graph_scan",
+        "hardware_scan",
+    ):
         _validate_input_file(stage1_dir / f"{module_name}.py")
 
     framework_package = importlib.import_module("framework")
@@ -133,6 +193,9 @@ def _is_p6_stage1_manifest(manifest: object) -> bool:
         "view_b1_search_groups",
         "view_b2_quant_units",
         "view_d_routing_segments",
+        "scanner_structural_axes",
+        "scanner_structural_axes_digest",
+        "formal_scan",
     }
     if not required.issubset(manifest):
         return False
@@ -148,7 +211,67 @@ def _is_p6_stage1_manifest(manifest: object) -> bool:
         and _valid_search_groups(manifest.get("view_b1_search_groups"))
         and _valid_quant_units(manifest.get("view_b2_quant_units"))
         and _valid_routing_segments(manifest.get("view_d_routing_segments"))
+        and _valid_formal_axes(manifest)
+        and not _contains_absolute_manifest_path(manifest)
     )
+
+
+def _contains_absolute_manifest_path(value: object) -> bool:
+    if isinstance(value, Mapping):
+        return any(
+            not isinstance(key, str)
+            or _is_absolute_path(key)
+            or _contains_absolute_manifest_path(item)
+            for key, item in value.items()
+        )
+    if isinstance(value, (list, tuple)):
+        return any(_contains_absolute_manifest_path(item) for item in value)
+    return isinstance(value, str) and _is_absolute_path(value)
+
+
+def _is_absolute_path(value: str) -> bool:
+    return Path(value).is_absolute() or PureWindowsPath(value).is_absolute()
+
+
+def _valid_formal_axes(manifest: Mapping[str, Any]) -> bool:
+    if "structural_axes" in manifest or "structural_axis_inputs" in manifest:
+        return False
+    axes = manifest.get("scanner_structural_axes")
+    digest = manifest.get("scanner_structural_axes_digest")
+    formal_scan = manifest.get("formal_scan")
+    if (
+        not isinstance(axes, list)
+        or not axes
+        or not isinstance(digest, str)
+        or not isinstance(formal_scan, Mapping)
+        or formal_scan.get("status") != "derived"
+    ):
+        return False
+    try:
+        return digest == scanner_structural_axes_digest(axes)
+    except (TypeError, ValueError):
+        return False
+
+
+def _validate_strict_stage2_contract(
+    manifest: Mapping[str, Any], directory: Path
+) -> None:
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=directory,
+            prefix=".p6-stage1-strict.",
+            suffix=".json",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            json.dump(manifest, handle, sort_keys=True, separators=(",", ":"))
+        load_stage2_search_space(temporary_path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 def _is_h800_capability(value: object) -> bool:
@@ -193,13 +316,21 @@ def _valid_quant_unit(value: object) -> bool:
     if not isinstance(value, Mapping):
         return False
     legal_bits = value.get("legal_bits")
-    return (
+    member_groups = value.get("member_groups")
+    if not (
         _non_empty_string(value.get("unit"))
         and isinstance(value.get("quantizable"), bool)
         and _string_list(legal_bits)
-        and {"FP16", "INT8"}.issubset(set(legal_bits))
-        and _string_list(value.get("member_groups"))
-    )
+        and isinstance(member_groups, list)
+    ):
+        return False
+    if value["quantizable"]:
+        return (
+            len(legal_bits) == 2
+            and set(legal_bits) == {"FP16", "INT8"}
+            and _string_list(member_groups)
+        )
+    return legal_bits == ["FP16"] and member_groups == []
 
 
 def _valid_routing_segments(value: object) -> bool:

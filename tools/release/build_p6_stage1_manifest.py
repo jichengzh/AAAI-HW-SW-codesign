@@ -41,6 +41,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--hardware", required=True, type=_absolute_path)
     parser.add_argument("--output", required=True, type=_absolute_path)
     parser.add_argument("--device", required=True)
+    parser.add_argument("--scenario", required=True, type=_absolute_path)
     parser.add_argument("--stage1-repo-root", required=True, type=_absolute_path)
     parser.add_argument("--heal-root", required=True, type=_absolute_path)
     parser.add_argument("--heal-checkpoint-root", required=True, type=_absolute_path)
@@ -65,6 +66,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "HEAL_CKPT_ROOT": str(args.heal_checkpoint_root),
             },
             run_real_stage1_scan,
+            scenario_path=args.scenario,
         )
     except P6Stage1BridgeError:
         sys.stderr.write("stage1_scan_invalid\n")
