@@ -28,6 +28,12 @@ from framework.stage6.coptv2x_h800_search_v2 import (  # noqa: E402
     load_local_config,
     load_public_contract,
 )
+from framework.stage6.p6_formal_plan_contract_v1 import (  # noqa: E402
+    validate_p6_candidate_plan,
+)
+from framework.stage6.hardware_execution_profile_v1 import (  # noqa: E402
+    HardwareExecutionProfile,
+)
 from framework.stage6.p6_history_binding_v1 import (  # noqa: E402
     validate_history_execution_binding,
 )
@@ -40,6 +46,10 @@ from framework.stage6.p6_history_measurement_v1 import (  # noqa: E402
 from framework.stage6.p6_history_source_materialization_v1 import (  # noqa: E402
     project_source_materialization_request,
 )
+from framework.stage6.p6_post_source_adapter_profile_v1 import (  # noqa: E402
+    load_post_source_adapter_profile,
+    require_post_source_adapter_profile_v4,
+)
 from framework.stage6.p6_source_reuse_evidence_v1 import (  # noqa: E402
     canonical_json_sha256,
     load_fresh_run_context,
@@ -51,6 +61,7 @@ from framework.stage6.p6_source_reuse_evidence_v1 import (  # noqa: E402
 class P6MaterializerCompletionReport:
     schema_version: Literal["p6_materializer_training_bridge_completion_v1"]
     status: Literal["completed"]
+    hardware_profile: str
     completed_rounds: int
     selected_rows: int
     gold176_remeasured_rows: int
@@ -157,19 +168,50 @@ def _load_verification_context(
     binding = _read_mapping(
         private_binding_path, root=private_binding_path.parent.resolve(strict=True)
     )
-    interface = validate_history_execution_binding(binding)
+    profile = contract.hardware_profile
+    interface = validate_history_execution_binding(binding, profile)
     private_root_value = binding.get("private_root")
     if not isinstance(private_root_value, str):
         raise ValueError
-    private_root = Path(private_root_value)
-    frozen_gold, _, _, profile = _load_search_inputs(local, contract)
-    task_contract = validate_search_task(_build_search_task(contract, profile))
+    private_root = Path(private_root_value).resolve(strict=True)
+    _require_post_source_profile(private_root, profile)
+    frozen_gold, _, _, capability_profile = _load_search_inputs(local, contract)
+    task_contract = validate_search_task(
+        _build_search_task(contract, capability_profile)
+    )
+    candidate_plan = _read_mapping(
+        local.local_output_root / "pyramid_candidate_plan.json",
+        root=local.local_output_root,
+    )
+    validate_p6_candidate_plan(candidate_plan, profile=profile)
     context = load_fresh_run_context(
         local_output_root=local.local_output_root,
         expected_task_id=task_contract["task_id"],
         expected_task_sha256=task_contract["task_sha256"],
     )
     return local, interface, private_root, frozen_gold, context
+
+
+def _require_post_source_profile(
+    private_root: Path, profile: HardwareExecutionProfile
+) -> None:
+    profile_path = private_root / "post-source-adapter-profile.yaml"
+    try:
+        profile_mode = profile_path.lstat().st_mode
+    except FileNotFoundError:
+        if profile.profile_id != "h800":
+            raise ValueError
+        return
+    if stat.S_ISLNK(profile_mode) or not stat.S_ISREG(profile_mode):
+        raise ValueError
+    post_source = load_post_source_adapter_profile(
+        profile_path,
+        private_root=private_root,
+    )
+    if profile.profile_id != "h800":
+        require_post_source_adapter_profile_v4(post_source)
+    if post_source.hardware_profile is not profile:
+        raise ValueError
 
 
 def _require_completed_state(local_output_root: Path) -> None:
@@ -192,6 +234,7 @@ def _validated_round_request(
     context: Any,
     interface: Mapping[str, Any],
     private_root: Path,
+    hardware_profile: HardwareExecutionProfile,
 ) -> Mapping[str, Any]:
     public_request = _read_mapping(
         public_round / "measurement_request.json", root=local_output_root
@@ -199,8 +242,12 @@ def _validated_round_request(
     private_request = _read_mapping(
         paths["measurement_request"], root=paths["history_root"]
     )
-    public_projected = project_source_materialization_request(public_request).request
-    private_projected = project_source_materialization_request(private_request).request
+    public_projected = project_source_materialization_request(
+        public_request, hardware_profile
+    ).request
+    private_projected = project_source_materialization_request(
+        private_request, hardware_profile
+    ).request
     if public_projected != private_projected:
         raise ValueError
     request = public_projected
@@ -265,6 +312,7 @@ def _verify_completed_round(
         context=context,
         interface=interface,
         private_root=private_root,
+        hardware_profile=local.hardware_profile,
     )
     _require_native_finalization_leaves(paths)
     feedback = translate_history_feedback(
@@ -312,6 +360,7 @@ def verify_materializer_training_run(
         return P6MaterializerCompletionReport(
             schema_version="p6_materializer_training_bridge_completion_v1",
             status="completed",
+            hardware_profile=local.hardware_profile.profile_id,
             completed_rounds=4,
             selected_rows=16,
             gold176_remeasured_rows=0,

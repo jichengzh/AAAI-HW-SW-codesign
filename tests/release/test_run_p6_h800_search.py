@@ -13,18 +13,25 @@ import pytest
 import yaml
 
 from framework.stage2.canonical_search_v3 import build_capability_profile
+from framework.stage6.coptv2x_h800_search_v2 import P6CoptV2XRunState
+from framework.stage6.p6_history_normalization_v1 import normalize_history_inputs
 from framework.stage6.p6_history_recipe_profiles_v1 import (
     PROFILE_V1,
     RECIPE_V2,
     get_recipe_profile,
 )
 from tests.release.test_p6_history_execution_adapters import (
+    RTX_GPU_INDICES,
     _synthetic_history_binding,
+    _synthetic_rtx_history_binding,
     _write_synthetic_nvidia_smi,
 )
 from tests.release.scanner_owned_stage1_fixture import (
     scanner_owned_pyramid_stage1_manifest,
 )
+from tests.stage6.test_p6_history_normalization import _history_root
+from tests.stage6.test_p6_post_source_adapter_profile import v5_private_source_map
+import tools.release.run_p6_h800_search as runner
 
 try:
     import resource
@@ -36,18 +43,18 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 CLI = REPOSITORY_ROOT / "tools/release/run_p6_h800_search.py"
 
 
-def _public_contract() -> dict[str, Any]:
-    return {
+def _public_contract(hardware_profile: str = "h800") -> dict[str, Any]:
+    contract = {
         "schema_version": "p6_h800_coptv2x_search_contract_v2",
-        "search_id": "p6-pyramid-h800-tvm",
-        "target": "h800",
+        "search_id": f"p6-pyramid-{hardware_profile}-tvm",
+        "target": hardware_profile,
         "target_model": "pyramid",
         "execution_backend": "tvm_auto",
         "seed": 73,
         "sample_budget": 16,
         "batch_size": 4,
         "round_count": 4,
-        "configuration_label": "p6-pyramid-h800-tvm",
+        "configuration_label": f"p6-pyramid-{hardware_profile}-tvm",
         "candidate_space_label": "coptv2x-pyramid-width-grid-v1",
         "metric_names": ["latency_ms", "energy_j", "ap30", "ap50", "ap70"],
         "assets": [
@@ -56,22 +63,30 @@ def _public_contract() -> dict[str, Any]:
             {"label": "toolchain", "version": "v3", "license_status": "cleared"},
         ],
     }
+    if hardware_profile != "h800":
+        contract.update(
+            {
+                "schema_version": "p6_coptv2x_search_contract_v3",
+                "hardware_profile": hardware_profile,
+            }
+        )
+    return contract
 
 
-def _profile() -> dict[str, Any]:
+def _profile(hardware_profile: str = "h800") -> dict[str, Any]:
     return build_capability_profile(
-        capability_profile_id="h800-tvm-auto",
-        hardware_target="h800",
+        capability_profile_id=f"{hardware_profile}-tvm-auto",
+        hardware_target=hardware_profile,
         compiler_fingerprint="a" * 64,
         dispatch_key="tvm_auto",
         features={"int8_propagation": 0.0, "qdq_fold": 0.0},
     )
 
 
-def _non_target_profile() -> dict[str, Any]:
+def _non_target_profile(hardware_profile: str = "h800") -> dict[str, Any]:
     return build_capability_profile(
-        capability_profile_id="h800-trt-engine",
-        hardware_target="h800",
+        capability_profile_id=f"{hardware_profile}-trt-engine",
+        hardware_target=hardware_profile,
         compiler_fingerprint="b" * 64,
         dispatch_key="trt_engine",
         features={"int8_propagation": 1.0, "qdq_fold": 1.0},
@@ -89,7 +104,9 @@ def _graph(group_id: str, width: list[int]) -> dict[str, Any]:
     }
 
 
-def _gold176() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _gold176(
+    hardware_profile: str = "h800",
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     rows: list[dict[str, Any]] = []
     graphs: list[dict[str, Any]] = []
     for index in range(176):
@@ -98,7 +115,11 @@ def _gold176() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         q_mode = "int8" if index % 2 else "fp16"
         non_target = index >= 88
         dispatch_key = "trt_engine" if non_target else "tvm_auto"
-        profile_id = "h800-trt-engine" if non_target else "h800-tvm-auto"
+        profile_id = (
+            f"{hardware_profile}-trt-engine"
+            if non_target
+            else f"{hardware_profile}-tvm-auto"
+        )
         graphs.append(_graph(group_id, width))
         rows.append(
             {
@@ -217,14 +238,16 @@ shutil.copyfile(template_path, output_path)
     return path
 
 
-def _real_stage1_partition_manifest() -> dict[str, Any]:
+def _real_stage1_partition_manifest(
+    hardware_profile: str = "h800",
+) -> dict[str, Any]:
     return scanner_owned_pyramid_stage1_manifest(
         {
             "schema": "stage1_partition_manifest_v1",
             "stage": "stage1_partition",
             "model": "pyramid_lidar",
             "scan_status": "ok",
-            "hw_capability": {"name": "h800"},
+            "hw_capability": {"name": hardware_profile},
             "view_b1_search_groups": [
                 {
                     "search_group_id": f"pyramid_group.{suffix}",
@@ -256,8 +279,12 @@ def _real_stage1_partition_manifest() -> dict[str, Any]:
     )
 
 
-def _write_fake_stage1_adapter(path: Path) -> Path:
-    manifest = json.dumps(_real_stage1_partition_manifest(), sort_keys=True)
+def _write_fake_stage1_adapter(
+    path: Path, hardware_profile: str = "h800"
+) -> Path:
+    manifest = json.dumps(
+        _real_stage1_partition_manifest(hardware_profile), sort_keys=True
+    )
     path.write_text(
         f"""from __future__ import annotations
 from pathlib import Path
@@ -324,13 +351,23 @@ Path(feedback_path).write_text(json.dumps(feedback), encoding="utf-8")
     return path
 
 
-def _cli_fixture(tmp_path: Path, *, mode: str = "success") -> dict[str, Path]:
-    contract_path = _write_yaml(tmp_path / "contract.yaml", _public_contract())
-    gold_rows, gold_graphs = _gold176()
+def _cli_fixture(
+    tmp_path: Path,
+    *,
+    mode: str = "success",
+    hardware_profile: str = "h800",
+) -> dict[str, Path]:
+    contract_path = _write_yaml(
+        tmp_path / "contract.yaml", _public_contract(hardware_profile)
+    )
+    gold_rows, gold_graphs = _gold176(hardware_profile)
     input_payloads = {
         "gold176_rows": gold_rows,
         "gold176_graph_features": gold_graphs,
-        "capability_profiles": [_profile(), _non_target_profile()],
+        "capability_profiles": [
+            _profile(hardware_profile),
+            _non_target_profile(hardware_profile),
+        ],
         "closure": _closure(),
     }
     input_paths: dict[str, str] = {}
@@ -350,11 +387,9 @@ def _cli_fixture(tmp_path: Path, *, mode: str = "success") -> dict[str, Path]:
     measurement_adapter = _write_fake_measurement_adapter(tmp_path / "fake_measurement.py")
     call_log = tmp_path / "PRIVATE_CALL_LOG.txt"
     output_root = tmp_path / "PRIVATE_LOCAL_OUTPUT"
-    local_path = _write_yaml(
-        tmp_path / "local.yaml",
-        {
+    local_payload = {
             "schema_version": "p6_h800_coptv2x_local_v2",
-            "target": "h800",
+            "target": hardware_profile,
             "asset_paths": asset_paths,
             "local_input_paths": input_paths,
             "source_registry_step": {
@@ -380,7 +415,17 @@ def _cli_fixture(tmp_path: Path, *, mode: str = "success") -> dict[str, Path]:
                 ],
             },
             "local_output_root": str(output_root),
-        },
+        }
+    if hardware_profile != "h800":
+        local_payload.update(
+            {
+                "schema_version": "p6_coptv2x_local_v3",
+                "hardware_profile": hardware_profile,
+            }
+        )
+    local_path = _write_yaml(
+        tmp_path / "local.yaml",
+        local_payload,
     )
     return {
         "contract": contract_path,
@@ -391,17 +436,37 @@ def _cli_fixture(tmp_path: Path, *, mode: str = "success") -> dict[str, Path]:
 
 
 def _history_cli_fixture(
-    tmp_path: Path, *, materializable: bool = True
+    tmp_path: Path,
+    *,
+    materializable: bool = True,
+    hardware_profile: str = "h800",
 ) -> dict[str, Any]:
     """Build a private generated-binding integration fixture without real discovery."""
     private_root = tmp_path / "private"
     private_root.mkdir()
-    paths: dict[str, Any] = _cli_fixture(private_root)
+    paths: dict[str, Any] = _cli_fixture(
+        private_root, hardware_profile=hardware_profile
+    )
     stage1 = private_root / "stage1.yaml"
     stage1_call_log = private_root / "stage1-call.log"
-    stage1_adapter = _write_fake_stage1_adapter(private_root / "fake-stage1.py")
+    stage1_adapter = _write_fake_stage1_adapter(
+        private_root / "fake-stage1.py", hardware_profile
+    )
     binding_path = private_root / "p6-history-binding.json"
-    binding = _synthetic_history_binding(private_root)
+    if hardware_profile == "rtx4090":
+        post_source_workspace = tmp_path / "post-source-workspace"
+        post_source_workspace.mkdir()
+        source_map, runner_template = v5_private_source_map(post_source_workspace)
+        source_map["hardware_profile"] = hardware_profile
+        normalize_history_inputs(
+            source_map,
+            _history_root(source_map),
+            private_root / "synthetic-history",
+            runner_template_path=runner_template,
+        )
+        binding = _synthetic_rtx_history_binding(private_root)
+    else:
+        binding = _synthetic_history_binding(private_root)
     profile = get_recipe_profile(PROFILE_V1)
     assert profile is not None
     operator_root = tmp_path / "operator-assets"
@@ -493,13 +558,26 @@ def _history_cli_fixture(
     fake_bin = private_root / "fake-bin"
     fake_bin.mkdir()
     gpu_probe = fake_bin / "nvidia-smi"
-    _write_synthetic_nvidia_smi(gpu_probe)
+    if hardware_profile == "rtx4090":
+        _write_rtx_nvidia_smi(gpu_probe)
+    else:
+        _write_synthetic_nvidia_smi(gpu_probe)
     paths.update({"private_root": private_root,
                   "binding": binding_path,
                   "stage1": stage1,
                   "stage1_call_log": stage1_call_log,
                   "env": {**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"}})
     return paths
+
+
+def _write_rtx_nvidia_smi(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    records = " ".join(
+        f"'{index}, GPU-fixture-{index}, NVIDIA GeForce RTX 4090, 0, 100'"
+        for index in RTX_GPU_INDICES
+    )
+    path.write_text(f"#!/bin/sh\nprintf '%s\\n' {records}\n", encoding="utf-8")
+    path.chmod(0o700)
 
 
 def _write_fake_source_materializer(path: Path) -> str:
@@ -599,6 +677,78 @@ def test_cli_runs_v2_loop_without_public_summary_and_keeps_outputs_local(tmp_pat
         "measure",
         "measure",
     ]
+
+
+def test_cli_runs_v3_rtx_hardware_profile_through_existing_executable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    paths = _cli_fixture(tmp_path, hardware_profile="rtx4090")
+    observed_profiles: list[tuple[str, str]] = []
+
+    def complete_without_launch(contract: Any, local: Any, *_: Any) -> P6CoptV2XRunState:
+        observed_profiles.append(
+            (contract.hardware_profile.profile_id, local.hardware_profile.profile_id)
+        )
+        return P6CoptV2XRunState(
+            schema_version="p6_h800_coptv2x_local_state_v2",
+            status="completed",
+            completed_rounds=4,
+            measured_candidate_count=16,
+            failure_code=None,
+            local_state_path=paths["output_root"] / "state.json",
+        )
+
+    monkeypatch.setattr(runner, "run_p6_coptv2x_search", complete_without_launch)
+    result = runner.main(
+        [
+            "--contract",
+            str(paths["contract"]),
+            "--local-config",
+            str(paths["local"]),
+            "--code-revision",
+            "test-revision",
+        ]
+    )
+    output = capsys.readouterr()
+
+    assert result == 0
+    assert output.out == "completed\n"
+    assert output.err == ""
+    assert observed_profiles == [("rtx4090", "rtx4090")]
+
+
+def test_cli_rejects_hardware_profile_mismatch_before_adapter_launch(
+    tmp_path: Path,
+) -> None:
+    paths = _cli_fixture(tmp_path, hardware_profile="rtx4090")
+    local = yaml.safe_load(paths["local"].read_text(encoding="utf-8"))
+    local["hardware_profile"] = "h800"
+    _write_yaml(paths["local"], local)
+
+    result = _run_cli(paths)
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert result.stderr == "contract_error\n"
+    assert not paths["call_log"].exists()
+
+
+def test_legacy_h800_hardware_profile_cli_state_remains_unchanged(
+    tmp_path: Path,
+) -> None:
+    paths = _cli_fixture(tmp_path)
+
+    result = _run_cli(paths)
+
+    state = json.loads(
+        (paths["output_root"] / "state.json").read_text(encoding="utf-8")
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "completed\n"
+    assert result.stderr == ""
+    assert "hardware_profile" not in state
 
 
 def test_cli_runs_full_framework_lifecycle_through_provisioned_history_binding(

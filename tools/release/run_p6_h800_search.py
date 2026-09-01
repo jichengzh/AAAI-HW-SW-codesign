@@ -1,4 +1,4 @@
-"""Run the explicit local P6.1 Pyramid/H800/TVM search."""
+"""Run the shared local P6.1 Pyramid/TVM hardware-profile search."""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ def _run_command(argv: tuple[str, ...], cwd: Path) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Return stable exit codes for completed, failed, and invalid searches."""
+    """Load a legacy H800 or selected v3 profile and return stable exit codes."""
     try:
         args = _parse_args(argv)
     except SystemExit as error:

@@ -5,12 +5,17 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import shutil
+import subprocess
 from typing import Any, Iterator
 
 import pytest
 import yaml
 
+from framework.stage6 import coptv2x_h800_search_v2 as search_execution
 from framework.stage6.coptv2x_h800_search_v2 import P6CoptV2XExecutionError
+from framework.stage6.hardware_execution_profile_v1 import (
+    load_hardware_execution_profile,
+)
 from framework.stage6.p6_history_measurement_v1 import (
     resolve_validated_history_round_paths,
 )
@@ -24,6 +29,8 @@ from tools.release.verify_p6_materializer_training_run import (
     verify_materializer_training_run,
 )
 import tools.release.verify_p6_materializer_training_run as verification
+import tools.release.run_p6_h800_search as search_runner
+import tools.release.measure_p6_history_batch as measurement_runner
 from tests.release.test_run_p6_h800_search import _history_cli_fixture, _run_cli
 from tests.stage6.test_coptv2x_h800_search import (
     _gold176,
@@ -50,12 +57,89 @@ def _completed_template(tmp_path_factory: pytest.TempPathFactory) -> Iterator[di
     yield {"live": live, "snapshot": snapshot, "paths": paths}
 
 
+@pytest.fixture(scope="module")
+def _completed_rtx_template(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Iterator[dict[str, Any]]:
+    workspace = tmp_path_factory.mktemp("p6-rtx-completion")
+    live = workspace / "live"
+    live.mkdir()
+    paths = _history_cli_fixture(live, hardware_profile="rtx4090")
+    profile = load_hardware_execution_profile("rtx4090")
+    project_request = search_execution.project_source_materialization_request
+
+    def profile_command_runner(argv: tuple[str, ...], cwd: Path) -> int:
+        if any(Path(value).name == "measure_p6_history_batch.py" for value in argv):
+            values = list(argv)
+            binding = measurement_runner._load_private_json(
+                Path(values[values.index("--binding") + 1])
+            )
+            request = measurement_runner._load_private_json(
+                Path(values[values.index("--measurement-request") + 1])
+            )
+            feedback_path = Path(values[values.index("--feedback-json") + 1])
+            round_root = Path(values[values.index("--round-output-root") + 1])
+            feedback = measurement_runner.run_history_measurement_batch(
+                request,
+                binding,
+                round_root,
+                measurement_runner.SubprocessRunner(),
+                measurement_runner.NvidiaSmiGpuProbe(),
+                profile=profile,
+            )
+            measurement_runner._write_feedback_atomic(
+                round_root, feedback_path, feedback
+            )
+            return 0
+        return subprocess.run(
+            argv,
+            cwd=cwd,
+            env=paths["env"],
+            shell=False,
+            text=True,
+            capture_output=True,
+            check=False,
+        ).returncode
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setenv("PATH", paths["env"]["PATH"])
+        monkeypatch.setattr(
+            search_execution,
+            "project_source_materialization_request",
+            lambda request: project_request(request, profile=profile),
+        )
+        monkeypatch.setattr(search_runner, "_run_command", profile_command_runner)
+        result = search_runner.main(
+            [
+                "--contract",
+                str(paths["contract"]),
+                "--local-config",
+                str(paths["local"]),
+                "--code-revision",
+                "test-revision",
+            ]
+        )
+    assert result == 0
+    _write_native_completion_leaves(paths)
+    snapshot = workspace / "snapshot"
+    shutil.copytree(live, snapshot, symlinks=True)
+    yield {"live": live, "snapshot": snapshot, "paths": paths}
+
+
 @pytest.fixture
 def completed_run(_completed_template: dict[str, Any]) -> dict[str, Any]:
     live = _completed_template["live"]
     shutil.rmtree(live)
     shutil.copytree(_completed_template["snapshot"], live, symlinks=True)
     return dict(_completed_template["paths"])
+
+
+@pytest.fixture
+def completed_rtx_run(_completed_rtx_template: dict[str, Any]) -> dict[str, Any]:
+    live = _completed_rtx_template["live"]
+    shutil.rmtree(live)
+    shutil.copytree(_completed_rtx_template["snapshot"], live, symlinks=True)
+    return dict(_completed_rtx_template["paths"])
 
 
 def _verify_kwargs(paths: dict[str, Any]) -> dict[str, Path]:
@@ -72,6 +156,61 @@ def _apply_completion_mutation(paths: dict[str, Any], mutation: str) -> None:
     binding = _read_json(paths["binding"])
     private_root = Path(binding["private_root"])
     interface = binding["execution_interface"]
+
+    if mutation == "binding_hardware_profile_drift":
+        indices = binding["gpu_policy"]["indices"][:3]
+        binding["target"]["hardware"] = "h800"
+        binding["gpu_policy"] = {
+            "indices": indices,
+            "uuid_by_index": {
+                str(index): binding["gpu_policy"]["uuid_by_index"][str(index)]
+                for index in indices
+            },
+            "hardware_profile": "h800",
+        }
+        binding["execution_interface"]["environment"]["values"][
+            "CUDA_VISIBLE_DEVICES"
+        ]["value"] = ",".join(str(index) for index in indices)
+        _write_json(paths["binding"], binding)
+        return
+    if mutation == "post_source_hardware_profile_drift":
+        profile_path = private_root / "post-source-adapter-profile.yaml"
+        profile = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
+        profile.update(
+            {
+                "hardware_profile": "h800",
+                "target": {
+                    "model": "pyramid",
+                    "hardware": "h800",
+                    "backend": "tvm_auto",
+                },
+            }
+        )
+        profile_path.write_text(
+            yaml.safe_dump(profile, sort_keys=False), encoding="utf-8"
+        )
+        return
+    if mutation == "candidate_plan_hardware_profile_drift":
+        plan_path = output_root / "pyramid_candidate_plan.json"
+        plan = _read_json(plan_path)
+        plan["hardware_target"] = "h800"
+        _write_json(plan_path, plan)
+        context = _read_json(context_path)
+        context["candidate_plan_sha256"] = canonical_json_sha256(plan)
+        context["run_context_sha256"] = canonical_json_sha256(
+            {
+                name: value
+                for name, value in context.items()
+                if name != "run_context_sha256"
+            }
+        )
+        _write_json(context_path, context)
+        return
+    if mutation == "post_source_profile_symlink":
+        (private_root / "post-source-adapter-profile.yaml").symlink_to(
+            private_root / "missing-post-source-profile.yaml"
+        )
+        return
 
     if mutation == "context_missing":
         context_path.unlink()
@@ -342,10 +481,11 @@ def _replace_round_row(
     _write_json(private_paths["finalization_barrier"], validation)
 
 
-def test_completion_report_does_not_publish_receipt_mapping() -> None:
+def test_completion_report_publishes_only_hardware_profile_id_and_counts() -> None:
     assert tuple(P6MaterializerCompletionReport.__dataclass_fields__) == (
         "schema_version",
         "status",
+        "hardware_profile",
         "completed_rounds",
         "selected_rows",
         "gold176_remeasured_rows",
@@ -373,12 +513,24 @@ def test_v3_rtx_verification_context_forwards_contract_to_search_inputs(
     binding_root = tmp_path / "binding-fixture"
     binding_root.mkdir()
     binding_path = _history_cli_fixture(binding_root)["binding"]
+    output_root = tmp_path / "private-output"
+    output_root.mkdir()
+    _write_json(output_root / "pyramid_candidate_plan.json", {})
     expected_context = object()
 
     def load_context(**_: Any) -> object:
         return expected_context
 
     monkeypatch.setattr(verification, "load_fresh_run_context", load_context)
+    monkeypatch.setattr(
+        verification,
+        "validate_history_execution_binding",
+        lambda binding, profile: binding["execution_interface"],
+    )
+    monkeypatch.setattr(
+        verification, "_require_post_source_profile", lambda *_: None
+    )
+    monkeypatch.setattr(verification, "validate_p6_candidate_plan", lambda *_a, **_k: {})
 
     local, _, _, frozen_gold, context = verification._load_verification_context(
         contract_path, local_path, binding_path
@@ -411,11 +563,44 @@ def test_completion_accepts_four_round_current_run_with_shared_receipts(
     ]
 
     assert report.status == "completed"
+    assert report.hardware_profile == "h800"
     assert report.completed_rounds == 4
     assert report.selected_rows == 16
     assert report.gold176_remeasured_rows == 0
     assert len({row["row_id"] for row in selected_rows}) == 16
     assert len(list(receipt_root.glob("*.json"))) < 16
+
+
+def test_completed_fake_rtx_hardware_profile_tree_reports_public_profile_id(
+    completed_rtx_run: dict[str, Any],
+) -> None:
+    report = verify_materializer_training_run(**_verify_kwargs(completed_rtx_run))
+
+    assert report.hardware_profile == "rtx4090"
+    assert report.completed_rounds == 4
+    assert report.selected_rows == 16
+    assert report.gold176_remeasured_rows == 0
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "binding_hardware_profile_drift",
+        "post_source_hardware_profile_drift",
+        "candidate_plan_hardware_profile_drift",
+    ],
+)
+def test_completed_rtx_rejects_wrong_hardware_profile_evidence_before_counts(
+    completed_rtx_run: dict[str, Any], mutation: str
+) -> None:
+    state = _read_json(completed_rtx_run["output_root"] / "state.json")
+    assert (state["completed_rounds"], state["measured_candidate_count"]) == (4, 16)
+    _apply_completion_mutation(completed_rtx_run, mutation)
+
+    with pytest.raises(P6CoptV2XExecutionError) as captured:
+        verify_materializer_training_run(**_verify_kwargs(completed_rtx_run))
+
+    assert captured.value.failure_code == "history_execution_invalid"
 
 
 @pytest.mark.parametrize(
@@ -480,6 +665,7 @@ def test_completion_requires_native_finalization_and_promotion_leaves(
         "ap_out_of_bounds",
         "decoy_context",
         "decoy_receipt",
+        "post_source_profile_symlink",
     ],
 )
 def test_completion_rejects_invalid_exact_evidence(
@@ -514,6 +700,7 @@ def test_completion_cli_emits_only_allowlisted_fields(
     assert set(json.loads(output.out)) == set(
         P6MaterializerCompletionReport.__dataclass_fields__
     )
+    assert json.loads(output.out)["hardware_profile"] == "h800"
 
 
 def test_completion_cli_redacts_private_failures(
