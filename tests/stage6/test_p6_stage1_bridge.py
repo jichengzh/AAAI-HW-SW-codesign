@@ -20,6 +20,9 @@ from framework.stage6.p6_stage1_bridge_v1 import (
     P6Stage1BridgeError,
     build_p6_stage1_partition_manifest,
 )
+from framework.stage6.hardware_execution_profile_v1 import (
+    load_hardware_execution_profile,
+)
 from framework.stage1_bridge import load_stage2_search_space
 from framework.stage6.pyramid_search_space_adapter_v1 import (
     build_pyramid_candidate_plan,
@@ -61,7 +64,7 @@ def _non_h800_hardware_path(tmp_path: Path) -> Path:
     return path
 
 
-def test_bridge_calls_scanner_and_writes_only_valid_json_manifest(
+def test_h800_profile_bridge_calls_scanner_and_writes_only_valid_json_manifest(
     tmp_path: Path,
 ) -> None:
     manifest = _valid_stage1_manifest()
@@ -86,6 +89,7 @@ def test_bridge_calls_scanner_and_writes_only_valid_json_manifest(
         "cuda:0",
         {"STAGE1_REPO_ROOT": "/private/stage1"},
         scanner,
+        profile=load_hardware_execution_profile("h800"),
         scenario_path=_scenario_path(tmp_path),
     )
 

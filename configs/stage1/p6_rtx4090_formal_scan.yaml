@@ -1,0 +1,14 @@
+hardware_precisions: [FP16, INT8]
+backend_precisions: [FP16, INT8]
+compression_modes: [fp16, int8]
+graph_quant_unit_policy:
+  all: [FP16, INT8]
+alignment:
+  default_round_to: 32
+  default_hardware_alignment: 32
+  default_max_rate_numerator: 75
+  default_max_rate_denominator: 100
+  backbone.s0.round_to: 8
+  backbone.s0.hardware_alignment: 8
+  backbone.s1.round_to: 16
+  backbone.s1.hardware_alignment: 16

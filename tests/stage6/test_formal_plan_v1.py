@@ -27,7 +27,7 @@ def _candidate(index: int, backend: str) -> dict[str, object]:
     }
 
 
-def test_builds_backend_symmetric_frozen_arm_plans() -> None:
+def test_h800_profile_inputs_build_backend_symmetric_frozen_arm_plans() -> None:
     tvm = [_candidate(index, "tvm") for index in range(20)]
     trt = [_candidate(index, "trt") for index in range(20)]
 

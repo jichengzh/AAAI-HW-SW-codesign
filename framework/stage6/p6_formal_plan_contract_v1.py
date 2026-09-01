@@ -26,6 +26,11 @@ from framework.stage6.p6_history_training_contract_v1 import (
     P6HistoryTrainingContractError,
     validate_recipe_v2_group_training_contract,
 )
+from framework.stage6.hardware_execution_profile_v1 import (
+    HardwareExecutionProfile,
+    default_hardware_execution_profile,
+    validate_profile_backend,
+)
 
 
 ALLOWED_Q_MODES = frozenset({"fp16", "int8"})
@@ -46,7 +51,6 @@ EXPECTED_PLAN_FIELDS = {
     "schema_version": PLAN_SCHEMA_VERSION,
     "source_schema": "stage2_search_space_v1",
     "target_model": "pyramid",
-    "execution_backend": "tvm_auto",
     "candidate_source_mode": "framework_stage2_search_space",
 }
 STAGES = ("stage1", "stage2", "stage3")
@@ -54,9 +58,12 @@ STAGES = ("stage1", "stage2", "stage3")
 
 def validate_p6_candidate_plan(
     raw_plan: Mapping[str, Any],
+    *,
+    profile: HardwareExecutionProfile | None = None,
 ) -> dict[tuple[tuple[int, int, int], str], tuple[str, str, str]]:
     """Validate a P6 candidate plan and return its canonical identity map."""
-    _validate_plan_envelope(raw_plan)
+    selected_profile = _selected_profile(profile)
+    _validate_plan_envelope(raw_plan, selected_profile)
     stage_axes = _formal_stage_axes(raw_plan)
     entries = [
         _candidate_entry(candidate, stage_axes)
@@ -79,19 +86,54 @@ def formal_base_widths(raw_plan: Mapping[str, Any]) -> tuple[int, int, int] | No
     return tuple(base for _axis_id, base in stage_axes)  # type: ignore[return-value]
 
 
-def _validate_plan_envelope(raw_plan: Mapping[str, Any]) -> None:
+def _selected_profile(
+    profile: HardwareExecutionProfile | None,
+) -> HardwareExecutionProfile:
+    selected = profile or default_hardware_execution_profile()
+    validate_profile_backend(selected, "tvm_auto")
+    return selected
+
+
+def _validate_plan_envelope(
+    raw_plan: Mapping[str, Any], profile: HardwareExecutionProfile
+) -> None:
     if not isinstance(raw_plan, Mapping):
         _invalid("candidate plan must be an object")
     if any(raw_plan.get(key) != value for key, value in EXPECTED_PLAN_FIELDS.items()):
         _invalid("candidate plan contract is incompatible")
-    hardware_target = raw_plan.get("hardware_target")
-    if not isinstance(hardware_target, str) or not (
-        hardware_target == "h800" or hardware_target.startswith("h800_")
-    ):
-        _invalid("candidate plan hardware is incompatible")
+    if raw_plan.get("hardware_target") != profile.target_hardware_id:
+        _invalid("candidate plan hardware does not match the hardware profile")
+    try:
+        validate_profile_backend(profile, raw_plan.get("execution_backend"))
+    except ValueError:
+        _invalid("candidate plan backend does not match the hardware profile")
+    _validate_scanner_hardware_profile(raw_plan, profile)
     candidates = raw_plan.get("candidates")
     if not isinstance(candidates, list) or not candidates:
         _invalid("candidate plan candidates are invalid")
+
+
+def _validate_scanner_hardware_profile(
+    raw_plan: Mapping[str, Any], profile: HardwareExecutionProfile
+) -> None:
+    if raw_plan.get("formal_plan_schema") != "formal_software_plan_v1":
+        return
+    source_provenance = raw_plan.get("source_provenance")
+    q_mode_provenance = (
+        source_provenance.get("formal_q_mode_provenance")
+        if isinstance(source_provenance, Mapping)
+        else None
+    )
+    hardware_target = (
+        q_mode_provenance.get("hardware_target")
+        if isinstance(q_mode_provenance, Mapping)
+        else None
+    )
+    if (
+        not isinstance(hardware_target, Mapping)
+        or hardware_target.get("name") != profile.target_hardware_id
+    ):
+        _invalid("candidate plan scanner hardware does not match the hardware profile")
 
 
 def _formal_stage_axes(raw_plan: Mapping[str, Any]) -> tuple[tuple[str, int], ...] | None:

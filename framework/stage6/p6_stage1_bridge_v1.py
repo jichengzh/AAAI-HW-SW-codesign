@@ -17,6 +17,12 @@ import yaml
 
 from framework.stage1.structural_axis_digest import scanner_structural_axes_digest
 from framework.stage1_bridge import load_stage2_search_space
+from framework.stage6.hardware_execution_profile_v1 import (
+    HardwareExecutionProfile,
+    default_hardware_execution_profile,
+    load_hardware_execution_profile,
+    validate_profile_backend,
+)
 
 
 MODEL_NAME = "pyramid_lidar"
@@ -24,6 +30,7 @@ SCHEMA = "stage1_partition_manifest_v1"
 STAGE = "stage1_partition"
 MAX_MANIFEST_BYTES = 16 * 1024 * 1024
 _STAGE1_ENV_KEYS = ("STAGE1_REPO_ROOT", "HEAL_ROOT", "HEAL_CKPT_ROOT")
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
 class P6Stage1BridgeError(ValueError):
@@ -43,14 +50,16 @@ def build_p6_stage1_partition_manifest(
         [str, Path, str, Mapping[str, str], Path], Mapping[str, Any]
     ],
     *,
+    profile: HardwareExecutionProfile | None = None,
     scenario_path: Path,
 ) -> dict[str, Any]:
     """Run Stage1 scanning, validate the P6 manifest contract, and write JSON."""
     try:
         _validate_output_path(output_path)
-        _validate_input_file(hardware_path)
+        hardware_path = _validate_input_file(hardware_path)
+        profile = _selected_profile(profile, hardware_path)
         scenario_path = _validate_input_file(scenario_path)
-        _validate_h800_hardware_yaml(hardware_path)
+        _validate_profile_hardware_yaml(hardware_path, profile)
         manifest = scanner(
             MODEL_NAME,
             hardware_path,
@@ -58,9 +67,9 @@ def build_p6_stage1_partition_manifest(
             copy.deepcopy(dict(environment)),
             scenario_path,
         )
-        if not _is_p6_stage1_manifest(manifest):
+        if not _is_p6_stage1_manifest(manifest, profile):
             raise P6Stage1BridgeError()
-        owned_manifest = copy.deepcopy(dict(manifest))
+        owned_manifest = _profile_target_manifest(manifest, profile)
         _validate_strict_stage2_contract(owned_manifest, output_path.parent)
         _atomic_write_json(output_path, owned_manifest)
     except P6Stage1BridgeError:
@@ -181,7 +190,9 @@ def _supplied_stage1_imports(stage1_root: Path) -> Any:
         importlib.invalidate_caches()
 
 
-def _is_p6_stage1_manifest(manifest: object) -> bool:
+def _is_p6_stage1_manifest(
+    manifest: object, profile: HardwareExecutionProfile
+) -> bool:
     if not isinstance(manifest, Mapping):
         return False
     required = {
@@ -207,7 +218,7 @@ def _is_p6_stage1_manifest(manifest: object) -> bool:
     ):
         return False
     return (
-        _is_h800_capability(manifest.get("hw_capability"))
+        _is_profile_capability(manifest.get("hw_capability"), profile)
         and _valid_search_groups(manifest.get("view_b1_search_groups"))
         and _valid_quant_units(manifest.get("view_b2_quant_units"))
         and _valid_routing_segments(manifest.get("view_d_routing_segments"))
@@ -274,10 +285,16 @@ def _validate_strict_stage2_contract(
             temporary_path.unlink(missing_ok=True)
 
 
-def _is_h800_capability(value: object) -> bool:
+def _is_profile_capability(
+    value: object, profile: HardwareExecutionProfile
+) -> bool:
     if not isinstance(value, Mapping):
         return False
-    return _is_h800_name(value.get("name"))
+    if profile.profile_id == "h800":
+        return _is_h800_name(value.get("name"))
+    return _normalize_hardware_name(value.get("name")) in (
+        profile.allowed_normalized_gpu_models
+    )
 
 
 def _valid_search_groups(value: object) -> bool:
@@ -405,7 +422,31 @@ def _validate_input_file(path: Path) -> Path:
     return resolved
 
 
-def _validate_h800_hardware_yaml(path: Path) -> None:
+def _selected_profile(
+    profile: HardwareExecutionProfile | None, hardware_path: Path
+) -> HardwareExecutionProfile:
+    if profile is None:
+        rtx_profile = load_hardware_execution_profile("rtx4090")
+        selected = (
+            rtx_profile
+            if hardware_path == _declared_hardware_path(rtx_profile)
+            else default_hardware_execution_profile()
+        )
+    else:
+        selected = profile
+    validate_profile_backend(selected, "tvm_auto")
+    return selected
+
+
+def _declared_hardware_path(profile: HardwareExecutionProfile) -> Path:
+    return _validate_input_file(
+        _REPOSITORY_ROOT.joinpath(*profile.hardware_capability_path.parts)
+    )
+
+
+def _validate_profile_hardware_yaml(
+    path: Path, profile: HardwareExecutionProfile
+) -> None:
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, yaml.YAMLError) as error:
@@ -414,8 +455,36 @@ def _validate_h800_hardware_yaml(path: Path) -> None:
         raise P6Stage1BridgeError()
     basic = raw.get("basic")
     name = basic.get("name") if isinstance(basic, Mapping) else raw.get("name")
-    if not _is_h800_name(name):
+    if profile.profile_id == "h800":
+        if not _is_h800_name(name):
+            raise P6Stage1BridgeError()
+        return
+    declared_path = _declared_hardware_path(profile)
+    architecture = raw.get("arch")
+    if (
+        path != declared_path
+        or _normalize_hardware_name(name)
+        not in profile.allowed_normalized_gpu_models
+        or not isinstance(architecture, Mapping)
+        or architecture.get("sm") != profile.tvm_arch
+    ):
         raise P6Stage1BridgeError()
+
+
+def _profile_target_manifest(
+    manifest: Mapping[str, Any], profile: HardwareExecutionProfile
+) -> dict[str, Any]:
+    owned = copy.deepcopy(dict(manifest))
+    if profile.profile_id == "h800":
+        return owned
+    capability = owned["hw_capability"]
+    return {
+        **owned,
+        "hw_capability": {
+            **dict(capability),
+            "name": profile.target_hardware_id,
+        },
+    }
 
 
 def _is_h800_name(value: object) -> bool:
@@ -425,6 +494,12 @@ def _is_h800_name(value: object) -> bool:
     if normalized.startswith("nvidia_"):
         normalized = normalized.removeprefix("nvidia_")
     return normalized == "h800" or normalized.startswith("h800_")
+
+
+def _normalize_hardware_name(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    return "".join(character for character in value.upper() if character.isalnum())
 
 
 def _validate_output_path(path: Path) -> None:
