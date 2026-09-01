@@ -1,110 +1,136 @@
-# Task 5 report: Normalized Profiles and TVM Cache Evidence
+# Task 5 report: Normalized Profiles and Compile-Bound TVM Evidence
 
 ## Delivered
 
-- Added `p6_post_source_adapter_profile_v4`, which extends the existing v3
-  dependency-overlay profile with the canonical `hardware_profile` identifier.
-  Its serialized target is derived from the registry-owned profile, and the
-  loader requires exact target/backend/profile agreement. Existing v1-v3
-  profiles remain H800-only and continue to serialize without the new key.
-- Added canonical hardware profile persistence to the materialized Stage5
-  source registry.
-- Added `validate_tvm_measurement_manifest(...)` as the single cache-reuse
-  predicate. Reuse requires exact equality of schema, hardware profile, TVM
-  architecture, cache namespace, TVM toolchain, candidate identity, and source
-  digest. Missing or mismatched evidence returns `False`, so it is a
-  compile-required miss rather than reusable success.
-- Bound v4 performance planner invocations to the selected profile's
-  `--tvm-arch` and `--tvm-cache-namespace` through the existing direct-argv
-  leaf call. Legacy v1-v3 argv remains unchanged.
-- Kept native jobs and executor mechanics unchanged. The adapter carries the
-  already-validated row candidate/source identity beside native jobs only for
-  result-manifest validation.
-- Removed TensorRT dispatch from the performance adapter's accepted runner-key
-  mapping. TensorRT/engine markers are recursively rejected before latency or
-  energy parsing, including nested engine paths.
-- Added canonical-registry validation before a v4 planner launch, so a forged
-  `HardwareExecutionProfile` cannot pass architecture/cache values to a leaf.
+- `p6_post_source_adapter_profile_v4` binds the post-source target to a
+  registry-owned hardware profile. Existing v1-v3 profiles remain legacy H800.
+- Current v5 normalization accepts an optional exact `hardware_profile` id.
+  Omission still emits profile v3/H800; explicit `rtx4090` is loaded from the
+  canonical registry, carried as that registry object through canonical
+  normalization, and emits profile v4. Unknown ids, forged objects, and a
+  hardware field on an older source-map schema fail closed.
+- The performance adapter now passes `--hardware-profile`, `--tvm-arch`, and
+  `--tvm-cache-namespace` through the existing direct-argv planner leaf for v4.
+  Legacy v1-v3 planner argv remains unchanged.
+- The historical planner parser accepts those three arguments with H800
+  defaults. The measurement plan validates rows against the exact selected
+  hardware target and rejects mixed H800/RTX or noncanonical architecture and
+  namespace labels. Every newly planned TVM job carries an exact expected
+  manifest bound to `manifest_job_id` and the validated row source digest.
+- The historical executor still runs the real subprocess. Only after a zero
+  return code, success/correctness checks, and finite latency/energy checks does
+  it reject a conflicting runner-supplied manifest or atomically inject the
+  exact job manifest into the real result JSON. The result is hashed after that
+  write. Jobs without an expected manifest retain their prior behavior.
+- The current adapter validates both the planned expected manifest and the
+  successful result manifest against the canonical profile and request row.
+  Missing or mismatched evidence on a successful v4 result fails before metric
+  parsing. TensorRT runner keys and recursive engine markers remain excluded.
+
+## Current cache behavior
+
+There is no implemented artifact-reuse controller in this path. Current TVM
+runners compile fresh, and the historical planner/executor attaches evidence to
+that fresh compile result. `validate_tvm_measurement_manifest(...)` is an exact
+evidence-acceptance predicate: missing or mismatched evidence returns `False`,
+so an old unmanifested `.so` or TensorRT artifact is not accepted as a measured
+success. This task does not claim or fabricate a cache hit, bypass a subprocess,
+or introduce a reuse path.
 
 ## Strict RED -> GREEN evidence
 
-The exact focused RED command from the brief was run after adding the tests:
+Initial Task 5 RED:
 
-```bash
-PYTHONPATH=. pytest -q \
-  tests/stage6/test_p6_post_source_adapter_profile.py \
-  tests/stage6/test_p6_history_registry.py \
-  tests/stage6/test_p6_performance_round_adapter.py \
-  -k 'hardware_profile or tvm_manifest or rtx'
+```text
+9 failed, 4 passed, 102 deselected
 ```
 
-Observed RED: `9 failed, 4 passed, 102 deselected`. Failures were the expected
-missing v4 dataclass/schema field, absent registry profile persistence, absent
-manifest predicate, and absent RTX adapter binding. There were no collection or
-fixture errors.
-
-After the minimal implementation, the same command passed:
+Initial focused GREEN:
 
 ```text
 13 passed, 102 deselected
 ```
 
-The security review added two more focused tests. Before the hardening change,
-the nested TensorRT marker and forged registry object tests both failed. After
-recursive marker rejection and pre-launch registry validation:
+Fix round parent-repository RED contained four expected real-boundary failures:
+
+1. the planner argparse rejected profile/arch/namespace;
+2. the measurement plan had no parameter-derived RTX target;
+3. a successful real subprocess result was not given its job manifest; and
+4. a conflicting result manifest was accepted.
 
 ```text
-2 passed, 31 deselected
+4 failed, 16 deselected
 ```
 
-## Cache-reuse and metric-order review gate
+The four tests then passed. A separate real CLI test demonstrated that a
+self-consistent but noncanonical `rtx4090`/`sm90` tuple was accepted:
 
-- `validate_tvm_measurement_manifest` constructs one literal expected mapping
-  and returns `True` only when both the key set and complete mapping are equal.
-  Wrong `sm90`, H800 cache namespace, source digest, candidate, toolchain, or
-  any extra field returns `False`; a missing manifest also returns `False`.
-- A v4 successful native state calls the manifest predicate before
-  `_validate_success_result_payload`. A false result raises the stable adapter
-  error before either metric extractor.
-- TensorRT/engine markers are rejected recursively at both manifest and result
-  boundaries. Tests replace the latency parser with a counter and prove zero
-  calls for missing manifests and TensorRT-marked results.
-- `_native_runner_key` accepts only the two existing TVM runner keys. No
-  TensorRT result candidate can be selected through a validated request.
-- No compiler/controller abstraction, synthetic metric, alternate scheduler,
-  shell execution, GPU action, remote call, or private runtime was introduced.
+```text
+1 failed, 4 deselected -> 1 passed, 4 deselected
+```
+
+Fix round current-worktree RED demonstrated both missing integration links:
+
+```text
+2 failed, 68 deselected
+```
+
+The failures were v5 explicit RTX being rejected during recipe canonicalization
+and the adapter omitting `--hardware-profile`. Both passed after the minimal
+normalization/staging and adapter changes.
 
 ## Verification
 
-Full assigned suites on the final tree:
+Parent historical focused plus adjacent Stage5/fixed-batch suites:
 
 ```text
-117 passed in 18.46s
+25 passed in 0.87s
 ```
 
-Fresh expanded compatibility and branch-coverage run (assigned suites plus
-finalization, history measurement, post-source wrapper, and full-chain
-bootstrap):
+The 21-test focused parent branch-coverage run recorded 76% across the existing full
+historical planner and executor files. Ruff (excluding the two pre-existing
+`EXE001`/`SIM117` findings), compilation, and scoped `git diff --check` passed.
+An attempted broader Stage7 physical-execution run stopped in its deployment
+fixture because unrelated dirty parent files no longer match its reviewed
+source-SHA table; it fails before reaching Task 5 planner/executor behavior.
+
+Current worktree expanded compatibility and branch-coverage suite:
 
 ```text
-256 passed in 40.72s
-feedback validation 88%, registry 83%, performance adapter 78%,
-post-source profile 77%, aggregate branch coverage 80%
+297 passed in 52.49s
+normalization 82%, staging 83%, feedback validation 88%, registry 83%,
+performance adapter 78%, post-source profile 77%, aggregate branch coverage 81%
 ```
 
-Ruff passed on all seven changed Python files, including the exact two-file
-command from the brief. `git diff --check` passed.
+Pytest continues to emit the pre-existing temporary-directory cleanup warning
+after successful current-worktree runs. It does not change the exit status.
 
-Pytest continues to emit a pre-existing temporary-directory cleanup warning
-after otherwise successful runs. It was present on the clean baseline and does
-not change test exit status or Task 5 evidence.
+## Commits
 
-## Files changed
+- Parent historical-authority repository:
+  `0fb3585d96f39ce4a6324bd72b2498a37c50e9b0`
+  (`feat: bind historical TVM results to hardware profiles`).
+- Initial current-worktree Task 5 commit:
+  `213e73c058bc1de03e56761acd0c5cbd5cf1c06a`.
+- The exact current fix-round commit hash is included in the final handoff. It
+  cannot be embedded in this report inside that same commit because changing
+  the report changes the Git commit hash.
 
-- `framework/stage6/p6_post_source_adapter_profile_v1.py`
-- `framework/stage6/p6_history_registry_v1.py`
-- `framework/stage6/p6_history_feedback_validation_v1.py`
+## Fix-round files changed
+
+Parent repository `/home/jichengzhi/V2X`:
+
+- `framework/stage5/measurement_plan_v2.py`
+- `scripts/stage5_build_performance_plan_v2.py`
+- `scripts/stage3_execute_performance_plan_v3.py`
+- `framework/tests/test_stage5_measurement_plan_v2.py`
+- `framework/tests/test_stage3_execute_performance_plan_v3.py`
+
+Current worktree:
+
+- `framework/stage6/p6_history_normalization_v1.py`
+- `framework/stage6/p6_history_normalization_staging_v1.py`
 - `framework/stage6/p6_performance_round_adapter_v1.py`
 - `tests/stage6/test_p6_post_source_adapter_profile.py`
-- `tests/stage6/test_p6_history_registry.py`
 - `tests/stage6/test_p6_performance_round_adapter.py`
+- `.superpowers/sdd/2026-09-01-p6-hardware-profile-parameterization/task-5-report.md`

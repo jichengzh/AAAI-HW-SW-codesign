@@ -66,6 +66,7 @@ class _PerformanceRunner:
         native_confirmed_history: bool = True,
         first_result_path: Path | None = None,
         tvm_manifest_profile: HardwareExecutionProfile | None = None,
+        inject_result_manifest: bool = True,
         raise_unexpected: bool = False,
     ) -> None:
         self.calls: list[Mapping[str, Any]] = []
@@ -87,6 +88,7 @@ class _PerformanceRunner:
         self._native_confirmed_history = native_confirmed_history
         self._first_result_path = first_result_path
         self._tvm_manifest_profile = tvm_manifest_profile
+        self._inject_result_manifest = inject_result_manifest
         self._source_digest_by_candidate: dict[str, str] = {}
         self._raise_unexpected = raise_unexpected
 
@@ -165,6 +167,7 @@ class _PerformanceRunner:
             quant_root,
             self._first_job_overrides,
             self._job_count,
+            self._tvm_manifest_profile,
         )
         (output_dir / "performance_jobs.jsonl").write_text(
             "".join(json.dumps(job, sort_keys=True) + "\n" for job in jobs),
@@ -200,15 +203,12 @@ class _PerformanceRunner:
                         **self._result_payload_overrides,
                         **(
                             {
-                                "tvm_measurement_manifest": _tvm_manifest(
-                                    self._tvm_manifest_profile,
-                                    candidate_id=str(job["manifest_job_id"]),
-                                    source_digest=self._source_digest_by_candidate[
-                                        str(job["manifest_job_id"])
-                                    ],
+                                "tvm_measurement_manifest": dict(
+                                    job["expected_tvm_measurement_manifest"]
                                 )
                             }
-                            if self._tvm_manifest_profile is not None
+                            if self._inject_result_manifest
+                            and "expected_tvm_measurement_manifest" in job
                             else {}
                         ),
                     },
@@ -242,6 +242,7 @@ def _native_jobs(
     quant_root: Path,
     first_overrides: Mapping[str, Any],
     job_count: int,
+    tvm_manifest_profile: HardwareExecutionProfile | None,
 ) -> list[dict[str, Any]]:
     return [
         {
@@ -251,6 +252,7 @@ def _native_jobs(
                 assigned_gpu=(2, 5, 7)[index % 3],
                 performance_root=output_dir,
                 quant_root=quant_root,
+                tvm_manifest_profile=tvm_manifest_profile,
             ),
             **(first_overrides if index == 0 else {}),
         }
@@ -369,10 +371,22 @@ def test_rtx_hardware_profile_binds_tvm_arch_namespace_and_exact_manifests(
     run_performance_round(profile, task_state, round_root, runner)
 
     planner_argv = runner.calls[0]["argv"]
+    assert planner_argv[planner_argv.index("--hardware-profile") + 1] == "rtx4090"
     assert planner_argv[planner_argv.index("--tvm-arch") + 1] == "sm89"
     assert (
         planner_argv[planner_argv.index("--tvm-cache-namespace") + 1]
         == "rtx4090-sm89"
+    )
+    jobs_path = round_root / "performance/performance_jobs.jsonl"
+    jobs = [json.loads(line) for line in jobs_path.read_text().splitlines() if line]
+    assert all(
+        job["expected_tvm_measurement_manifest"]
+        == _tvm_manifest(
+            profile.hardware_profile,
+            candidate_id=str(job["manifest_job_id"]),
+            source_digest=runner._source_digest_by_candidate[str(job["manifest_job_id"])],
+        )
+        for job in jobs
     )
     assert "--tvm-arch" not in runner.calls[1]["argv"]
     assert _read_json(task_state)["stage"] == "performance"
@@ -397,7 +411,54 @@ def test_rtx_tvm_manifest_missing_stops_before_metric_parsing(
     monkeypatch.setattr(performance_adapter, "_extract_latency", counted_metric_parser)
 
     with pytest.raises(P6PerformanceRoundAdapterError):
-        run_performance_round(profile, task_state, round_root, _PerformanceRunner())
+        run_performance_round(
+            profile,
+            task_state,
+            round_root,
+            _PerformanceRunner(
+                tvm_manifest_profile=profile.hardware_profile,
+                inject_result_manifest=False,
+            ),
+        )
+
+    assert metric_calls == 0
+    assert _read_json(task_state)["stage"] == "quantization"
+
+
+def test_rtx_tvm_manifest_mismatch_stops_before_metric_parsing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path, hardware_profile_id="rtx4090")
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_quantized_task_state(round_root, request)
+    metric_calls = 0
+
+    def counted_metric_parser(_payload: Mapping[str, Any]) -> float:
+        nonlocal metric_calls
+        metric_calls += 1
+        return 1.0
+
+    monkeypatch.setattr(performance_adapter, "_extract_latency", counted_metric_parser)
+    first = request["rows"][0]
+    conflicting = {
+        **_tvm_manifest(
+            profile.hardware_profile,
+            candidate_id=str(first["manifest_job_id"]),
+            source_digest=str(first["source_evidence_sha256"]),
+        ),
+        "tvm_arch": "sm90",
+    }
+    runner = _PerformanceRunner(
+        tvm_manifest_profile=profile.hardware_profile,
+        inject_result_manifest=False,
+        result_payload_overrides={"tvm_measurement_manifest": conflicting},
+    )
+
+    with pytest.raises(P6PerformanceRoundAdapterError):
+        run_performance_round(profile, task_state, round_root, runner)
 
     assert metric_calls == 0
     assert _read_json(task_state)["stage"] == "quantization"
@@ -887,6 +948,7 @@ def _native_performance_job(
     assigned_gpu: int = 2,
     performance_root: Path | None = None,
     quant_root: Path | None = None,
+    tvm_manifest_profile: HardwareExecutionProfile | None = None,
 ) -> dict[str, Any]:
     manifest_id = row_id or str(row["manifest_job_id"])
     runner_key = "tvm_int8" if row["q_mode"] == "int8" else "tvm_fp16"
@@ -906,7 +968,7 @@ def _native_performance_job(
         command.extend(
             ["--tensor-quant-params-json", str(_quant_contract_path(quant_root.parent, row))]
         )
-    return {
+    job = {
         "schema_version": "stage5_performance_job_v1",
         "job_id": f"{row['group_id']}|{runner_key}",
         "manifest_job_id": manifest_id,
@@ -927,6 +989,16 @@ def _native_performance_job(
         "expected_result_json": str(result_path),
         "max_attempts": 2,
         "terminal_status": "pending",
+    }
+    if tvm_manifest_profile is None:
+        return job
+    return {
+        **job,
+        "expected_tvm_measurement_manifest": _tvm_manifest(
+            tvm_manifest_profile,
+            candidate_id=manifest_id,
+            source_digest=str(row["source_evidence_sha256"]),
+        ),
     }
 
 

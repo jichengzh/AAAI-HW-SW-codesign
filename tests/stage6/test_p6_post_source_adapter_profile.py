@@ -221,6 +221,62 @@ def test_v5_normalizer_selects_declared_verified_dependency_root_for_profile_v3(
     )
 
 
+def test_v5_normalizer_emits_profile_v4_for_explicit_canonical_rtx(
+    tmp_path: Path,
+) -> None:
+    source_map, runner = v5_private_source_map(tmp_path)
+    source_map["hardware_profile"] = "rtx4090"
+    private_dir = tmp_path / "private-normalized"
+
+    paths = normalize_history_inputs(
+        source_map,
+        _history_root(source_map),
+        private_dir,
+        runner_template_path=runner,
+    )
+
+    payload = yaml.safe_load(paths["post_source_adapter_profile"].read_text())
+    loaded = load_post_source_adapter_profile(
+        paths["post_source_adapter_profile"], private_root=private_dir
+    )
+    assert payload["schema_version"] == "p6_post_source_adapter_profile_v4"
+    assert payload["hardware_profile"] == "rtx4090"
+    assert payload["target"] == {
+        "model": "pyramid",
+        "hardware": "rtx4090",
+        "backend": "tvm_auto",
+    }
+    assert loaded.hardware_profile is load_hardware_execution_profile("rtx4090")
+
+
+@pytest.mark.parametrize("mutation", ("unknown", "forged", "legacy-schema"))
+def test_normalizer_rejects_noncanonical_or_mixed_hardware_profile_selection(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    source_map, runner = v5_private_source_map(tmp_path)
+    if mutation == "unknown":
+        source_map["hardware_profile"] = "unknown-profile"
+    elif mutation == "forged":
+        source_map["hardware_profile"] = replace(
+            load_hardware_execution_profile("rtx4090"), tvm_arch="sm90"
+        )
+    else:
+        source_map["schema_version"] = "p6_history_normalization_source_v4"
+        source_map["hardware_profile"] = "rtx4090"
+
+    destination = tmp_path / f"invalid-{mutation}"
+    with pytest.raises(P6HistoryNormalizationError):
+        normalize_history_inputs(
+            source_map,
+            _history_root(source_map),
+            destination,
+            runner_template_path=runner,
+        )
+
+    assert not destination.exists()
+
+
 def test_hardware_profile_v4_round_trips_canonical_rtx_identity(
     tmp_path: Path,
 ) -> None:

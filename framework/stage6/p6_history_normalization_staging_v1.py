@@ -314,6 +314,7 @@ def _stage_post_source_wrappers(
         adapter_dependency_root_relative_path=canonical.get(
             "adapter_dependency_root_relative_path"
         ),
+        hardware_profile=canonical.get("hardware_profile"),
     )
     profile_path = staged / "post-source-adapter-profile.yaml"
     _atomic_write_yaml(

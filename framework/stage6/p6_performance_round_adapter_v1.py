@@ -141,6 +141,8 @@ def _tvm_profile_argv(
     except ValueError:
         raise P6PerformanceRoundAdapterError() from None
     return (
+        "--hardware-profile",
+        profile.hardware_profile.profile_id,
         "--tvm-arch",
         profile.hardware_profile.tvm_arch,
         "--tvm-cache-namespace",
@@ -410,9 +412,26 @@ def _validate_performance_job(
     }
     if any(job.get(key) != value for key, value in expected.items()):
         raise P6PerformanceRoundAdapterError()
+    _validate_job_tvm_manifest(context.profile, request_row, job)
     _validate_source_contract(request_row.get("source_contract"), source_contract, quant_binding)
     _validate_job_quant_command(job, quant_binding)
     _validate_job_outputs(job, performance_root)
+
+
+def _validate_job_tvm_manifest(
+    profile: ValidatedPostSourceAdapterProfile,
+    request_row: Mapping[str, Any],
+    job: Mapping[str, Any],
+) -> None:
+    if profile.schema_version != PROFILE_SCHEMA_VERSION_V4:
+        return
+    if not validate_tvm_measurement_manifest(
+        job.get("expected_tvm_measurement_manifest"),
+        profile=profile.hardware_profile,
+        candidate_id=str(request_row["manifest_job_id"]),
+        source_digest=str(request_row["source_evidence_sha256"]),
+    ):
+        raise P6PerformanceRoundAdapterError()
 
 
 def _validate_job_outputs(job: Mapping[str, Any], performance_root: Path) -> None:

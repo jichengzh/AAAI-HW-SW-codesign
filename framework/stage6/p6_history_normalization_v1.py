@@ -12,6 +12,11 @@ from typing import Any
 
 import yaml
 
+from framework.stage6.hardware_execution_profile_v1 import (
+    HardwareExecutionProfile,
+    load_hardware_execution_profile,
+    validate_profile_backend,
+)
 from framework.stage6.p6_external_training_binding_v1 import (
     bind_external_training_contract,
     validate_external_training_binding,
@@ -278,8 +283,11 @@ def _source_recipe(
 ) -> tuple[Mapping[str, Any], bool]:
     if schema_version == SOURCE_MAP_SCHEMA_VERSION:
         return _validate_recipe(source_map.get("dynamic_materialization_recipe")), False
+    recipe_source_map = copy.deepcopy(dict(source_map))
+    if schema_version == SOURCE_MAP_V5_SCHEMA_VERSION:
+        recipe_source_map.pop("hardware_profile", None)
     return _recipe_from_v2_source_map(
-        source_map, resolved_history_root, runner_template_path
+        recipe_source_map, resolved_history_root, runner_template_path
     )
 
 
@@ -370,6 +378,26 @@ def _adapter_dependency_root_relative_path(
     return matches[0].destination_relative_root
 
 
+def _hardware_profile(
+    source_map: Mapping[str, Any], schema_version: str
+) -> HardwareExecutionProfile | None:
+    if "hardware_profile" not in source_map:
+        return None
+    raw_profile = source_map.get("hardware_profile")
+    if schema_version != SOURCE_MAP_V5_SCHEMA_VERSION or not isinstance(
+        raw_profile, str
+    ):
+        _invalid("hardware profile is invalid")
+    try:
+        profile = load_hardware_execution_profile(raw_profile)
+        validate_profile_backend(profile, "tvm_auto")
+    except ValueError as error:
+        raise P6HistoryNormalizationError(
+            "history_normalization_invalid", "hardware profile is invalid"
+        ) from error
+    return profile
+
+
 def _bind_source_group(raw_source_group: object, external_training: Any) -> dict[str, Any]:
     if not isinstance(raw_source_group, Mapping) or not isinstance(
         raw_source_group.get("source_contract"), Mapping
@@ -429,6 +457,7 @@ def _canonical_source_map(
     post_source_leaf_binding: Any,
     adapter_python: Path | None,
     adapter_dependency_root_relative_path: Path | None,
+    hardware_profile: HardwareExecutionProfile | None,
     derived: bool,
 ) -> dict[str, Any]:
     canonical = {
@@ -452,6 +481,8 @@ def _canonical_source_map(
         canonical["adapter_dependency_root_relative_path"] = (
             adapter_dependency_root_relative_path
         )
+    if hardware_profile is not None:
+        canonical["hardware_profile"] = hardware_profile
     if derived:
         canonical["derived_recipe"] = copy.deepcopy(recipe)
     return canonical
@@ -477,6 +508,7 @@ def _validate_private_source_map(
     post_source_leaf_binding = None
     adapter_python = None
     adapter_dependency_root_relative_path = None
+    hardware_profile = _hardware_profile(source_map, schema_version)
     if recipe_v2_source:
         runtime = _execution_runtime(source_map, resolved_root, runner_template_path)
         post_source_leaf_binding = _post_source_binding(
@@ -503,6 +535,7 @@ def _validate_private_source_map(
         post_source_leaf_binding=post_source_leaf_binding,
         adapter_python=adapter_python,
         adapter_dependency_root_relative_path=adapter_dependency_root_relative_path,
+        hardware_profile=hardware_profile,
         derived=derived,
     )
 
