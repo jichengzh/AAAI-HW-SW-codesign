@@ -17,6 +17,9 @@ from typing import Any
 from framework.stage5.production_search_v1 import (
     validate_source_contract,
 )
+from framework.stage6.hardware_execution_profile_v1 import (
+    load_hardware_execution_profile,
+)
 from framework.stage6.p6_history_binding_v1 import (
     P6HistoryBindingError,
     validate_history_execution_binding,
@@ -214,8 +217,15 @@ def _require_private_registry_output(path: Path) -> None:
 def _validate_plan(
     raw_plan: Mapping[str, Any],
 ) -> dict[tuple[tuple[int, int, int], str], tuple[str, str, str]]:
+    hardware_target = raw_plan.get("hardware_target")
+    if not isinstance(hardware_target, str):
+        _invalid("candidate plan hardware target is unknown")
     try:
-        return validate_p6_candidate_plan(raw_plan)
+        profile = load_hardware_execution_profile(hardware_target)
+    except ValueError:
+        _invalid("candidate plan hardware target is unknown")
+    try:
+        return validate_p6_candidate_plan(raw_plan, profile=profile)
     except ValueError as error:
         _invalid(str(error))
 

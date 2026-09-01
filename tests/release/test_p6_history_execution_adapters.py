@@ -10,10 +10,17 @@ from typing import Any, Mapping
 
 import pytest
 
+from framework.stage1.structural_axis_digest import canonical_digest
 from framework.stage2.canonical_search_v3 import build_capability_profile
 from framework.stage5.single_target_search_v2 import (
     SearchTask,
     build_task_candidate_manifest,
+)
+from framework.stage6.hardware_execution_profile_v1 import (
+    load_hardware_execution_profile,
+)
+from framework.stage6.pyramid_search_space_adapter_v1 import (
+    build_pyramid_candidate_plan,
 )
 from tools.release import measure_p6_history_batch as measurement_cli
 from tests.release.p6_post_source_adapter_chain_fixture import (
@@ -21,6 +28,9 @@ from tests.release.p6_post_source_adapter_chain_fixture import (
     build_adapter_measurement_request,
     install_adapter_chain,
     write_source_materializer,
+)
+from tests.stage6.pyramid_formal_space_support import (
+    scanner_owned_pyramid_stage2_space,
 )
 
 
@@ -54,6 +64,25 @@ def _plan() -> dict[str, Any]:
         "candidate_count": 2,
         "candidates": candidates,
     }
+
+
+def _scanner_owned_rtx_plan() -> dict[str, Any]:
+    search_space = scanner_owned_pyramid_stage2_space()
+    hardware_target = dict(search_space["hardware_target"])
+    hardware_target["name"] = "NVIDIA RTX 4090"
+    search_space["hardware_target"] = hardware_target
+    provenance = dict(search_space["formal_q_mode_provenance"])
+    provenance["hardware_target"] = dict(hardware_target)
+    unsigned = {
+        key: value for key, value in provenance.items() if key != "digest"
+    }
+    provenance["digest"] = canonical_digest(unsigned)
+    search_space["formal_q_mode_provenance"] = provenance
+    search_space["hardware_candidates"][0]["hardware"] = "NVIDIA RTX 4090"
+    return build_pyramid_candidate_plan(
+        search_space,
+        profile=load_hardware_execution_profile("rtx4090"),
+    )
 
 
 def _write_executable(path: Path) -> str:
@@ -469,6 +498,66 @@ def test_registry_cli_writes_stage5_compatible_exact_dynamic_manifest(
     manifest = build_task_candidate_manifest(registry, task=task, measured_row_ids=set())
     assert _identity_map(manifest["rows"]) == _identity_map(plan["candidates"])
     assert manifest["eligible_row_count"] == plan["candidate_count"]
+
+
+def test_registry_cli_materializes_scanner_owned_rtx_plan_through_real_chain(
+    tmp_path: Path,
+) -> None:
+    local_output_root = tmp_path / "private-output"
+    local_output_root.mkdir()
+    binding_path = _write_json(
+        local_output_root / "binding.json", _synthetic_history_binding(tmp_path)
+    )
+    plan = _scanner_owned_rtx_plan()
+    plan_path = _write_json(local_output_root / "plan.json", plan)
+    registry_path = local_output_root / "registry.json"
+
+    result = _run_registry_cli(
+        binding_path, plan_path, registry_path, local_output_root
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "source_registry_written\n"
+    assert result.stderr == ""
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    assert _identity_map(
+        [
+            {
+                "width": group["width"],
+                "q_mode": q_mode,
+            }
+            for group in registry["groups"]
+            for q_mode in group["available_q_modes"]
+        ]
+    ) == _identity_map(plan["candidates"])
+
+
+@pytest.mark.parametrize(
+    "hardware_target",
+    ["unknown", "h800"],
+    ids=["unknown", "mixed-h800-outer-rtx-provenance"],
+)
+def test_registry_cli_rejects_unknown_or_mixed_rtx_plan_target(
+    tmp_path: Path, hardware_target: str
+) -> None:
+    local_output_root = tmp_path / "private-output"
+    local_output_root.mkdir()
+    binding_path = _write_json(
+        local_output_root / "binding.json", _synthetic_history_binding(tmp_path)
+    )
+    plan = _scanner_owned_rtx_plan()
+    plan["hardware_target"] = hardware_target
+    plan_path = _write_json(local_output_root / "plan.json", plan)
+    registry_path = local_output_root / "registry.json"
+
+    result = _run_registry_cli(
+        binding_path, plan_path, registry_path, local_output_root
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "source_registry_invalid\n"
+    assert not registry_path.exists()
 
 
 def test_registry_cli_rejects_extra_command_surface_with_category_only_stderr(

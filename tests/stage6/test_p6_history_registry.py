@@ -9,7 +9,11 @@ from typing import Any, Callable, Mapping
 
 import pytest
 
+from framework.stage1.structural_axis_digest import canonical_digest
 from framework.stage5.production_search_v1 import validate_source_contract
+from framework.stage6.hardware_execution_profile_v1 import (
+    load_hardware_execution_profile,
+)
 from framework.stage6.p6_history_registry_v1 import (
     P6HistoryRegistryError,
     materialize_history_registry,
@@ -17,7 +21,13 @@ from framework.stage6.p6_history_registry_v1 import (
 from framework.stage6.p6_history_training_contract_v1 import (
     REQUIRED_TRAINING_PARAMETER_KEYS,
 )
+from framework.stage6.pyramid_search_space_adapter_v1 import (
+    build_pyramid_candidate_plan,
+)
 import framework.stage6.p6_history_registry_v1 as registry_module
+from tests.stage6.pyramid_formal_space_support import (
+    scanner_owned_pyramid_stage2_space,
+)
 
 
 SYNTHETIC_GPU_INDICES = (101, 103, 107)
@@ -66,6 +76,27 @@ def _plan(q_modes: tuple[str, ...], *, duplicate: bool = False) -> dict[str, Any
         "candidate_count": len(candidates),
         "candidates": candidates,
     }
+
+
+def _canonical_profile_plan(
+    profile_id: str, hardware_name: str
+) -> dict[str, Any]:
+    search_space = scanner_owned_pyramid_stage2_space()
+    hardware_target = copy.deepcopy(search_space["hardware_target"])
+    hardware_target["name"] = hardware_name
+    search_space["hardware_target"] = hardware_target
+    provenance = copy.deepcopy(search_space["formal_q_mode_provenance"])
+    provenance["hardware_target"] = copy.deepcopy(hardware_target)
+    unsigned = {
+        key: value for key, value in provenance.items() if key != "digest"
+    }
+    provenance["digest"] = canonical_digest(unsigned)
+    search_space["formal_q_mode_provenance"] = provenance
+    search_space["hardware_candidates"][0]["hardware"] = hardware_name
+    return build_pyramid_candidate_plan(
+        search_space,
+        profile=load_hardware_execution_profile(profile_id),
+    )
 
 
 def _plan_for_widths(
@@ -495,6 +526,48 @@ def test_registry_materializes_every_dynamic_identity_without_pruning(
     assert json.loads((local_output_root / "source_registry.json").read_text()) == registry
     assert plan == original_plan
     assert binding == original_binding
+
+
+def test_registry_materializes_canonical_rtx_plan_at_independent_boundary(
+    tmp_path: Path,
+) -> None:
+    plan = _canonical_profile_plan("rtx4090", "NVIDIA RTX 4090")
+    local_output_root = tmp_path / "private-output"
+    local_output_root.mkdir()
+
+    registry = materialize_history_registry(
+        plan, _binding(tmp_path), local_output_root
+    )
+
+    assert plan["hardware_target"] == "rtx4090"
+    assert _registry_identity_map(registry) == _plan_identity_map(plan)
+    assert json.loads(
+        (local_output_root / "source_registry.json").read_text(encoding="utf-8")
+    ) == registry
+
+
+@pytest.mark.parametrize(
+    "hardware_target",
+    [None, "unknown", "NVIDIA RTX 4090", "h800"],
+    ids=[
+        "non-string",
+        "unknown",
+        "noncanonical-alias",
+        "mixed-h800-outer-rtx-provenance",
+    ],
+)
+def test_registry_rejects_unknown_or_mixed_plan_target_before_write(
+    tmp_path: Path, hardware_target: object
+) -> None:
+    plan = _canonical_profile_plan("rtx4090", "NVIDIA RTX 4090")
+    plan["hardware_target"] = hardware_target
+    local_output_root = tmp_path / "private-output"
+    local_output_root.mkdir()
+
+    with pytest.raises(P6HistoryRegistryError, match="hardware"):
+        materialize_history_registry(plan, _binding(tmp_path), local_output_root)
+
+    assert not (local_output_root / "source_registry.json").exists()
 
 
 def test_registry_rejects_over_base_formal_candidate_before_write(

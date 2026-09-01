@@ -55,7 +55,6 @@ SUCCESS_STATUS = "measured_success_gold"
 TRUE_FAILURE_STATUSES = frozenset({"feasibility_failure", "numerical_feasibility_failure"})
 FEEDBACK_SCHEMA_VERSION = "p6_h800_coptv2x_feedback_v2"
 FAILURE_SCHEMA_VERSION = "p6_h800_coptv2x_failure_v2"
-FIXED_TARGET = "h800"
 FIXED_MODEL = "pyramid"
 FIXED_BACKEND = "tvm_auto"
 FIXED_SAMPLE_BUDGET = 16
@@ -433,12 +432,16 @@ def _validate_stage1_partition_manifest(
 def _matches_profile_hardware_target(
     hardware_profile: HardwareExecutionProfile, hardware_name: object
 ) -> bool:
-    if hardware_name == hardware_profile.target_hardware_id:
-        return True
-    return (
-        hardware_profile.profile_id == "h800"
-        and isinstance(hardware_name, str)
-        and hardware_name.startswith(f"{FIXED_TARGET}_")
+    return _normalize_hardware_target_name(hardware_name) in (
+        hardware_profile.allowed_normalized_gpu_models
+    )
+
+
+def _normalize_hardware_target_name(hardware_name: object) -> str:
+    if not isinstance(hardware_name, str):
+        return ""
+    return "".join(
+        character for character in hardware_name.upper() if character.isalnum()
     )
 
 

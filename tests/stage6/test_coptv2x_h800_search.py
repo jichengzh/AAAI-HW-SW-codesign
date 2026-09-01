@@ -3213,6 +3213,50 @@ def test_v3_rtx_controller_builds_scanner_owned_source_registry_plan(
     assert registry["schema_version"] == "stage5_candidate_source_registry_v2"
 
 
+@pytest.mark.parametrize(
+    ("profile_id", "hardware_name"),
+    [
+        ("h800", "NVIDIA H800"),
+        ("h800", "NVIDIA H800 80GB HBM3"),
+        ("rtx4090", "NVIDIA RTX 4090"),
+        ("rtx4090", "NVIDIA GeForce RTX 4090"),
+    ],
+)
+def test_controller_stage1_manifest_accepts_registry_hardware_aliases(
+    tmp_path: Path, profile_id: str, hardware_name: str
+) -> None:
+    manifest = scanner_owned_pyramid_stage1_manifest()
+    manifest["hw_capability"]["name"] = hardware_name
+    path = _write_yaml(tmp_path / f"{profile_id}-stage1.yaml", manifest)
+
+    execution._validate_stage1_partition_manifest(
+        path, load_hardware_execution_profile(profile_id)
+    )
+
+
+@pytest.mark.parametrize(
+    ("profile_id", "hardware_name"),
+    [
+        ("h800", "h800_custom"),
+        ("h800", "h800_rtx4090"),
+        ("h800", "NVIDIA H800 custom"),
+        ("rtx4090", "rtx4090_custom"),
+        ("rtx4090", "NVIDIA RTX 4090 custom"),
+    ],
+)
+def test_controller_stage1_manifest_rejects_fuzzy_hardware_names(
+    tmp_path: Path, profile_id: str, hardware_name: str
+) -> None:
+    manifest = scanner_owned_pyramid_stage1_manifest()
+    manifest["hw_capability"]["name"] = hardware_name
+    path = _write_yaml(tmp_path / f"{profile_id}-stage1.yaml", manifest)
+
+    with pytest.raises(P6CoptV2XContractError, match="hardware profile"):
+        execution._validate_stage1_partition_manifest(
+            path, load_hardware_execution_profile(profile_id)
+        )
+
+
 def test_hardware_profile_legacy_search_input_loader_defaults_to_h800(
     tmp_path: Path,
 ) -> None:
