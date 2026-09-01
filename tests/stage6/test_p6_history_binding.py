@@ -10,6 +10,9 @@ from typing import Any, Iterable, Mapping
 
 import pytest
 
+from framework.stage6.hardware_execution_profile_v1 import (
+    load_hardware_execution_profile,
+)
 from framework.stage6.p6_history_binding_v1 import (
     EXPECTED_HISTORY_ENV_KEYS,
     GpuRecord,
@@ -421,6 +424,7 @@ def test_discovers_documented_history_and_returns_no_leak_projection(
     assert projected == {
         "schema_version": "p6_history_binding_public_v1",
         "binding_schema_version": "p6_history_binding_v1",
+        "hardware_profile": "h800",
         "target": {
             "model": "pyramid",
             "hardware": "h800",
@@ -590,9 +594,152 @@ def test_binding_accepts_two_gpu_policy_and_double_probes_exact_order(
         "uuid_by_index": {
             str(index): f"GPU-fixture-{index}" for index in policy_indices
         },
-        "model": "h800",
-        "maximum_occupancy": 0.05,
+        "hardware_profile": "h800",
     }
+
+
+def test_binding_hardware_profile_rtx_admits_exact_four_ordered_cards(
+    tmp_path: Path,
+) -> None:
+    """Catches RTX discovery falling back to H800 or reordering its policy."""
+    policy_indices = (29, 17, 31, 23)
+    history_root = _history_root(tmp_path)
+    manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["environment"]["values"]["CUDA_VISIBLE_DEVICES"]["value"] = (
+        "29,17,31,23"
+    )
+    _write_json(manifest_path, manifest)
+    records = _gpu_records(
+        indices=policy_indices,
+        model_name="NVIDIA GeForce RTX 4090",
+        occupancy=0.05,
+    )
+    probe = _probe(records)
+
+    binding = discover_history_binding(
+        history_root,
+        probe,
+        load_hardware_execution_profile("rtx4090"),
+    )
+
+    assert probe.calls == [policy_indices, policy_indices]
+    assert binding["target"] == {
+        "model": "pyramid",
+        "hardware": "rtx4090",
+        "backend": "tvm_auto",
+    }
+    assert binding["gpu_policy"] == {
+        "indices": [29, 17, 31, 23],
+        "uuid_by_index": {
+            "29": "GPU-fixture-29",
+            "17": "GPU-fixture-17",
+            "31": "GPU-fixture-31",
+            "23": "GPU-fixture-23",
+        },
+        "hardware_profile": "rtx4090",
+    }
+    assert public_binding_projection(binding)["hardware_profile"] == "rtx4090"
+
+
+@pytest.mark.parametrize("policy_indices", [(17, 19, 23), (11, 13, 17, 19, 23)])
+def test_binding_hardware_profile_rtx_rejects_wrong_cardinality_before_probe(
+    tmp_path: Path,
+    policy_indices: tuple[int, ...],
+) -> None:
+    """Catches an RTX binding probing a policy other than exactly four cards."""
+    history_root = _history_root(tmp_path)
+    manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["environment"]["values"]["CUDA_VISIBLE_DEVICES"]["value"] = ",".join(
+        str(index) for index in policy_indices
+    )
+    _write_json(manifest_path, manifest)
+    records = _gpu_records(
+        indices=policy_indices,
+        model_name="NVIDIA RTX 4090",
+    )
+    probe = _probe(records)
+
+    with _expect_category("gpu_admission") as captured:
+        discover_history_binding(
+            history_root,
+            probe,
+            load_hardware_execution_profile("rtx4090"),
+        )
+
+    assert probe.calls == []
+    assert not any(
+        token in str(captured.value)
+        for token in ("17", "19", "23", "NVIDIA", "RTX 4090")
+    )
+
+
+@pytest.mark.parametrize(
+    ("model_name", "occupancy"),
+    [
+        ("NVIDIA H800 80GB HBM3", 0.0),
+        ("NVIDIA RTX 4090", 0.050001),
+    ],
+)
+def test_binding_hardware_profile_rtx_rejects_model_or_occupancy(
+    tmp_path: Path,
+    model_name: str,
+    occupancy: float,
+) -> None:
+    """Catches RTX admission bypassing registry model or occupancy limits."""
+    policy_indices = (11, 13, 17, 19)
+    history_root = _history_root(tmp_path)
+    manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["environment"]["values"]["CUDA_VISIBLE_DEVICES"]["value"] = (
+        "11,13,17,19"
+    )
+    _write_json(manifest_path, manifest)
+    records = _gpu_records(
+        indices=policy_indices,
+        model_name=model_name,
+        occupancy=occupancy,
+    )
+    probe = _probe(records)
+
+    with _expect_category("gpu_admission") as captured:
+        discover_history_binding(
+            history_root,
+            probe,
+            load_hardware_execution_profile("rtx4090"),
+        )
+
+    assert probe.calls == [policy_indices, policy_indices]
+    assert model_name not in str(captured.value)
+
+
+def test_binding_hardware_profile_rtx_rejects_second_snapshot_uuid_drift(
+    tmp_path: Path,
+) -> None:
+    """Catches profile parameterization weakening ordered two-snapshot identity."""
+    policy_indices = (11, 13, 17, 19)
+    history_root = _history_root(tmp_path)
+    manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["environment"]["values"]["CUDA_VISIBLE_DEVICES"]["value"] = (
+        "11,13,17,19"
+    )
+    _write_json(manifest_path, manifest)
+    first = _gpu_records(indices=policy_indices, model_name="NVIDIA RTX 4090")
+    second = list(first)
+    second[1] = GpuRecord(13, "GPU-drifted", "NVIDIA RTX 4090", 0.0)
+    probe = _probe(first, second)
+
+    with _expect_category("gpu_drift") as captured:
+        discover_history_binding(
+            history_root,
+            probe,
+            load_hardware_execution_profile("rtx4090"),
+        )
+
+    assert probe.calls == [policy_indices, policy_indices]
+    assert "GPU-drifted" not in str(captured.value)
 
 
 def _noncanonical_private_cuda_policies() -> tuple[str, ...]:

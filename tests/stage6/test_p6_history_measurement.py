@@ -11,6 +11,9 @@ from typing import Any, Mapping, Sequence
 
 import pytest
 
+from framework.stage6.hardware_execution_profile_v1 import (
+    load_hardware_execution_profile,
+)
 from framework.stage6.p6_history_binding_v1 import (
     EXPECTED_HISTORY_ENV_KEYS,
     GpuRecord,
@@ -51,7 +54,10 @@ def _executable(path: Path) -> str:
 
 
 def _binding(
-    private_root: Path, *, gpu_indices: tuple[int, ...] = SYNTHETIC_GPU_INDICES
+    private_root: Path,
+    *,
+    gpu_indices: tuple[int, ...] = SYNTHETIC_GPU_INDICES,
+    hardware_profile: str = "h800",
 ) -> dict[str, Any]:
     component_root = private_root / "components"
     components = {
@@ -194,21 +200,24 @@ def _binding(
     }
     return {
         "schema_version": "p6_history_binding_v1",
-        "target": {"model": "pyramid", "hardware": "h800", "backend": "tvm_auto"},
+        "target": {
+            "model": "pyramid",
+            "hardware": hardware_profile,
+            "backend": "tvm_auto",
+        },
         "private_root": str(private_root),
         "component_paths": components,
         "execution_interface": interface,
         "gpu_policy": {
             "indices": list(gpu_indices),
             "uuid_by_index": {str(index): f"GPU-synthetic-{index}" for index in gpu_indices},
-            "model": "h800",
-            "maximum_occupancy": 0.05,
+            "hardware_profile": hardware_profile,
         },
         "status": "validated",
     }
 
 
-def _request() -> dict[str, Any]:
+def _request(*, hardware_profile: str = "h800") -> dict[str, Any]:
     task_sha = hashlib.sha256(b"task").hexdigest()
     rows: list[dict[str, Any]] = []
     for index in range(4):
@@ -226,7 +235,7 @@ def _request() -> dict[str, Any]:
             "materialization_scope": "synthetic_fixture",
         }
         q_mode = "fp16" if index % 2 == 0 else "int8"
-        row_id = f"{group_id}|q={q_mode}|profile=h800-tvm-auto"
+        row_id = f"{group_id}|q={q_mode}|profile={hardware_profile}-tvm-auto"
         rows.append(
             {
                 "schema_version": "stage5_candidate_row_v2",
@@ -246,8 +255,8 @@ def _request() -> dict[str, Any]:
                 "genome": [*width, q_mode],
                 "strategy_id": f"q={q_mode}",
                 "q_mode": q_mode,
-                "hardware_id": "h800",
-                "capability_profile_id": "h800-tvm-auto",
+                "hardware_id": hardware_profile,
+                "capability_profile_id": f"{hardware_profile}-tvm-auto",
                 "capability_digest": hashlib.sha256(b"profile").hexdigest(),
                 "dispatch_key": "tvm_auto",
                 "source_status": "ready",
@@ -773,6 +782,122 @@ def test_measurement_executes_exact_two_gpu_policy_with_double_admission(
     assert len(feedback["rows"]) == 4
 
 
+def test_runtime_hardware_profile_rtx_admits_four_cards_in_existing_order(
+    tmp_path: Path,
+) -> None:
+    """Catches RTX runtime admission reordering cards or launching as H800."""
+    policy_indices = (109, 103, 107, 101)
+    private_root = tmp_path / "private"
+    private_root.mkdir()
+    round_root = private_root / "controller-round"
+    round_root.mkdir()
+    request = _request(hardware_profile="rtx4090")
+    runner = FakeRunner(request)
+    records = _records(
+        indices=policy_indices,
+        model="NVIDIA GeForce RTX 4090",
+        occupancy=0.05,
+    )
+    probe = FakeProbe(records, records)
+
+    feedback = run_history_measurement_batch(
+        request,
+        _binding(
+            private_root,
+            gpu_indices=policy_indices,
+            hardware_profile="rtx4090",
+        ),
+        round_root,
+        runner,
+        probe,
+        profile=load_hardware_execution_profile("rtx4090"),
+    )
+
+    source_calls = [
+        call
+        for call in runner.calls
+        if Path(call.argv[0]).name == "stage5_materialize_round_sources_v1.sh"
+    ]
+    assert probe.calls == [policy_indices, policy_indices]
+    assert [call.argv[8] for call in source_calls] == ["109", "103", "107", "101"]
+    assert len(feedback["rows"]) == 4
+
+
+@pytest.mark.parametrize(
+    ("binding_profile", "expected_profile"),
+    [("h800", "rtx4090"), ("rtx4090", "h800")],
+)
+def test_runtime_hardware_profile_mismatch_stops_before_probe_source_or_process(
+    tmp_path: Path,
+    binding_profile: str,
+    expected_profile: str,
+) -> None:
+    """Catches contract/profile disagreement reaching any private launch boundary."""
+    private_root = tmp_path / "private"
+    private_root.mkdir()
+    round_root = private_root / "controller-round"
+    round_root.mkdir()
+    policy_indices = (
+        (101, 103, 107, 109)
+        if binding_profile == "rtx4090"
+        else SYNTHETIC_GPU_INDICES[:2]
+    )
+    request = _request(hardware_profile=expected_profile)
+    runner = FakeRunner(request)
+    probe = FakeProbe()
+
+    with pytest.raises(P6HistoryMeasurementError) as captured:
+        run_history_measurement_batch(
+            request,
+            _binding(
+                private_root,
+                gpu_indices=policy_indices,
+                hardware_profile=binding_profile,
+            ),
+            round_root,
+            runner,
+            probe,
+            profile=load_hardware_execution_profile(expected_profile),
+        )
+
+    assert captured.value.category == "history_execution_invalid"
+    assert str(captured.value) == "history_execution_invalid"
+    assert probe.calls == []
+    assert runner.calls == []
+
+
+def test_runtime_hardware_profile_rtx_rejects_wrong_count_before_probe_or_process(
+    tmp_path: Path,
+) -> None:
+    """Catches runtime accepting a persisted non-four-card RTX policy."""
+    private_root = tmp_path / "private"
+    private_root.mkdir()
+    round_root = private_root / "controller-round"
+    round_root.mkdir()
+    policy_indices = (101, 103, 107)
+    request = _request(hardware_profile="rtx4090")
+    runner = FakeRunner(request)
+    probe = FakeProbe()
+
+    with pytest.raises(P6HistoryMeasurementError) as captured:
+        run_history_measurement_batch(
+            request,
+            _binding(
+                private_root,
+                gpu_indices=policy_indices,
+                hardware_profile="rtx4090",
+            ),
+            round_root,
+            runner,
+            probe,
+            profile=load_hardware_execution_profile("rtx4090"),
+        )
+
+    assert captured.value.category == "history_execution_invalid"
+    assert probe.calls == []
+    assert runner.calls == []
+
+
 def test_interface_gpu_policy_rejects_noncanonical_csv_alias() -> None:
     """A leading-zero private CSV must not alias the canonical policy tuple."""
     policy_indices = SYNTHETIC_GPU_INDICES[:2]
@@ -807,8 +932,7 @@ def test_runtime_rejects_policy_that_differs_from_execution_interface_before_pro
     binding["gpu_policy"] = {
         "indices": list(mismatched_indices),
         "uuid_by_index": {str(index): f"GPU-synthetic-{index}" for index in mismatched_indices},
-        "model": "h800",
-        "maximum_occupancy": 0.05,
+        "hardware_profile": "h800",
     }
 
     with pytest.raises(P6HistoryMeasurementError) as raised:
@@ -835,8 +959,7 @@ def test_runtime_rejects_reordered_policy_that_differs_from_execution_interface(
     binding["gpu_policy"] = {
         "indices": list(reordered_indices),
         "uuid_by_index": {str(index): f"GPU-synthetic-{index}" for index in reordered_indices},
-        "model": "h800",
-        "maximum_occupancy": 0.05,
+        "hardware_profile": "h800",
     }
 
     with pytest.raises(P6HistoryMeasurementError) as raised:

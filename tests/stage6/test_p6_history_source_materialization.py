@@ -6,6 +6,9 @@ from typing import Mapping, Sequence
 
 import pytest
 
+from framework.stage6.hardware_execution_profile_v1 import (
+    load_hardware_execution_profile,
+)
 from framework.stage6.p6_history_source_materialization_v1 import (
     P6HistorySourceMaterializationError,
     build_source_invocations,
@@ -13,14 +16,17 @@ from framework.stage6.p6_history_source_materialization_v1 import (
 )
 
 
-def _gpu_policy(indices: tuple[int, ...] = (101, 103, 107)) -> dict[str, object]:
+def _gpu_policy(
+    indices: tuple[int, ...] = (101, 103, 107),
+    *,
+    hardware_profile: str = "h800",
+) -> dict[str, object]:
     return {
         "indices": list(indices),
         "uuid_by_index": {
             str(index): f"GPU-synthetic-{index}" for index in indices
         },
-        "model": "h800",
-        "maximum_occupancy": 0.05,
+        "hardware_profile": hardware_profile,
     }
 
 
@@ -150,8 +156,7 @@ def test_source_invocations_round_robin_four_groups_across_two_gpus(
         "nonpolicy_uuid",
         "duplicate_uuid",
         "malformed_index",
-        "wrong_model",
-        "wrong_occupancy_gate",
+        "unknown_hardware_profile",
     ],
 )
 def test_source_invocations_reject_malformed_or_nonpolicy_gpu_policy(
@@ -191,10 +196,8 @@ def test_source_invocations_reject_malformed_or_nonpolicy_gpu_policy(
         }
     elif mutation == "malformed_index":
         policy = {**policy, "indices": [101, True, 107]}
-    elif mutation == "wrong_model":
-        policy = {**policy, "model": "h100"}
     else:
-        policy = {**policy, "maximum_occupancy": 0.5}
+        policy = {**policy, "hardware_profile": "unknown"}
 
     with pytest.raises(P6HistorySourceMaterializationError) as captured:
         build_source_invocations(
@@ -235,6 +238,66 @@ def test_source_invocations_preserve_validated_gpu_policy_existing_order(
         "pyramid|29x53x101",
     ]
     assert [argv[8] for argv in invocations] == ["107", "103", "101"]
+
+
+def test_source_invocations_hardware_profile_rtx_preserves_four_card_order(
+    tmp_path: Path,
+) -> None:
+    """Catches RTX source assignment sorting or ignoring the four-card profile."""
+    policy_indices = (109, 103, 107, 101)
+
+    invocations = build_source_invocations(
+        tmp_path / "request.json",
+        (
+            "pyramid|31x59x103",
+            "pyramid|17x31x63",
+            "pyramid|29x53x101",
+            "pyramid|23x47x95",
+        ),
+        source_materializer=_executable(tmp_path / "source-materializer"),
+        validated_gpu_policy=_gpu_policy(
+            policy_indices,
+            hardware_profile="rtx4090",
+        ),
+        profile=load_hardware_execution_profile("rtx4090"),
+    )
+
+    assert [argv[8] for argv in invocations] == ["109", "103", "107", "101"]
+
+
+@pytest.mark.parametrize(
+    ("policy_profile", "expected_profile", "indices"),
+    [
+        ("h800", "rtx4090", (101, 103, 107, 109)),
+        ("rtx4090", "h800", (101, 103, 107, 109)),
+        ("rtx4090", "rtx4090", (101, 103, 107)),
+    ],
+)
+def test_source_invocations_hardware_profile_mismatch_or_count_fails_closed(
+    tmp_path: Path,
+    policy_profile: str,
+    expected_profile: str,
+    indices: tuple[int, ...],
+) -> None:
+    """Catches source planning from a binding policy outside its selected profile."""
+    with pytest.raises(P6HistorySourceMaterializationError) as captured:
+        build_source_invocations(
+            tmp_path / "request.json",
+            ("pyramid|17x31x63",),
+            source_materializer=_executable(tmp_path / "source-materializer"),
+            validated_gpu_policy=_gpu_policy(
+                indices,
+                hardware_profile=policy_profile,
+            ),
+            profile=load_hardware_execution_profile(expected_profile),
+        )
+
+    assert captured.value.category == "history_execution_invalid"
+    assert str(captured.value) == "history_execution_invalid"
+    assert not any(
+        token in str(captured.value)
+        for token in ("101", "103", "107", "109", "RTX", "H800")
+    )
 
 
 def test_source_runner_validates_complete_plan_before_direct_argv_execution(

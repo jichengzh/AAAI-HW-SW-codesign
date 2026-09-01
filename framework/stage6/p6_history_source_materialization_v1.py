@@ -15,8 +15,13 @@ from framework.stage5.genome_contract_v1 import (
     validate_structure_identity,
 )
 from framework.stage5.production_search_v1 import validate_source_contract
+from framework.stage6.hardware_execution_profile_v1 import (
+    HardwareExecutionProfile,
+    default_hardware_execution_profile,
+    load_hardware_execution_profile,
+    validate_profile_gpu_policy,
+)
 from framework.stage6.p6_gpu_policy_v1 import canonical_gpu_indices
-from framework.stage6.p6_history_binding_v1 import MAX_GPU_OCCUPANCY
 from framework.stage6.p6_history_recipe_profiles_v1 import (
     RECIPE_V2,
     SHARED_SOURCE_PATH_KEYS,
@@ -120,10 +125,14 @@ class Runner(Protocol):
 
 def project_source_materialization_request(
     request: Mapping[str, Any],
+    profile: HardwareExecutionProfile | None = None,
 ) -> ProjectedSourceRequest:
     """Flatten recipe-v2 shared bundles without mutating the Stage5 request."""
     try:
-        projected = _validated_request_copy(request)
+        projected = _validated_request_copy(
+            request,
+            profile or default_hardware_execution_profile(),
+        )
         rows = projected["rows"]
         ordered_group_ids = tuple(sorted({row["group_id"] for row in rows}))
         recipe_v2_signals = [
@@ -184,10 +193,14 @@ def project_source_materialization_request(
 
 def validate_projected_training_marker_pairs(
     request: Mapping[str, Any],
+    profile: HardwareExecutionProfile | None = None,
 ) -> tuple[tuple[Path, Path], ...]:
     """Return one ordered, unique training/source marker pair per source group."""
     try:
-        projected = _validated_request_copy(request)
+        projected = _validated_request_copy(
+            request,
+            profile or default_hardware_execution_profile(),
+        )
         _validate_flat_projected_contracts(projected["rows"])
         pairs_by_group: dict[str, tuple[Path, Path]] = {}
         owners_by_marker: dict[Path, str] = {}
@@ -219,6 +232,7 @@ def build_source_invocations(
     *,
     source_materializer: Path,
     validated_gpu_policy: Mapping[str, Any],
+    profile: HardwareExecutionProfile | None = None,
 ) -> tuple[tuple[str, ...], ...]:
     """Build one canonical direct argv per distinct source group."""
     try:
@@ -229,7 +243,11 @@ def build_source_invocations(
         )
         if not groups:
             _invalid()
-        gpu_indices = _validated_gpu_indices(validated_gpu_policy)
+        gpu_indices = _validated_gpu_indices(
+            validated_gpu_policy,
+            profile or default_hardware_execution_profile(),
+            allow_legacy_h800=profile is None,
+        )
         return tuple(
             (
                 str(materializer),
@@ -331,13 +349,30 @@ def _validated_group_id(raw_group_id: object) -> str:
     return raw_group_id
 
 
-def _validated_gpu_indices(policy: Mapping[str, Any]) -> tuple[int, ...]:
-    if not isinstance(policy, Mapping) or set(policy) != {
-        "indices",
-        "uuid_by_index",
-        "model",
-        "maximum_occupancy",
-    }:
+def _validated_gpu_indices(
+    policy: Mapping[str, Any],
+    expected_profile: HardwareExecutionProfile,
+    *,
+    allow_legacy_h800: bool,
+) -> tuple[int, ...]:
+    if not isinstance(policy, Mapping):
+        _invalid()
+    policy_keys = set(policy)
+    current_keys = {"indices", "uuid_by_index", "hardware_profile"}
+    legacy_keys = {"indices", "uuid_by_index", "model", "maximum_occupancy"}
+    if policy_keys == current_keys:
+        profile_id = policy.get("hardware_profile")
+    elif policy_keys == legacy_keys and allow_legacy_h800:
+        default_profile = default_hardware_execution_profile()
+        if (
+            expected_profile is not default_profile
+            or policy.get("model") != default_profile.profile_id
+            or policy.get("maximum_occupancy")
+            != default_profile.maximum_occupancy
+        ):
+            _invalid()
+        profile_id = default_profile.profile_id
+    else:
         _invalid()
     raw_indices = policy.get("indices")
     if (
@@ -346,13 +381,17 @@ def _validated_gpu_indices(policy: Mapping[str, Any]) -> tuple[int, ...]:
     ):
         _invalid()
     try:
-        indices = canonical_gpu_indices(raw_indices)
-    except ValueError:
-        _invalid()
-    if (
-        policy.get("model") != "h800"
-        or policy.get("maximum_occupancy") != MAX_GPU_OCCUPANCY
-    ):
+        profile = load_hardware_execution_profile(profile_id)
+        canonical_expected = load_hardware_execution_profile(
+            expected_profile.profile_id
+        )
+        if canonical_expected is not expected_profile or profile is not expected_profile:
+            _invalid()
+        indices = validate_profile_gpu_policy(
+            profile,
+            canonical_gpu_indices(raw_indices),
+        )
+    except (AttributeError, TypeError, ValueError):
         _invalid()
     uuid_by_index = policy.get("uuid_by_index")
     if (
@@ -434,7 +473,10 @@ def _validated_environment(env: Mapping[str, str]) -> dict[str, str]:
     return dict(env)
 
 
-def _validated_request_copy(request: Mapping[str, Any]) -> dict[str, Any]:
+def _validated_request_copy(
+    request: Mapping[str, Any],
+    profile: HardwareExecutionProfile,
+) -> dict[str, Any]:
     if not isinstance(request, Mapping) or set(request) != REQUEST_KEYS:
         _invalid()
     projected = copy.deepcopy(dict(request))
@@ -468,7 +510,7 @@ def _validated_request_copy(request: Mapping[str, Any]) -> dict[str, Any]:
     ):
         _invalid()
     row_ids = [
-        _validate_row(row, str(task_id), str(task_sha))
+        _validate_row(row, str(task_id), str(task_sha), profile)
         for row in rows
     ]
     if len(set(row_ids)) != len(row_ids) or set(row_hashes) != set(row_ids):
@@ -488,7 +530,12 @@ def _validated_request_copy(request: Mapping[str, Any]) -> dict[str, Any]:
     return projected
 
 
-def _validate_row(row: object, task_id: str, task_sha: str) -> str:
+def _validate_row(
+    row: object,
+    task_id: str,
+    task_sha: str,
+    profile: HardwareExecutionProfile,
+) -> str:
     if not isinstance(row, Mapping) or set(row) != ROW_KEYS:
         _invalid()
     row_id = row.get("row_id")
@@ -501,7 +548,7 @@ def _validate_row(row: object, task_id: str, task_sha: str) -> str:
         or row.get("task_id") != task_id
         or row.get("task_sha256") != task_sha
         or row.get("model") != "pyramid"
-        or row.get("hardware_id") != "h800"
+        or row.get("hardware_id") != profile.target_hardware_id
         or row.get("dispatch_key") != "tvm_auto"
         or row.get("source_status") not in {"ready", "materializable"}
         or q_mode not in ALLOWED_Q_MODES

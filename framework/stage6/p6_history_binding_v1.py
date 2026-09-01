@@ -6,7 +6,6 @@ from collections.abc import Callable, Mapping, Sequence
 import copy
 from dataclasses import dataclass
 import json
-import math
 import os
 from pathlib import Path
 import subprocess
@@ -15,6 +14,13 @@ from typing import Any, Protocol
 from types import MappingProxyType
 
 from framework.stage5.production_search_v1 import validate_source_contract
+from framework.stage6.hardware_execution_profile_v1 import (
+    HardwareExecutionProfile,
+    default_hardware_execution_profile,
+    load_hardware_execution_profile,
+    validate_profile_gpu_policy,
+    validate_profile_gpu_records,
+)
 from framework.stage6.p6_gpu_policy_v1 import parse_gpu_indices_csv
 from framework.stage6.p6_history_recipe_profiles_v1 import RECIPE_V2
 from framework.stage6.p6_history_training_contract_v1 import (
@@ -26,19 +32,6 @@ BINDING_SCHEMA_VERSION = "p6_history_binding_v1"
 PUBLIC_SCHEMA_VERSION = "p6_history_binding_public_v1"
 SOURCE_REGISTRY_SCHEMA_VERSION = "stage5_candidate_source_registry_v1"
 EXECUTION_INTERFACE_SCHEMA_VERSION = "p6_history_runner_interface_v1"
-MAX_GPU_OCCUPANCY = 0.05
-ALLOWED_NORMALIZED_H800_MODELS = frozenset(
-    {
-        "H800",
-        "NVIDIAH800",
-        "NVIDIAH80080GBHBM3",
-    }
-)
-TARGET = {
-    "model": "pyramid",
-    "hardware": "h800",
-    "backend": "tvm_auto",
-}
 COMPONENT_MARKERS = {
     "controller": ("stage5_task_round_controller_v3.sh", "v3"),
     "source_materializer": ("stage5_materialize_round_sources_v1.sh", "v1"),
@@ -166,6 +159,7 @@ IgnorePredicate = Callable[[Path], bool]
 def discover_history_binding(
     history_root: str | Path,
     gpu_probe: GpuProbe,
+    profile: HardwareExecutionProfile | None = None,
 ) -> dict[str, Any]:
     """Discover and validate one private Stage5 history binding beneath ``root``."""
     root = _resolve_history_root(history_root)
@@ -184,6 +178,7 @@ def discover_history_binding(
         execution_interface=execution_interface,
         local_input_paths=local_input_paths,
         gpu_probe=gpu_probe,
+        profile=profile,
     )
 
 
@@ -194,8 +189,10 @@ def build_history_binding(
     execution_interface: Mapping[str, Any],
     local_input_paths: Mapping[str, str],
     gpu_probe: GpuProbe,
+    profile: HardwareExecutionProfile | None = None,
 ) -> dict[str, Any]:
     """Build one binding from explicit paths and an already selected interface."""
+    selected_profile = profile or default_hardware_execution_profile()
     root = _resolve_history_root(history_root)
     canonical_components = _binding_component_paths(component_paths, root)
     canonical_inputs = _binding_local_input_paths(local_input_paths, root)
@@ -204,7 +201,13 @@ def build_history_binding(
             _json_compatible(execution_interface), root, canonical_components
         )
     )
-    gpu_indices = _private_gpu_indices(canonical_interface)
+    parsed_gpu_indices = _private_gpu_indices(canonical_interface)
+    try:
+        gpu_indices = _profile_gpu_indices(selected_profile, parsed_gpu_indices)
+    except ValueError:
+        raise P6HistoryBindingError(
+            "gpu_admission", "GPU policy does not match hardware profile"
+        ) from None
     registry_path, source_contract = _discover_source_contract(root)
     if _is_recipe_v2_source_template(source_contract):
         source_contract = validate_recipe_v2_training_template(
@@ -213,14 +216,22 @@ def build_history_binding(
         )
     first_snapshot = _probe_snapshot(gpu_probe, gpu_indices)
     second_snapshot = _probe_snapshot(gpu_probe, gpu_indices)
-    first_uuid_map = _validate_gpu_snapshot(first_snapshot, gpu_indices)
-    second_uuid_map = _validate_gpu_snapshot(second_snapshot, gpu_indices)
+    first_uuid_map = _validate_gpu_snapshot(
+        first_snapshot,
+        gpu_indices,
+        selected_profile,
+    )
+    second_uuid_map = _validate_gpu_snapshot(
+        second_snapshot,
+        gpu_indices,
+        selected_profile,
+    )
     if first_uuid_map != second_uuid_map:
-        raise P6HistoryBindingError("gpu_drift", "GPU UUIDs changed between snapshots")
+        raise P6HistoryBindingError("gpu_drift", "GPU identity changed between snapshots")
 
     return {
         "schema_version": BINDING_SCHEMA_VERSION,
-        "target": copy.deepcopy(TARGET),
+        "target": _profile_target(selected_profile),
         "private_root": str(root),
         "component_paths": canonical_components,
         "component_versions": {
@@ -233,8 +244,7 @@ def build_history_binding(
         "gpu_policy": {
             "indices": list(gpu_indices),
             "uuid_by_index": first_uuid_map,
-            "model": "h800",
-            "maximum_occupancy": MAX_GPU_OCCUPANCY,
+            "hardware_profile": selected_profile.profile_id,
         },
         "status": "validated",
     }
@@ -263,12 +273,20 @@ def public_binding_projection(binding: Mapping[str, Any]) -> dict[str, Any]:
     """Return the fixed safe-label projection; private binding content is never copied."""
     if binding.get("schema_version") != BINDING_SCHEMA_VERSION:
         raise P6HistoryBindingError("public_projection", "unexpected binding schema")
-    if binding.get("target") != TARGET:
+    try:
+        profile = _binding_hardware_profile(binding)
+    except P6HistoryBindingError:
+        raise P6HistoryBindingError(
+            "public_projection", "unexpected hardware profile"
+        ) from None
+    target = _profile_target(profile)
+    if binding.get("target") != target:
         raise P6HistoryBindingError("public_projection", "unexpected binding target")
     projection = {
         "schema_version": PUBLIC_SCHEMA_VERSION,
         "binding_schema_version": BINDING_SCHEMA_VERSION,
-        "target": copy.deepcopy(TARGET),
+        "hardware_profile": profile.profile_id,
+        "target": target,
         "component_versions": {
             role: version for role, (_, version) in COMPONENT_MARKERS.items()
         },
@@ -278,13 +296,18 @@ def public_binding_projection(binding: Mapping[str, Any]) -> dict[str, Any]:
     return projection
 
 
-def validate_history_execution_binding(binding: Mapping[str, Any]) -> Mapping[str, Any]:
+def validate_history_execution_binding(
+    binding: Mapping[str, Any],
+    profile: HardwareExecutionProfile | None = None,
+) -> Mapping[str, Any]:
     """Return a canonical immutable execution interface from a private binding."""
     if (
         not isinstance(binding, Mapping)
         or binding.get("schema_version") != BINDING_SCHEMA_VERSION
-        or binding.get("target") != TARGET
     ):
+        raise _execution_interface_error()
+    selected_profile = _binding_hardware_profile(binding, expected=profile)
+    if binding.get("target") != _profile_target(selected_profile):
         raise _execution_interface_error()
     root = _binding_private_root(binding.get("private_root"))
     component_paths = _binding_component_paths(binding.get("component_paths"), root)
@@ -294,7 +317,13 @@ def validate_history_execution_binding(binding: Mapping[str, Any]) -> Mapping[st
     canonical_interface = _validate_execution_interface(
         _json_compatible(interface), root, component_paths
     )
-    _private_gpu_indices(canonical_interface)
+    try:
+        _profile_gpu_indices(
+            selected_profile,
+            _private_gpu_indices(canonical_interface),
+        )
+    except ValueError:
+        raise _execution_interface_error() from None
     return _freeze_mapping(canonical_interface)
 
 
@@ -948,6 +977,53 @@ def _private_gpu_indices(interface: Mapping[str, Any]) -> tuple[int, ...]:
         raise _execution_interface_error() from None
 
 
+def _profile_target(profile: HardwareExecutionProfile) -> dict[str, str]:
+    return {
+        "model": "pyramid",
+        "hardware": profile.target_hardware_id,
+        "backend": "tvm_auto",
+    }
+
+
+def _binding_hardware_profile(
+    binding: Mapping[str, Any],
+    *,
+    expected: HardwareExecutionProfile | None = None,
+) -> HardwareExecutionProfile:
+    try:
+        policy = binding.get("gpu_policy")
+        if not isinstance(policy, Mapping):
+            raise ValueError
+        policy_keys = set(policy)
+        current_keys = {"indices", "uuid_by_index", "hardware_profile"}
+        legacy_keys = {"indices", "uuid_by_index", "model", "maximum_occupancy"}
+        if policy_keys == current_keys:
+            profile = load_hardware_execution_profile(policy.get("hardware_profile"))
+        elif policy_keys == legacy_keys:
+            profile = default_hardware_execution_profile()
+            if (
+                policy.get("model") != profile.profile_id
+                or policy.get("maximum_occupancy") != profile.maximum_occupancy
+            ):
+                raise ValueError
+        else:
+            raise ValueError
+        if expected is not None:
+            canonical_expected = load_hardware_execution_profile(expected.profile_id)
+            if canonical_expected is not expected or profile is not expected:
+                raise ValueError
+        return profile
+    except (AttributeError, TypeError, ValueError):
+        raise _execution_interface_error() from None
+
+
+def _profile_gpu_indices(
+    profile: HardwareExecutionProfile,
+    indices: tuple[int, ...],
+) -> tuple[int, ...]:
+    return validate_profile_gpu_policy(profile, indices)
+
+
 def _probe_snapshot(
     gpu_probe: GpuProbe, indices: tuple[int, ...]
 ) -> tuple[GpuRecord, ...]:
@@ -961,42 +1037,28 @@ def _probe_snapshot(
 
 
 def _validate_gpu_snapshot(
-    snapshot: tuple[GpuRecord, ...], indices: tuple[int, ...]
+    snapshot: tuple[GpuRecord, ...],
+    indices: tuple[int, ...],
+    profile: HardwareExecutionProfile,
 ) -> dict[str, str]:
     if len(snapshot) != len(indices) or any(
         not isinstance(record, GpuRecord) for record in snapshot
     ):
         raise P6HistoryBindingError("gpu_admission", "GPU snapshot is incomplete")
+    try:
+        validate_profile_gpu_records(profile, snapshot, indices)
+    except ValueError:
+        raise P6HistoryBindingError(
+            "gpu_admission", "GPU snapshot does not match hardware profile"
+        ) from None
     by_index = {record.index: record for record in snapshot}
-    if set(by_index) != set(indices) or len(by_index) != len(snapshot):
-        raise P6HistoryBindingError("gpu_admission", "GPU index set does not match policy")
     ordered = [by_index[index] for index in indices]
     if any(not isinstance(record.uuid, str) for record in ordered):
-        raise P6HistoryBindingError("gpu_admission", "GPU UUIDs must be strings")
+        raise P6HistoryBindingError("gpu_admission", "GPU identity records are invalid")
     uuids = [record.uuid.strip() for record in ordered]
     if any(not uuid for uuid in uuids) or len(set(uuids)) != len(uuids):
-        raise P6HistoryBindingError("gpu_admission", "GPU UUIDs must be non-empty and unique")
-    if any(
-        _normalize_model(record.model_name) not in ALLOWED_NORMALIZED_H800_MODELS
-        for record in ordered
-    ):
-        raise P6HistoryBindingError("gpu_admission", "all admitted GPUs must be H800 models")
-    if any(
-        isinstance(record.occupancy, bool)
-        or not isinstance(record.occupancy, (int, float))
-        or not math.isfinite(record.occupancy)
-        or record.occupancy < 0.0
-        or record.occupancy > MAX_GPU_OCCUPANCY
-        for record in ordered
-    ):
-        raise P6HistoryBindingError("gpu_admission", "GPU occupancy is incompatible")
+        raise P6HistoryBindingError("gpu_admission", "GPU identity records are invalid")
     return {str(record.index): record.uuid.strip() for record in ordered}
-
-
-def _normalize_model(model_name: str) -> str:
-    if not isinstance(model_name, str):
-        return ""
-    return "".join(character for character in model_name.upper() if character.isalnum())
 
 
 def _validate_public_keys(payload: Mapping[str, Any]) -> None:

@@ -15,6 +15,13 @@ from typing import Any, Protocol
 
 from framework.stage5.genome_contract_v1 import validate_structure_identity
 from framework.stage5.production_search_v1 import validate_source_contract
+from framework.stage6.hardware_execution_profile_v1 import (
+    HardwareExecutionProfile,
+    default_hardware_execution_profile,
+    load_hardware_execution_profile,
+    validate_profile_gpu_policy,
+    validate_profile_gpu_records,
+)
 from framework.stage6.p6_external_training_binding_v1 import (
     P6ExternalTrainingBindingError,
     external_training_binding_from_contract,
@@ -22,9 +29,7 @@ from framework.stage6.p6_external_training_binding_v1 import (
     validate_external_training_binding,
 )
 from framework.stage6.p6_history_binding_v1 import (
-    ALLOWED_NORMALIZED_H800_MODELS,
     EXPECTED_HISTORY_ENV_KEYS,
-    MAX_GPU_OCCUPANCY,
     GpuProbe,
     GpuRecord,
     P6HistoryBindingError,
@@ -127,16 +132,25 @@ def run_history_measurement_batch(
     round_output_root: str | Path,
     runner: Runner,
     gpu_probe: GpuProbe,
+    *,
+    profile: HardwareExecutionProfile | None = None,
 ) -> dict[str, Any]:
     """Execute one validated four-row history batch and return safe P6 feedback."""
-    interface = _validated_interface(binding)
-    verified_request = _validate_request(request)
+    selected_profile = profile or default_hardware_execution_profile()
+    interface = _validated_interface(binding, selected_profile)
+    verified_request = _validate_request(request, selected_profile)
     try:
-        projected = project_source_materialization_request(verified_request)
+        projected = project_source_materialization_request(
+            verified_request,
+            selected_profile,
+        )
     except P6HistorySourceMaterializationError:
         raise P6HistoryMeasurementError("history_execution_invalid") from None
     canonical_request = projected.request
-    private_root, gpu_policy = _validate_binding_runtime(binding)
+    private_root, gpu_policy, selected_profile = _validate_binding_runtime(
+        binding,
+        selected_profile,
+    )
     _validate_interface_gpu_policy(interface, gpu_policy)
     paths = resolve_validated_history_round_paths(
         interface, private_root, round_output_root, canonical_request["round_index"]
@@ -160,11 +174,12 @@ def run_history_measurement_batch(
             source_group_ids,
             source_materializer=Path(interface["execution_chain"][0]["argv"][0]),
             validated_gpu_policy=gpu_policy,
+            profile=selected_profile,
         )
         if source_group_ids
         else ()
     )
-    _validate_gpu(gpu_probe, gpu_policy)
+    _validate_gpu(gpu_probe, gpu_policy, selected_profile)
     _initialize_private_round(canonical_request, interface, paths)
     environment = _render_environment(interface, paths)
     substitutions = _substitutions(paths)
@@ -200,7 +215,7 @@ def run_history_measurement_batch(
         raise P6HistoryMeasurementError("history_execution_invalid") from None
     for stage in interface["execution_chain"][1:]:
         _execute(stage["argv"], substitutions, runner, paths, environment)
-    _validate_gpu(gpu_probe, gpu_policy)
+    _validate_gpu(gpu_probe, gpu_policy, selected_profile)
     return _translate_feedback(canonical_request, interface, paths, private_root)
 
 
@@ -298,13 +313,19 @@ def _run_first_use_sources(request: Mapping[str, Any], group_ids: Sequence[str],
             private_root=private_root,
         )
 
-def _validated_interface(binding: Mapping[str, Any]) -> Mapping[str, Any]:
+def _validated_interface(
+    binding: Mapping[str, Any],
+    profile: HardwareExecutionProfile,
+) -> Mapping[str, Any]:
     try:
-        return validate_history_execution_binding(binding)
+        return validate_history_execution_binding(binding, profile)
     except (P6HistoryBindingError, OSError, TypeError, ValueError):
         raise P6HistoryMeasurementError("history_execution_invalid") from None
 
-def _validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
+def _validate_request(
+    request: Mapping[str, Any],
+    profile: HardwareExecutionProfile,
+) -> dict[str, Any]:
     try:
         if not isinstance(request, Mapping) or set(request) != REQUEST_KEYS:
             _request_invalid()
@@ -333,7 +354,9 @@ def _validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
             or not all(isinstance(row, Mapping) for row in rows)
         ):
             _request_invalid()
-        row_ids = [_validate_request_row(row, task_id, task_sha) for row in rows]
+        row_ids = [
+            _validate_request_row(row, task_id, task_sha, profile) for row in rows
+        ]
         if len(set(row_ids)) != 4 or set(row_hashes) != set(row_ids):
             _request_invalid()
         for row, row_id in zip(rows, row_ids, strict=True):
@@ -349,7 +372,12 @@ def _validate_request(request: Mapping[str, Any]) -> dict[str, Any]:
     except (KeyError, OverflowError, TypeError, ValueError):
         raise P6HistoryMeasurementError("history_request_invalid") from None
 
-def _validate_request_row(row: Mapping[str, Any], task_id: str, task_sha: str) -> str:
+def _validate_request_row(
+    row: Mapping[str, Any],
+    task_id: str,
+    task_sha: str,
+    profile: HardwareExecutionProfile,
+) -> str:
     if set(row) != ROW_KEYS:
         _request_invalid()
     row_id = row.get("row_id")
@@ -361,7 +389,7 @@ def _validate_request_row(row: Mapping[str, Any], task_id: str, task_sha: str) -
         or row.get("task_id") != task_id
         or row.get("task_sha256") != task_sha
         or row.get("model") != "pyramid"
-        or row.get("hardware_id") != "h800"
+        or row.get("hardware_id") != profile.target_hardware_id
         or row.get("dispatch_key") != "tvm_auto"
         or row.get("source_status") not in {"ready", "materializable"}
         or not isinstance(row.get("capability_profile_id"), str)
@@ -392,7 +420,8 @@ def _validate_request_row(row: Mapping[str, Any], task_id: str, task_sha: str) -
 
 def _validate_binding_runtime(
     binding: Mapping[str, Any],
-) -> tuple[Path, dict[str, Any]]:
+    expected_profile: HardwareExecutionProfile,
+) -> tuple[Path, dict[str, Any], HardwareExecutionProfile]:
     try:
         private_root = Path(binding["private_root"])
         if not private_root.is_absolute() or private_root.is_symlink():
@@ -404,20 +433,26 @@ def _validate_binding_runtime(
         if not isinstance(raw_policy, Mapping) or set(raw_policy) != {
             "indices",
             "uuid_by_index",
-            "model",
-            "maximum_occupancy",
+            "hardware_profile",
         }:
+            raise ValueError
+        profile = load_hardware_execution_profile(raw_policy.get("hardware_profile"))
+        canonical_expected = load_hardware_execution_profile(
+            expected_profile.profile_id
+        )
+        if canonical_expected is not expected_profile or profile is not expected_profile:
             raise ValueError
         raw_indices = raw_policy.get("indices")
         uuid_by_index = raw_policy.get("uuid_by_index")
         if (
             not isinstance(raw_indices, list)
-            or raw_policy.get("model") != "h800"
-            or raw_policy.get("maximum_occupancy") != MAX_GPU_OCCUPANCY
             or not isinstance(uuid_by_index, Mapping)
         ):
             raise ValueError
-        indices = canonical_gpu_indices(raw_indices)
+        indices = validate_profile_gpu_policy(
+            profile,
+            canonical_gpu_indices(raw_indices),
+        )
         if set(uuid_by_index) != {str(index) for index in indices}:
             raise ValueError
         raw_uuids = [uuid_by_index[str(index)] for index in indices]
@@ -431,14 +466,17 @@ def _validate_binding_runtime(
             "uuid_by_index": {
                 str(index): uuid for index, uuid in zip(indices, uuids, strict=True)
             },
-            "model": "h800",
-            "maximum_occupancy": MAX_GPU_OCCUPANCY,
+            "hardware_profile": profile.profile_id,
         }
-        return private_root, policy
-    except (KeyError, OSError, TypeError, ValueError):
+        return private_root, policy, profile
+    except (AttributeError, KeyError, OSError, TypeError, ValueError):
         raise P6HistoryMeasurementError("history_execution_invalid") from None
 
-def _validate_gpu(gpu_probe: GpuProbe, policy: Mapping[str, Any]) -> None:
+def _validate_gpu(
+    gpu_probe: GpuProbe,
+    policy: Mapping[str, Any],
+    profile: HardwareExecutionProfile,
+) -> None:
     try:
         indices = policy["indices"]
         snapshot = gpu_probe.snapshot(indices)
@@ -446,9 +484,8 @@ def _validate_gpu(gpu_probe: GpuProbe, policy: Mapping[str, Any]) -> None:
             raise ValueError
         if any(not isinstance(record, GpuRecord) for record in snapshot):
             raise ValueError
+        validate_profile_gpu_records(profile, snapshot, indices)
         by_index = {record.index: record for record in snapshot}
-        if set(by_index) != set(indices) or len(by_index) != len(snapshot):
-            raise ValueError
         ordered = [by_index[index] for index in indices]
         if any(not isinstance(record.uuid, str) for record in ordered):
             raise ValueError
@@ -458,15 +495,8 @@ def _validate_gpu(gpu_probe: GpuProbe, policy: Mapping[str, Any]) -> None:
         ):
             raise ValueError
         for index, observed_uuid in zip(indices, observed_uuids, strict=True):
-            record = by_index[index]
             if (
                 observed_uuid != policy["uuid_by_index"][str(index)]
-                or _normalized_model(record.model_name) not in ALLOWED_NORMALIZED_H800_MODELS
-                or isinstance(record.occupancy, bool)
-                or not isinstance(record.occupancy, (int, float))
-                or not math.isfinite(record.occupancy)
-                or record.occupancy < 0.0
-                or record.occupancy > policy["maximum_occupancy"]
             ):
                 raise ValueError
     except Exception:
