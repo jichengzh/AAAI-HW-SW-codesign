@@ -7,6 +7,7 @@ from typing import Any, Mapping
 
 import pytest
 
+from framework.stage1.structural_axis_digest import canonical_digest
 from framework.stage6.hardware_execution_profile_v1 import (
     HardwareExecutionProfile,
     load_hardware_execution_profile,
@@ -228,3 +229,44 @@ def test_rtx_profile_rejects_manually_substituted_candidate_plan_target() -> Non
 
     with pytest.raises(ValueError, match="scanner.*hardware.*profile"):
         validate_p6_candidate_plan(plan, profile=_profile("rtx4090"))
+
+
+def test_rtx_profile_rejects_retargeted_scanner_provenance_with_stale_digest(
+) -> None:
+    plan = copy.deepcopy(_scanner_plan())
+    plan["hardware_target"] = "rtx4090"
+    q_mode_provenance = plan["source_provenance"][
+        "formal_q_mode_provenance"
+    ]
+    original_digest = q_mode_provenance["digest"]
+    q_mode_provenance["hardware_target"]["name"] = "rtx4090"
+
+    assert q_mode_provenance["digest"] == original_digest
+    with pytest.raises(ValueError, match="scanner provenance digest"):
+        validate_p6_candidate_plan(plan, profile=_profile("rtx4090"))
+
+
+def test_rtx_profile_rejects_retargeted_plan_with_stale_candidate_provenance(
+) -> None:
+    plan = copy.deepcopy(_scanner_plan())
+    plan["hardware_target"] = "rtx4090"
+    q_mode_provenance = plan["source_provenance"][
+        "formal_q_mode_provenance"
+    ]
+    q_mode_provenance["hardware_target"]["name"] = "rtx4090"
+    unsigned = {
+        key: value for key, value in q_mode_provenance.items() if key != "digest"
+    }
+    q_mode_provenance["digest"] = canonical_digest(unsigned)
+
+    with pytest.raises(ValueError, match="candidate formal identity provenance"):
+        validate_p6_candidate_plan(plan, profile=_profile("rtx4090"))
+
+
+def test_profile_candidate_plan_rejects_noncanonical_formal_identity_digest(
+) -> None:
+    plan = copy.deepcopy(_scanner_plan())
+    plan["candidates"][0]["formal_candidate_id"] = "0" * 64
+
+    with pytest.raises(ValueError, match="candidate formal identity digest"):
+        validate_p6_candidate_plan(plan, profile=_profile("h800"))

@@ -10,6 +10,10 @@ from framework.stage1.structural_axis_digest import (
     canonical_digest,
     scanner_structural_axes_digest,
 )
+from framework.stage6.hardware_execution_profile_v1 import (
+    load_hardware_execution_profile,
+)
+from framework.stage6.p6_formal_plan_contract_v1 import validate_p6_candidate_plan
 from framework.stage6.pyramid_search_space_adapter_v1 import (
     PyramidSearchSpaceAdapterError,
     build_pyramid_candidate_plan,
@@ -151,6 +155,18 @@ def _pyramid_space_with_axis_schema() -> dict[str, Any]:
     )
 
 
+def _profile_space(hardware_name: str) -> dict[str, Any]:
+    payload = _pyramid_space_with_axis_schema()
+    hardware_target = copy.deepcopy(payload["hardware_target"])
+    hardware_target["name"] = hardware_name
+    payload["hardware_target"] = hardware_target
+    payload["formal_q_mode_provenance"] = _q_mode_provenance(
+        hardware_target, ["fp16", "int8"]
+    )
+    payload["hardware_candidates"][0]["hardware"] = hardware_name
+    return payload
+
+
 def test_build_pyramid_candidate_plan_uses_generic_formal_plan() -> None:
     space = _pyramid_space_with_axis_schema()
 
@@ -169,6 +185,43 @@ def test_build_pyramid_candidate_plan_uses_generic_formal_plan() -> None:
     assert {row["q_mode"] for row in plan["candidates"]} == {"fp16", "int8"}
     assert all("formal_candidate_id" in row for row in plan["candidates"])
     assert all("formal_identity" in row for row in plan["candidates"])
+
+
+def test_rtx_profile_builds_scanner_owned_343_by_686_candidate_plan() -> None:
+    profile = load_hardware_execution_profile("rtx4090")
+
+    plan = build_pyramid_candidate_plan(
+        _profile_space("NVIDIA RTX 4090"), profile=profile
+    )
+    mapping = validate_p6_candidate_plan(plan, profile=profile)
+
+    assert plan["hardware_target"] == "rtx4090"
+    assert plan["execution_backend"] == "tvm_auto"
+    assert plan["structure_count"] == 343
+    assert plan["candidate_count"] == 686
+    assert len(mapping) == 686
+
+
+def test_h800_profile_normalizes_tracked_vendor_name_to_canonical_target() -> None:
+    profile = load_hardware_execution_profile("h800")
+
+    plan = build_pyramid_candidate_plan(
+        _profile_space("NVIDIA H800"), profile=profile
+    )
+
+    assert plan["hardware_target"] == "h800"
+    validate_p6_candidate_plan(plan, profile=profile)
+
+
+@pytest.mark.parametrize("hardware_name", ["h800_custom", "NVIDIA H800 custom"])
+def test_h800_profile_rejects_fuzzy_free_form_hardware_names(
+    hardware_name: str,
+) -> None:
+    with pytest.raises(PyramidSearchSpaceAdapterError, match="hardware profile"):
+        build_pyramid_candidate_plan(
+            _profile_space(hardware_name),
+            profile=load_hardware_execution_profile("h800"),
+        )
 
 
 def test_build_pyramid_candidate_plan_ignores_legacy_candidates_for_formal_space() -> None:
@@ -233,7 +286,10 @@ def test_build_pyramid_candidate_plan_requires_scanner_owned_axis_schema() -> No
     [
         (lambda data: data.update({"schema": "bad"}), "schema"),
         (lambda data: data.update({"model": "codriving"}), "model"),
-        (lambda data: data.update({"hardware_target": {"name": "orin"}}), "H800"),
+        (
+            lambda data: data.update({"hardware_target": {"name": "orin"}}),
+            "hardware profile",
+        ),
         (lambda data: data.update({"hardware_candidates": []}), "TVM"),
         (
             lambda data: data["hardware_candidates"][0].update({"backend_scope": "cuda"}),

@@ -141,8 +141,11 @@ def test_scenario_loader_returns_explicit_scan_scenario(tmp_path: Path) -> None:
     assert scenario.alignment["default_round_to"] == 4
 
 
-def test_tracked_p6_scenario_is_count_free_and_exact_schema() -> None:
-    path = Path("configs/stage1/p6_h800_formal_scan.yaml").resolve()
+@pytest.mark.parametrize("profile_id", ["h800", "rtx4090"])
+def test_tracked_p6_profile_scenario_is_count_free_and_exact_schema(
+    profile_id: str,
+) -> None:
+    path = Path(f"configs/stage1/p6_{profile_id}_formal_scan.yaml").resolve()
     scenario = load_scan_scenario(path, trusted_root=path.parent)
     tokens = path.read_text(encoding="utf-8").replace(":", " ").split()
 

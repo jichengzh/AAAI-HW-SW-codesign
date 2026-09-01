@@ -533,7 +533,9 @@ def _build_source_registry(
         assert local.stage2_search_space_path is not None
         search_space = load_stage2_search_space(local.stage2_search_space_path)
         _validate_stage2_hardware_target(search_space, local.hardware_profile)
-        plan = build_pyramid_candidate_plan(search_space)
+        plan = build_pyramid_candidate_plan(
+            search_space, profile=local.hardware_profile
+        )
         plan_path = local.local_output_root / "pyramid_candidate_plan.json"
         _require_local_output_absent(plan_path)
         plan_path.write_text(

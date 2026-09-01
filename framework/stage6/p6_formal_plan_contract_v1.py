@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from framework.stage1.structural_axis_digest import canonical_digest
 from framework.stage5.genome_contract_v1 import (
     canonical_group_id,
     validate_structure_identity,
@@ -107,14 +108,16 @@ def _validate_plan_envelope(
         validate_profile_backend(profile, raw_plan.get("execution_backend"))
     except ValueError:
         _invalid("candidate plan backend does not match the hardware profile")
-    _validate_scanner_hardware_profile(raw_plan, profile)
     candidates = raw_plan.get("candidates")
     if not isinstance(candidates, list) or not candidates:
         _invalid("candidate plan candidates are invalid")
+    _validate_scanner_hardware_profile(raw_plan, profile, candidates)
 
 
 def _validate_scanner_hardware_profile(
-    raw_plan: Mapping[str, Any], profile: HardwareExecutionProfile
+    raw_plan: Mapping[str, Any],
+    profile: HardwareExecutionProfile,
+    candidates: list[Any],
 ) -> None:
     if raw_plan.get("formal_plan_schema") != "formal_software_plan_v1":
         return
@@ -124,16 +127,68 @@ def _validate_scanner_hardware_profile(
         if isinstance(source_provenance, Mapping)
         else None
     )
+    if not isinstance(q_mode_provenance, Mapping):
+        _invalid("candidate plan scanner provenance is invalid")
+    unsigned_provenance = {
+        key: value
+        for key, value in q_mode_provenance.items()
+        if key != "digest"
+    }
+    try:
+        expected_digest = canonical_digest(unsigned_provenance)
+    except (TypeError, ValueError):
+        _invalid("candidate plan scanner provenance digest is invalid")
+    if q_mode_provenance.get("digest") != expected_digest:
+        _invalid("candidate plan scanner provenance digest is invalid")
     hardware_target = (
         q_mode_provenance.get("hardware_target")
-        if isinstance(q_mode_provenance, Mapping)
-        else None
     )
     if (
         not isinstance(hardware_target, Mapping)
-        or hardware_target.get("name") != profile.target_hardware_id
+        or _normalize_hardware_name(hardware_target.get("name"))
+        not in profile.allowed_normalized_gpu_models
     ):
         _invalid("candidate plan scanner hardware does not match the hardware profile")
+    for candidate in candidates:
+        _validate_formal_candidate_identity(candidate, raw_plan, source_provenance)
+
+
+def _validate_formal_candidate_identity(
+    candidate: object,
+    raw_plan: Mapping[str, Any],
+    source_provenance: object,
+) -> None:
+    if not isinstance(candidate, Mapping):
+        _invalid("candidate plan candidate is invalid")
+    identity = candidate.get("formal_identity")
+    if not isinstance(identity, Mapping):
+        _invalid("candidate formal identity is invalid")
+    if identity.get("source_provenance") != source_provenance:
+        _invalid("candidate formal identity provenance does not match scanner plan")
+    try:
+        expected_digest = canonical_digest(identity)
+    except (TypeError, ValueError):
+        _invalid("candidate formal identity digest is invalid")
+    if candidate.get("formal_candidate_id") != expected_digest:
+        _invalid("candidate formal identity digest is invalid")
+    axis_order = candidate.get("axis_order")
+    axis_values = candidate.get("axis_values")
+    if (
+        identity.get("axis_schema") != raw_plan.get("axis_schema")
+        or identity.get("axis_order") != axis_order
+        or identity.get("q_mode") != candidate.get("q_mode")
+        or not isinstance(axis_order, list)
+        or not isinstance(axis_values, Mapping)
+        or identity.get("width_tuple")
+        != [axis_values.get(axis_id) for axis_id in axis_order]
+    ):
+        _invalid("candidate formal identity does not match candidate plan")
+
+
+def _normalize_hardware_name(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    return "".join(character for character in value.upper() if character.isalnum())
 
 
 def _formal_stage_axes(raw_plan: Mapping[str, Any]) -> tuple[tuple[str, int], ...] | None:

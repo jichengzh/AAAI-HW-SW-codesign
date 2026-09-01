@@ -147,7 +147,7 @@ def test_vendor_h800_manifest_flows_through_strict_stage2_to_pyramid_plan(
     plan = build_pyramid_candidate_plan(search_space)
 
     assert search_space["hardware_target"]["name"] == "NVIDIA H800"
-    assert plan["hardware_target"] == "NVIDIA H800"
+    assert plan["hardware_target"] == "h800"
     assert json.loads(output_path.read_text(encoding="utf-8")) == manifest
 
 

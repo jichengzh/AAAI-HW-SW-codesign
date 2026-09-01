@@ -3170,6 +3170,49 @@ def test_v3_rtx_capability_profile_reaches_profile_derived_search_task(
     assert task.hardware_id == "rtx4090"
 
 
+def test_v3_rtx_controller_builds_scanner_owned_source_registry_plan(
+    tmp_path: Path,
+) -> None:
+    profile = load_hardware_execution_profile("rtx4090")
+    stage1_manifest = scanner_owned_pyramid_stage1_manifest()
+    stage1_manifest["hw_capability"]["name"] = "rtx4090"
+    stage2_path = _write_yaml(tmp_path / "rtx-stage1.yaml", stage1_manifest)
+    output_root = tmp_path / "rtx-output"
+    output_root.mkdir()
+    local = LocalP6CoptV2XConfig(
+        asset_paths={},
+        local_input_paths={},
+        candidate_source_mode="framework_stage2_search_space",
+        stage2_search_space_path=stage2_path,
+        stage1_scan_step=None,
+        source_registry_step=LocalExecutionStep(
+            name="build_source_registry",
+            argv=(
+                "fake-registry",
+                "{source_registry_json}",
+                "{pyramid_candidate_plan}",
+            ),
+        ),
+        measurement_step=LocalExecutionStep(name="measure_batch", argv=()),
+        local_output_root=output_root,
+        hardware_profile=profile,
+    )
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        del cwd
+        plan = json.loads(Path(argv[2]).read_text(encoding="utf-8"))
+        _write_source_registry_from_plan(Path(argv[1]), plan)
+        return 0
+
+    registry, plan = execution._build_source_registry(local, runner)
+
+    assert plan is not None
+    assert plan["hardware_target"] == "rtx4090"
+    assert plan["structure_count"] == len(registry["groups"])
+    assert plan["candidate_count"] == len(plan["candidates"])
+    assert registry["schema_version"] == "stage5_candidate_source_registry_v2"
+
+
 def test_hardware_profile_legacy_search_input_loader_defaults_to_h800(
     tmp_path: Path,
 ) -> None:

@@ -5,6 +5,11 @@ from typing import Any
 from urllib.parse import quote, unquote_to_bytes
 
 from framework.stage2.formal_software_space_v1 import build_formal_software_plan
+from framework.stage6.hardware_execution_profile_v1 import (
+    HardwareExecutionProfile,
+    default_hardware_execution_profile,
+    validate_profile_backend,
+)
 
 
 class PyramidSearchSpaceAdapterError(ValueError):
@@ -54,7 +59,7 @@ def parse_pyramid_stage_provenance_token(token: str) -> tuple[str, ...]:
 
 
 def _build_formal_candidate_plan(
-    search_space: Mapping[str, Any], hardware_name: str
+    search_space: Mapping[str, Any], hardware_target_id: str
 ) -> dict[str, Any]:
     try:
         formal_plan = build_formal_software_plan(search_space)
@@ -76,7 +81,7 @@ def _build_formal_candidate_plan(
         "schema_version": "p6_pyramid_candidate_plan_v2",
         "source_schema": "stage2_search_space_v1",
         "target_model": "pyramid",
-        "hardware_target": hardware_name,
+        "hardware_target": hardware_target_id,
         "execution_backend": "tvm_auto",
         "candidate_source_mode": "framework_stage2_search_space",
         "structure_count": formal_plan["structure_count"],
@@ -146,8 +151,17 @@ def _p6_candidate(
     }
 
 
-def build_pyramid_candidate_plan(search_space: Mapping[str, Any]) -> dict[str, Any]:
+def build_pyramid_candidate_plan(
+    search_space: Mapping[str, Any],
+    *,
+    profile: HardwareExecutionProfile | None = None,
+) -> dict[str, Any]:
     """Convert a Stage2 Pyramid search space into executable candidates."""
+    selected_profile = profile or default_hardware_execution_profile()
+    try:
+        validate_profile_backend(selected_profile, "tvm_auto")
+    except ValueError as error:
+        raise PyramidSearchSpaceAdapterError(str(error)) from error
     if not isinstance(search_space, Mapping):
         _fail("search space must be a mapping")
     if search_space.get("schema") != "stage2_search_space_v1":
@@ -157,10 +171,13 @@ def build_pyramid_candidate_plan(search_space: Mapping[str, Any]) -> dict[str, A
 
     hardware_target = search_space.get("hardware_target")
     if not isinstance(hardware_target, Mapping):
-        _fail("H800 hardware target is required")
+        _fail("hardware target is required")
     hardware_name = hardware_target.get("name")
-    if not _is_h800_name(hardware_name):
-        _fail("H800 hardware target is required")
+    if (
+        _normalize_hardware_name(hardware_name)
+        not in selected_profile.allowed_normalized_gpu_models
+    ):
+        _fail("hardware target does not match the hardware profile")
 
     hardware_candidates = search_space.get("hardware_candidates")
     if not isinstance(hardware_candidates, list):
@@ -178,18 +195,21 @@ def build_pyramid_candidate_plan(search_space: Mapping[str, Any]) -> dict[str, A
     ):
         _fail("TVM hardware candidate is required")
 
-    return _build_formal_candidate_plan(search_space, hardware_name)
+    return _build_formal_candidate_plan(
+        search_space, selected_profile.target_hardware_id
+    )
 
 
-def _is_h800_name(value: object) -> bool:
+def _normalize_hardware_name(value: object) -> str:
     if not isinstance(value, str):
-        return False
-    normalized = "_".join(value.casefold().strip().split())
-    if normalized.startswith("nvidia_"):
-        normalized = normalized.removeprefix("nvidia_")
-    return normalized == "h800" or normalized.startswith("h800_")
+        return ""
+    return "".join(character for character in value.upper() if character.isalnum())
 
 
-def build_pyramid_structure_plan(search_space: Mapping[str, Any]) -> dict[str, Any]:
+def build_pyramid_structure_plan(
+    search_space: Mapping[str, Any],
+    *,
+    profile: HardwareExecutionProfile | None = None,
+) -> dict[str, Any]:
     """Compatibility alias for callers using the P6.1 converter name."""
-    return build_pyramid_candidate_plan(search_space)
+    return build_pyramid_candidate_plan(search_space, profile=profile)
