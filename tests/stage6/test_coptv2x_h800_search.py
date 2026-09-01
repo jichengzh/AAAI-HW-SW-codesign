@@ -170,20 +170,51 @@ def _local_v3_config(
     )
 
 
-def _profile() -> dict[str, Any]:
+def _write_profile_search_inputs(
+    tmp_path: Path,
+    *,
+    rows: list[dict[str, Any]],
+    graphs: list[dict[str, Any]],
+    profiles: list[dict[str, Any]],
+) -> None:
+    for name, payload in {
+        "gold176_rows": rows,
+        "gold176_graph_features": graphs,
+        "capability_profiles": profiles,
+        "closure": _closure(),
+    }.items():
+        (tmp_path / f"{name}.json").write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _load_v3_profile_pair(
+    tmp_path: Path, profile_id: str
+) -> tuple[PublicP6CoptV2XContract, LocalP6CoptV2XConfig]:
+    contract = load_public_contract(
+        _write_yaml(tmp_path / "public-profile.yaml", _public_v3_contract(profile_id))
+    )
+    local = load_local_config(
+        _write_yaml(
+            tmp_path / "local-profile.yaml", _local_v3_config(tmp_path, profile_id)
+        ),
+        contract,
+    )
+    return contract, local
+
+
+def _profile(hardware_target: str = "h800") -> dict[str, Any]:
     return build_capability_profile(
-        capability_profile_id="h800-tvm-auto",
-        hardware_target="h800",
+        capability_profile_id=f"{hardware_target}-tvm-auto",
+        hardware_target=hardware_target,
         compiler_fingerprint="a" * 64,
         dispatch_key="tvm_auto",
         features={"int8_propagation": 0.0, "qdq_fold": 0.0},
     )
 
 
-def _non_target_profile() -> dict[str, Any]:
+def _non_target_profile(hardware_target: str = "h800") -> dict[str, Any]:
     return build_capability_profile(
-        capability_profile_id="h800-trt-engine",
-        hardware_target="h800",
+        capability_profile_id=f"{hardware_target}-trt-engine",
+        hardware_target=hardware_target,
         compiler_fingerprint="b" * 64,
         dispatch_key="trt_engine",
         features={"int8_propagation": 1.0, "qdq_fold": 1.0},
@@ -202,7 +233,11 @@ def _graph(group_id: str, width: list[int]) -> dict[str, Any]:
 
 
 def _gold176(
-    *, include_non_target_backend: bool = False, include_graph_provenance: bool = False
+    *,
+    include_non_target_backend: bool = False,
+    include_graph_provenance: bool = False,
+    hardware_target: str = "h800",
+    non_target_hardware_target: str | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     rows: list[dict[str, Any]] = []
     graphs: list[dict[str, Any]] = []
@@ -212,7 +247,16 @@ def _gold176(
         q_mode = "int8" if index % 2 else "fp16"
         non_target = include_non_target_backend and index >= 88
         dispatch_key = "trt_engine" if non_target else "tvm_auto"
-        profile_id = "h800-trt-engine" if non_target else "h800-tvm-auto"
+        profile_hardware_target = (
+            non_target_hardware_target or hardware_target
+            if non_target
+            else hardware_target
+        )
+        profile_id = (
+            f"{profile_hardware_target}-trt-engine"
+            if non_target
+            else f"{profile_hardware_target}-tvm-auto"
+        )
         graph = _graph(group_id, width)
         if include_graph_provenance:
             graph["source_annotation"] = "legacy_metadata"
@@ -3101,6 +3145,49 @@ def test_v3_hardware_profile_contract_and_local_config_share_registry_profile(
     assert local.hardware_profile is contract.hardware_profile
     assert contract.target == local.hardware_profile.target_hardware_id == target
     assert contract.execution_backend in contract.hardware_profile.backend_scope
+
+
+def test_v3_rtx_capability_profile_reaches_profile_derived_search_task(
+    tmp_path: Path,
+) -> None:
+    rows, graphs = _gold176(
+        include_non_target_backend=True, hardware_target="rtx4090"
+    )
+    _write_profile_search_inputs(
+        tmp_path,
+        rows=rows,
+        graphs=graphs,
+        profiles=[_profile("rtx4090"), _non_target_profile("rtx4090")],
+    )
+    contract, local = _load_v3_profile_pair(tmp_path, "rtx4090")
+
+    _, _, _, selected_profile = execution._load_search_inputs(local, contract)
+    task = execution._build_search_task(contract, selected_profile)
+    execution.validate_search_task(task)
+
+    assert selected_profile["hardware_target"] == "rtx4090"
+    assert selected_profile["dispatch_key"] == "tvm_auto"
+    assert task.hardware_id == "rtx4090"
+
+
+def test_v3_rtx_hardware_profile_rejects_mixed_h800_capability_context(
+    tmp_path: Path,
+) -> None:
+    rows, graphs = _gold176(
+        include_non_target_backend=True,
+        hardware_target="rtx4090",
+        non_target_hardware_target="h800",
+    )
+    _write_profile_search_inputs(
+        tmp_path,
+        rows=rows,
+        graphs=graphs,
+        profiles=[_profile("rtx4090"), _non_target_profile("h800")],
+    )
+    contract, local = _load_v3_profile_pair(tmp_path, "rtx4090")
+
+    with pytest.raises(P6CoptV2XContractError, match="hardware profile"):
+        execution._load_search_inputs(local, contract)
 
 
 @pytest.mark.parametrize(

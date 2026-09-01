@@ -30,6 +30,8 @@ from tests.stage6.test_coptv2x_h800_search import (
     _FullChainCalls,
     _complete_framework_stage2_search_space,
     _framework_local_config_with_stage1_step,
+    _real_stage1_partition_manifest,
+    _write_yaml,
 )
 
 
@@ -83,8 +85,24 @@ def _context_task_contract(
     contract: execution.PublicP6CoptV2XContract,
     local: execution.LocalP6CoptV2XConfig,
 ) -> dict[str, Any]:
-    _, _, _, profile = execution._load_search_inputs(local)
+    _, _, _, profile = execution._load_search_inputs(local, contract)
     return validate_search_task(execution._build_search_task(contract, profile))
+
+
+def _rtx_framework_local_config(tmp_path: Path) -> execution.LocalP6CoptV2XConfig:
+    return _framework_local_config_with_stage1_step(
+        tmp_path,
+        contract_overrides={
+            "schema_version": "p6_coptv2x_search_contract_v3",
+            "hardware_profile": "rtx4090",
+            "target": "rtx4090",
+        },
+        local_overrides={
+            "schema_version": "p6_coptv2x_local_v3",
+            "hardware_profile": "rtx4090",
+            "target": "rtx4090",
+        },
+    )
 
 
 def test_prepare_round_output_rejects_an_existing_round_root(tmp_path: Path) -> None:
@@ -146,19 +164,7 @@ def test_controller_creates_context_after_registry_exactly_once_before_measureme
 def test_hardware_profile_stage2_target_mismatch_fails_before_runner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    local = _framework_local_config_with_stage1_step(
-        tmp_path,
-        contract_overrides={
-            "schema_version": "p6_coptv2x_search_contract_v3",
-            "hardware_profile": "rtx4090",
-            "target": "rtx4090",
-        },
-        local_overrides={
-            "schema_version": "p6_coptv2x_local_v3",
-            "hardware_profile": "rtx4090",
-            "target": "rtx4090",
-        },
-    )
+    local = _rtx_framework_local_config(tmp_path)
     monkeypatch.setattr(
         execution,
         "load_stage2_search_space",
@@ -175,6 +181,41 @@ def test_hardware_profile_stage2_target_mismatch_fails_before_runner(
         execution._build_source_registry(local, forbidden_runner)
 
     assert runner_calls == 0
+
+
+def test_hardware_profile_full_controller_rejects_stage2_target_mismatch_before_downstream_runner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    local = _rtx_framework_local_config(tmp_path)
+    contract = load_public_contract(tmp_path / "contract.yaml")
+    monkeypatch.setattr(
+        execution,
+        "load_stage2_search_space",
+        lambda path: _complete_framework_stage2_search_space(),
+    )
+    runner_calls: list[str] = []
+
+    def runner(argv: tuple[str, ...], cwd: Path) -> int:
+        del cwd
+        runner_calls.append(argv[0])
+        if argv[0] != "fake-stage1":
+            raise AssertionError(argv)
+        h800_manifest = _real_stage1_partition_manifest()
+        manifest = {
+            **h800_manifest,
+            "hw_capability": {
+                **h800_manifest["hw_capability"],
+                "name": "rtx4090",
+            },
+        }
+        _write_yaml(Path(argv[1]), manifest)
+        return 0
+
+    with pytest.raises(P6CoptV2XExecutionError) as captured:
+        run_p6_coptv2x_search(contract, local, "rev-stage2-target", runner)
+
+    assert captured.value.failure_code == "stage1_scan_invalid"
+    assert runner_calls == ["fake-stage1"]
 
 
 @pytest.mark.parametrize(

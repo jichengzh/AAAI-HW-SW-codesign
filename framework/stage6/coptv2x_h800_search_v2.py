@@ -297,7 +297,9 @@ def run_p6_coptv2x_search(
     if local.candidate_source_mode == "framework_stage2_search_space":
         _require_controller_destinations_absent(local)
     _run_framework_stage1_scan(local, command_runner)
-    frozen_gold, gold_graphs, capability_profiles, profile = _load_search_inputs(local)
+    frozen_gold, gold_graphs, capability_profiles, profile = _load_search_inputs(
+        local, contract
+    )
     task = _build_search_task(contract, profile)
     try:
         source_registry, framework_plan = _build_source_registry(local, command_runner)
@@ -453,6 +455,7 @@ def _validate_stage2_hardware_target(
 
 def _load_search_inputs(
     local: LocalP6CoptV2XConfig,
+    contract: PublicP6CoptV2XContract,
 ) -> tuple[
     list[dict[str, Any]],
     list[dict[str, Any]],
@@ -492,7 +495,7 @@ def _load_search_inputs(
         or capability_profile_ids != coldstart_profile_ids
     ):
         raise P6CoptV2XContractError("coldstart capability context is incomplete")
-    profile = _select_profile(capability_profiles)
+    profile = _select_profile(capability_profiles, contract)
     return frozen_gold, gold_graphs, capability_profiles, profile
 
 
@@ -1003,7 +1006,7 @@ def _build_search_task(
     return SearchTask(
         task_id=contract.search_id,
         target_model=contract.target_model,
-        hardware_id=contract.target,
+        hardware_id=contract.hardware_profile.target_hardware_id,
         capability_profile=profile,
         sample_budget=contract.sample_budget,
         batch_size=contract.batch_size,
@@ -1011,19 +1014,31 @@ def _build_search_task(
     )
 
 
-def _select_profile(profiles: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+def _select_profile(
+    profiles: Sequence[Mapping[str, Any]], contract: PublicP6CoptV2XContract
+) -> dict[str, Any]:
     try:
         validated = [validate_capability_profile(profile) for profile in profiles]
     except ValueError as exc:
         raise P6CoptV2XContractError("capability profile invalid") from exc
+    hardware_target = contract.hardware_profile.target_hardware_id
+    if any(
+        str(profile["hardware_target"]).lower() != hardware_target
+        for profile in validated
+    ):
+        raise P6CoptV2XContractError(
+            "capability profiles must match the hardware profile"
+        )
     matching = [
         profile
         for profile in validated
-        if str(profile["hardware_target"]).lower() == FIXED_TARGET
-        and str(profile["dispatch_key"]) == FIXED_BACKEND
+        if str(profile["hardware_target"]).lower() == hardware_target
+        and str(profile["dispatch_key"]) == contract.execution_backend
     ]
     if len(matching) != 1:
-        raise P6CoptV2XContractError("exactly one H800 TVM capability profile is required")
+        raise P6CoptV2XContractError(
+            "exactly one profile-compatible capability profile is required"
+        )
     return matching[0]
 
 
