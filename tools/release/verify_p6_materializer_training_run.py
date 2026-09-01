@@ -162,7 +162,7 @@ def _load_verification_context(
     if not isinstance(private_root_value, str):
         raise ValueError
     private_root = Path(private_root_value)
-    frozen_gold, _, _, profile = _load_search_inputs(local)
+    frozen_gold, _, _, profile = _load_search_inputs(local, contract)
     task_contract = validate_search_task(_build_search_task(contract, profile))
     context = load_fresh_run_context(
         local_output_root=local.local_output_root,

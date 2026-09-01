@@ -23,7 +23,17 @@ from tools.release.verify_p6_materializer_training_run import (
     main,
     verify_materializer_training_run,
 )
+import tools.release.verify_p6_materializer_training_run as verification
 from tests.release.test_run_p6_h800_search import _history_cli_fixture, _run_cli
+from tests.stage6.test_coptv2x_h800_search import (
+    _gold176,
+    _local_v3_config,
+    _non_target_profile,
+    _profile,
+    _public_v3_contract,
+    _write_profile_search_inputs,
+    _write_yaml,
+)
 
 
 @pytest.fixture(scope="module")
@@ -340,6 +350,43 @@ def test_completion_report_does_not_publish_receipt_mapping() -> None:
         "selected_rows",
         "gold176_remeasured_rows",
     )
+
+
+def test_v3_rtx_verification_context_forwards_contract_to_search_inputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rows, graphs = _gold176(
+        include_non_target_backend=True, hardware_target="rtx4090"
+    )
+    _write_profile_search_inputs(
+        tmp_path,
+        rows=rows,
+        graphs=graphs,
+        profiles=[_profile("rtx4090"), _non_target_profile("rtx4090")],
+    )
+    contract_path = _write_yaml(
+        tmp_path / "contract-v3.yaml", _public_v3_contract("rtx4090")
+    )
+    local_path = _write_yaml(
+        tmp_path / "local-v3.yaml", _local_v3_config(tmp_path, "rtx4090")
+    )
+    binding_root = tmp_path / "binding-fixture"
+    binding_root.mkdir()
+    binding_path = _history_cli_fixture(binding_root)["binding"]
+    expected_context = object()
+
+    def load_context(**_: Any) -> object:
+        return expected_context
+
+    monkeypatch.setattr(verification, "load_fresh_run_context", load_context)
+
+    local, _, _, frozen_gold, context = verification._load_verification_context(
+        contract_path, local_path, binding_path
+    )
+
+    assert local.hardware_profile.target_hardware_id == "rtx4090"
+    assert len(frozen_gold) == 176
+    assert context is expected_context
 
 
 def test_completion_accepts_four_round_current_run_with_shared_receipts(
