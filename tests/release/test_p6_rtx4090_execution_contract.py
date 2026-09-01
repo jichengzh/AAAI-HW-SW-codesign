@@ -62,7 +62,7 @@ def _read_yaml(path: Path) -> dict[str, Any]:
 def _report_provenance(profile_id: str) -> dict[str, Any]:
     profile = load_hardware_execution_profile(profile_id)
     return {
-        "schema_version": "p6_hardware_specific_report_provenance_v2",
+        "schema_version": "p6_hardware_specific_report_provenance_v3",
         "comparison_scope": "hardware_specific",
         "hardware_profile": profile.profile_id,
         "target": profile.target_hardware_id,
@@ -72,7 +72,9 @@ def _report_provenance(profile_id: str) -> dict[str, Any]:
         "execution_backend": "tvm_auto",
         "tvm_arch": profile.tvm_arch,
         "tvm_cache_namespace": profile.tvm_cache_namespace,
-        "environment_digest": "a" * 64,
+        "declared_environment_contract_digest": "a" * 64,
+        "runtime_observation_status": "observed",
+        "observed_runtime_digest": "f" * 64,
         "code_revision": "abc123",
         "source_digest": "b" * 64,
         "compiler_toolchain_digest": "c" * 64,
@@ -84,6 +86,9 @@ def _report_provenance(profile_id: str) -> dict[str, Any]:
             "training_config_digest": "d" * 64,
             "seed": 73,
             "metric_protocol": "coptv2x-ap-v1",
+            "dataset_snapshot_digest": "1" * 64,
+            "evaluation_snapshot_digest": "2" * 64,
+            "cross_hardware_comparison_status": "available",
         },
     }
 
@@ -252,3 +257,22 @@ def test_hardware_specific_cross_hardware_ap_requires_matching_external_provenan
     mismatched["ap_provenance"]["data_split"] = "different-split"
     with pytest.raises(report_contract.P6PublicReportError, match="AP provenance"):
         report_contract.validate_cross_hardware_ap_provenance([rtx, mismatched])
+
+
+def test_cross_hardware_ap_is_unavailable_without_exact_dataset_identity() -> None:
+    report_contract = _report_contract()
+    rtx = _report_provenance("rtx4090")
+    h800 = _report_provenance("h800")
+    for report in (rtx, h800):
+        report["ap_provenance"].update(
+            {
+                "dataset_snapshot_digest": None,
+                "evaluation_snapshot_digest": None,
+                "cross_hardware_comparison_status": (
+                    "unavailable_unverified_dataset_identity"
+                ),
+            }
+        )
+
+    with pytest.raises(report_contract.P6PublicReportError, match="unavailable"):
+        report_contract.validate_cross_hardware_ap_provenance([rtx, h800])

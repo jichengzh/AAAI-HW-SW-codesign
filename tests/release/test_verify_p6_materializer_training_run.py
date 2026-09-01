@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 import shutil
 from typing import Any, Iterator
@@ -17,6 +17,10 @@ from framework.stage6.p6_public_report_v1 import (
     validate_hardware_specific_report_provenance,
 )
 from framework.stage6.p6_post_source_adapter_profile_v1 import (
+    PROFILE_SCHEMA_VERSION,
+    PROFILE_SCHEMA_VERSION_V2,
+    PROFILE_SCHEMA_VERSION_V3,
+    PROFILE_SCHEMA_VERSION_V4,
     load_post_source_adapter_profile,
 )
 from framework.stage6.p6_history_measurement_v1 import (
@@ -348,6 +352,24 @@ def _mutate_performance_evidence(
     if mutation == "performance_result_tampered":
         Path(states[0]["result_json"]).write_text("{}\n", encoding="utf-8")
         return
+    if mutation in {
+        "performance_missing_observed_runtime",
+        "performance_wrong_runtime_arch",
+    }:
+        result_state = next(row for row in states if row["job_id"] == jobs[0]["job_id"])
+        result_path = Path(result_state["result_json"])
+        result = _read_json(result_path)
+        if mutation == "performance_missing_observed_runtime":
+            result.pop("observed_runtime_evidence")
+        else:
+            result["observed_runtime_evidence"]["target_arch"] = "sm90"
+        _write_json(result_path, result)
+        result_state["result_sha256"] = sha256_file(result_path)
+        states_path.write_text(
+            "".join(json.dumps(row, sort_keys=True) + "\n" for row in states),
+            encoding="utf-8",
+        )
+        return
     field, value = {
         "performance_wrong_profile": ("hardware_profile", "h800"),
         "performance_wrong_arch": ("tvm_arch", "sm90"),
@@ -642,7 +664,7 @@ def test_completion_accepts_four_round_current_run_with_shared_receipts(
     binding = _read_json(completed_run["binding"])
     training = binding["source_contract_template"]["external_training_binding"]
     assert isinstance(report.provenance, P6HardwareSpecificReportProvenance)
-    assert report.provenance.schema_version == "p6_hardware_specific_report_provenance_v2"
+    assert report.provenance.schema_version == "p6_hardware_specific_report_provenance_v3"
     assert report.provenance.hardware_model_family == "h800"
     assert report.provenance.gpu_count == len(binding["gpu_policy"]["indices"])
     assert report.provenance.code_revision == "test-revision"
@@ -652,7 +674,14 @@ def test_completion_accepts_four_round_current_run_with_shared_receipts(
         "training_config_digest": training["pyramid_config_sha256"],
         "seed": 20260821,
         "metric_protocol": "coptv2x-ap30-ap50-ap70-v1",
+        "dataset_snapshot_digest": None,
+        "evaluation_snapshot_digest": None,
+        "cross_hardware_comparison_status": (
+            "unavailable_unverified_dataset_identity"
+        ),
     }
+    assert report.provenance.runtime_observation_status == "unavailable_legacy_profile"
+    assert report.provenance.observed_runtime_digest is None
     with pytest.raises(FrozenInstanceError):
         report.provenance.target = "rtx4090"  # type: ignore[misc]
     assert report.completed_rounds == 4
@@ -688,7 +717,14 @@ def test_completed_fake_rtx_hardware_profile_tree_reports_public_profile_id(
         "training_config_digest": training["pyramid_config_sha256"],
         "seed": 20260821,
         "metric_protocol": "coptv2x-ap30-ap50-ap70-v1",
+        "dataset_snapshot_digest": None,
+        "evaluation_snapshot_digest": None,
+        "cross_hardware_comparison_status": (
+            "unavailable_unverified_dataset_identity"
+        ),
     }
+    assert report.provenance.runtime_observation_status == "observed"
+    assert report.provenance.observed_runtime_digest is not None
     assert report.completed_rounds == 4
     assert report.selected_rows == 16
     assert report.gold176_remeasured_rows == 0
@@ -709,6 +745,8 @@ def test_completed_fake_rtx_hardware_profile_tree_reports_public_profile_id(
         "performance_wrong_code",
         "performance_wrong_toolchain",
         "performance_tensorrt_marker",
+        "performance_missing_observed_runtime",
+        "performance_wrong_runtime_arch",
     ],
 )
 def test_completed_rtx_rejects_unbound_native_performance_evidence(
@@ -843,12 +881,40 @@ def test_completion_cli_emits_only_allowlisted_fields(
     payload = json.loads(output.out)
     assert payload["hardware_profile"] == "h800"
     provenance = payload["provenance"]
-    assert provenance["schema_version"] == "p6_hardware_specific_report_provenance_v2"
+    assert provenance["schema_version"] == "p6_hardware_specific_report_provenance_v3"
     assert provenance["hardware_profile"] == "h800"
     assert provenance["target_model"] == "pyramid"
     assert provenance["code_revision"] == "test-revision"
     assert provenance["ap_provenance"]["seed"] == 20260821
+    assert provenance["runtime_observation_status"] == "unavailable_legacy_profile"
+    assert provenance["observed_runtime_digest"] is None
+    assert provenance["ap_provenance"]["cross_hardware_comparison_status"] == (
+        "unavailable_unverified_dataset_identity"
+    )
     assert all("/" not in str(value) for value in provenance.values())
+
+
+@pytest.mark.parametrize(
+    ("schema_version", "required"),
+    [
+        (PROFILE_SCHEMA_VERSION, False),
+        (PROFILE_SCHEMA_VERSION_V2, False),
+        (PROFILE_SCHEMA_VERSION_V3, False),
+        (PROFILE_SCHEMA_VERSION_V4, True),
+    ],
+)
+def test_native_performance_attestation_gate_is_formal_v4_only(
+    tmp_path: Path, schema_version: str, required: bool
+) -> None:
+    paths = _history_cli_fixture(tmp_path, hardware_profile="rtx4090")
+    private_root = Path(_read_json(paths["binding"])["private_root"])
+    profile = load_post_source_adapter_profile(
+        private_root / "post-source-adapter-profile.yaml",
+        private_root=private_root,
+    )
+    profile = replace(profile, schema_version=schema_version)
+
+    assert verification._requires_native_performance_attestation(profile) is required
 
 
 def test_completion_cli_rejects_profile_drift_in_constructed_provenance(

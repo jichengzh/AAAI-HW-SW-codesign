@@ -14,7 +14,7 @@ from framework.stage6.hardware_execution_profile_v1 import (
 )
 
 
-REPORT_SCHEMA_VERSION = "p6_hardware_specific_report_provenance_v2"
+REPORT_SCHEMA_VERSION = "p6_hardware_specific_report_provenance_v3"
 COMPARISON_SCOPE = "hardware_specific"
 _REPORT_KEYS = frozenset(
     {
@@ -28,7 +28,9 @@ _REPORT_KEYS = frozenset(
         "execution_backend",
         "tvm_arch",
         "tvm_cache_namespace",
-        "environment_digest",
+        "declared_environment_contract_digest",
+        "runtime_observation_status",
+        "observed_runtime_digest",
         "code_revision",
         "source_digest",
         "compiler_toolchain_digest",
@@ -44,6 +46,9 @@ _AP_PROVENANCE_KEYS = frozenset(
         "training_config_digest",
         "seed",
         "metric_protocol",
+        "dataset_snapshot_digest",
+        "evaluation_snapshot_digest",
+        "cross_hardware_comparison_status",
     }
 )
 _PUBLIC_IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
@@ -58,7 +63,7 @@ class P6PublicReportError(ValueError):
 class P6HardwareSpecificReportProvenance:
     """Redacted labels that bind performance and Pareto evidence to hardware."""
 
-    schema_version: Literal["p6_hardware_specific_report_provenance_v2"]
+    schema_version: Literal["p6_hardware_specific_report_provenance_v3"]
     comparison_scope: Literal["hardware_specific"]
     hardware_profile: str
     target: str
@@ -68,17 +73,19 @@ class P6HardwareSpecificReportProvenance:
     execution_backend: str
     tvm_arch: str
     tvm_cache_namespace: str
-    environment_digest: str
+    declared_environment_contract_digest: str
+    runtime_observation_status: str
+    observed_runtime_digest: str | None
     code_revision: str
     source_digest: str
-    compiler_toolchain_digest: str
+    compiler_toolchain_digest: str | None
     latency_energy_hardware_profile: str
     pareto_hardware_profile: str
     ap_provenance: P6APProvenance
 
 
 @dataclass(frozen=True, eq=False)
-class P6APProvenance(Mapping[str, str | int]):
+class P6APProvenance(Mapping[str, str | int | None]):
     """Immutable, asdict-compatible external provenance for AP comparison."""
 
     data_split: str
@@ -86,8 +93,11 @@ class P6APProvenance(Mapping[str, str | int]):
     training_config_digest: str
     seed: int
     metric_protocol: str
+    dataset_snapshot_digest: str | None
+    evaluation_snapshot_digest: str | None
+    cross_hardware_comparison_status: str
 
-    def __getitem__(self, key: str) -> str | int:
+    def __getitem__(self, key: str) -> str | int | None:
         if key not in _AP_PROVENANCE_KEYS:
             raise KeyError(key)
         return getattr(self, key)
@@ -100,6 +110,9 @@ class P6APProvenance(Mapping[str, str | int]):
                 "training_config_digest",
                 "seed",
                 "metric_protocol",
+                "dataset_snapshot_digest",
+                "evaluation_snapshot_digest",
+                "cross_hardware_comparison_status",
             )
         )
 
@@ -126,7 +139,7 @@ def validate_hardware_specific_report_provenance(
         backend,
         cache_namespace,
     ) = _validated_hardware_fields(raw_report)
-    environment_digest, code_revision, source_digest, toolchain_digest = (
+    declared_environment_digest, runtime_status, observed_digest, code_revision, source_digest, toolchain_digest = (
         _validated_runtime_fields(raw_report)
     )
 
@@ -144,7 +157,9 @@ def validate_hardware_specific_report_provenance(
         execution_backend=backend,
         tvm_arch=profile.tvm_arch,
         tvm_cache_namespace=cache_namespace,
-        environment_digest=environment_digest,
+        declared_environment_contract_digest=declared_environment_digest,
+        runtime_observation_status=runtime_status,
+        observed_runtime_digest=observed_digest,
         code_revision=code_revision,
         source_digest=source_digest,
         compiler_toolchain_digest=toolchain_digest,
@@ -201,18 +216,38 @@ def _validated_hardware_fields(
 
 def _validated_runtime_fields(
     report: Mapping[str, object],
-) -> tuple[str, str, str, str]:
+) -> tuple[str, str, str | None, str, str, str | None]:
+    status = report.get("runtime_observation_status")
+    if status == "observed":
+        observed_digest = _digest(report.get("observed_runtime_digest"), "observed runtime")
+        toolchain_digest = _digest(
+            report.get("compiler_toolchain_digest"), "compiler toolchain"
+        )
+    elif status == "unavailable_legacy_profile":
+        if report.get("observed_runtime_digest") is not None or report.get(
+            "compiler_toolchain_digest"
+        ) is not None:
+            raise P6PublicReportError("legacy runtime observation status is invalid")
+        observed_digest = None
+        toolchain_digest = None
+    else:
+        raise P6PublicReportError("runtime observation status is invalid")
     return (
-        _digest(report.get("environment_digest"), "environment"),
+        _digest(
+            report.get("declared_environment_contract_digest"),
+            "declared environment contract",
+        ),
+        str(status),
+        observed_digest,
         _identifier(report.get("code_revision"), "code revision"),
         _digest(report.get("source_digest"), "source"),
-        _digest(report.get("compiler_toolchain_digest"), "compiler toolchain"),
+        toolchain_digest,
     )
 
 
 def validate_cross_hardware_ap_provenance(
     raw_reports: Sequence[Mapping[str, object]],
-) -> Mapping[str, str | int]:
+) -> Mapping[str, str | int | None]:
     """Return shared AP provenance only for comparable cross-hardware reports."""
     if (
         not isinstance(raw_reports, Sequence)
@@ -226,6 +261,13 @@ def validate_cross_hardware_ap_provenance(
     ]
     if len({report.hardware_profile for report in reports}) < 2:
         raise P6PublicReportError("cross-hardware AP comparison requires distinct profiles")
+    if any(
+        report.ap_provenance.cross_hardware_comparison_status != "available"
+        for report in reports
+    ):
+        raise P6PublicReportError(
+            "cross-hardware AP comparison is unavailable without exact dataset identity"
+        )
     expected = dict(reports[0].ap_provenance)
     if any(dict(report.ap_provenance) != expected for report in reports[1:]):
         raise P6PublicReportError("cross-hardware AP provenance does not match")
@@ -238,6 +280,17 @@ def _ap_provenance(value: object) -> P6APProvenance:
     seed = value.get("seed")
     if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
         raise P6PublicReportError("AP provenance seed is invalid")
+    comparison_status = value.get("cross_hardware_comparison_status")
+    dataset_digest = value.get("dataset_snapshot_digest")
+    evaluation_digest = value.get("evaluation_snapshot_digest")
+    if comparison_status == "available":
+        dataset_digest = _digest(dataset_digest, "AP dataset snapshot")
+        evaluation_digest = _digest(evaluation_digest, "AP evaluation snapshot")
+    elif comparison_status == "unavailable_unverified_dataset_identity":
+        if dataset_digest is not None or evaluation_digest is not None:
+            raise P6PublicReportError("unavailable AP comparison identity is invalid")
+    else:
+        raise P6PublicReportError("AP comparison status is invalid")
     return P6APProvenance(
         data_split=_identifier(value.get("data_split"), "AP data split"),
         checkpoint_initial_state=_digest(
@@ -250,6 +303,9 @@ def _ap_provenance(value: object) -> P6APProvenance:
         metric_protocol=_identifier(
             value.get("metric_protocol"), "AP metric protocol"
         ),
+        dataset_snapshot_digest=dataset_digest,
+        evaluation_snapshot_digest=evaluation_digest,
+        cross_hardware_comparison_status=str(comparison_status),
     )
 
 

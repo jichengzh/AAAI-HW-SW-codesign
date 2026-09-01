@@ -46,6 +46,19 @@ OWNED_NATIVE_FILES = (
     "performance_state.jsonl",
 )
 OWNED_NATIVE_DIRECTORIES = ("attempts", "artifacts")
+OBSERVED_RUNTIME_SCHEMA = "p6_tvm_observed_runtime_v1"
+_OBSERVED_RUNTIME_KEYS = frozenset(
+    {
+        "schema_version",
+        "compiler_target",
+        "target_arch",
+        "tvm_version",
+        "cuda_compute_version",
+        "python_version",
+        "framework_name",
+        "framework_version",
+    }
+)
 
 
 class P6PerformanceRoundAdapterError(ValueError):
@@ -80,6 +93,7 @@ class ValidatedPerformanceEvidence:
     checkpoint_digests: tuple[str, ...]
     code_digests: tuple[str, ...]
     toolchain_ids: tuple[str, ...]
+    observed_runtime_digests: tuple[str, ...]
 
 
 def run_performance_round(
@@ -130,6 +144,8 @@ def validate_completed_performance_evidence(
 ) -> ValidatedPerformanceEvidence:
     """Validate existing native plan/state/results without launching leaves."""
     try:
+        if profile.schema_version != PROFILE_SCHEMA_VERSION_V4:
+            raise P6PerformanceRoundAdapterError()
         context = RoundContext(
             profile=profile,
             request=request,
@@ -148,7 +164,11 @@ def validate_completed_performance_evidence(
             profile,
             identities,
         )
-        return _performance_evidence_summary(jobs)
+        return _performance_evidence_summary(
+            jobs,
+            performance_root / "performance_state.jsonl",
+            profile,
+        )
     except P6PerformanceRoundAdapterError:
         raise
     except Exception:
@@ -157,8 +177,36 @@ def validate_completed_performance_evidence(
 
 def _performance_evidence_summary(
     jobs: Sequence[Mapping[str, Any]],
+    state_path: Path,
+    profile: ValidatedPostSourceAdapterProfile,
 ) -> ValidatedPerformanceEvidence:
     manifests = tuple(job["expected_tvm_measurement_manifest"] for job in jobs)
+    successful_rows = tuple(
+        row
+        for row in _read_jsonl_mappings(state_path)
+        if row.get("status") == "success"
+    )
+    if len(successful_rows) != len(jobs):
+        raise P6PerformanceRoundAdapterError()
+    observed_runtime_digests = tuple(
+        sorted(
+            hashlib.sha256(
+                json.dumps(
+                    _validate_observed_runtime_evidence(
+                        _read_mapping(_plain_input_file(row.get("result_json"))).get(
+                            "observed_runtime_evidence"
+                        ),
+                        profile,
+                    ),
+                    ensure_ascii=True,
+                    allow_nan=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            for row in successful_rows
+        )
+    )
     return ValidatedPerformanceEvidence(
         source_digests=tuple(sorted(str(item["source_digest"]) for item in manifests)),
         configuration_digests=tuple(
@@ -169,6 +217,7 @@ def _performance_evidence_summary(
         ),
         code_digests=tuple(sorted(str(item["code_digest"]) for item in manifests)),
         toolchain_ids=tuple(sorted(str(item["toolchain_id"]) for item in manifests)),
+        observed_runtime_digests=observed_runtime_digests,
     )
 
 
@@ -756,6 +805,35 @@ def _validate_tvm_result_manifest(
         **measurement_identity.__dict__,
     ):
         raise P6PerformanceRoundAdapterError()
+    _validate_observed_runtime_evidence(
+        payload.get("observed_runtime_evidence"), profile
+    )
+
+
+def _validate_observed_runtime_evidence(
+    value: object,
+    profile: ValidatedPostSourceAdapterProfile,
+) -> Mapping[str, str]:
+    if (
+        not isinstance(value, Mapping)
+        or set(value) != _OBSERVED_RUNTIME_KEYS
+        or value.get("schema_version") != OBSERVED_RUNTIME_SCHEMA
+        or any(not isinstance(item, str) or not item for item in value.values())
+        or value.get("target_arch") != profile.hardware_profile.tvm_arch
+        or value.get("framework_name") != "tvm"
+        or value.get("framework_version") != value.get("tvm_version")
+        or _contains_tensorrt_result_marker(value)
+    ):
+        raise P6PerformanceRoundAdapterError()
+    normalized_target = str(value["compiler_target"]).lower().replace("_", "").replace("-", "")
+    normalized_compute = str(value["cuda_compute_version"]).replace(".", "")
+    expected_compute = profile.hardware_profile.tvm_arch.removeprefix("sm")
+    if (
+        profile.hardware_profile.tvm_arch not in normalized_target
+        or normalized_compute != expected_compute
+    ):
+        raise P6PerformanceRoundAdapterError()
+    return {key: str(value[key]) for key in sorted(_OBSERVED_RUNTIME_KEYS)}
 
 
 def _validate_terminal_rows(

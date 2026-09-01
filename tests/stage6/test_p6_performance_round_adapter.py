@@ -67,6 +67,7 @@ class _PerformanceRunner:
         first_result_path: Path | None = None,
         tvm_manifest_profile: HardwareExecutionProfile | None = None,
         inject_result_manifest: bool = True,
+        inject_result_runtime_evidence: bool = True,
         raise_unexpected: bool = False,
         gpu_indices: Sequence[int] = (2, 5, 7),
     ) -> None:
@@ -90,6 +91,7 @@ class _PerformanceRunner:
         self._first_result_path = first_result_path
         self._tvm_manifest_profile = tvm_manifest_profile
         self._inject_result_manifest = inject_result_manifest
+        self._inject_result_runtime_evidence = inject_result_runtime_evidence
         self._source_digest_by_candidate: dict[str, str] = {}
         self._raise_unexpected = raise_unexpected
         self._gpu_indices = tuple(gpu_indices)
@@ -203,7 +205,6 @@ class _PerformanceRunner:
                     status,
                     write_result=self._write_result_artifacts,
                     result_payload_overrides={
-                        **self._result_payload_overrides,
                         **(
                             {
                                 "tvm_measurement_manifest": dict(
@@ -214,6 +215,18 @@ class _PerformanceRunner:
                             and "expected_tvm_measurement_manifest" in job
                             else {}
                         ),
+                        **(
+                            {
+                                "observed_runtime_evidence": _observed_runtime(
+                                    self._tvm_manifest_profile
+                                )
+                            }
+                            if self._inject_result_runtime_evidence
+                            and self._tvm_manifest_profile is not None
+                            and "expected_tvm_measurement_manifest" in job
+                            else {}
+                        ),
+                        **self._result_payload_overrides,
                     },
                 )
                 if self._native_confirmed_history
@@ -307,6 +320,20 @@ def _tvm_manifest(
         "configuration_digest": training["pyramid_config_sha256"],
         "checkpoint_digest": training["base_checkpoint_sha256"],
         "code_digest": _sha256_file(code_path),
+    }
+
+
+def _observed_runtime(profile: HardwareExecutionProfile) -> dict[str, str]:
+    compute_version = "8.9" if profile.tvm_arch == "sm89" else "9.0"
+    return {
+        "schema_version": "p6_tvm_observed_runtime_v1",
+        "compiler_target": f"cuda -arch={profile.tvm_arch}",
+        "target_arch": profile.tvm_arch,
+        "tvm_version": "0.20.dev0",
+        "cuda_compute_version": compute_version,
+        "python_version": "3.10.14",
+        "framework_name": "tvm",
+        "framework_version": "0.20.dev0",
     }
 
 
@@ -479,6 +506,52 @@ def test_rtx_tvm_manifest_mismatch_stops_before_metric_parsing(
         tvm_manifest_profile=profile.hardware_profile,
         inject_result_manifest=False,
         result_payload_overrides={"tvm_measurement_manifest": conflicting},
+    )
+
+    with pytest.raises(P6PerformanceRoundAdapterError):
+        run_performance_round(profile, task_state, round_root, runner)
+
+    assert metric_calls == 0
+    assert _read_json(task_state)["stage"] == "quantization"
+
+
+@pytest.mark.parametrize(
+    "runtime_override",
+    [
+        None,
+        {
+            **_observed_runtime(load_hardware_execution_profile("rtx4090")),
+            "target_arch": "sm90",
+        },
+    ],
+    ids=("missing", "conflicting-target"),
+)
+def test_rtx_observed_runtime_evidence_stops_before_metric_parsing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    runtime_override: Mapping[str, Any] | None,
+) -> None:
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path, hardware_profile_id="rtx4090")
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_quantized_task_state(round_root, request)
+    metric_calls = 0
+
+    def counted_metric_parser(_payload: Mapping[str, Any]) -> float:
+        nonlocal metric_calls
+        metric_calls += 1
+        return 1.0
+
+    monkeypatch.setattr(performance_adapter, "_extract_latency", counted_metric_parser)
+    runner = _PerformanceRunner(
+        tvm_manifest_profile=profile.hardware_profile,
+        inject_result_runtime_evidence=runtime_override is not None,
+        result_payload_overrides=(
+            {"observed_runtime_evidence": runtime_override}
+            if runtime_override is not None
+            else {}
+        ),
     )
 
     with pytest.raises(P6PerformanceRoundAdapterError):

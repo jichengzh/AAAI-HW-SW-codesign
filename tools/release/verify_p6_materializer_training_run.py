@@ -52,6 +52,7 @@ from framework.stage6.p6_history_source_materialization_v1 import (  # noqa: E40
     project_source_materialization_request,
 )
 from framework.stage6.p6_post_source_adapter_profile_v1 import (  # noqa: E402
+    PROFILE_SCHEMA_VERSION_V4,
     ValidatedPostSourceAdapterProfile,
     load_post_source_adapter_profile,
     require_post_source_adapter_profile_v4,
@@ -255,7 +256,7 @@ def _completion_provenance(
     _require_performance_training_identity(training, performance_evidence)
     return validate_hardware_specific_report_provenance(
         {
-            "schema_version": "p6_hardware_specific_report_provenance_v2",
+            "schema_version": "p6_hardware_specific_report_provenance_v3",
             "comparison_scope": "hardware_specific",
             "hardware_profile": profile.profile_id,
             "target": contract.target,
@@ -265,13 +266,30 @@ def _completion_provenance(
             "execution_backend": contract.execution_backend,
             "tvm_arch": profile.tvm_arch,
             "tvm_cache_namespace": profile.tvm_cache_namespace,
-            "environment_digest": _sha256_file(
+            "declared_environment_contract_digest": _sha256_file(
                 REPOSITORY_ROOT / profile.environment_contract_path
+            ),
+            "runtime_observation_status": (
+                "observed" if performance_evidence else "unavailable_legacy_profile"
+            ),
+            "observed_runtime_digest": (
+                _aggregate_digest(
+                    "observed_runtime",
+                    [
+                        digest
+                        for summary in performance_evidence
+                        for digest in summary.observed_runtime_digests
+                    ],
+                )
+                if performance_evidence
+                else None
             ),
             "code_revision": state["code_revision"],
             "source_digest": _aggregate_digest("sources", source_digests),
-            "compiler_toolchain_digest": _compiler_digest(
-                state, performance_evidence
+            "compiler_toolchain_digest": (
+                _compiler_digest(state, performance_evidence)
+                if performance_evidence
+                else None
             ),
             "latency_energy_hardware_profile": profile.profile_id,
             "pareto_hardware_profile": profile.profile_id,
@@ -281,6 +299,11 @@ def _completion_provenance(
                 "training_config_digest": training["pyramid_config_sha256"],
                 "seed": parameters["seed"],
                 "metric_protocol": P6_AP_METRIC_PROTOCOL,
+                "dataset_snapshot_digest": None,
+                "evaluation_snapshot_digest": None,
+                "cross_hardware_comparison_status": (
+                    "unavailable_unverified_dataset_identity"
+                ),
             },
         }
     )
@@ -309,6 +332,11 @@ def _compiler_digest(
                 toolchain for summary in evidence for toolchain in summary.toolchain_ids
             )
             or ["tvm_auto"],
+            "observed_runtime_digests": sorted(
+                digest
+                for summary in evidence
+                for digest in summary.observed_runtime_digests
+            ),
         }
     )
 
@@ -344,6 +372,12 @@ def _require_post_source_profile(
     if post_source.hardware_profile is not profile:
         raise ValueError
     return post_source
+
+
+def _requires_native_performance_attestation(
+    profile: ValidatedPostSourceAdapterProfile | None,
+) -> bool:
+    return profile is not None and profile.schema_version == PROFILE_SCHEMA_VERSION_V4
 
 
 def _require_completed_state(local_output_root: Path) -> Mapping[str, Any]:
@@ -455,7 +489,7 @@ def _verify_completed_round(
         validate_completed_performance_evidence(
             post_source_profile, request, paths["round_root"], gpu_indices
         )
-        if post_source_profile is not None
+        if _requires_native_performance_attestation(post_source_profile)
         else None
     )
     _require_native_finalization_leaves(paths)
