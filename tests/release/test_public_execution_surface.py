@@ -87,8 +87,8 @@ def test_public_runner_source_contains_no_personal_absolute_path() -> None:
     assert 'parser.add_argument("--work-root", required=True)' in source
 
 
-def test_public_release_tree_contains_no_personal_absolute_paths() -> None:
-    """Internal SDD reports are not part of the anonymous public surface."""
+def test_tracked_tree_contains_no_personal_absolute_paths() -> None:
+    """Tracked evidence must never become a personal-path disclosure."""
     result = subprocess.run(
         ["git", "grep", "-Il", "-e", "/home/jichengzhi", "-e", "/exdata/"],
         cwd=REPOSITORY_ROOT,
@@ -100,7 +100,6 @@ def test_public_release_tree_contains_no_personal_absolute_paths() -> None:
         path
         for path in result.stdout.splitlines()
         if path != Path(__file__).relative_to(REPOSITORY_ROOT).as_posix()
-        and not path.startswith(".superpowers/sdd/")
     }
 
     assert result.returncode in {0, 1}

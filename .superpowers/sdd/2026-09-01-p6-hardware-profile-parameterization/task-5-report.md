@@ -118,7 +118,7 @@ after successful current-worktree runs. It does not change the exit status.
 
 ## Fix-round files changed
 
-Parent repository `/home/jichengzhi/V2X`:
+Parent historical-authority repository (path redacted):
 
 - `framework/stage5/measurement_plan_v2.py`
 - `scripts/stage5_build_performance_plan_v2.py`

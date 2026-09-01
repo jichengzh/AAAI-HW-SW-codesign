@@ -76,3 +76,31 @@ also has its own stricter direct privacy regression.
 - Successful pytest runs continue to emit the pre-existing temporary-directory
   cleanup warning for `.execution-closure.locked.tmp`; exit status and test
   results remain successful.
+
+## Fix round 1: actual completion-boundary provenance
+
+- Restored the whole tracked-tree personal-path privacy scan and removed the
+  broad `.superpowers/sdd/` exclusion. The sole tracked disclosure in the Task
+  5 report is now a path-free historical-authority label; its commit hash and
+  evidence remain intact.
+- `P6MaterializerCompletionReport` now nests the validated frozen hardware-
+  specific provenance object. `asdict` serializes its schema, scope, profile,
+  target, backend, TVM architecture, latency/energy profile, Pareto profile,
+  and AP provenance into the real CLI JSON.
+- AP data split and checkpoint/initial-state labels come from the validated
+  public contract's `training-data` and `model-init` asset versions; seed comes
+  from the contract and metric protocol is the fixed public
+  `coptv2x-ap30-ap50-ap70-v1` label.
+- A real CLI regression injects construction-time target drift through the
+  validator call and proves the verifier fails closed with only
+  `verification_failed`.
+
+Fix-round evidence:
+
+```text
+privacy RED: 1 failed (Task 5 absolute path)
+verifier RED: 6 failed, 41 deselected
+focused GREEN: 1 privacy + 6 verifier passed
+combined verifier/Task8/public/preflight regression: 55 passed, 58 deselected
+Ruff, byte-compilation, diff check, and tracked-tree privacy grep: passed
+```

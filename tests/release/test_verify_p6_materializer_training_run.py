@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 import shutil
 from typing import Any, Iterator
@@ -11,6 +12,10 @@ import pytest
 import yaml
 
 from framework.stage6.coptv2x_h800_search_v2 import P6CoptV2XExecutionError
+from framework.stage6.p6_public_report_v1 import (
+    P6HardwareSpecificReportProvenance,
+    validate_hardware_specific_report_provenance,
+)
 from framework.stage6.p6_history_measurement_v1 import (
     resolve_validated_history_round_paths,
 )
@@ -421,11 +426,12 @@ def _replace_round_row(
     _write_json(private_paths["finalization_barrier"], validation)
 
 
-def test_completion_report_publishes_only_hardware_profile_id_and_counts() -> None:
+def test_completion_report_publishes_only_profile_provenance_and_counts() -> None:
     assert tuple(P6MaterializerCompletionReport.__dataclass_fields__) == (
         "schema_version",
         "status",
         "hardware_profile",
+        "provenance",
         "completed_rounds",
         "selected_rows",
         "gold176_remeasured_rows",
@@ -472,10 +478,11 @@ def test_v3_rtx_verification_context_forwards_contract_to_search_inputs(
     )
     monkeypatch.setattr(verification, "validate_p6_candidate_plan", lambda *_a, **_k: {})
 
-    local, _, _, frozen_gold, context = verification._load_verification_context(
+    contract, local, _, _, frozen_gold, context = verification._load_verification_context(
         contract_path, local_path, binding_path
     )
 
+    assert contract.hardware_profile is local.hardware_profile
     assert local.hardware_profile.target_hardware_id == "rtx4090"
     assert len(frozen_gold) == 176
     assert context is expected_context
@@ -504,6 +511,24 @@ def test_completion_accepts_four_round_current_run_with_shared_receipts(
 
     assert report.status == "completed"
     assert report.hardware_profile == "h800"
+    assert report.provenance == P6HardwareSpecificReportProvenance(
+        schema_version="p6_hardware_specific_report_provenance_v1",
+        comparison_scope="hardware_specific",
+        hardware_profile="h800",
+        target="h800",
+        execution_backend="tvm_auto",
+        tvm_arch="sm90",
+        latency_energy_hardware_profile="h800",
+        pareto_hardware_profile="h800",
+        ap_provenance={
+            "data_split": "v1",
+            "checkpoint_initial_state": "v2",
+            "seed": 73,
+            "metric_protocol": "coptv2x-ap30-ap50-ap70-v1",
+        },
+    )
+    with pytest.raises(FrozenInstanceError):
+        report.provenance.target = "rtx4090"  # type: ignore[misc]
     assert report.completed_rounds == 4
     assert report.selected_rows == 16
     assert report.gold176_remeasured_rows == 0
@@ -517,6 +542,19 @@ def test_completed_fake_rtx_hardware_profile_tree_reports_public_profile_id(
     report = verify_materializer_training_run(**_verify_kwargs(completed_rtx_run))
 
     assert report.hardware_profile == "rtx4090"
+    assert report.provenance.comparison_scope == "hardware_specific"
+    assert report.provenance.hardware_profile == "rtx4090"
+    assert report.provenance.target == "rtx4090"
+    assert report.provenance.execution_backend == "tvm_auto"
+    assert report.provenance.tvm_arch == "sm89"
+    assert report.provenance.latency_energy_hardware_profile == "rtx4090"
+    assert report.provenance.pareto_hardware_profile == "rtx4090"
+    assert report.provenance.ap_provenance == {
+        "data_split": "v1",
+        "checkpoint_initial_state": "v2",
+        "seed": 73,
+        "metric_protocol": "coptv2x-ap30-ap50-ap70-v1",
+    }
     assert report.completed_rounds == 4
     assert report.selected_rows == 16
     assert report.gold176_remeasured_rows == 0
@@ -640,7 +678,57 @@ def test_completion_cli_emits_only_allowlisted_fields(
     assert set(json.loads(output.out)) == set(
         P6MaterializerCompletionReport.__dataclass_fields__
     )
-    assert json.loads(output.out)["hardware_profile"] == "h800"
+    payload = json.loads(output.out)
+    assert payload["hardware_profile"] == "h800"
+    assert payload["provenance"] == {
+        "schema_version": "p6_hardware_specific_report_provenance_v1",
+        "comparison_scope": "hardware_specific",
+        "hardware_profile": "h800",
+        "target": "h800",
+        "execution_backend": "tvm_auto",
+        "tvm_arch": "sm90",
+        "latency_energy_hardware_profile": "h800",
+        "pareto_hardware_profile": "h800",
+        "ap_provenance": {
+            "data_split": "v1",
+            "checkpoint_initial_state": "v2",
+            "seed": 73,
+            "metric_protocol": "coptv2x-ap30-ap50-ap70-v1",
+        },
+    }
+
+
+def test_completion_cli_rejects_profile_drift_in_constructed_provenance(
+    completed_run: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def validate_with_profile_drift(raw: dict[str, object]) -> Any:
+        drifted = {**raw, "target": "rtx4090"}
+        return validate_hardware_specific_report_provenance(drifted)
+
+    monkeypatch.setattr(
+        verification,
+        "validate_hardware_specific_report_provenance",
+        validate_with_profile_drift,
+        raising=False,
+    )
+
+    result = main(
+        [
+            "--contract",
+            str(completed_run["contract"]),
+            "--local-config",
+            str(completed_run["local"]),
+            "--binding",
+            str(completed_run["binding"]),
+        ]
+    )
+    output = capsys.readouterr()
+
+    assert result == 1
+    assert output.out == ""
+    assert output.err == "verification_failed\n"
 
 
 def test_completion_cli_redacts_private_failures(

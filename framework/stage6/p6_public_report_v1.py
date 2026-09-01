@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 import re
-from types import MappingProxyType
 from typing import Literal
 
 from framework.stage6.hardware_execution_profile_v1 import (
@@ -51,7 +50,30 @@ class P6HardwareSpecificReportProvenance:
     tvm_arch: str
     latency_energy_hardware_profile: str
     pareto_hardware_profile: str
-    ap_provenance: Mapping[str, str | int]
+    ap_provenance: P6APProvenance
+
+
+@dataclass(frozen=True, eq=False)
+class P6APProvenance(Mapping[str, str | int]):
+    """Immutable, asdict-compatible external provenance for AP comparison."""
+
+    data_split: str
+    checkpoint_initial_state: str
+    seed: int
+    metric_protocol: str
+
+    def __getitem__(self, key: str) -> str | int:
+        if key not in _AP_PROVENANCE_KEYS:
+            raise KeyError(key)
+        return getattr(self, key)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(
+            ("data_split", "checkpoint_initial_state", "seed", "metric_protocol")
+        )
+
+    def __len__(self) -> int:
+        return len(_AP_PROVENANCE_KEYS)
 
 
 def validate_hardware_specific_report_provenance(
@@ -103,7 +125,7 @@ def validate_hardware_specific_report_provenance(
         tvm_arch=profile.tvm_arch,
         latency_energy_hardware_profile=profile.profile_id,
         pareto_hardware_profile=profile.profile_id,
-        ap_provenance=MappingProxyType(ap_provenance),
+        ap_provenance=ap_provenance,
     )
 
 
@@ -126,25 +148,25 @@ def validate_cross_hardware_ap_provenance(
     expected = dict(reports[0].ap_provenance)
     if any(dict(report.ap_provenance) != expected for report in reports[1:]):
         raise P6PublicReportError("cross-hardware AP provenance does not match")
-    return MappingProxyType(expected)
+    return P6APProvenance(**expected)  # type: ignore[arg-type]
 
 
-def _ap_provenance(value: object) -> dict[str, str | int]:
+def _ap_provenance(value: object) -> P6APProvenance:
     if not isinstance(value, Mapping) or set(value) != _AP_PROVENANCE_KEYS:
         raise P6PublicReportError("AP provenance fields are invalid")
     seed = value.get("seed")
     if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
         raise P6PublicReportError("AP provenance seed is invalid")
-    return {
-        "data_split": _identifier(value.get("data_split"), "AP data split"),
-        "checkpoint_initial_state": _identifier(
+    return P6APProvenance(
+        data_split=_identifier(value.get("data_split"), "AP data split"),
+        checkpoint_initial_state=_identifier(
             value.get("checkpoint_initial_state"), "AP checkpoint initial state"
         ),
-        "seed": seed,
-        "metric_protocol": _identifier(
+        seed=seed,
+        metric_protocol=_identifier(
             value.get("metric_protocol"), "AP metric protocol"
         ),
-    }
+    )
 
 
 def _identifier(value: object, field: str) -> str:

@@ -23,6 +23,7 @@ sys.path = [
 from framework.stage5.single_target_search_v2 import validate_search_task  # noqa: E402
 from framework.stage6.coptv2x_h800_search_v2 import (  # noqa: E402
     P6CoptV2XExecutionError,
+    PublicP6CoptV2XContract,
     _build_search_task,
     _load_search_inputs,
     load_local_config,
@@ -50,6 +51,10 @@ from framework.stage6.p6_post_source_adapter_profile_v1 import (  # noqa: E402
     load_post_source_adapter_profile,
     require_post_source_adapter_profile_v4,
 )
+from framework.stage6.p6_public_report_v1 import (  # noqa: E402
+    P6HardwareSpecificReportProvenance,
+    validate_hardware_specific_report_provenance,
+)
 from framework.stage6.p6_source_reuse_evidence_v1 import (  # noqa: E402
     canonical_json_sha256,
     load_fresh_run_context,
@@ -62,6 +67,7 @@ class P6MaterializerCompletionReport:
     schema_version: Literal["p6_materializer_training_bridge_completion_v1"]
     status: Literal["completed"]
     hardware_profile: str
+    provenance: P6HardwareSpecificReportProvenance
     completed_rounds: int
     selected_rows: int
     gold176_remeasured_rows: int
@@ -158,11 +164,21 @@ def _require_native_finalization_leaves(paths: Mapping[str, Path]) -> None:
         raise ValueError
 
 
+P6_AP_METRIC_PROTOCOL = "coptv2x-ap30-ap50-ap70-v1"
+
+
 def _load_verification_context(
     public_contract_path: Path,
     local_config_path: Path,
     private_binding_path: Path,
-) -> tuple[Any, Mapping[str, Any], Path, list[Any], Any]:
+) -> tuple[
+    PublicP6CoptV2XContract,
+    Any,
+    Mapping[str, Any],
+    Path,
+    list[Any],
+    Any,
+]:
     contract = load_public_contract(public_contract_path)
     local = load_local_config(local_config_path, contract)
     binding = _read_mapping(
@@ -189,7 +205,32 @@ def _load_verification_context(
         expected_task_id=task_contract["task_id"],
         expected_task_sha256=task_contract["task_sha256"],
     )
-    return local, interface, private_root, frozen_gold, context
+    return contract, local, interface, private_root, frozen_gold, context
+
+
+def _completion_provenance(
+    contract: PublicP6CoptV2XContract,
+) -> P6HardwareSpecificReportProvenance:
+    asset_versions = {asset.label: asset.version for asset in contract.assets}
+    profile = contract.hardware_profile
+    return validate_hardware_specific_report_provenance(
+        {
+            "schema_version": "p6_hardware_specific_report_provenance_v1",
+            "comparison_scope": "hardware_specific",
+            "hardware_profile": profile.profile_id,
+            "target": contract.target,
+            "execution_backend": contract.execution_backend,
+            "tvm_arch": profile.tvm_arch,
+            "latency_energy_hardware_profile": profile.profile_id,
+            "pareto_hardware_profile": profile.profile_id,
+            "ap_provenance": {
+                "data_split": asset_versions["training-data"],
+                "checkpoint_initial_state": asset_versions["model-init"],
+                "seed": contract.seed,
+                "metric_protocol": P6_AP_METRIC_PROTOCOL,
+            },
+        }
+    )
 
 
 def _require_post_source_profile(
@@ -334,7 +375,7 @@ def verify_materializer_training_run(
 ) -> P6MaterializerCompletionReport:
     """Resolve canonical evidence paths and prove all four rounds completed."""
     try:
-        local, interface, private_root, frozen_gold, context = (
+        contract, local, interface, private_root, frozen_gold, context = (
             _load_verification_context(
                 public_contract_path,
                 local_config_path,
@@ -361,6 +402,7 @@ def verify_materializer_training_run(
             schema_version="p6_materializer_training_bridge_completion_v1",
             status="completed",
             hardware_profile=local.hardware_profile.profile_id,
+            provenance=_completion_provenance(contract),
             completed_rounds=4,
             selected_rows=16,
             gold176_remeasured_rows=0,
