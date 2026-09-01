@@ -631,6 +631,7 @@ def materialize_history_registry(
         )
         registry = {
             "schema_version": REGISTRY_SCHEMA_VERSION,
+            "hardware_profile": profile.profile_id,
             "groups": groups,
         }
         if _registry_identity_map(registry) != plan_mapping:

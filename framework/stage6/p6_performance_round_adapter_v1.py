@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import hashlib
 import json
@@ -11,7 +11,12 @@ import os
 from pathlib import Path
 from typing import Any
 
+from framework.stage6.hardware_execution_profile_v1 import validate_profile_backend
+from framework.stage6.p6_history_feedback_validation_v1 import (
+    validate_tvm_measurement_manifest,
+)
 from framework.stage6.p6_post_source_adapter_profile_v1 import (
+    PROFILE_SCHEMA_VERSION_V4,
     PostSourceLeaf,
     ValidatedPostSourceAdapterProfile,
 )
@@ -56,6 +61,12 @@ class _QuantBinding:
     sha256: str
 
 
+@dataclass(frozen=True)
+class _TvmMeasurementIdentity:
+    candidate_id: str
+    source_digest: str
+
+
 def run_performance_round(
     profile: ValidatedPostSourceAdapterProfile,
     task_state: Path,
@@ -76,12 +87,18 @@ def run_performance_round(
         _require_fresh_native_outputs(performance_root)
         quant_bindings = _validate_int8_quant_contracts(context)
         _run_planner(context, plan_leaf, performance_root, runner)
-        jobs = _validate_native_plan(context, performance_root, quant_bindings)
+        jobs, measurement_identities = _validate_native_plan(
+            context,
+            performance_root,
+            quant_bindings,
+        )
         _run_executor(context, execute_leaf, performance_root, runner)
         _validate_native_state(
             performance_root / "performance_state.jsonl",
             jobs,
             performance_root,
+            context.profile,
+            measurement_identities,
         )
         advance_task_state(context, "performance")
     except (P6PerformanceRoundAdapterError, P6RoundAdapterRuntimeError):
@@ -109,8 +126,26 @@ def _run_planner(
         str(context.round_root / "quant_contracts"),
         "--gpus",
         _gpu_csv(context),
+        *_tvm_profile_argv(context.profile),
     )
     _require_zero(runner.run(argv, cwd=leaf.implementation_cwd, env=_leaf_env(context), shell=False))
+
+
+def _tvm_profile_argv(
+    profile: ValidatedPostSourceAdapterProfile,
+) -> tuple[str, ...]:
+    if profile.schema_version != PROFILE_SCHEMA_VERSION_V4:
+        return ()
+    try:
+        validate_profile_backend(profile.hardware_profile, "tvm_auto")
+    except ValueError:
+        raise P6PerformanceRoundAdapterError() from None
+    return (
+        "--tvm-arch",
+        profile.hardware_profile.tvm_arch,
+        "--tvm-cache-namespace",
+        profile.hardware_profile.tvm_cache_namespace,
+    )
 
 
 def _run_executor(
@@ -138,7 +173,10 @@ def _validate_native_plan(
     context: RoundContext,
     performance_root: Path,
     quant_bindings: Mapping[str, _QuantBinding],
-) -> tuple[Mapping[str, Any], ...]:
+) -> tuple[
+    tuple[Mapping[str, Any], ...],
+    Mapping[str, _TvmMeasurementIdentity],
+]:
     manifest = _read_mapping(performance_root / "performance_manifest.json")
     jobs = _read_jsonl_mappings(performance_root / "performance_jobs.jsonl")
     request_rows = tuple(context.request["rows"])
@@ -146,6 +184,7 @@ def _validate_native_plan(
     if len(jobs) != 4:
         raise P6PerformanceRoundAdapterError()
     _validate_manifest_header(context, manifest, request_rows)
+    identities: dict[str, _TvmMeasurementIdentity] = {}
     for index, (request_row, manifest_row, job) in enumerate(
         zip(request_rows, manifest_rows, jobs, strict=True)
     ):
@@ -160,7 +199,13 @@ def _validate_native_plan(
             binding,
             performance_root,
         )
-    return jobs
+        identities[str(job["job_id"])] = _TvmMeasurementIdentity(
+            candidate_id=str(request_row["manifest_job_id"]),
+            source_digest=str(request_row["source_evidence_sha256"]),
+        )
+    if len(identities) != len(jobs):
+        raise P6PerformanceRoundAdapterError()
+    return jobs, identities
 
 
 def _validate_int8_quant_contracts(
@@ -438,8 +483,6 @@ def _native_runner_key(row: Mapping[str, Any]) -> str:
     mapping = {
         ("tvm_auto", "fp16"): "tvm_fp16",
         ("tvm_auto", "int8"): "tvm_int8",
-        ("trt_engine", "fp16"): "trt_fp16",
-        ("trt_engine", "int8"): "trt_int8",
     }
     try:
         return mapping[(str(row["dispatch_key"]), str(row["q_mode"]))]
@@ -451,6 +494,8 @@ def _validate_native_state(
     state_path: Path,
     jobs: tuple[Mapping[str, Any], ...],
     performance_root: Path,
+    profile: ValidatedPostSourceAdapterProfile,
+    measurement_identities: Mapping[str, _TvmMeasurementIdentity],
 ) -> None:
     rows = _read_jsonl_mappings(state_path)
     jobs_by_id = {str(job["job_id"]): job for job in jobs}
@@ -459,7 +504,13 @@ def _validate_native_state(
         job_id = str(row.get("job_id") or "")
         if job_id not in jobs_by_id:
             raise P6PerformanceRoundAdapterError()
-        _validate_native_state_row(row, jobs_by_id[job_id], performance_root)
+        _validate_native_state_row(
+            row,
+            jobs_by_id[job_id],
+            performance_root,
+            profile,
+            measurement_identities[job_id],
+        )
         grouped[job_id].append(row)
     if any(not job_rows for job_rows in grouped.values()):
         raise P6PerformanceRoundAdapterError()
@@ -471,6 +522,8 @@ def _validate_native_state_row(
     row: Mapping[str, Any],
     job: Mapping[str, Any],
     performance_root: Path,
+    profile: ValidatedPostSourceAdapterProfile,
+    measurement_identity: _TvmMeasurementIdentity,
 ) -> None:
     required = {
         "schema_version",
@@ -511,11 +564,24 @@ def _validate_native_state_row(
     if status == "success":
         if returncode != 0 or reasons:
             raise P6PerformanceRoundAdapterError()
-        _validate_state_result(row, job, performance_root, require_metrics=True)
+        _validate_state_result(
+            row,
+            job,
+            performance_root,
+            profile,
+            measurement_identity,
+            require_metrics=True,
+        )
     else:
         if not reasons:
             raise P6PerformanceRoundAdapterError()
-        _validate_optional_state_result(row, job, performance_root)
+        _validate_optional_state_result(
+            row,
+            job,
+            performance_root,
+            profile,
+            measurement_identity,
+        )
 
 
 def _validate_state_timing(row: Mapping[str, Any]) -> None:
@@ -534,6 +600,8 @@ def _validate_optional_state_result(
     row: Mapping[str, Any],
     job: Mapping[str, Any],
     performance_root: Path,
+    profile: ValidatedPostSourceAdapterProfile,
+    measurement_identity: _TvmMeasurementIdentity,
 ) -> None:
     result_path = row.get("result_json")
     result_sha = row.get("result_sha256")
@@ -541,13 +609,22 @@ def _validate_optional_state_result(
         return
     if result_path is None or result_sha is None:
         raise P6PerformanceRoundAdapterError()
-    _validate_state_result(row, job, performance_root, require_metrics=False)
+    _validate_state_result(
+        row,
+        job,
+        performance_root,
+        profile,
+        measurement_identity,
+        require_metrics=False,
+    )
 
 
 def _validate_state_result(
     row: Mapping[str, Any],
     job: Mapping[str, Any],
     performance_root: Path,
+    profile: ValidatedPostSourceAdapterProfile,
+    measurement_identity: _TvmMeasurementIdentity,
     *,
     require_metrics: bool,
 ) -> None:
@@ -557,7 +634,25 @@ def _validate_state_result(
     if row.get("result_sha256") != _sha256_file(path):
         raise P6PerformanceRoundAdapterError()
     if require_metrics:
-        _validate_success_result_payload(_read_mapping(path))
+        payload = _read_mapping(path)
+        _validate_tvm_result_manifest(payload, profile, measurement_identity)
+        _validate_success_result_payload(payload)
+
+
+def _validate_tvm_result_manifest(
+    payload: Mapping[str, Any],
+    profile: ValidatedPostSourceAdapterProfile,
+    measurement_identity: _TvmMeasurementIdentity,
+) -> None:
+    if profile.schema_version != PROFILE_SCHEMA_VERSION_V4:
+        return
+    if not validate_tvm_measurement_manifest(
+        payload.get("tvm_measurement_manifest"),
+        profile=profile.hardware_profile,
+        candidate_id=measurement_identity.candidate_id,
+        source_digest=measurement_identity.source_digest,
+    ):
+        raise P6PerformanceRoundAdapterError()
 
 
 def _validate_terminal_rows(
@@ -699,6 +794,8 @@ def _flag_path(command: list[str], flag: str) -> Path:
 
 
 def _validate_success_result_payload(payload: Mapping[str, Any]) -> None:
+    if _contains_tensorrt_result_marker(payload):
+        raise P6PerformanceRoundAdapterError()
     if _extract_latency(payload) is None or _extract_energy(payload) is None:
         raise P6PerformanceRoundAdapterError()
     success = payload.get("status") == "success" or payload.get("build_success") is True
@@ -709,6 +806,23 @@ def _validate_success_result_payload(payload: Mapping[str, Any]) -> None:
     correctness = correctness or _nonempty_list(payload.get("correctness_vs_native_direct"))
     if not success or not correctness:
         raise P6PerformanceRoundAdapterError()
+
+
+def _contains_tensorrt_result_marker(payload: object) -> bool:
+    if isinstance(payload, Mapping):
+        for raw_key, value in payload.items():
+            key = str(raw_key).lower()
+            populated = value is not None and value is not False and value != ""
+            if "engine" in key and populated:
+                return True
+            if _contains_tensorrt_result_marker(value):
+                return True
+    elif isinstance(payload, Sequence) and not isinstance(payload, (str, bytes)):
+        return any(_contains_tensorrt_result_marker(value) for value in payload)
+    elif isinstance(payload, str):
+        normalized = payload.lower()
+        return normalized.endswith(".engine") or "tensorrt" in normalized
+    return False
 
 
 def _extract_latency(payload: Mapping[str, Any]) -> float | None:

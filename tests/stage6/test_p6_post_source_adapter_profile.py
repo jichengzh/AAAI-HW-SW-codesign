@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 import hashlib
 import os
 from pathlib import Path
@@ -14,12 +15,16 @@ from framework.stage6.p6_history_normalization_v1 import (
     P6HistoryNormalizationError,
     normalize_history_inputs,
 )
+from framework.stage6.hardware_execution_profile_v1 import (
+    load_hardware_execution_profile,
+)
 from framework.stage6.p6_post_source_adapter_profile_v1 import (
     PROFILE_SCHEMA_VERSION,
     POST_SOURCE_ADAPTER_STAGES,
     POST_SOURCE_LEAF_NAMES,
     P6PostSourceAdapterProfileError,
     load_post_source_adapter_profile,
+    post_source_adapter_profile_to_mapping,
 )
 from tests.stage6.test_p6_history_normalization import (
     _as_v2_procedural,
@@ -214,6 +219,96 @@ def test_v5_normalizer_selects_declared_verified_dependency_root_for_profile_v3(
     assert loaded.adapter_dependency_root == (
         private_dir / "execution-closure/dependency-overlay"
     )
+
+
+def test_hardware_profile_v4_round_trips_canonical_rtx_identity(
+    tmp_path: Path,
+) -> None:
+    source_map, runner = v5_private_source_map(tmp_path)
+    private_dir = tmp_path / "private-normalized"
+    paths = normalize_history_inputs(
+        source_map,
+        _history_root(source_map),
+        private_dir,
+        runner_template_path=runner,
+    )
+    legacy = load_post_source_adapter_profile(
+        paths["post_source_adapter_profile"], private_root=private_dir
+    )
+    rtx4090 = load_hardware_execution_profile("rtx4090")
+    profile = replace(
+        legacy,
+        schema_version="p6_post_source_adapter_profile_v4",
+        hardware_profile=rtx4090,
+    )
+
+    payload = post_source_adapter_profile_to_mapping(profile)
+    profile_path = _write_profile(
+        private_dir / "rtx4090-post-source-adapter-profile.yaml", payload
+    )
+    loaded = load_post_source_adapter_profile(profile_path, private_root=private_dir)
+
+    assert payload["hardware_profile"] == "rtx4090"
+    assert payload["target"] == {
+        "model": "pyramid",
+        "hardware": "rtx4090",
+        "backend": "tvm_auto",
+    }
+    assert loaded == profile
+    assert loaded.hardware_profile is rtx4090
+
+
+def test_hardware_profile_v3_loads_only_as_legacy_h800(
+    tmp_path: Path,
+) -> None:
+    source_map, runner = v5_private_source_map(tmp_path)
+    private_dir = tmp_path / "private-normalized"
+    paths = normalize_history_inputs(
+        source_map,
+        _history_root(source_map),
+        private_dir,
+        runner_template_path=runner,
+    )
+
+    payload = yaml.safe_load(paths["post_source_adapter_profile"].read_text())
+    loaded = load_post_source_adapter_profile(
+        paths["post_source_adapter_profile"], private_root=private_dir
+    )
+
+    assert payload["schema_version"] == "p6_post_source_adapter_profile_v3"
+    assert "hardware_profile" not in payload
+    assert loaded.hardware_profile is load_hardware_execution_profile("h800")
+
+
+def test_hardware_profile_v4_rejects_rtx_target_mismatch(
+    tmp_path: Path,
+) -> None:
+    source_map, runner = v5_private_source_map(tmp_path)
+    private_dir = tmp_path / "private-normalized"
+    paths = normalize_history_inputs(
+        source_map,
+        _history_root(source_map),
+        private_dir,
+        runner_template_path=runner,
+    )
+    payload = yaml.safe_load(paths["post_source_adapter_profile"].read_text())
+    payload.update(
+        {
+            "schema_version": "p6_post_source_adapter_profile_v4",
+            "hardware_profile": "rtx4090",
+            "target": {
+                "model": "pyramid",
+                "hardware": "h800",
+                "backend": "tvm_auto",
+            },
+        }
+    )
+
+    with pytest.raises(P6PostSourceAdapterProfileError):
+        load_post_source_adapter_profile(
+            _write_profile(private_dir / "mismatched-rtx-profile.yaml", payload),
+            private_root=private_dir,
+        )
 
 
 @pytest.mark.parametrize("mutation", ("missing", "extra", "unknown"))

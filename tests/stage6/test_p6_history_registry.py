@@ -563,6 +563,7 @@ def test_registry_materializes_canonical_rtx_plan_at_independent_boundary(
     registry = materialize_history_registry(plan, _rtx_binding(tmp_path), local_output_root)
 
     assert plan["hardware_target"] == "rtx4090"
+    assert registry["hardware_profile"] == "rtx4090"
     assert _registry_identity_map(registry) == _plan_identity_map(plan)
     assert json.loads(
         (local_output_root / "source_registry.json").read_text(encoding="utf-8")

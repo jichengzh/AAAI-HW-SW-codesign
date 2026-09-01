@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 import math
 from pathlib import Path
 import re
 from typing import Any
+
+from framework.stage6.hardware_execution_profile_v1 import (
+    HardwareExecutionProfile,
+    validate_profile_backend,
+)
 
 
 FEEDBACK_SCHEMA_VERSION = "p6_h800_coptv2x_feedback_v2"
@@ -16,6 +21,19 @@ FAILURE_STATUSES = frozenset(
 )
 ALLOWED_STATUSES = frozenset({SUCCESS_STATUS, *FAILURE_STATUSES})
 PUBLIC_FAILURE_REASON = re.compile(r"^[a-z0-9_-]+$")
+TVM_MEASUREMENT_MANIFEST_SCHEMA = "p6_tvm_measurement_manifest_v1"
+TVM_TOOLCHAIN_ID = "tvm_auto"
+TVM_MEASUREMENT_MANIFEST_KEYS = frozenset(
+    {
+        "schema_version",
+        "hardware_profile",
+        "tvm_arch",
+        "tvm_cache_namespace",
+        "toolchain_id",
+        "candidate_id",
+        "source_digest",
+    }
+)
 
 
 class P6HistoryFeedbackValidationError(ValueError):
@@ -23,6 +41,59 @@ class P6HistoryFeedbackValidationError(ValueError):
 
     def __init__(self) -> None:
         super().__init__("history_execution_invalid")
+
+
+def validate_tvm_measurement_manifest(
+    manifest: object,
+    *,
+    profile: HardwareExecutionProfile,
+    candidate_id: str,
+    source_digest: str,
+) -> bool:
+    """Return whether TVM cache evidence exactly matches the active work."""
+    try:
+        validate_profile_backend(profile, "tvm_auto")
+        if not isinstance(candidate_id, str) or not candidate_id or not _is_sha(
+            source_digest
+        ):
+            raise ValueError
+        if _contains_tensorrt_engine_marker(manifest):
+            raise P6HistoryFeedbackValidationError()
+        if not isinstance(manifest, Mapping):
+            return False
+        expected = {
+            "schema_version": TVM_MEASUREMENT_MANIFEST_SCHEMA,
+            "hardware_profile": profile.profile_id,
+            "tvm_arch": profile.tvm_arch,
+            "tvm_cache_namespace": profile.tvm_cache_namespace,
+            "toolchain_id": TVM_TOOLCHAIN_ID,
+            "candidate_id": candidate_id,
+            "source_digest": source_digest,
+        }
+        return set(manifest) == TVM_MEASUREMENT_MANIFEST_KEYS and dict(
+            manifest
+        ) == expected
+    except P6HistoryFeedbackValidationError:
+        raise
+    except (TypeError, ValueError):
+        raise P6HistoryFeedbackValidationError() from None
+
+
+def _contains_tensorrt_engine_marker(value: object) -> bool:
+    if isinstance(value, Mapping):
+        for raw_key, child in value.items():
+            key = str(raw_key).lower()
+            populated = child is not None and child is not False and child != ""
+            if "engine" in key and populated:
+                return True
+            if _contains_tensorrt_engine_marker(child):
+                return True
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return any(_contains_tensorrt_engine_marker(child) for child in value)
+    elif isinstance(value, str):
+        normalized = value.lower()
+        return normalized.endswith(".engine") or "tensorrt" in normalized
+    return False
 
 
 def translate_history_feedback(
@@ -249,4 +320,12 @@ def _finite(value: object) -> bool:
         not isinstance(value, bool)
         and isinstance(value, (int, float))
         and math.isfinite(float(value))
+    )
+
+
+def _is_sha(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
     )

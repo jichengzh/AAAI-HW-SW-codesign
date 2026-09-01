@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 import json
 from pathlib import Path
 import sys
@@ -9,6 +10,12 @@ from typing import Any
 
 import pytest
 
+from framework.stage6.hardware_execution_profile_v1 import (
+    HardwareExecutionProfile,
+    load_hardware_execution_profile,
+)
+import framework.stage6.p6_history_feedback_validation_v1 as feedback_validation
+import framework.stage6.p6_performance_round_adapter_v1 as performance_adapter
 from framework.stage6.p6_performance_round_adapter_v1 import (
     P6PerformanceRoundAdapterError,
     run_performance_round,
@@ -58,6 +65,7 @@ class _PerformanceRunner:
         result_payload_overrides: Mapping[str, Any] | None = None,
         native_confirmed_history: bool = True,
         first_result_path: Path | None = None,
+        tvm_manifest_profile: HardwareExecutionProfile | None = None,
         raise_unexpected: bool = False,
     ) -> None:
         self.calls: list[Mapping[str, Any]] = []
@@ -78,6 +86,8 @@ class _PerformanceRunner:
         self._result_payload_overrides = dict(result_payload_overrides or {})
         self._native_confirmed_history = native_confirmed_history
         self._first_result_path = first_result_path
+        self._tvm_manifest_profile = tvm_manifest_profile
+        self._source_digest_by_candidate: dict[str, str] = {}
         self._raise_unexpected = raise_unexpected
 
     def run(
@@ -117,6 +127,10 @@ class _PerformanceRunner:
         output_dir = Path(argv[argv.index("--output-dir") + 1])
         quant_root = Path(argv[argv.index("--quant-contract-root") + 1])
         rows = request["rows"]
+        self._source_digest_by_candidate = {
+            str(row["manifest_job_id"]): str(row["source_evidence_sha256"])
+            for row in rows
+        }
         manifest_ids = self._manifest_row_ids or tuple(row["manifest_job_id"] for row in rows)
         job_ids = self._job_row_ids or tuple(row["manifest_job_id"] for row in rows)
         manifest_rows = [
@@ -182,7 +196,22 @@ class _PerformanceRunner:
                     job_id,
                     status,
                     write_result=self._write_result_artifacts,
-                    result_payload_overrides=self._result_payload_overrides,
+                    result_payload_overrides={
+                        **self._result_payload_overrides,
+                        **(
+                            {
+                                "tvm_measurement_manifest": _tvm_manifest(
+                                    self._tvm_manifest_profile,
+                                    candidate_id=str(job["manifest_job_id"]),
+                                    source_digest=self._source_digest_by_candidate[
+                                        str(job["manifest_job_id"])
+                                    ],
+                                )
+                            }
+                            if self._tvm_manifest_profile is not None
+                            else {}
+                        ),
+                    },
                 )
                 if self._native_confirmed_history
                 else [_native_state_row(job, job_id, status)]
@@ -236,6 +265,205 @@ def _native_success_payload() -> dict[str, Any]:
         "lat_p50_ms": 1.25,
         "energy_j": 2.5,
     }
+
+
+def _tvm_manifest(
+    profile: HardwareExecutionProfile,
+    *,
+    candidate_id: str = "candidate-1",
+    source_digest: str = "a" * 64,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "p6_tvm_measurement_manifest_v1",
+        "hardware_profile": profile.profile_id,
+        "tvm_arch": profile.tvm_arch,
+        "tvm_cache_namespace": profile.tvm_cache_namespace,
+        "toolchain_id": "tvm_auto",
+        "candidate_id": candidate_id,
+        "source_digest": source_digest,
+    }
+
+
+def test_tvm_manifest_full_equality_is_the_only_cache_reuse_predicate() -> None:
+    validator = getattr(feedback_validation, "validate_tvm_measurement_manifest", None)
+    assert callable(validator)
+    profile = load_hardware_execution_profile("rtx4090")
+    candidate_id = "pyramid|16x32x64|q=fp16|profile=rtx4090-tvm-auto"
+    source_digest = "a" * 64
+    manifest = _tvm_manifest(
+        profile,
+        candidate_id=candidate_id,
+        source_digest=source_digest,
+    )
+
+    assert validator(
+        manifest,
+        profile=profile,
+        candidate_id=candidate_id,
+        source_digest=source_digest,
+    ) is True
+
+    mutations = {
+        "wrong_sm90": {**manifest, "tvm_arch": "sm90"},
+        "wrong_cache_namespace": {
+            **manifest,
+            "tvm_cache_namespace": "h800-sm90",
+        },
+        "wrong_source_digest": {**manifest, "source_digest": "b" * 64},
+        "wrong_candidate": {**manifest, "candidate_id": "another-candidate"},
+        "wrong_toolchain": {**manifest, "toolchain_id": "trt_engine"},
+        "extra_field": {**manifest, "cache_hit": True},
+    }
+    assert {
+        name: validator(
+            candidate,
+            profile=profile,
+            candidate_id=candidate_id,
+            source_digest=source_digest,
+        )
+        for name, candidate in mutations.items()
+    } == {name: False for name in mutations}
+
+
+def test_tvm_manifest_missing_is_a_compile_required_cache_miss() -> None:
+    validator = getattr(feedback_validation, "validate_tvm_measurement_manifest", None)
+    assert callable(validator)
+
+    assert validator(
+        None,
+        profile=load_hardware_execution_profile("rtx4090"),
+        candidate_id="candidate-1",
+        source_digest="a" * 64,
+    ) is False
+
+
+def test_tvm_manifest_rejects_tensorrt_engine_marker() -> None:
+    validator = getattr(feedback_validation, "validate_tvm_measurement_manifest", None)
+    assert callable(validator)
+    profile = load_hardware_execution_profile("rtx4090")
+    manifest = {
+        **_tvm_manifest(profile),
+        "engine_path": "/private/cache/candidate.engine",
+    }
+
+    with pytest.raises(ValueError):
+        validator(
+            manifest,
+            profile=profile,
+            candidate_id="candidate-1",
+            source_digest="a" * 64,
+        )
+
+
+def test_rtx_hardware_profile_binds_tvm_arch_namespace_and_exact_manifests(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path, hardware_profile_id="rtx4090")
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_quantized_task_state(round_root, request)
+    runner = _PerformanceRunner(tvm_manifest_profile=profile.hardware_profile)
+
+    run_performance_round(profile, task_state, round_root, runner)
+
+    planner_argv = runner.calls[0]["argv"]
+    assert planner_argv[planner_argv.index("--tvm-arch") + 1] == "sm89"
+    assert (
+        planner_argv[planner_argv.index("--tvm-cache-namespace") + 1]
+        == "rtx4090-sm89"
+    )
+    assert "--tvm-arch" not in runner.calls[1]["argv"]
+    assert _read_json(task_state)["stage"] == "performance"
+
+
+def test_rtx_tvm_manifest_missing_stops_before_metric_parsing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path, hardware_profile_id="rtx4090")
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_quantized_task_state(round_root, request)
+    metric_calls = 0
+
+    def counted_metric_parser(_payload: Mapping[str, Any]) -> float:
+        nonlocal metric_calls
+        metric_calls += 1
+        return 1.0
+
+    monkeypatch.setattr(performance_adapter, "_extract_latency", counted_metric_parser)
+
+    with pytest.raises(P6PerformanceRoundAdapterError):
+        run_performance_round(profile, task_state, round_root, _PerformanceRunner())
+
+    assert metric_calls == 0
+    assert _read_json(task_state)["stage"] == "quantization"
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        {"engine_path": "/private/cache/candidate.engine"},
+        {"artifact": {"engine_path": "/private/cache/candidate.engine"}},
+    ],
+    ids=("top-level", "nested"),
+)
+def test_rtx_tensorrt_marked_result_stops_before_metric_parsing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    marker: Mapping[str, Any],
+) -> None:
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path, hardware_profile_id="rtx4090")
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_quantized_task_state(round_root, request)
+    metric_calls = 0
+
+    def counted_metric_parser(_payload: Mapping[str, Any]) -> float:
+        nonlocal metric_calls
+        metric_calls += 1
+        return 1.0
+
+    monkeypatch.setattr(performance_adapter, "_extract_latency", counted_metric_parser)
+    runner = _PerformanceRunner(
+        tvm_manifest_profile=profile.hardware_profile,
+        result_payload_overrides=marker,
+    )
+
+    with pytest.raises(P6PerformanceRoundAdapterError):
+        run_performance_round(profile, task_state, round_root, runner)
+
+    assert metric_calls == 0
+    assert _read_json(task_state)["stage"] == "quantization"
+
+
+def test_rtx_forged_hardware_profile_stops_before_planner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path, hardware_profile_id="rtx4090")
+    forged_profile = replace(profile.hardware_profile)
+    forged_adapter_profile = replace(profile, hardware_profile=forged_profile)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_quantized_task_state(round_root, request)
+    runner = _PerformanceRunner(tvm_manifest_profile=forged_profile)
+
+    with pytest.raises(P6PerformanceRoundAdapterError):
+        run_performance_round(
+            forged_adapter_profile,
+            task_state,
+            round_root,
+            runner,
+        )
+
+    assert runner.calls == []
+    assert _read_json(task_state)["stage"] == "quantization"
 
 
 def test_performance_round_plans_once_then_executes_with_historical_argv(
@@ -590,6 +818,7 @@ def _profile(
     *,
     plan_name: str = "performance_plan",
     execute_name: str = "performance_execute",
+    hardware_profile_id: str | None = None,
 ) -> ValidatedPostSourceAdapterProfile:
     private_root = tmp_path / "private"
     plan_cwd = private_root / "plan-cwd"
@@ -598,8 +827,17 @@ def _profile(
     execute_cwd.mkdir(parents=True)
     plan = _write_leaf(plan_cwd / "stage5_build_performance_plan_v2.py")
     execute = _write_leaf(execute_cwd / "stage3_execute_performance_plan_v3.py")
+    profile_fields = (
+        {"hardware_profile": load_hardware_execution_profile(hardware_profile_id)}
+        if hardware_profile_id is not None
+        else {}
+    )
     return ValidatedPostSourceAdapterProfile(
-        schema_version="p6_post_source_adapter_profile_v1",
+        schema_version=(
+            "p6_post_source_adapter_profile_v4"
+            if hardware_profile_id is not None
+            else "p6_post_source_adapter_profile_v1"
+        ),
         private_root=private_root,
         project_python=Path(sys.executable),
         adapters=(),
@@ -607,6 +845,7 @@ def _profile(
             PostSourceLeaf(plan_name, plan, plan_cwd, "0" * 64),
             PostSourceLeaf(execute_name, execute, execute_cwd, "1" * 64),
         ),
+        **profile_fields,
     )
 
 

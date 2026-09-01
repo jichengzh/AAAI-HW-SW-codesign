@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import os
 from pathlib import Path
@@ -12,6 +12,12 @@ from typing import Any, Literal
 
 import yaml
 
+from framework.stage6.hardware_execution_profile_v1 import (
+    HardwareExecutionProfile,
+    default_hardware_execution_profile,
+    load_hardware_execution_profile,
+    validate_profile_backend,
+)
 from framework.stage6.p6_history_execution_closure_v1 import (
     P6ValidatedExecutionClosure,
 )
@@ -28,6 +34,7 @@ from framework.stage6.p6_python_runtime_v1 import (
 PROFILE_SCHEMA_VERSION = "p6_post_source_adapter_profile_v1"
 PROFILE_SCHEMA_VERSION_V2 = "p6_post_source_adapter_profile_v2"
 PROFILE_SCHEMA_VERSION_V3 = "p6_post_source_adapter_profile_v3"
+PROFILE_SCHEMA_VERSION_V4 = "p6_post_source_adapter_profile_v4"
 RUNNER_INTERFACE_SCHEMA_VERSION = "p6_history_runner_interface_v1"
 POST_SOURCE_ADAPTER_STAGES: tuple[str, ...] = (
     "quantization",
@@ -48,6 +55,7 @@ PROFILE_KEYS = frozenset(
 )
 PROFILE_V2_KEYS = PROFILE_KEYS | {"adapter_python"}
 PROFILE_V3_KEYS = PROFILE_V2_KEYS | {"adapter_dependency_root_relative_path"}
+PROFILE_V4_KEYS = PROFILE_V3_KEYS | {"hardware_profile"}
 IMPLEMENTATION_KEYS = frozenset(
     {"implementation_relative_path", "implementation_cwd_relative_path"}
 )
@@ -76,6 +84,7 @@ class ValidatedPostSourceAdapterProfile:
         "p6_post_source_adapter_profile_v1",
         "p6_post_source_adapter_profile_v2",
         "p6_post_source_adapter_profile_v3",
+        "p6_post_source_adapter_profile_v4",
     ]
     private_root: Path
     project_python: Path
@@ -83,6 +92,9 @@ class ValidatedPostSourceAdapterProfile:
     leaves: tuple[PostSourceLeaf, ...]
     adapter_python: Path | None = None
     adapter_dependency_root: Path | None = None
+    hardware_profile: HardwareExecutionProfile = field(
+        default_factory=default_hardware_execution_profile
+    )
 
 
 class P6PostSourceAdapterProfileError(ValueError):
@@ -125,6 +137,7 @@ def build_post_source_adapter_profile(
     leaf_binding: ValidatedPostSourceLeafBinding,
     adapter_python: Path | None = None,
     adapter_dependency_root_relative_path: Path | None = None,
+    hardware_profile: HardwareExecutionProfile | None = None,
 ) -> ValidatedPostSourceAdapterProfile:
     """Build the immutable normalized profile from copied closure paths."""
     root = _private_root(private_root)
@@ -143,9 +156,18 @@ def build_post_source_adapter_profile(
     )
     if dependency_root is not None and validated_adapter_python is None:
         _invalid()
+    selected_hardware_profile = (
+        default_hardware_execution_profile()
+        if hardware_profile is None
+        else _hardware_profile(hardware_profile)
+    )
+    if hardware_profile is not None and dependency_root is None:
+        _invalid()
     return ValidatedPostSourceAdapterProfile(
         schema_version=(
-            PROFILE_SCHEMA_VERSION_V3
+            PROFILE_SCHEMA_VERSION_V4
+            if hardware_profile is not None
+            else PROFILE_SCHEMA_VERSION_V3
             if dependency_root is not None
             else PROFILE_SCHEMA_VERSION_V2
             if validated_adapter_python is not None
@@ -157,6 +179,7 @@ def build_post_source_adapter_profile(
         leaves=leaves,
         adapter_python=validated_adapter_python,
         adapter_dependency_root=dependency_root,
+        hardware_profile=selected_hardware_profile,
     )
 
 
@@ -166,9 +189,15 @@ def post_source_adapter_profile_to_mapping(
     """Serialize a validated profile without private absolute implementation paths."""
     if not isinstance(profile, ValidatedPostSourceAdapterProfile):
         _invalid()
+    hardware_profile = _hardware_profile(profile.hardware_profile)
+    if (
+        profile.schema_version != PROFILE_SCHEMA_VERSION_V4
+        and hardware_profile is not default_hardware_execution_profile()
+    ):
+        _invalid()
     payload = {
         "schema_version": profile.schema_version,
-        "target": dict(TARGET_PROFILE),
+        "target": _target_profile(hardware_profile),
         "runner_interface_schema_version": RUNNER_INTERFACE_SCHEMA_VERSION,
         "project_python": str(profile.project_python),
         "adapters": {
@@ -193,6 +222,7 @@ def post_source_adapter_profile_to_mapping(
     if profile.schema_version not in {
         PROFILE_SCHEMA_VERSION_V2,
         PROFILE_SCHEMA_VERSION_V3,
+        PROFILE_SCHEMA_VERSION_V4,
     }:
         _invalid()
     adapter_python = _adapter_python(profile.adapter_python)
@@ -203,7 +233,13 @@ def post_source_adapter_profile_to_mapping(
         if profile.adapter_dependency_root is not None:
             _invalid()
         return runtime_payload
-    return _v3_profile_mapping(profile, runtime_payload)
+    dependency_payload = _v3_profile_mapping(profile, runtime_payload)
+    if profile.schema_version == PROFILE_SCHEMA_VERSION_V3:
+        return dependency_payload
+    return {
+        **dependency_payload,
+        "hardware_profile": hardware_profile.profile_id,
+    }
 
 
 def _v3_profile_mapping(
@@ -235,25 +271,37 @@ def load_post_source_adapter_profile(
         if schema_version == PROFILE_SCHEMA_VERSION_V2
         else PROFILE_V3_KEYS
         if schema_version == PROFILE_SCHEMA_VERSION_V3
+        else PROFILE_V4_KEYS
+        if schema_version == PROFILE_SCHEMA_VERSION_V4
         else frozenset()
+    )
+    hardware_profile = (
+        _loaded_hardware_profile(payload.get("hardware_profile"))
+        if schema_version == PROFILE_SCHEMA_VERSION_V4
+        else default_hardware_execution_profile()
     )
     if (
         set(payload) != expected_keys
-        or payload.get("target") != TARGET_PROFILE
+        or payload.get("target") != _target_profile(hardware_profile)
         or payload.get("runner_interface_schema_version") != RUNNER_INTERFACE_SCHEMA_VERSION
     ):
         _invalid()
     project_python = _project_python(payload.get("project_python"))
     adapter_python = (
         _adapter_python(payload.get("adapter_python"))
-        if schema_version in {PROFILE_SCHEMA_VERSION_V2, PROFILE_SCHEMA_VERSION_V3}
+        if schema_version
+        in {
+            PROFILE_SCHEMA_VERSION_V2,
+            PROFILE_SCHEMA_VERSION_V3,
+            PROFILE_SCHEMA_VERSION_V4,
+        }
         else None
     )
     dependency_root = (
         _adapter_dependency_root(
             root, _relative_path(payload.get("adapter_dependency_root_relative_path"))
         )
-        if schema_version == PROFILE_SCHEMA_VERSION_V3
+        if schema_version in {PROFILE_SCHEMA_VERSION_V3, PROFILE_SCHEMA_VERSION_V4}
         else None
     )
     adapters = _load_adapters(payload.get("adapters"), root)
@@ -266,6 +314,7 @@ def load_post_source_adapter_profile(
         leaves,
         adapter_python,
         dependency_root,
+        hardware_profile,
     )
 
 
@@ -292,6 +341,46 @@ def require_post_source_adapter_profile_v3(
         or profile.adapter_dependency_root is None
     ):
         _invalid()
+
+
+def require_post_source_adapter_profile_v4(
+    profile: ValidatedPostSourceAdapterProfile,
+) -> None:
+    """Require the hardware-bound dependency-overlay runtime contract."""
+    if (
+        not isinstance(profile, ValidatedPostSourceAdapterProfile)
+        or profile.schema_version != PROFILE_SCHEMA_VERSION_V4
+        or profile.adapter_python is None
+        or profile.adapter_dependency_root is None
+    ):
+        _invalid()
+    _hardware_profile(profile.hardware_profile)
+
+
+def _loaded_hardware_profile(raw: object) -> HardwareExecutionProfile:
+    try:
+        return load_hardware_execution_profile(raw)  # type: ignore[arg-type]
+    except ValueError:
+        _invalid()
+
+
+def _hardware_profile(raw: object) -> HardwareExecutionProfile:
+    if not isinstance(raw, HardwareExecutionProfile):
+        _invalid()
+    try:
+        validate_profile_backend(raw, "tvm_auto")
+    except ValueError:
+        _invalid()
+    return raw
+
+
+def _target_profile(profile: HardwareExecutionProfile) -> dict[str, str]:
+    _hardware_profile(profile)
+    return {
+        "model": "pyramid",
+        "hardware": profile.target_hardware_id,
+        "backend": "tvm_auto",
+    }
 
 
 def _adapter(
