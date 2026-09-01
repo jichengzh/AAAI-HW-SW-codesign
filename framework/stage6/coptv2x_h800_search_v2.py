@@ -1,10 +1,10 @@
-"""Contracts and local state machine for the P6 CoptV2X H800/TVM search."""
+"""Contracts and local state machine for the P6 CoptV2X hardware search."""
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import json
 import math
@@ -30,6 +30,12 @@ from framework.stage5.single_target_search_v2 import (
     validate_task_feedback_history,
 )
 from framework.stage6.pyramid_search_space_adapter_v1 import build_pyramid_candidate_plan
+from framework.stage6.hardware_execution_profile_v1 import (
+    HardwareExecutionProfile,
+    default_hardware_execution_profile,
+    load_hardware_execution_profile,
+    validate_profile_backend,
+)
 from framework.stage6.p6_history_source_materialization_v1 import (
     P6HistorySourceMaterializationError,
     project_source_materialization_request,
@@ -42,6 +48,8 @@ from framework.stage6.p6_source_reuse_evidence_v1 import (
 
 PUBLIC_SCHEMA_VERSION = "p6_h800_coptv2x_search_contract_v2"
 LOCAL_SCHEMA_VERSION = "p6_h800_coptv2x_local_v2"
+PUBLIC_SCHEMA_VERSION_V3 = "p6_coptv2x_search_contract_v3"
+LOCAL_SCHEMA_VERSION_V3 = "p6_coptv2x_local_v3"
 METRIC_NAMES = ("latency_ms", "energy_j", "ap30", "ap50", "ap70")
 SUCCESS_STATUS = "measured_success_gold"
 TRUE_FAILURE_STATUSES = frozenset({"feasibility_failure", "numerical_feasibility_failure"})
@@ -121,6 +129,7 @@ PUBLIC_KEYS = frozenset(
         "assets",
     }
 )
+PUBLIC_V3_KEYS = PUBLIC_KEYS | {"hardware_profile"}
 LOCAL_KEYS = frozenset(
     {
         "schema_version",
@@ -135,6 +144,7 @@ LOCAL_KEYS = frozenset(
         "local_output_root",
     }
 )
+LOCAL_V3_KEYS = LOCAL_KEYS | {"hardware_profile"}
 _OPTIONAL_LEGACY_LOCAL_KEYS = frozenset(
     {"candidate_source_mode", "stage2_search_space_path", "stage1_scan_step"}
 )
@@ -230,6 +240,9 @@ class PublicP6CoptV2XContract:
     candidate_space_label: str
     assets: tuple[RegisteredAsset, ...]
     metric_names: tuple[str, ...]
+    hardware_profile: HardwareExecutionProfile = field(
+        default_factory=default_hardware_execution_profile
+    )
 
 
 @dataclass(frozen=True)
@@ -250,6 +263,9 @@ class LocalP6CoptV2XConfig:
     source_registry_step: LocalExecutionStep
     measurement_step: LocalExecutionStep
     local_output_root: Path
+    hardware_profile: HardwareExecutionProfile = field(
+        default_factory=default_hardware_execution_profile
+    )
 
 
 @dataclass(frozen=True)
@@ -271,7 +287,11 @@ def run_p6_coptv2x_search(
     code_revision: str,
     command_runner: CommandRunner,
 ) -> P6CoptV2XRunState:
-    """Run the fixed four-round local Pyramid/H800/TVM search state machine."""
+    """Run the fixed four-round local Pyramid/TVM search state machine."""
+    if contract.hardware_profile.profile_id != local.hardware_profile.profile_id:
+        raise P6CoptV2XContractError(
+            "local hardware profile must match the public contract"
+        )
     code_revision = validate_code_revision(code_revision)
     _prepare_local_output_root(local.local_output_root)
     if local.candidate_source_mode == "framework_stage2_search_space":
@@ -378,14 +398,18 @@ def _run_framework_stage1_scan(
             cwd=local.local_output_root,
             runner=command_runner,
         )
-        _validate_stage1_partition_manifest(local.stage2_search_space_path)
+        _validate_stage1_partition_manifest(
+            local.stage2_search_space_path, local.hardware_profile
+        )
     except Exception:
         raise P6CoptV2XExecutionError(
             "stage1_scan_invalid", "stage1 scan invalid"
         ) from None
 
 
-def _validate_stage1_partition_manifest(path: Path) -> None:
+def _validate_stage1_partition_manifest(
+    path: Path, hardware_profile: HardwareExecutionProfile
+) -> None:
     manifest = _load_mapping(path, "stage1 partition manifest")
     if (
         manifest.get("schema") != "stage1_partition_manifest_v1"
@@ -396,11 +420,35 @@ def _validate_stage1_partition_manifest(path: Path) -> None:
         raise P6CoptV2XContractError("Stage1 partition manifest is invalid")
     hardware = manifest.get("hw_capability")
     hardware_name = hardware.get("name") if isinstance(hardware, Mapping) else None
-    if not isinstance(hardware_name, str) or not (
-        hardware_name == FIXED_TARGET or hardware_name.startswith(f"{FIXED_TARGET}_")
-    ):
-        raise P6CoptV2XContractError("Stage1 H800 capability is invalid")
-    load_stage2_search_space(path)
+    if not _matches_profile_hardware_target(hardware_profile, hardware_name):
+        raise P6CoptV2XContractError(
+            "Stage1 hardware target does not match the hardware profile"
+        )
+    search_space = load_stage2_search_space(path)
+    _validate_stage2_hardware_target(search_space, hardware_profile)
+
+
+def _matches_profile_hardware_target(
+    hardware_profile: HardwareExecutionProfile, hardware_name: object
+) -> bool:
+    if hardware_name == hardware_profile.target_hardware_id:
+        return True
+    return (
+        hardware_profile.profile_id == "h800"
+        and isinstance(hardware_name, str)
+        and hardware_name.startswith(f"{FIXED_TARGET}_")
+    )
+
+
+def _validate_stage2_hardware_target(
+    search_space: Mapping[str, Any], hardware_profile: HardwareExecutionProfile
+) -> None:
+    hardware = search_space.get("hardware_target")
+    hardware_name = hardware.get("name") if isinstance(hardware, Mapping) else None
+    if not _matches_profile_hardware_target(hardware_profile, hardware_name):
+        raise P6CoptV2XContractError(
+            "Stage2 hardware target does not match the hardware profile"
+        )
 
 
 def _load_search_inputs(
@@ -480,9 +528,9 @@ def _build_source_registry(
     plan: Mapping[str, Any] | None = None
     if local.candidate_source_mode == "framework_stage2_search_space":
         assert local.stage2_search_space_path is not None
-        plan = build_pyramid_candidate_plan(
-            load_stage2_search_space(local.stage2_search_space_path)
-        )
+        search_space = load_stage2_search_space(local.stage2_search_space_path)
+        _validate_stage2_hardware_target(search_space, local.hardware_profile)
+        plan = build_pyramid_candidate_plan(search_space)
         plan_path = local.local_output_root / "pyramid_candidate_plan.json"
         _require_local_output_absent(plan_path)
         plan_path.write_text(
@@ -1189,15 +1237,42 @@ def load_public_contract(path: Path) -> PublicP6CoptV2XContract:
     """Load the fixed, non-executable public P6 CoptV2X search contract."""
     payload = _load_mapping(path, "public contract")
     _reject_public_execution_details(payload)
-    _require_exact_keys(payload, PUBLIC_KEYS, "public contract")
-    if payload["schema_version"] != PUBLIC_SCHEMA_VERSION:
+    schema_version = payload.get("schema_version")
+    if schema_version == PUBLIC_SCHEMA_VERSION:
+        _require_exact_keys(payload, PUBLIC_KEYS, "public contract")
+        hardware_profile = default_hardware_execution_profile()
+    elif schema_version == PUBLIC_SCHEMA_VERSION_V3:
+        _require_exact_keys(payload, PUBLIC_V3_KEYS, "public contract")
+        try:
+            hardware_profile = load_hardware_execution_profile(
+                payload["hardware_profile"]
+            )
+        except ValueError:
+            raise P6CoptV2XContractError("hardware profile is invalid") from None
+    else:
         raise P6CoptV2XContractError("public schema_version is invalid")
-    if _require_public_identifier(payload["target"], "target") != FIXED_TARGET:
-        raise P6CoptV2XContractError("target must be h800")
+    target = _require_public_identifier(payload["target"], "target")
+    if target != hardware_profile.target_hardware_id:
+        if schema_version == PUBLIC_SCHEMA_VERSION:
+            raise P6CoptV2XContractError("target must be h800")
+        raise P6CoptV2XContractError(
+            "target does not match the hardware profile"
+        )
     if _require_public_identifier(payload["target_model"], "target_model") != FIXED_MODEL:
         raise P6CoptV2XContractError("target_model must be pyramid")
-    if _require_public_identifier(payload["execution_backend"], "execution_backend") != FIXED_BACKEND:
-        raise P6CoptV2XContractError("execution_backend must be tvm_auto")
+    execution_backend = _require_public_identifier(
+        payload["execution_backend"], "execution_backend"
+    )
+    try:
+        validate_profile_backend(hardware_profile, execution_backend)
+    except ValueError:
+        if schema_version == PUBLIC_SCHEMA_VERSION:
+            raise P6CoptV2XContractError(
+                "execution_backend must be tvm_auto"
+            ) from None
+        raise P6CoptV2XContractError(
+            "execution_backend does not match the hardware profile"
+        ) from None
     if _require_positive_integer(payload["sample_budget"], "sample_budget") != FIXED_SAMPLE_BUDGET:
         raise P6CoptV2XContractError("sample_budget must be 16")
     if _require_positive_integer(payload["batch_size"], "batch_size") != FIXED_BATCH_SIZE:
@@ -1209,9 +1284,9 @@ def load_public_contract(path: Path) -> PublicP6CoptV2XContract:
         raise P6CoptV2XContractError("metric_names must exactly match runtime metrics")
     return PublicP6CoptV2XContract(
         search_id=_require_public_identifier(payload["search_id"], "search_id"),
-        target=FIXED_TARGET,
+        target=target,
         target_model=FIXED_MODEL,
-        execution_backend=FIXED_BACKEND,
+        execution_backend=execution_backend,
         seed=_require_positive_integer(payload["seed"], "seed"),
         sample_budget=FIXED_SAMPLE_BUDGET,
         batch_size=FIXED_BATCH_SIZE,
@@ -1224,6 +1299,7 @@ def load_public_contract(path: Path) -> PublicP6CoptV2XContract:
         ),
         assets=_parse_assets(payload["assets"]),
         metric_names=metric_names,
+        hardware_profile=hardware_profile,
     )
 
 
@@ -1232,18 +1308,38 @@ def load_local_config(path: Path, contract: PublicP6CoptV2XContract) -> LocalP6C
     if not isinstance(contract, PublicP6CoptV2XContract):
         raise P6CoptV2XContractError("public contract is invalid")
     payload = _load_mapping(path, "local config")
-    unknown_keys = set(payload) - LOCAL_KEYS
+    schema_version = payload.get("schema_version")
+    if schema_version == LOCAL_SCHEMA_VERSION:
+        allowed_keys = LOCAL_KEYS
+        required_keys = LOCAL_KEYS - _OPTIONAL_LEGACY_LOCAL_KEYS
+    elif schema_version == LOCAL_SCHEMA_VERSION_V3:
+        allowed_keys = LOCAL_V3_KEYS
+        required_keys = LOCAL_V3_KEYS - _OPTIONAL_LEGACY_LOCAL_KEYS
+    else:
+        raise P6CoptV2XContractError("local schema_version is invalid")
+    unknown_keys = set(payload) - allowed_keys
     if unknown_keys:
         raise P6CoptV2XContractError(
             f"local config contains unknown keys: {sorted(unknown_keys)}"
         )
-    missing_keys = (LOCAL_KEYS - _OPTIONAL_LEGACY_LOCAL_KEYS) - set(payload)
+    missing_keys = required_keys - set(payload)
     if missing_keys:
         raise P6CoptV2XContractError(
             f"local config is missing required keys: {sorted(missing_keys)}"
         )
-    if payload["schema_version"] != LOCAL_SCHEMA_VERSION:
-        raise P6CoptV2XContractError("local schema_version is invalid")
+    if schema_version == LOCAL_SCHEMA_VERSION:
+        hardware_profile = default_hardware_execution_profile()
+    else:
+        try:
+            hardware_profile = load_hardware_execution_profile(
+                payload["hardware_profile"]
+            )
+        except ValueError:
+            raise P6CoptV2XContractError("hardware profile is invalid") from None
+    if hardware_profile.profile_id != contract.hardware_profile.profile_id:
+        raise P6CoptV2XContractError(
+            "local hardware profile must match the public contract"
+        )
     if _require_nonempty_string(payload["target"], "local target") != contract.target:
         raise P6CoptV2XContractError("local target must match the public contract")
     asset_paths = _parse_path_mapping(payload["asset_paths"], "asset_paths")
@@ -1310,6 +1406,7 @@ def load_local_config(path: Path, contract: PublicP6CoptV2XContract) -> LocalP6C
             required_tokens={"{measurement_request}", "{feedback_json}", "{round_output_root}"},
         ),
         local_output_root=_parse_absolute_path(payload["local_output_root"], "local_output_root"),
+        hardware_profile=hardware_profile,
     )
 
 

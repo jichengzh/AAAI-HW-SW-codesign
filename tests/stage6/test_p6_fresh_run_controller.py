@@ -143,6 +143,40 @@ def test_controller_creates_context_after_registry_exactly_once_before_measureme
     assert context.source_registry_sha256 == canonical_json_sha256(registry)
 
 
+def test_hardware_profile_stage2_target_mismatch_fails_before_runner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    local = _framework_local_config_with_stage1_step(
+        tmp_path,
+        contract_overrides={
+            "schema_version": "p6_coptv2x_search_contract_v3",
+            "hardware_profile": "rtx4090",
+            "target": "rtx4090",
+        },
+        local_overrides={
+            "schema_version": "p6_coptv2x_local_v3",
+            "hardware_profile": "rtx4090",
+            "target": "rtx4090",
+        },
+    )
+    monkeypatch.setattr(
+        execution,
+        "load_stage2_search_space",
+        lambda path: _complete_framework_stage2_search_space(),
+    )
+    runner_calls = 0
+
+    def forbidden_runner(argv: tuple[str, ...], cwd: Path) -> int:
+        nonlocal runner_calls
+        runner_calls += 1
+        raise AssertionError((argv, cwd))
+
+    with pytest.raises(P6CoptV2XContractError, match="hardware profile"):
+        execution._build_source_registry(local, forbidden_runner)
+
+    assert runner_calls == 0
+
+
 @pytest.mark.parametrize(
     "mutation", ["mixed_recipe", "incomplete_recipe", "plan_registry_drift"]
 )

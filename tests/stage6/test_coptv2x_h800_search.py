@@ -24,6 +24,10 @@ from framework.stage6.coptv2x_h800_search_v2 import (
     load_public_contract,
     run_p6_coptv2x_search,
 )
+from framework.stage6.hardware_execution_profile_v1 import (
+    default_hardware_execution_profile,
+    load_hardware_execution_profile,
+)
 from framework.stage6.p6_full_chain_bootstrap_v1 import materialize_full_chain_binding
 from framework.stage6.p6_history_binding_v1 import COMPONENT_MARKERS, GpuRecord
 from framework.stage6.p6_history_normalization_v1 import normalize_history_inputs
@@ -97,6 +101,17 @@ def _public_contract(**overrides: Any) -> dict[str, Any]:
     return {**contract, **overrides}
 
 
+def _public_v3_contract(
+    hardware_profile: str, *, target: str | None = None, **overrides: Any
+) -> dict[str, Any]:
+    return _public_contract(
+        schema_version="p6_coptv2x_search_contract_v3",
+        hardware_profile=hardware_profile,
+        target=target or hardware_profile,
+        **overrides,
+    )
+
+
 def _local_config(tmp_path: Path, **overrides: Any) -> dict[str, Any]:
     output_root = tmp_path / "private-output"
     payload = {
@@ -137,6 +152,22 @@ def _local_config(tmp_path: Path, **overrides: Any) -> dict[str, Any]:
         "local_output_root": str(output_root),
     }
     return {**payload, **overrides}
+
+
+def _local_v3_config(
+    tmp_path: Path,
+    hardware_profile: str,
+    *,
+    target: str | None = None,
+    **overrides: Any,
+) -> dict[str, Any]:
+    return _local_config(
+        tmp_path,
+        schema_version="p6_coptv2x_local_v3",
+        hardware_profile=hardware_profile,
+        target=target or hardware_profile,
+        **overrides,
+    )
 
 
 def _profile() -> dict[str, Any]:
@@ -949,7 +980,12 @@ def _framework_local_payload(tmp_path: Path) -> dict[str, Any]:
     )
 
 
-def _framework_local_config_with_stage1_step(tmp_path: Path) -> LocalP6CoptV2XConfig:
+def _framework_local_config_with_stage1_step(
+    tmp_path: Path,
+    *,
+    contract_overrides: Mapping[str, Any] | None = None,
+    local_overrides: Mapping[str, Any] | None = None,
+) -> LocalP6CoptV2XConfig:
     gold_rows, gold_graphs = _gold176(include_non_target_backend=True)
     for name, payload in {
         "gold176_rows": gold_rows,
@@ -960,9 +996,18 @@ def _framework_local_config_with_stage1_step(tmp_path: Path) -> LocalP6CoptV2XCo
         (tmp_path / f"{name}.json").write_text(json.dumps(payload), encoding="utf-8")
     for label in ("training-data", "model-init", "toolchain"):
         (tmp_path / label).mkdir()
-    contract = load_public_contract(_write_yaml(tmp_path / "contract.yaml", _public_contract()))
+    contract = load_public_contract(
+        _write_yaml(
+            tmp_path / "contract.yaml",
+            _public_contract(**dict(contract_overrides or {})),
+        )
+    )
+    local_payload = {
+        **_framework_local_payload(tmp_path),
+        **dict(local_overrides or {}),
+    }
     return load_local_config(
-        _write_yaml(tmp_path / "local.yaml", _framework_local_payload(tmp_path)),
+        _write_yaml(tmp_path / "local.yaml", local_payload),
         contract,
     )
 
@@ -3002,6 +3047,135 @@ def test_load_public_contract_requires_fixed_pyramid_h800_tvm_budget(tmp_path: P
     for index, payload in enumerate(invalid_contracts):
         with pytest.raises(P6CoptV2XContractError):
             load_public_contract(_write_yaml(tmp_path / f"contract-{index}.yaml", payload))
+
+
+def test_hardware_profile_v2_contract_and_local_config_default_to_h800(
+    tmp_path: Path,
+) -> None:
+    contract = load_public_contract(
+        _write_yaml(tmp_path / "public-v2.yaml", _public_contract())
+    )
+    local = load_local_config(
+        _write_yaml(tmp_path / "local-v2.yaml", _local_config(tmp_path)), contract
+    )
+
+    assert contract.hardware_profile is default_hardware_execution_profile()
+    assert local.hardware_profile is contract.hardware_profile
+    assert (contract.target, contract.execution_backend) == ("h800", "tvm_auto")
+    assert (contract.sample_budget, contract.batch_size, contract.round_count) == (
+        16,
+        4,
+        4,
+    )
+    assert contract.metric_names == (
+        "latency_ms",
+        "energy_j",
+        "ap30",
+        "ap50",
+        "ap70",
+    )
+
+
+@pytest.mark.parametrize(
+    ("profile_id", "target"),
+    [("h800", "h800"), ("rtx4090", "rtx4090")],
+)
+def test_v3_hardware_profile_contract_and_local_config_share_registry_profile(
+    tmp_path: Path, profile_id: str, target: str
+) -> None:
+    contract = load_public_contract(
+        _write_yaml(
+            tmp_path / f"public-{profile_id}.yaml",
+            _public_v3_contract(profile_id, target=target),
+        )
+    )
+    local = load_local_config(
+        _write_yaml(
+            tmp_path / f"local-{profile_id}.yaml",
+            _local_v3_config(tmp_path, profile_id, target=target),
+        ),
+        contract,
+    )
+
+    assert contract.hardware_profile is load_hardware_execution_profile(profile_id)
+    assert local.hardware_profile is contract.hardware_profile
+    assert contract.target == local.hardware_profile.target_hardware_id == target
+    assert contract.execution_backend in contract.hardware_profile.backend_scope
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        _public_v3_contract("missing-profile"),
+        _public_v3_contract("h800", target="rtx4090"),
+        _public_v3_contract("rtx4090", execution_backend="trt_engine"),
+    ],
+    ids=["unknown-profile", "target-disagreement", "backend-outside-scope"],
+)
+def test_v3_hardware_profile_contract_rejects_registry_disagreement(
+    tmp_path: Path, payload: dict[str, Any]
+) -> None:
+    with pytest.raises(P6CoptV2XContractError, match="hardware profile"):
+        load_public_contract(_write_yaml(tmp_path / "public-v3.yaml", payload))
+
+
+def test_v2_and_v3_hardware_profile_contracts_use_exact_versioned_keys(
+    tmp_path: Path,
+) -> None:
+    v2_with_profile = _public_contract(hardware_profile="h800")
+    v3_without_profile = _public_v3_contract("h800")
+    v3_without_profile.pop("hardware_profile")
+
+    with pytest.raises(P6CoptV2XContractError, match="unknown"):
+        load_public_contract(_write_yaml(tmp_path / "public-v2-extra.yaml", v2_with_profile))
+    with pytest.raises(P6CoptV2XContractError, match="missing"):
+        load_public_contract(_write_yaml(tmp_path / "public-v3-missing.yaml", v3_without_profile))
+
+
+def test_v3_local_hardware_profile_must_match_public_profile(tmp_path: Path) -> None:
+    contract = load_public_contract(
+        _write_yaml(
+            tmp_path / "public-v3.yaml", _public_v3_contract("rtx4090")
+        )
+    )
+
+    with pytest.raises(P6CoptV2XContractError, match="hardware profile"):
+        load_local_config(
+            _write_yaml(
+                tmp_path / "local-v3.yaml",
+                _local_v3_config(tmp_path, "h800", target="rtx4090"),
+            ),
+            contract,
+        )
+    with pytest.raises(P6CoptV2XContractError, match="hardware profile"):
+        load_local_config(
+            _write_yaml(
+                tmp_path / "local-v2.yaml",
+                _local_config(tmp_path, target="rtx4090"),
+            ),
+            contract,
+        )
+
+
+def test_v2_and_v3_local_hardware_profiles_use_exact_versioned_keys(
+    tmp_path: Path,
+) -> None:
+    contract = load_public_contract(
+        _write_yaml(tmp_path / "public-v2.yaml", _public_contract())
+    )
+    v2_with_profile = _local_config(tmp_path, hardware_profile="h800")
+    v3_without_profile = _local_v3_config(tmp_path, "h800")
+    v3_without_profile.pop("hardware_profile")
+
+    with pytest.raises(P6CoptV2XContractError, match="unknown"):
+        load_local_config(
+            _write_yaml(tmp_path / "local-v2-extra.yaml", v2_with_profile), contract
+        )
+    with pytest.raises(P6CoptV2XContractError, match="missing"):
+        load_local_config(
+            _write_yaml(tmp_path / "local-v3-missing.yaml", v3_without_profile),
+            contract,
+        )
 
 
 @pytest.mark.parametrize(
