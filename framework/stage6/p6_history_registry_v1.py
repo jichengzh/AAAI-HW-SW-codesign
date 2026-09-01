@@ -217,6 +217,8 @@ def _require_private_registry_output(path: Path) -> None:
 def _validate_plan(
     raw_plan: Mapping[str, Any],
 ) -> dict[tuple[tuple[int, int, int], str], tuple[str, str, str]]:
+    if not isinstance(raw_plan, Mapping):
+        _invalid("candidate plan must be an object")
     hardware_target = raw_plan.get("hardware_target")
     if not isinstance(hardware_target, str):
         _invalid("candidate plan hardware target is unknown")

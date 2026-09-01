@@ -570,6 +570,19 @@ def test_registry_rejects_unknown_or_mixed_plan_target_before_write(
     assert not (local_output_root / "source_registry.json").exists()
 
 
+def test_registry_rejects_non_mapping_plan_with_stable_category(
+    tmp_path: Path,
+) -> None:
+    local_output_root = tmp_path / "private-output"
+    local_output_root.mkdir()
+
+    with pytest.raises(P6HistoryRegistryError) as captured:
+        materialize_history_registry([], _binding(tmp_path), local_output_root)
+
+    assert captured.value.category == "source_registry_invalid"
+    assert not (local_output_root / "source_registry.json").exists()
+
+
 def test_registry_rejects_over_base_formal_candidate_before_write(
     tmp_path: Path,
 ) -> None:
