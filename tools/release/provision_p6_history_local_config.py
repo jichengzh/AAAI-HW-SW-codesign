@@ -361,8 +361,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.config_output,
             REPOSITORY_ROOT,
         )
-        load_public_contract(PUBLIC_CONTRACT_PATH)
-        discover_history_binding(args.history_root, NvidiaSmiGpuProbe())
+        contract = load_public_contract(PUBLIC_CONTRACT_PATH)
+        discover_history_binding(
+            args.history_root,
+            NvidiaSmiGpuProbe(),
+            profile=contract.hardware_profile,
+        )
         raise P6HistoryBindingError(
             "stage1_scan_unavailable",
             "legacy provisioning cannot supply the required Stage1 scan step",

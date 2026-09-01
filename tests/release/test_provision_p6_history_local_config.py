@@ -28,6 +28,7 @@ LOCAL_INPUT_NAMES = (
     "closure",
 )
 SYNTHETIC_GPU_INDICES = (107, 103, 101)
+RTX_GPU_INDICES = (109, 107, 103, 101)
 
 
 def _canonical_json_sha(payload: Mapping[str, Any]) -> str:
@@ -93,6 +94,29 @@ def _stage1_manifest() -> dict[str, Any]:
             }
         ],
         "view_d_routing_segments": {"segments": [{"device": "gpu", "n_nodes": 1}]},
+    }
+
+
+def _rtx_public_contract() -> dict[str, Any]:
+    return {
+        "schema_version": "p6_coptv2x_search_contract_v3",
+        "search_id": "p6-pyramid-rtx4090-tvm",
+        "target": "rtx4090",
+        "hardware_profile": "rtx4090",
+        "target_model": "pyramid",
+        "execution_backend": "tvm_auto",
+        "seed": 73,
+        "sample_budget": 16,
+        "batch_size": 4,
+        "round_count": 4,
+        "configuration_label": "p6-pyramid-rtx4090-tvm",
+        "candidate_space_label": "coptv2x-pyramid-width-grid-v1",
+        "metric_names": ["latency_ms", "energy_j", "ap30", "ap50", "ap70"],
+        "assets": [
+            {"label": "training-data", "version": "v1", "license_status": "cleared"},
+            {"label": "model-init", "version": "v2", "license_status": "cleared"},
+            {"label": "toolchain", "version": "v3", "license_status": "cleared"},
+        ],
     }
 
 
@@ -384,6 +408,69 @@ def test_cli_rejects_obsolete_framework_provisioning_without_output_or_tracked_l
     assert not binding_path.exists()
     assert not config_path.exists()
     assert _tracked_snapshot() == tracked_before
+
+
+def test_rtx_hardware_profile_admits_four_fake_cards_with_exactly_two_snapshots(
+    tmp_path: Path,
+    monkeypatch: Any,
+    capsys: Any,
+) -> None:
+    history_root = _history_root(tmp_path)
+    interface_path = history_root / "private-runner/p6-history-runner-interface.json"
+    interface = json.loads(interface_path.read_text(encoding="utf-8"))
+    interface["environment"]["values"]["CUDA_VISIBLE_DEVICES"]["value"] = ",".join(
+        str(index) for index in RTX_GPU_INDICES
+    )
+    _write_json(interface_path, interface)
+    public_contract = _write_json(tmp_path / "rtx-public.yaml", _rtx_public_contract())
+    monkeypatch.setattr(legacy_provisioner, "PUBLIC_CONTRACT_PATH", public_contract)
+    probe_calls: list[tuple[int, ...]] = []
+
+    def fake_snapshot(
+        _self: Any,
+        indices: tuple[int, ...],
+    ) -> tuple[legacy_provisioner.GpuRecord, ...]:
+        probe_calls.append(indices)
+        return tuple(
+            legacy_provisioner.GpuRecord(
+                index=index,
+                uuid=f"GPU-rtx-fixture-{index}",
+                model_name="NVIDIA GeForce RTX 4090",
+                occupancy=0.0,
+            )
+            for index in indices
+        )
+
+    monkeypatch.setattr(
+        legacy_provisioner.NvidiaSmiGpuProbe,
+        "snapshot",
+        fake_snapshot,
+    )
+    private_root = tmp_path / "private-output"
+    private_root.mkdir()
+    binding_path = private_root / "history-binding.json"
+    config_path = private_root / "p6.local.yaml"
+
+    exit_code = legacy_provisioner.main(
+        [
+            "--history-root",
+            str(history_root),
+            "--local-output-root",
+            str(private_root),
+            "--binding-output",
+            str(binding_path),
+            "--config-output",
+            str(config_path),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.out == ""
+    assert captured.err == "stage1_scan_unavailable\n"
+    assert probe_calls == [RTX_GPU_INDICES, RTX_GPU_INDICES]
+    assert not binding_path.exists()
+    assert not config_path.exists()
 
 
 def test_obsolete_framework_route_does_not_reach_loader_without_stage1_step(

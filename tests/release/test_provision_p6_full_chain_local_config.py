@@ -16,6 +16,9 @@ from framework.stage6.coptv2x_h800_search_v2 import (
     load_local_config,
     load_public_contract,
 )
+from framework.stage6 import p6_full_chain_bootstrap_v1 as bootstrap
+from framework.stage6.p6_full_chain_bootstrap_v1 import FullChainBootstrapError
+from framework.stage6.p6_history_binding_v1 import GpuRecord
 from framework.stage6.p6_history_normalization_v1 import normalize_history_inputs
 from tools.release import provision_p6_history_local_config as provision_cli
 from tests.p6_source_wrapper_support import write_test_project_python
@@ -50,6 +53,24 @@ STAGES = (
     "finalization",
 )
 SYNTHETIC_GPU_INDICES = (23, 19, 17)
+RTX_GPU_INDICES = (29, 23, 19, 17)
+
+
+class _RtxGpuProbe:
+    def __init__(self) -> None:
+        self.calls: list[tuple[int, ...]] = []
+
+    def snapshot(self, indices: tuple[int, ...]) -> tuple[GpuRecord, ...]:
+        self.calls.append(indices)
+        return tuple(
+            GpuRecord(
+                index=index,
+                uuid=f"GPU-rtx-fixture-{index}",
+                model_name="NVIDIA GeForce RTX 4090",
+                occupancy=0.0,
+            )
+            for index in indices
+        )
 
 
 def _write_yaml(path: Path, payload: Any) -> Path:
@@ -412,6 +433,64 @@ def _v5_valid_args(tmp_path: Path) -> tuple[tuple[str, ...], dict[str, Path]]:
         str(normalized["external_training_binding"]),
     )
     return args, normalized
+
+
+def _rtx_v5_materialization_inputs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[dict[str, Path], Path, Path, Path, Path]:
+    source_map, runner = v5_private_source_map(tmp_path)
+    source_map["hardware_profile"] = "rtx4090"
+    private_dir = tmp_path / "rtx-private-normalized"
+    normalized = normalize_history_inputs(
+        source_map,
+        Path(str(source_map["history_root"])),
+        private_dir,
+        runner_template_path=runner,
+    )
+    legacy = yaml.safe_load(normalized["legacy"].read_text(encoding="utf-8"))
+    legacy.update(
+        {
+            "schema_version": "p6_coptv2x_local_v3",
+            "target": "rtx4090",
+            "hardware_profile": "rtx4090",
+        }
+    )
+    _write_yaml(normalized["legacy"], legacy)
+    runner_payload = yaml.safe_load(
+        normalized["runner_template"].read_text(encoding="utf-8")
+    )
+    runner_payload["execution_interface"]["environment"]["values"][
+        "CUDA_VISIBLE_DEVICES"
+    ]["value"] = ",".join(str(index) for index in RTX_GPU_INDICES)
+    _write_yaml(normalized["runner_template"], runner_payload)
+    public_payload = yaml.safe_load(PUBLIC_CONTRACT.read_text(encoding="utf-8"))
+    public_payload.update(
+        {
+            "schema_version": "p6_coptv2x_search_contract_v3",
+            "search_id": "p6-pyramid-rtx4090-tvm",
+            "target": "rtx4090",
+            "hardware_profile": "rtx4090",
+            "configuration_label": "p6-pyramid-rtx4090-tvm",
+        }
+    )
+    public_contract = _write_yaml(
+        tmp_path / "p6_rtx4090_search.example.yaml", public_payload
+    )
+    monkeypatch.setattr(
+        bootstrap,
+        "PUBLIC_CONTRACT_PATH",
+        tmp_path / "p6_{hardware_profile}_search.example.yaml",
+    )
+    output_root = tmp_path / "rtx-private-output"
+    output_root.mkdir()
+    return (
+        normalized,
+        output_root,
+        output_root / "binding.json",
+        output_root / "p6.local.yaml",
+        public_contract,
+    )
 
 
 def _v4_valid_args(tmp_path: Path) -> tuple[tuple[str, ...], dict[str, Path]]:
@@ -834,6 +913,91 @@ def test_cli_accepts_v3_post_source_profile_for_v5_recipe_v2(
     assert result.returncode == 0
     assert result.stdout == "p6_full_chain_config_written\n"
     assert result.stderr == ""
+
+
+def test_rtx_hardware_profile_materializes_agreeing_pair_with_two_snapshots(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    normalized, output_root, binding_path, config_path, public_contract_path = (
+        _rtx_v5_materialization_inputs(tmp_path, monkeypatch)
+    )
+    probe = _RtxGpuProbe()
+
+    binding = bootstrap.materialize_full_chain_binding(
+        normalized["legacy"],
+        normalized["runner_template"],
+        output_root,
+        binding_path,
+        config_path,
+        probe,
+        source_wrapper_profile=normalized["source_wrapper_profile"],
+        external_training_binding=normalized["external_training_binding"],
+        post_source_adapter_profile=normalized["post_source_adapter_profile"],
+    )
+
+    contract = load_public_contract(public_contract_path)
+    local = load_local_config(config_path, contract)
+    assert probe.calls == [RTX_GPU_INDICES, RTX_GPU_INDICES]
+    assert binding["gpu_policy"] == {
+        "indices": list(RTX_GPU_INDICES),
+        "uuid_by_index": {
+            str(index): f"GPU-rtx-fixture-{index}" for index in RTX_GPU_INDICES
+        },
+        "hardware_profile": "rtx4090",
+    }
+    assert binding["target"]["hardware"] == "rtx4090"
+    assert local.hardware_profile is contract.hardware_profile
+
+
+def test_rtx_hardware_profile_mismatch_stops_before_wrapper_write_or_gpu_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    normalized, output_root, binding_path, config_path, _ = (
+        _rtx_v5_materialization_inputs(tmp_path, monkeypatch)
+    )
+    post_source_payload = yaml.safe_load(
+        normalized["post_source_adapter_profile"].read_text(encoding="utf-8")
+    )
+    post_source_payload.update(
+        {
+            "hardware_profile": "h800",
+            "target": {
+                "model": "pyramid",
+                "hardware": "h800",
+                "backend": "tvm_auto",
+            },
+        }
+    )
+    _write_yaml(normalized["post_source_adapter_profile"], post_source_payload)
+    source_profile = yaml.safe_load(
+        normalized["source_wrapper_profile"].read_text(encoding="utf-8")
+    )
+    source_wrapper = output_root.parent / "rtx-private-normalized" / source_profile[
+        "destination_relative_path"
+    ]
+    source_wrapper.unlink()
+    probe = _RtxGpuProbe()
+
+    with pytest.raises(FullChainBootstrapError) as captured:
+        bootstrap.materialize_full_chain_binding(
+            normalized["legacy"],
+            normalized["runner_template"],
+            output_root,
+            binding_path,
+            config_path,
+            probe,
+            source_wrapper_profile=normalized["source_wrapper_profile"],
+            external_training_binding=normalized["external_training_binding"],
+            post_source_adapter_profile=normalized["post_source_adapter_profile"],
+        )
+
+    assert captured.value.category == "history_execution_invalid"
+    assert probe.calls == []
+    assert not source_wrapper.exists()
+    assert not binding_path.exists()
+    assert not config_path.exists()
 
 
 @pytest.mark.parametrize(

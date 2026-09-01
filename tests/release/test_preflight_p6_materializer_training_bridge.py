@@ -13,7 +13,9 @@ import pytest
 import yaml
 
 from framework.stage6.coptv2x_h800_search_v2 import P6CoptV2XExecutionError
+from framework.stage6 import p6_full_chain_bootstrap_v1 as bootstrap
 from framework.stage6.p6_full_chain_bootstrap_v1 import materialize_full_chain_binding
+from framework.stage6.p6_history_binding_v1 import GpuRecord
 from framework.stage6.p6_history_measurement_v1 import (
     plan_validated_history_round_paths,
 )
@@ -40,6 +42,26 @@ from tests.stage6.test_p6_history_normalization import (
     valid_private_source_map,
 )
 from tests.stage6.test_p6_post_source_adapter_profile import v5_private_source_map
+
+
+RTX_GPU_INDICES = (31, 29, 23, 19)
+
+
+class _RtxGpuProbe:
+    def __init__(self) -> None:
+        self.calls: list[tuple[int, ...]] = []
+
+    def snapshot(self, indices: tuple[int, ...]) -> tuple[GpuRecord, ...]:
+        self.calls.append(indices)
+        return tuple(
+            GpuRecord(
+                index=index,
+                uuid=f"GPU-rtx-preflight-{index}",
+                model_name="NVIDIA GeForce RTX 4090",
+                occupancy=0.0,
+            )
+            for index in indices
+        )
 
 
 def _build_preflight_inputs(root: Path) -> dict[str, Path]:
@@ -111,6 +133,80 @@ def _build_v5_preflight_inputs(root: Path) -> dict[str, Path]:
         "external_training_binding_path": normalized["external_training_binding"],
         "post_source_adapter_profile_path": normalized["post_source_adapter_profile"],
     }
+
+
+def _build_rtx_preflight_inputs(
+    root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[dict[str, Path], _RtxGpuProbe]:
+    source_map, source_runner = v5_private_source_map(root)
+    source_map["hardware_profile"] = "rtx4090"
+    private_root = root / "rtx-normalized-private-root"
+    normalized = normalize_history_inputs(
+        source_map,
+        Path(str(source_map["history_root"])),
+        private_root,
+        runner_template_path=source_runner,
+    )
+    legacy = yaml.safe_load(normalized["legacy"].read_text(encoding="utf-8"))
+    legacy.update(
+        {
+            "schema_version": "p6_coptv2x_local_v3",
+            "target": "rtx4090",
+            "hardware_profile": "rtx4090",
+        }
+    )
+    _write_yaml(normalized["legacy"], legacy)
+    runner = yaml.safe_load(normalized["runner_template"].read_text(encoding="utf-8"))
+    runner["execution_interface"]["environment"]["values"][
+        "CUDA_VISIBLE_DEVICES"
+    ]["value"] = ",".join(str(index) for index in RTX_GPU_INDICES)
+    _write_yaml(normalized["runner_template"], runner)
+    public_contract = _write_yaml(
+        root / "p6_rtx4090_search.example.yaml",
+        _public_contract(
+            schema_version="p6_coptv2x_search_contract_v3",
+            search_id="p6-pyramid-rtx4090-tvm",
+            target="rtx4090",
+            hardware_profile="rtx4090",
+            configuration_label="p6-pyramid-rtx4090-tvm",
+        ),
+    )
+    monkeypatch.setattr(
+        bootstrap,
+        "PUBLIC_CONTRACT_PATH",
+        root / "p6_{hardware_profile}_search.example.yaml",
+    )
+    local_output_root = root / "rtx-provisioned"
+    local_output_root.mkdir()
+    binding = local_output_root / "binding.json"
+    local_config = local_output_root / "local.yaml"
+    probe = _RtxGpuProbe()
+    materialize_full_chain_binding(
+        normalized["legacy"],
+        normalized["runner_template"],
+        local_output_root,
+        binding,
+        local_config,
+        probe,
+        source_wrapper_profile=normalized["source_wrapper_profile"],
+        external_training_binding=normalized["external_training_binding"],
+        post_source_adapter_profile=normalized["post_source_adapter_profile"],
+    )
+    return (
+        {
+            "public_contract_path": public_contract,
+            "local_config_path": local_config,
+            "private_binding_path": binding,
+            "runner_template_path": normalized["runner_template"],
+            "source_wrapper_profile_path": normalized["source_wrapper_profile"],
+            "external_training_binding_path": normalized["external_training_binding"],
+            "post_source_adapter_profile_path": normalized[
+                "post_source_adapter_profile"
+            ],
+        },
+        probe,
+    )
 
 
 def _write_executable(path: Path, body: str = "#!/bin/sh\nexit 0\n") -> Path:
@@ -330,6 +426,66 @@ def test_preflight_accepts_regenerated_training_binding_without_process_or_gpu(
     assert report.training_required is True
     assert report.historical_process_launch_count == 0
     assert report.gpu_probe_count == 0
+
+
+def test_rtx_hardware_profile_preflight_accepts_four_planned_rounds_without_launches(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inputs, provision_probe = _build_rtx_preflight_inputs(tmp_path, monkeypatch)
+
+    report = preflight_materializer_training_bridge(**inputs)
+
+    assert provision_probe.calls == [RTX_GPU_INDICES, RTX_GPU_INDICES]
+    assert report == P6MaterializerPreflightReport(
+        schema_version="p6_materializer_training_bridge_preflight_v1",
+        status="accepted",
+        validated_round_count=4,
+        wrapper_marker="stage5_materialize_round_sources_v1.sh",
+        training_required=True,
+        historical_process_launch_count=0,
+        gpu_probe_count=0,
+    )
+
+
+def test_rtx_hardware_profile_binding_mismatch_stops_before_profile_or_runner_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inputs, _ = _build_rtx_preflight_inputs(tmp_path, monkeypatch)
+    binding = _read_json(inputs["private_binding_path"])
+    binding["target"]["hardware"] = "h800"
+    binding["gpu_policy"]["hardware_profile"] = "h800"
+    inputs["private_binding_path"].write_text(json.dumps(binding), encoding="utf-8")
+    post_source_calls = 0
+    runner_calls = 0
+    real_post_source_validation = preflight_module._validate_post_source_profile
+
+    def counted_post_source_validation(*args: Any, **kwargs: Any) -> None:
+        nonlocal post_source_calls
+        post_source_calls += 1
+        real_post_source_validation(*args, **kwargs)
+
+    def counted_runner_validation(*_args: Any, **_kwargs: Any) -> None:
+        nonlocal runner_calls
+        runner_calls += 1
+
+    monkeypatch.setattr(
+        preflight_module,
+        "_validate_post_source_profile",
+        counted_post_source_validation,
+    )
+    monkeypatch.setattr(
+        preflight_module,
+        "validate_pre_provision_runner_template",
+        counted_runner_validation,
+    )
+
+    with pytest.raises(P6CoptV2XExecutionError):
+        preflight_materializer_training_bridge(**inputs)
+
+    assert post_source_calls == 0
+    assert runner_calls == 0
 
 
 def test_preflight_requires_profile_argument_for_v5_recipe_v2(

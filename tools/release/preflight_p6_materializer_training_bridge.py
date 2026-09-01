@@ -22,6 +22,9 @@ from framework.stage6.coptv2x_h800_search_v2 import (  # noqa: E402
     load_local_config,
     load_public_contract,
 )
+from framework.stage6.hardware_execution_profile_v1 import (  # noqa: E402
+    HardwareExecutionProfile,
+)
 from framework.stage6.p6_history_binding_v1 import (  # noqa: E402
     validate_history_execution_binding,
 )
@@ -44,8 +47,10 @@ from framework.stage6.p6_runner_template_validator_v1 import (  # noqa: E402
     validate_pre_provision_runner_template,
 )
 from framework.stage6.p6_post_source_adapter_profile_v1 import (  # noqa: E402
+    PROFILE_SCHEMA_VERSION_V4,
     load_post_source_adapter_profile,
     require_post_source_adapter_profile_v3,
+    require_post_source_adapter_profile_v4,
 )
 from framework.stage6.p6_post_source_wrapper_template_v1 import (  # noqa: E402
     validate_post_source_adapter_wrappers,
@@ -98,13 +103,19 @@ def _validate_post_source_profile(
     *,
     private_root: Path,
     runner_template_path: Path,
+    hardware_profile: HardwareExecutionProfile,
 ) -> None:
     if profile_path is None:
         if (private_root / "post-source-adapter-profile.yaml").is_file():
             raise ValueError
         return
     profile = load_post_source_adapter_profile(profile_path, private_root=private_root)
-    require_post_source_adapter_profile_v3(profile)
+    if profile.schema_version == PROFILE_SCHEMA_VERSION_V4:
+        require_post_source_adapter_profile_v4(profile)
+    else:
+        require_post_source_adapter_profile_v3(profile)
+    if profile.hardware_profile is not hardware_profile:
+        raise ValueError
     wrapper_paths = validate_post_source_adapter_wrappers(
         profile,
         private_root=private_root,
@@ -187,7 +198,9 @@ def _load_preflight_inputs(
     if local.candidate_source_mode != "framework_stage2_search_space":
         raise ValueError
     binding = _load_json_mapping(private_binding_path)
-    interface = validate_history_execution_binding(binding)
+    interface = validate_history_execution_binding(
+        binding, profile=contract.hardware_profile
+    )
     private_root = _private_root(binding)
     template = binding.get("source_contract_template")
     if not isinstance(template, Mapping):
@@ -199,6 +212,7 @@ def _load_preflight_inputs(
         post_source_adapter_profile_path,
         private_root=private_root,
         runner_template_path=runner_template_path,
+        hardware_profile=contract.hardware_profile,
     )
     runner_template = validate_pre_provision_runner_template(
         runner_template_path, private_root, require_exact_history_environment=True

@@ -15,6 +15,15 @@ from typing import Any
 
 import yaml
 
+from framework.stage6.coptv2x_h800_search_v2 import (
+    P6CoptV2XContractError,
+    PublicP6CoptV2XContract,
+    load_public_contract,
+)
+from framework.stage6.hardware_execution_profile_v1 import (
+    HardwareExecutionProfile,
+    load_hardware_execution_profile,
+)
 from framework.stage6.p6_external_training_binding_v1 import (
     P6ExternalTrainingBindingError,
     external_training_binding_from_contract,
@@ -33,6 +42,7 @@ from framework.stage6.p6_history_binding_v1 import (
     build_history_binding,
     prevalidate_private_binding_pair_destinations,
     validate_binding_recipe_consistency,
+    validate_history_execution_binding,
     validate_ready_source_contract_template,
     write_private_binding_pair,
 )
@@ -63,7 +73,10 @@ from framework.stage6.p6_source_wrapper_profile_v1 import (
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-PUBLIC_CONTRACT_PATH = REPOSITORY_ROOT / "configs/execution/p6_h800_search.example.yaml"
+PUBLIC_CONTRACT_PATH = (
+    REPOSITORY_ROOT
+    / "configs/execution/p6_{hardware_profile}_search.example.yaml"
+)
 SOURCE_ADAPTER_PATH = REPOSITORY_ROOT / "tools/release/build_p6_history_registry.py"
 MEASUREMENT_ADAPTER_PATH = REPOSITORY_ROOT / "tools/release/measure_p6_history_batch.py"
 EXPECTED_ASSET_LABELS = ("training-data", "model-init", "toolchain")
@@ -80,6 +93,7 @@ LEGACY_LOCAL_KEYS = frozenset(
         "measurement_step",
         "local_output_root",
         "history_recipe_derivation_path",
+        "hardware_profile",
     }
 )
 LEGACY_REQUIRED_KEYS = frozenset(
@@ -114,6 +128,9 @@ class _LegacyLocator:
     asset_paths: Mapping[str, Path]
     local_input_paths: Mapping[str, Path]
     expected_recipe_path: Path | None
+    local_schema_version: str
+    public_contract_path: Path
+    public_contract: PublicP6CoptV2XContract
 
 
 class _UniqueKeyLoader(yaml.SafeLoader):
@@ -214,11 +231,18 @@ def _validate_bootstrap_profiles(
     runner_template: Path,
     source_wrapper_profile: Path | None,
     post_source_adapter_profile: Path | None,
+    hardware_profile: HardwareExecutionProfile,
 ) -> None:
+    if hardware_profile.profile_id != "h800" and (
+        source_wrapper_profile is None or post_source_adapter_profile is None
+    ):
+        raise FullChainBootstrapError(
+            "history_execution_invalid", "hardware-bound profiles are required"
+        )
+    loaded_source_profile: Mapping[str, Any] | None = None
     if source_wrapper_profile is not None:
         try:
-            profile = load_source_wrapper_profile(source_wrapper_profile)
-            render_self_contained_source_wrapper(profile, history_root=root)
+            loaded_source_profile = load_source_wrapper_profile(source_wrapper_profile)
         except P6SourceWrapperProfileError as error:
             raise FullChainBootstrapError(
                 error.category, "source wrapper profile is invalid"
@@ -229,12 +253,26 @@ def _validate_bootstrap_profiles(
         )
     if post_source_adapter_profile is not None:
         try:
-            profile = post_source_profile.load_post_source_adapter_profile(
+            loaded_post_source_profile = post_source_profile.load_post_source_adapter_profile(
                 post_source_adapter_profile,
                 private_root=root,
             )
-            post_source_profile.require_post_source_adapter_profile_v3(profile)
-            wrapper_paths = validate_post_source_adapter_wrappers(profile, private_root=root)
+            if (
+                loaded_post_source_profile.schema_version
+                == post_source_profile.PROFILE_SCHEMA_VERSION_V4
+            ):
+                post_source_profile.require_post_source_adapter_profile_v4(
+                    loaded_post_source_profile
+                )
+            else:
+                post_source_profile.require_post_source_adapter_profile_v3(
+                    loaded_post_source_profile
+                )
+            if loaded_post_source_profile.hardware_profile is not hardware_profile:
+                raise post_source_profile.P6PostSourceAdapterProfileError()
+            wrapper_paths = validate_post_source_adapter_wrappers(
+                loaded_post_source_profile, private_root=root
+            )
             validate_post_source_wrapper_runner_binding(
                 runner_template,
                 normalized_private_root=root,
@@ -248,6 +286,13 @@ def _validate_bootstrap_profiles(
             category = getattr(error, "category", "history_execution_invalid")
             raise FullChainBootstrapError(
                 category, "post-source adapter profile is invalid"
+            ) from error
+    if loaded_source_profile is not None:
+        try:
+            render_self_contained_source_wrapper(loaded_source_profile, history_root=root)
+        except P6SourceWrapperProfileError as error:
+            raise FullChainBootstrapError(
+                error.category, "source wrapper profile is invalid"
             ) from error
 
 
@@ -288,6 +333,7 @@ def _build_private_binding(
     validated_template: Any,
     interface: Mapping[str, Any],
     gpu_probe: GpuProbe,
+    hardware_profile: HardwareExecutionProfile,
 ) -> dict[str, Any]:
     try:
         return build_history_binding(
@@ -302,6 +348,7 @@ def _build_private_binding(
                 for name in LOCAL_INPUT_NAMES
             },
             gpu_probe=gpu_probe,
+            profile=hardware_profile,
         )
     except (P6HistoryBindingError, P6HistoryTrainingContractError) as error:
         if isinstance(error, P6HistoryTrainingContractError):
@@ -324,12 +371,20 @@ def _publish_bootstrap_pair(
     expected_recipe: Mapping[str, Any] | None,
     binding_path: Path,
     config_path: Path,
+    public_contract_path: Path,
+    hardware_profile: HardwareExecutionProfile,
 ) -> None:
+    try:
+        validate_history_execution_binding(binding, profile=hardware_profile)
+    except P6HistoryBindingError as error:
+        raise FullChainBootstrapError(
+            "execution_interface_unavailable", "rendered binding is invalid"
+        ) from error
     validate_rendered_pair(
         binding,
         config,
         output_root,
-        public_contract_path=PUBLIC_CONTRACT_PATH,
+        public_contract_path=public_contract_path,
         error_factory=FullChainBootstrapError,
     )
     try:
@@ -360,6 +415,7 @@ def _validated_bootstrap_runtime(
     binding_path: Path,
     config_path: Path,
     runner_template: Path,
+    hardware_profile: HardwareExecutionProfile,
 ) -> tuple[Any, Mapping[str, Any], dict[str, Any]]:
     _validate_bootstrap_external(
         source_contract,
@@ -376,6 +432,7 @@ def _validated_bootstrap_runtime(
         runner_template=runner_template,
         source_wrapper_profile=source_wrapper_profile,
         post_source_adapter_profile=post_source_adapter_profile,
+        hardware_profile=hardware_profile,
     )
     return _validated_runner_interface(runner_template, root, source_wrapper_profile)
 
@@ -395,6 +452,7 @@ def materialize_full_chain_binding(
     locator, root, expected_recipe, source_contract, recipe_v2 = (
         _validated_bootstrap_source(legacy_local_config, runner_template)
     )
+    hardware_profile = locator.public_contract.hardware_profile
     validated_template, stage1_scan, interface = _validated_bootstrap_runtime(
         source_contract,
         recipe_v2=recipe_v2,
@@ -406,6 +464,7 @@ def materialize_full_chain_binding(
         binding_path=binding_path,
         config_path=config_path,
         runner_template=runner_template,
+        hardware_profile=hardware_profile,
     )
     binding = _build_private_binding(
         root=root,
@@ -413,9 +472,15 @@ def materialize_full_chain_binding(
         validated_template=validated_template,
         interface=interface,
         gpu_probe=gpu_probe,
+        hardware_profile=hardware_profile,
     )
     config = _render_full_chain_local_config(
-        locator, stage1_scan, root, output_root, binding_path
+        locator,
+        stage1_scan,
+        root,
+        output_root,
+        binding_path,
+        hardware_profile,
     )
     _publish_bootstrap_pair(
         binding=binding,
@@ -424,17 +489,37 @@ def materialize_full_chain_binding(
         expected_recipe=expected_recipe,
         binding_path=binding_path,
         config_path=config_path,
+        public_contract_path=locator.public_contract_path,
+        hardware_profile=hardware_profile,
     )
     return binding
 
 
 def _load_legacy_local_locator(path: Path) -> _LegacyLocator:
     payload = _load_private_yaml(path, "legacy_locator_invalid")
+    schema_version = payload.get("schema_version")
+    if schema_version == "p6_h800_coptv2x_local_v2":
+        allowed_keys = LEGACY_LOCAL_KEYS - {"hardware_profile"}
+        profile_id: object = "h800"
+    elif schema_version == "p6_coptv2x_local_v3":
+        allowed_keys = LEGACY_LOCAL_KEYS
+        profile_id = payload.get("hardware_profile")
+    else:
+        raise FullChainBootstrapError(
+            "legacy_locator_invalid", "legacy locator contract is invalid"
+        )
+    public_contract_path, public_contract = _selected_public_contract(profile_id)
     if (
         not LEGACY_REQUIRED_KEYS.issubset(payload)
-        or not set(payload).issubset(LEGACY_LOCAL_KEYS)
-        or payload.get("schema_version") != "p6_h800_coptv2x_local_v2"
-        or payload.get("target") != "h800"
+        or not set(payload).issubset(allowed_keys)
+        or (
+            schema_version == "p6_coptv2x_local_v3"
+            and "hardware_profile" not in payload
+        )
+        or payload.get("target") != public_contract.target
+        or public_contract.hardware_profile.profile_id != profile_id
+        or tuple(asset.label for asset in public_contract.assets)
+        != EXPECTED_ASSET_LABELS
     ):
         raise FullChainBootstrapError(
             "legacy_locator_invalid", "legacy locator contract is invalid"
@@ -456,7 +541,33 @@ def _load_legacy_local_locator(path: Path) -> _LegacyLocator:
         asset_paths=assets,
         local_input_paths=inputs,
         expected_recipe_path=expected_recipe_path,
+        local_schema_version=schema_version,
+        public_contract_path=public_contract_path,
+        public_contract=public_contract,
     )
+
+
+def _selected_public_contract(
+    raw_profile_id: object,
+) -> tuple[Path, PublicP6CoptV2XContract]:
+    try:
+        if not isinstance(raw_profile_id, str):
+            raise ValueError
+        profile = load_hardware_execution_profile(raw_profile_id)
+        template = str(PUBLIC_CONTRACT_PATH)
+        public_contract_path = Path(
+            template.format(hardware_profile=profile.profile_id)
+        )
+        public_contract = load_public_contract(public_contract_path)
+    except (P6CoptV2XContractError, KeyError, OSError, ValueError):
+        raise FullChainBootstrapError(
+            "legacy_locator_invalid", "public contract selection is invalid"
+        ) from None
+    if public_contract.hardware_profile is not profile:
+        raise FullChainBootstrapError(
+            "legacy_locator_invalid", "public contract selection is invalid"
+        )
+    return public_contract_path, public_contract
 
 
 def _parse_expected_recipe_path(raw_path: object) -> Path | None:
@@ -738,12 +849,18 @@ def _render_full_chain_local_config(
     root: Path,
     local_output_root: Path,
     binding_output: Path,
+    hardware_profile: HardwareExecutionProfile,
 ) -> dict[str, Any]:
     stage1_scan_step = _render_stage1_scan_step(root, stage1_scan)
     python_executable = str(Path(sys.executable).resolve(strict=True))
     return {
-        "schema_version": "p6_h800_coptv2x_local_v2",
-        "target": "h800",
+        "schema_version": locator.local_schema_version,
+        "target": hardware_profile.target_hardware_id,
+        **(
+            {"hardware_profile": hardware_profile.profile_id}
+            if locator.local_schema_version == "p6_coptv2x_local_v3"
+            else {}
+        ),
         "asset_paths": {
             label: str(locator.asset_paths[label]) for label in EXPECTED_ASSET_LABELS
         },
