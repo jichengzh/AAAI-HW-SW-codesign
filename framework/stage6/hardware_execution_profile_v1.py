@@ -93,6 +93,15 @@ def validate_profile_gpu_policy(
     return canonical_indices
 
 
+def validate_profile_backend(
+    profile: HardwareExecutionProfile, backend: str
+) -> None:
+    """Require an execution backend admitted by the selected profile."""
+    _validate_profile(profile)
+    if not isinstance(backend, str) or backend not in profile.backend_scope:
+        raise ValueError("backend does not match the hardware execution profile")
+
+
 def validate_profile_gpu_records(
     profile: HardwareExecutionProfile,
     records: Sequence[object],
@@ -100,7 +109,11 @@ def validate_profile_gpu_records(
 ) -> None:
     """Validate injected GPU model and occupancy records for a profile."""
     canonical_indices = validate_profile_gpu_policy(profile, indices)
-    if isinstance(records, (str, bytes)) or len(records) != len(canonical_indices):
+    if (
+        not isinstance(records, Sequence)
+        or isinstance(records, (str, bytes))
+        or len(records) != len(canonical_indices)
+    ):
         raise ValueError("GPU records do not match the profile policy")
     try:
         by_index = {record.index: record for record in records}  # type: ignore[attr-defined]
@@ -110,6 +123,9 @@ def validate_profile_gpu_records(
         raise ValueError("GPU records do not match the profile policy")
     for index in canonical_indices:
         record = by_index[index]
+        record_index = getattr(record, "index", None)
+        if isinstance(record_index, bool) or not isinstance(record_index, int):
+            raise ValueError("GPU records do not match the profile policy")
         if _normalize_model(getattr(record, "model_name", None)) not in profile.allowed_normalized_gpu_models:
             raise ValueError("GPU model does not match the hardware execution profile")
         occupancy = getattr(record, "occupancy", None)
@@ -124,8 +140,12 @@ def validate_profile_gpu_records(
 
 
 def _validate_profile(profile: HardwareExecutionProfile) -> None:
-    if not isinstance(profile, HardwareExecutionProfile):
-        raise ValueError("hardware execution profile is required")
+    if (
+        not isinstance(profile, HardwareExecutionProfile)
+        or not isinstance(profile.profile_id, str)
+        or _PROFILES.get(profile.profile_id) is not profile
+    ):
+        raise ValueError("hardware execution profile must be loaded from the registry")
 
 
 def _validate_declared_yaml_path(path: PurePosixPath) -> None:

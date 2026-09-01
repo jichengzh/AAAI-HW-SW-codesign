@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from pathlib import PurePosixPath
 
 import pytest
@@ -11,6 +11,7 @@ from framework.stage6.hardware_execution_profile_v1 import (
     HardwareExecutionProfile,
     default_hardware_execution_profile,
     load_hardware_execution_profile,
+    validate_profile_backend,
     validate_profile_gpu_policy,
     validate_profile_gpu_records,
 )
@@ -76,6 +77,29 @@ def test_unknown_profile_is_rejected() -> None:
         load_hardware_execution_profile("a100")
 
 
+def test_validators_require_the_exact_registry_profile_instance() -> None:
+    """Catches forged frozen profile values bypassing registry authority."""
+    profile = default_hardware_execution_profile()
+    forged_profile = replace(profile)
+    indices = (17, 19)
+    records = _records(indices, model_name="NVIDIA H800 80GB HBM3")
+
+    with pytest.raises(ValueError, match="registry"):
+        validate_profile_gpu_policy(forged_profile, indices)
+    with pytest.raises(ValueError, match="registry"):
+        validate_profile_gpu_records(forged_profile, records, indices)
+    with pytest.raises(ValueError, match="registry"):
+        validate_profile_backend(forged_profile, "tvm_auto")
+
+
+def test_profile_backend_rejects_backend_outside_the_selected_scope() -> None:
+    """Catches a selected profile admitting a backend for another execution path."""
+    profile = load_hardware_execution_profile("rtx4090")
+
+    with pytest.raises(ValueError, match="backend"):
+        validate_profile_backend(profile, "tensorrt")
+
+
 @pytest.mark.parametrize("indices", [(0,), (0, 1, 2), (0, 1, 2, 3, 4)])
 def test_rtx4090_requires_exactly_four_gpu_indices(indices: tuple[int, ...]) -> None:
     """Catches RTX policies admitting a non-four-card allocation."""
@@ -103,3 +127,30 @@ def test_profile_gpu_records_reject_model_from_another_profile() -> None:
 
     with pytest.raises(ValueError, match="profile"):
         validate_profile_gpu_records(profile, records, indices)
+
+
+@pytest.mark.parametrize(
+    ("record_index", "indices"),
+    [(True, (1, 19)), ("17", (17, 19))],
+)
+def test_profile_gpu_records_reject_non_integer_record_indices(
+    record_index: object,
+    indices: tuple[int, ...],
+) -> None:
+    """Catches bool and non-integer record indices matching canonical policy values."""
+    profile = default_hardware_execution_profile()
+    records = (
+        GpuRecord(record_index, "GPU-fixture-17", "NVIDIA H800 80GB HBM3", 0.0),  # type: ignore[arg-type]
+        GpuRecord(19, "GPU-fixture-19", "NVIDIA H800 80GB HBM3", 0.0),
+    )
+
+    with pytest.raises(ValueError, match="GPU records"):
+        validate_profile_gpu_records(profile, records, indices)
+
+
+def test_profile_gpu_records_reject_non_sequence_records_stably() -> None:
+    """Catches invalid record inputs leaking a TypeError from len()."""
+    profile = default_hardware_execution_profile()
+
+    with pytest.raises(ValueError, match="GPU records"):
+        validate_profile_gpu_records(profile, object(), (17, 19))  # type: ignore[arg-type]
