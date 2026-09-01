@@ -2877,8 +2877,9 @@ def test_run_p6_projection_failure_is_atomic_before_measurement_request_write(
     local = _loaded_local_config(tmp_path)
     measurement_started = False
 
-    def fail_projection(request: Mapping[str, Any]) -> None:
+    def fail_projection(request: Mapping[str, Any], *, profile: Any) -> None:
         del request
+        assert profile.profile_id == "h800"
         raise P6HistorySourceMaterializationError()
 
     monkeypatch.setattr(

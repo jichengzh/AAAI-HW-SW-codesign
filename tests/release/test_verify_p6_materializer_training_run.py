@@ -5,17 +5,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import shutil
-import subprocess
 from typing import Any, Iterator
 
 import pytest
 import yaml
 
-from framework.stage6 import coptv2x_h800_search_v2 as search_execution
 from framework.stage6.coptv2x_h800_search_v2 import P6CoptV2XExecutionError
-from framework.stage6.hardware_execution_profile_v1 import (
-    load_hardware_execution_profile,
-)
 from framework.stage6.p6_history_measurement_v1 import (
     resolve_validated_history_round_paths,
 )
@@ -29,8 +24,6 @@ from tools.release.verify_p6_materializer_training_run import (
     verify_materializer_training_run,
 )
 import tools.release.verify_p6_materializer_training_run as verification
-import tools.release.run_p6_h800_search as search_runner
-import tools.release.measure_p6_history_batch as measurement_runner
 from tests.release.test_run_p6_h800_search import _history_cli_fixture, _run_cli
 from tests.stage6.test_coptv2x_h800_search import (
     _gold176,
@@ -65,61 +58,8 @@ def _completed_rtx_template(
     live = workspace / "live"
     live.mkdir()
     paths = _history_cli_fixture(live, hardware_profile="rtx4090")
-    profile = load_hardware_execution_profile("rtx4090")
-    project_request = search_execution.project_source_materialization_request
-
-    def profile_command_runner(argv: tuple[str, ...], cwd: Path) -> int:
-        if any(Path(value).name == "measure_p6_history_batch.py" for value in argv):
-            values = list(argv)
-            binding = measurement_runner._load_private_json(
-                Path(values[values.index("--binding") + 1])
-            )
-            request = measurement_runner._load_private_json(
-                Path(values[values.index("--measurement-request") + 1])
-            )
-            feedback_path = Path(values[values.index("--feedback-json") + 1])
-            round_root = Path(values[values.index("--round-output-root") + 1])
-            feedback = measurement_runner.run_history_measurement_batch(
-                request,
-                binding,
-                round_root,
-                measurement_runner.SubprocessRunner(),
-                measurement_runner.NvidiaSmiGpuProbe(),
-                profile=profile,
-            )
-            measurement_runner._write_feedback_atomic(
-                round_root, feedback_path, feedback
-            )
-            return 0
-        return subprocess.run(
-            argv,
-            cwd=cwd,
-            env=paths["env"],
-            shell=False,
-            text=True,
-            capture_output=True,
-            check=False,
-        ).returncode
-
-    with pytest.MonkeyPatch.context() as monkeypatch:
-        monkeypatch.setenv("PATH", paths["env"]["PATH"])
-        monkeypatch.setattr(
-            search_execution,
-            "project_source_materialization_request",
-            lambda request: project_request(request, profile=profile),
-        )
-        monkeypatch.setattr(search_runner, "_run_command", profile_command_runner)
-        result = search_runner.main(
-            [
-                "--contract",
-                str(paths["contract"]),
-                "--local-config",
-                str(paths["local"]),
-                "--code-revision",
-                "test-revision",
-            ]
-        )
-    assert result == 0
+    result = _run_cli(paths, env=paths["env"])
+    assert result.returncode == 0, result.stderr
     _write_native_completion_leaves(paths)
     snapshot = workspace / "snapshot"
     shutil.copytree(live, snapshot, symlinks=True)

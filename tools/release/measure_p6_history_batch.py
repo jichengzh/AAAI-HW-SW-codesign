@@ -22,7 +22,14 @@ sys.path = [
     *(entry for entry in sys.path if entry != _REPOSITORY_ROOT_ENTRY),
 ]
 
-from framework.stage6.p6_history_binding_v1 import GpuRecord  # noqa: E402
+from framework.stage6.hardware_execution_profile_v1 import (  # noqa: E402
+    load_hardware_execution_profile,
+)
+from framework.stage6.p6_history_binding_v1 import (  # noqa: E402
+    GpuRecord,
+    public_binding_projection,
+    validate_history_execution_binding,
+)
 from framework.stage6.p6_gpu_policy_v1 import canonical_gpu_indices  # noqa: E402
 from framework.stage6.p6_history_measurement_v1 import (  # noqa: E402
     P6HistoryMeasurementError,
@@ -273,12 +280,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         _prepare_destination(args.round_output_root, args.feedback_json)
         binding = _load_private_json(args.binding)
         request = _load_private_json(args.measurement_request)
+        binding_projection = public_binding_projection(binding)
+        profile = load_hardware_execution_profile(
+            binding_projection["hardware_profile"]
+        )
+        validate_history_execution_binding(binding, profile)
         feedback = run_history_measurement_batch(
             request,
             binding,
             args.round_output_root,
             SubprocessRunner(),
             NvidiaSmiGpuProbe(),
+            profile=profile,
         )
         _write_feedback_atomic(args.round_output_root, args.feedback_json, feedback)
     except P6HistoryMeasurementError as error:

@@ -944,6 +944,106 @@ def test_measurement_cli_executes_synthetic_chain_and_atomically_writes_feedback
     assert_adapter_leaf_chain(private_root / "private-runs/0", request, binding)
 
 
+def test_measurement_cli_derives_canonical_rtx_profile_from_validated_binding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Catches the private bridge silently falling back to the H800 profile."""
+    binding = _synthetic_rtx_history_binding(tmp_path)
+    round_output_root = Path(binding["private_root"]) / "controller-round"
+    round_output_root.mkdir()
+    binding_path = _write_json(round_output_root / "binding.json", binding)
+    request_path = _write_json(round_output_root / "request.json", _measurement_request())
+    feedback_path = round_output_root / "feedback.json"
+    observed: list[str] = []
+
+    def receive_profile(*args: Any, profile: Any = None, **kwargs: Any) -> dict[str, Any]:
+        del args, kwargs
+        observed.append(profile.profile_id)
+        return {"safe": "feedback"}
+
+    monkeypatch.setattr(measurement_cli, "run_history_measurement_batch", receive_profile)
+    monkeypatch.setattr(measurement_cli, "_write_feedback_atomic", lambda *args: None)
+
+    result = measurement_cli.main(
+        [
+            "--binding",
+            str(binding_path),
+            "--measurement-request",
+            str(request_path),
+            "--feedback-json",
+            str(feedback_path),
+            "--round-output-root",
+            str(round_output_root),
+        ]
+    )
+    output = capsys.readouterr()
+
+    assert result == 0
+    assert output.out == "measurement_feedback_written\n"
+    assert output.err == ""
+    assert observed == ["rtx4090"]
+
+
+@pytest.mark.parametrize(
+    ("policy_profile", "target_hardware"),
+    [
+        pytest.param("unknown-profile", "rtx4090", id="unknown-profile"),
+        pytest.param("rtx4090", "h800", id="target-policy-mismatch"),
+    ],
+)
+def test_measurement_cli_rejects_invalid_binding_profile_before_runner_or_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    policy_profile: str,
+    target_hardware: str,
+) -> None:
+    """Catches untrusted binding profiles reaching execution dependencies."""
+    original = _synthetic_rtx_history_binding(tmp_path)
+    binding = {
+        **original,
+        "gpu_policy": {
+            **original["gpu_policy"],
+            "hardware_profile": policy_profile,
+        },
+        "target": {**original["target"], "hardware": target_hardware},
+    }
+    round_output_root = Path(binding["private_root"]) / "controller-round"
+    round_output_root.mkdir()
+    binding_path = _write_json(round_output_root / "binding.json", binding)
+    request_path = _write_json(round_output_root / "request.json", _measurement_request())
+    feedback_path = round_output_root / "feedback.json"
+
+    def forbidden(*args: Any, **kwargs: Any) -> Any:
+        del args, kwargs
+        raise AssertionError("runner or probe reached")
+
+    monkeypatch.setattr(measurement_cli, "run_history_measurement_batch", forbidden)
+    monkeypatch.setattr(measurement_cli, "SubprocessRunner", forbidden)
+    monkeypatch.setattr(measurement_cli, "NvidiaSmiGpuProbe", forbidden)
+
+    result = measurement_cli.main(
+        [
+            "--binding",
+            str(binding_path),
+            "--measurement-request",
+            str(request_path),
+            "--feedback-json",
+            str(feedback_path),
+            "--round-output-root",
+            str(round_output_root),
+        ]
+    )
+    output = capsys.readouterr()
+
+    assert result == 1
+    assert output.out == ""
+    assert output.err == "history_execution_invalid\n"
+    assert not feedback_path.exists()
+
+
 def test_measurement_cli_keeps_history_artifacts_separate_from_external_feedback_root(
     tmp_path: Path,
 ) -> None:

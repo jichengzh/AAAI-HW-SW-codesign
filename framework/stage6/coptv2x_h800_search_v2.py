@@ -846,7 +846,11 @@ def _run_search_round(
         reject_existing=local.candidate_source_mode == "framework_stage2_search_space",
     )
     try:
-        request = dict(project_source_materialization_request(request).request)
+        request = dict(
+            project_source_materialization_request(
+                request, profile=local.hardware_profile
+            ).request
+        )
     except P6HistorySourceMaterializationError:
         raise P6CoptV2XExecutionError(
             "history_execution_invalid", "history execution invalid"

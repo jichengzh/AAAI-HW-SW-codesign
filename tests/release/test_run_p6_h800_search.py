@@ -13,7 +13,6 @@ import pytest
 import yaml
 
 from framework.stage2.canonical_search_v3 import build_capability_profile
-from framework.stage6.coptv2x_h800_search_v2 import P6CoptV2XRunState
 from framework.stage6.p6_history_normalization_v1 import normalize_history_inputs
 from framework.stage6.p6_history_recipe_profiles_v1 import (
     PROFILE_V1,
@@ -31,7 +30,6 @@ from tests.release.scanner_owned_stage1_fixture import (
 )
 from tests.stage6.test_p6_history_normalization import _history_root
 from tests.stage6.test_p6_post_source_adapter_profile import v5_private_source_map
-import tools.release.run_p6_h800_search as runner
 
 try:
     import resource
@@ -681,42 +679,24 @@ def test_cli_runs_v2_loop_without_public_summary_and_keeps_outputs_local(tmp_pat
 
 def test_cli_runs_v3_rtx_hardware_profile_through_existing_executable(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    paths = _cli_fixture(tmp_path, hardware_profile="rtx4090")
-    observed_profiles: list[tuple[str, str]] = []
+    paths = _history_cli_fixture(tmp_path, hardware_profile="rtx4090")
 
-    def complete_without_launch(contract: Any, local: Any, *_: Any) -> P6CoptV2XRunState:
-        observed_profiles.append(
-            (contract.hardware_profile.profile_id, local.hardware_profile.profile_id)
+    result = _run_cli(paths, env=paths["env"])
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "completed\n"
+    requests = [
+        json.loads(
+            (paths["output_root"] / f"round-{round_index:02d}" / "measurement_request.json")
+            .read_text(encoding="utf-8")
         )
-        return P6CoptV2XRunState(
-            schema_version="p6_h800_coptv2x_local_state_v2",
-            status="completed",
-            completed_rounds=4,
-            measured_candidate_count=16,
-            failure_code=None,
-            local_state_path=paths["output_root"] / "state.json",
-        )
-
-    monkeypatch.setattr(runner, "run_p6_coptv2x_search", complete_without_launch)
-    result = runner.main(
-        [
-            "--contract",
-            str(paths["contract"]),
-            "--local-config",
-            str(paths["local"]),
-            "--code-revision",
-            "test-revision",
-        ]
-    )
-    output = capsys.readouterr()
-
-    assert result == 0
-    assert output.out == "completed\n"
-    assert output.err == ""
-    assert observed_profiles == [("rtx4090", "rtx4090")]
+        for round_index in range(4)
+    ]
+    assert {row["hardware_id"] for request in requests for row in request["rows"]} == {
+        "rtx4090"
+    }
+    assert len({row["row_id"] for request in requests for row in request["rows"]}) == 16
 
 
 def test_cli_rejects_hardware_profile_mismatch_before_adapter_launch(

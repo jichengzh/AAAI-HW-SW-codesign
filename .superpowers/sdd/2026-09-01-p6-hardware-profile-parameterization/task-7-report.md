@@ -56,9 +56,11 @@ post-source profile symlink:
 - exact public report allowlist and legacy H800 report profile provenance.
 - rejection of a dangling post-source profile symlink without private leakage.
 
-The fake RTX completion uses the existing controller, round iteration,
-selection, feedback, and completion mechanics with a local injected fake
-measurement boundary. It launches no GPU, remote, or private production runtime.
+The fake RTX completion uses the existing executable, controller, round
+iteration, request projection, measurement CLI subprocess, selection, feedback,
+and completion mechanics. Only the external leaf executables and GPU probe are
+local deterministic fixtures; no GPU, remote, or private production runtime is
+launched.
 
 ## Verification
 
@@ -95,13 +97,41 @@ commands, receipts, logs, manifests, or private error details are serialized.
 All invalid evidence continues to collapse to `history_execution_invalid` in the
 API and `verification_failed` in the CLI.
 
+## Fix round 1: real RTX execution bridge
+
+The former scoped concern is resolved. A new real-path regression first removed
+both test-only profile injections and reproduced `execution_failed` from the v3
+RTX executable before round completion. The focused measurement bridge tests
+also reproduced a missing `profile` argument and proved that unknown or
+target-mismatched private binding profiles reached runner/probe construction.
+
+The controller now projects each request with `local.hardware_profile`. The
+measurement CLI derives a canonical registry profile from the private binding's
+validated public projection, validates the complete private execution binding
+against that exact profile, and only then constructs the runner/probe and calls
+`run_history_measurement_batch(profile=...)`. No public option, GPU override, or
+free-form environment selector was added.
+
+Fix-round GREEN evidence:
+
+```text
+real v3 RTX executable: 1 passed in 19.91s
+binding bridge/rejection slice: 3 passed in 1.38s
+owned release suites: 94 passed in 171.30s
+controller/fresh-run suites: 151 passed in 49.39s
+verifier branch coverage: 46 passed, 82.03%
+```
+
+The release suite initially exposed two unrelated fixture failures: the copied
+private test runtime omitted the registry-declared `configs/hardware` and
+`configs/environment` YAMLs. The same failures reproduced with the measurement
+CLI fix removed. The focused adapter-chain fixture now copies those declared
+configuration directories, restoring legacy H800 execution without changing
+production runtime behavior.
+
 ## Scoped concern
 
-Task 7 did not modify unowned controller or measurement modules. The fake RTX
-fixture has to inject the selected profile at two existing optional-profile
-call sites: request projection in `coptv2x_h800_search_v2.py` and the release
-measurement adapter's `run_history_measurement_batch` call. Without that
-injection, those call sites select the legacy H800 default. The named runner
-does load and forward v3 contract/local profiles correctly, but a real RTX
-subprocess execution requires those upstream/downstream call sites to forward
-the selected profile before Task 10.
+No functional concern remains in the Task 7 scope. Coverage collection for the
+measurement CLI reports 49% because most CLI cases execute it in subprocesses;
+the new in-process profile selection and pre-execution rejection branches are
+covered directly. The verifier retains its enforced 80% branch gate at 82.03%.

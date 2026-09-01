@@ -152,6 +152,14 @@ def _copy_runtime(private_root: Path) -> None:
         private_root / "framework",
         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
     )
+    shutil.copytree(
+        REPOSITORY_ROOT / "configs" / "hardware",
+        private_root / "configs" / "hardware",
+    )
+    shutil.copytree(
+        REPOSITORY_ROOT / "configs" / "environment",
+        private_root / "configs" / "environment",
+    )
     (private_root / "tools/release").mkdir(parents=True)
 
 
