@@ -3170,6 +3170,17 @@ def test_v3_rtx_capability_profile_reaches_profile_derived_search_task(
     assert task.hardware_id == "rtx4090"
 
 
+def test_hardware_profile_legacy_search_input_loader_defaults_to_h800(
+    tmp_path: Path,
+) -> None:
+    local = _loaded_local_config(tmp_path)
+
+    _, _, _, selected_profile = execution._load_search_inputs(local)
+
+    assert selected_profile["hardware_target"] == "h800"
+    assert selected_profile["dispatch_key"] == "tvm_auto"
+
+
 def test_v3_rtx_hardware_profile_rejects_mixed_h800_capability_context(
     tmp_path: Path,
 ) -> None:

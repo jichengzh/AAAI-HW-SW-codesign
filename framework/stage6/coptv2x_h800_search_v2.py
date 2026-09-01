@@ -455,7 +455,7 @@ def _validate_stage2_hardware_target(
 
 def _load_search_inputs(
     local: LocalP6CoptV2XConfig,
-    contract: PublicP6CoptV2XContract,
+    contract: PublicP6CoptV2XContract | None = None,
 ) -> tuple[
     list[dict[str, Any]],
     list[dict[str, Any]],
@@ -1015,13 +1015,22 @@ def _build_search_task(
 
 
 def _select_profile(
-    profiles: Sequence[Mapping[str, Any]], contract: PublicP6CoptV2XContract
+    profiles: Sequence[Mapping[str, Any]],
+    contract: PublicP6CoptV2XContract | None = None,
 ) -> dict[str, Any]:
     try:
         validated = [validate_capability_profile(profile) for profile in profiles]
     except ValueError as exc:
         raise P6CoptV2XContractError("capability profile invalid") from exc
-    hardware_target = contract.hardware_profile.target_hardware_id
+    hardware_profile = (
+        contract.hardware_profile
+        if contract is not None
+        else default_hardware_execution_profile()
+    )
+    hardware_target = hardware_profile.target_hardware_id
+    execution_backend = (
+        contract.execution_backend if contract is not None else FIXED_BACKEND
+    )
     if any(
         str(profile["hardware_target"]).lower() != hardware_target
         for profile in validated
@@ -1033,7 +1042,7 @@ def _select_profile(
         profile
         for profile in validated
         if str(profile["hardware_target"]).lower() == hardware_target
-        and str(profile["dispatch_key"]) == contract.execution_backend
+        and str(profile["dispatch_key"]) == execution_backend
     ]
     if len(matching) != 1:
         raise P6CoptV2XContractError(
