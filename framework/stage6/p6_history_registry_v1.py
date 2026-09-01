@@ -18,6 +18,7 @@ from framework.stage5.production_search_v1 import (
     validate_source_contract,
 )
 from framework.stage6.hardware_execution_profile_v1 import (
+    HardwareExecutionProfile,
     load_hardware_execution_profile,
 )
 from framework.stage6.p6_history_binding_v1 import (
@@ -65,11 +66,6 @@ RECIPE_V2_KEYS = {
     "group_id_template",
     "artifact_id_template",
     "shared_source_path_templates",
-}
-EXPECTED_BINDING_TARGET = {
-    "model": "pyramid",
-    "hardware": "h800",
-    "backend": "tvm_auto",
 }
 FORBIDDEN_CONTEXT_TOKENS = (
     "metric",
@@ -216,7 +212,10 @@ def _require_private_registry_output(path: Path) -> None:
 
 def _validate_plan(
     raw_plan: Mapping[str, Any],
-) -> dict[tuple[tuple[int, int, int], str], tuple[str, str, str]]:
+) -> tuple[
+    HardwareExecutionProfile,
+    dict[tuple[tuple[int, int, int], str], tuple[str, str, str]],
+]:
     if not isinstance(raw_plan, Mapping):
         _invalid("candidate plan must be an object")
     hardware_target = raw_plan.get("hardware_target")
@@ -227,7 +226,7 @@ def _validate_plan(
     except ValueError:
         _invalid("candidate plan hardware target is unknown")
     try:
-        return validate_p6_candidate_plan(raw_plan, profile=profile)
+        return profile, validate_p6_candidate_plan(raw_plan, profile=profile)
     except ValueError as error:
         _invalid(str(error))
 
@@ -249,8 +248,11 @@ def _validate_formal_base_matches_binding(
         _invalid("formal axis base width differs from binding base width")
 
 
-def _validate_template(binding: Mapping[str, Any]) -> ValidatedSourceTemplate:
-    private_root, template = _validate_template_binding(binding)
+def _validate_template(
+    binding: Mapping[str, Any],
+    profile: HardwareExecutionProfile,
+) -> ValidatedSourceTemplate:
+    private_root, template = _validate_template_binding(binding, profile)
     validated_template = _validate_source_contract_template(template, binding)
     recipe = _validate_recipe(validated_template.get("dynamic_materialization_recipe"))
     if recipe.get("schema_version") == RECIPE_V2:
@@ -266,18 +268,24 @@ def _validate_template(binding: Mapping[str, Any]) -> ValidatedSourceTemplate:
 
 def _validate_template_binding(
     binding: Mapping[str, Any],
+    profile: HardwareExecutionProfile,
 ) -> tuple[Path, dict[str, Any]]:
     if not isinstance(binding, Mapping):
         _invalid("history binding must be an object")
     try:
-        validate_history_execution_binding(binding)
+        validate_history_execution_binding(binding, profile=profile)
     except P6HistoryBindingError as error:
         raise P6HistoryRegistryError(
             "source_registry_invalid", "history execution interface is invalid"
         ) from error
     if (
         binding.get("schema_version") != BINDING_SCHEMA_VERSION
-        or binding.get("target") != EXPECTED_BINDING_TARGET
+        or binding.get("target")
+        != {
+            "model": "pyramid",
+            "hardware": profile.target_hardware_id,
+            "backend": "tvm_auto",
+        }
         or binding.get("status") != "validated"
     ):
         _invalid("history binding contract is incompatible")
@@ -606,8 +614,8 @@ def materialize_history_registry(
         local_output_root = _resolve_existing_root(local_registry_root, "local output root")
         output_path = _resolve_registry_output(registry_output_path, local_output_root)
         _require_private_registry_output(output_path)
-        plan_mapping = _validate_plan(plan)
-        validated = _validate_template(binding)
+        profile, plan_mapping = _validate_plan(plan)
+        validated = _validate_template(binding, profile)
         _validate_formal_base_matches_binding(
             plan,
             validated.template,

@@ -31,6 +31,7 @@ from tests.stage6.pyramid_formal_space_support import (
 
 
 SYNTHETIC_GPU_INDICES = (101, 103, 107)
+RTX_GPU_INDICES = (*SYNTHETIC_GPU_INDICES, 109)
 
 
 def _canonical_sha(payload: Mapping[str, Any]) -> str:
@@ -381,6 +382,14 @@ def _binding(tmp_path: Path) -> dict[str, Any]:
         },
         "private_root": str(private_root),
         **_execution_binding_fields(private_root),
+        "gpu_policy": {
+            "indices": list(SYNTHETIC_GPU_INDICES),
+            "uuid_by_index": {
+                str(index): f"GPU-fixture-{index}"
+                for index in SYNTHETIC_GPU_INDICES
+            },
+            "hardware_profile": "h800",
+        },
         "source_contract_template": {
             "schema_version": "stage5_source_contract_v1",
             "group_id": "pyramid|16x32x64",
@@ -394,6 +403,22 @@ def _binding(tmp_path: Path) -> dict[str, Any]:
         },
         "status": "validated",
     }
+
+
+def _rtx_binding(tmp_path: Path) -> dict[str, Any]:
+    binding = _binding(tmp_path)
+    binding["target"]["hardware"] = "rtx4090"
+    binding["execution_interface"]["environment"]["values"][
+        "CUDA_VISIBLE_DEVICES"
+    ]["value"] = ",".join(str(index) for index in RTX_GPU_INDICES)
+    binding["gpu_policy"] = {
+        "indices": list(RTX_GPU_INDICES),
+        "uuid_by_index": {
+            str(index): f"GPU-fixture-{index}" for index in RTX_GPU_INDICES
+        },
+        "hardware_profile": "rtx4090",
+    }
+    return binding
 
 
 def _private_root_with_training_inputs(tmp_path: Path) -> Path:
@@ -535,15 +560,39 @@ def test_registry_materializes_canonical_rtx_plan_at_independent_boundary(
     local_output_root = tmp_path / "private-output"
     local_output_root.mkdir()
 
-    registry = materialize_history_registry(
-        plan, _binding(tmp_path), local_output_root
-    )
+    registry = materialize_history_registry(plan, _rtx_binding(tmp_path), local_output_root)
 
     assert plan["hardware_target"] == "rtx4090"
     assert _registry_identity_map(registry) == _plan_identity_map(plan)
     assert json.loads(
         (local_output_root / "source_registry.json").read_text(encoding="utf-8")
     ) == registry
+
+
+@pytest.mark.parametrize(
+    ("plan_profile", "binding_profile"),
+    [("rtx4090", "h800"), ("h800", "rtx4090")],
+)
+def test_registry_rejects_plan_and_binding_profile_mismatch_before_write(
+    tmp_path: Path,
+    plan_profile: str,
+    binding_profile: str,
+) -> None:
+    hardware_name = (
+        "NVIDIA RTX 4090" if plan_profile == "rtx4090" else "NVIDIA H800 80GB HBM3"
+    )
+    plan = _canonical_profile_plan(plan_profile, hardware_name)
+    binding = (
+        _rtx_binding(tmp_path) if binding_profile == "rtx4090" else _binding(tmp_path)
+    )
+    local_output_root = tmp_path / "private-output"
+    local_output_root.mkdir()
+
+    with pytest.raises(P6HistoryRegistryError) as captured:
+        materialize_history_registry(plan, binding, local_output_root)
+
+    assert captured.value.category == "source_registry_invalid"
+    assert not (local_output_root / "source_registry.json").exists()
 
 
 @pytest.mark.parametrize(

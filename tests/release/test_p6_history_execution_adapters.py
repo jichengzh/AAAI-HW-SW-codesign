@@ -38,6 +38,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 REGISTRY_CLI = REPOSITORY_ROOT / "tools/release/build_p6_history_registry.py"
 MEASUREMENT_CLI = REPOSITORY_ROOT / "tools/release/measure_p6_history_batch.py"
 SYNTHETIC_GPU_INDICES = (101, 103, 107)
+RTX_GPU_INDICES = (*SYNTHETIC_GPU_INDICES, 109)
 
 
 def _plan() -> dict[str, Any]:
@@ -405,6 +406,22 @@ def _synthetic_history_binding(
     }
 
 
+def _synthetic_rtx_history_binding(tmp_path: Path) -> dict[str, Any]:
+    binding = _synthetic_history_binding(tmp_path)
+    binding["target"]["hardware"] = "rtx4090"
+    binding["execution_interface"]["environment"]["values"][
+        "CUDA_VISIBLE_DEVICES"
+    ]["value"] = ",".join(str(index) for index in RTX_GPU_INDICES)
+    binding["gpu_policy"] = {
+        "indices": list(RTX_GPU_INDICES),
+        "uuid_by_index": {
+            str(index): f"GPU-fixture-{index}" for index in RTX_GPU_INDICES
+        },
+        "hardware_profile": "rtx4090",
+    }
+    return binding
+
+
 def test_registry_cli_rejects_tampered_execution_interface_without_leak(
     tmp_path: Path,
 ) -> None:
@@ -506,7 +523,7 @@ def test_registry_cli_materializes_scanner_owned_rtx_plan_through_real_chain(
     local_output_root = tmp_path / "private-output"
     local_output_root.mkdir()
     binding_path = _write_json(
-        local_output_root / "binding.json", _synthetic_history_binding(tmp_path)
+        local_output_root / "binding.json", _synthetic_rtx_history_binding(tmp_path)
     )
     plan = _scanner_owned_rtx_plan()
     plan_path = _write_json(local_output_root / "plan.json", plan)
@@ -530,6 +547,40 @@ def test_registry_cli_materializes_scanner_owned_rtx_plan_through_real_chain(
             for q_mode in group["available_q_modes"]
         ]
     ) == _identity_map(plan["candidates"])
+
+
+@pytest.mark.parametrize(
+    ("plan_factory", "binding_factory"),
+    [
+        (_scanner_owned_rtx_plan, _synthetic_history_binding),
+        (_plan, _synthetic_rtx_history_binding),
+    ],
+    ids=["rtx-plan-h800-binding", "h800-plan-rtx-binding"],
+)
+def test_registry_cli_rejects_plan_and_binding_profile_mismatch_without_leak(
+    tmp_path: Path,
+    plan_factory: Any,
+    binding_factory: Any,
+) -> None:
+    local_output_root = tmp_path / "private-output"
+    local_output_root.mkdir()
+    binding_path = _write_json(
+        local_output_root / "binding.json", binding_factory(tmp_path)
+    )
+    plan_path = _write_json(local_output_root / "plan.json", plan_factory())
+    registry_path = local_output_root / "registry.json"
+
+    result = _run_registry_cli(
+        binding_path, plan_path, registry_path, local_output_root
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "source_registry_invalid\n"
+    assert "101" not in result.stderr
+    assert "GPU-fixture" not in result.stderr
+    assert "rtx4090" not in result.stderr
+    assert not registry_path.exists()
 
 
 @pytest.mark.parametrize(

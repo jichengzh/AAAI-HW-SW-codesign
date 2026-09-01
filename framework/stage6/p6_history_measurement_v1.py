@@ -430,13 +430,30 @@ def _validate_binding_runtime(
         if not private_root.is_dir():
             raise ValueError
         raw_policy = binding.get("gpu_policy")
-        if not isinstance(raw_policy, Mapping) or set(raw_policy) != {
+        if not isinstance(raw_policy, Mapping):
+            raise ValueError
+        policy_keys = set(raw_policy)
+        current_keys = {"indices", "uuid_by_index", "hardware_profile"}
+        legacy_keys = {
             "indices",
             "uuid_by_index",
-            "hardware_profile",
-        }:
+            "model",
+            "maximum_occupancy",
+        }
+        if policy_keys == current_keys:
+            profile = load_hardware_execution_profile(
+                raw_policy.get("hardware_profile")
+            )
+        elif policy_keys == legacy_keys:
+            profile = default_hardware_execution_profile()
+            if (
+                raw_policy.get("model") != profile.profile_id
+                or raw_policy.get("maximum_occupancy")
+                != profile.maximum_occupancy
+            ):
+                raise ValueError
+        else:
             raise ValueError
-        profile = load_hardware_execution_profile(raw_policy.get("hardware_profile"))
         canonical_expected = load_hardware_execution_profile(
             expected_profile.profile_id
         )

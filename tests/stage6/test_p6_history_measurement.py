@@ -866,6 +866,75 @@ def test_runtime_hardware_profile_mismatch_stops_before_probe_source_or_process(
     assert runner.calls == []
 
 
+def test_runtime_accepts_valid_legacy_h800_policy_and_preserves_two_snapshots(
+    tmp_path: Path,
+) -> None:
+    private_root = tmp_path / "private"
+    private_root.mkdir()
+    round_root = private_root / "controller-round"
+    round_root.mkdir()
+    request = _request()
+    binding = _binding(private_root)
+    binding["gpu_policy"] = {
+        "indices": list(SYNTHETIC_GPU_INDICES),
+        "uuid_by_index": {
+            str(index): f"GPU-synthetic-{index}"
+            for index in SYNTHETIC_GPU_INDICES
+        },
+        "model": "h800",
+        "maximum_occupancy": 0.05,
+    }
+    runner = FakeRunner(request)
+    probe = FakeProbe()
+
+    feedback = run_history_measurement_batch(
+        request, binding, round_root, runner, probe
+    )
+
+    assert len(feedback["rows"]) == 4
+    assert probe.calls == [SYNTHETIC_GPU_INDICES, SYNTHETIC_GPU_INDICES]
+
+
+def test_runtime_explicit_rtx_rejects_legacy_policy_before_probe_or_process(
+    tmp_path: Path,
+) -> None:
+    private_root = tmp_path / "private"
+    private_root.mkdir()
+    round_root = private_root / "controller-round"
+    round_root.mkdir()
+    request = _request(hardware_profile="rtx4090")
+    binding = _binding(
+        private_root,
+        gpu_indices=(101, 103, 107, 109),
+        hardware_profile="rtx4090",
+    )
+    binding["gpu_policy"] = {
+        "indices": [101, 103, 107, 109],
+        "uuid_by_index": {
+            str(index): f"GPU-synthetic-{index}" for index in (101, 103, 107, 109)
+        },
+        "model": "h800",
+        "maximum_occupancy": 0.05,
+    }
+    runner = FakeRunner(request)
+    probe = FakeProbe()
+
+    with pytest.raises(P6HistoryMeasurementError) as captured:
+        run_history_measurement_batch(
+            request,
+            binding,
+            round_root,
+            runner,
+            probe,
+            profile=load_hardware_execution_profile("rtx4090"),
+        )
+
+    assert captured.value.category == "history_execution_invalid"
+    assert str(captured.value) == "history_execution_invalid"
+    assert probe.calls == []
+    assert runner.calls == []
+
+
 def test_runtime_hardware_profile_rtx_rejects_wrong_count_before_probe_or_process(
     tmp_path: Path,
 ) -> None:
