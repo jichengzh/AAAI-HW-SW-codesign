@@ -1,0 +1,28 @@
+schema_version: p6_coptv2x_search_contract_v3
+search_id: p6-pyramid-rtx4090-tvm
+hardware_profile: rtx4090
+target: rtx4090
+target_model: pyramid
+execution_backend: tvm_auto
+seed: 73
+sample_budget: 16
+batch_size: 4
+round_count: 4
+configuration_label: p6-pyramid-rtx4090-tvm
+candidate_space_label: coptv2x-pyramid-width-grid-v1
+metric_names:
+  - latency_ms
+  - energy_j
+  - ap30
+  - ap50
+  - ap70
+assets:
+  - label: training-data
+    version: local-cleared-v1
+    license_status: cleared
+  - label: model-init
+    version: local-cleared-v1
+    license_status: cleared
+  - label: toolchain
+    version: rtx4090-tvm-local-v1
+    license_status: cleared

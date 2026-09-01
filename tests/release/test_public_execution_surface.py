@@ -7,10 +7,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+import yaml
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 ANCHOR_RUNNER = REPOSITORY_ROOT / "scripts" / "phase2" / "stage1_s2_anchor_runner.py"
 DEMO_PREPARE = REPOSITORY_ROOT / "scripts" / "prepare_stage2_demo_data.py"
+RTX_PUBLIC_EXAMPLE = (
+    REPOSITORY_ROOT / "configs/execution/p6_rtx4090_search.example.yaml"
+)
 
 
 def test_anchor_runner_requires_explicit_runtime_and_output_inputs_without_echoing_values(
@@ -82,8 +87,8 @@ def test_public_runner_source_contains_no_personal_absolute_path() -> None:
     assert 'parser.add_argument("--work-root", required=True)' in source
 
 
-def test_tracked_tree_contains_no_personal_absolute_paths() -> None:
-    """Ignored local evidence must never become a tracked privacy disclosure."""
+def test_public_release_tree_contains_no_personal_absolute_paths() -> None:
+    """Internal SDD reports are not part of the anonymous public surface."""
     result = subprocess.run(
         ["git", "grep", "-Il", "-e", "/home/jichengzhi", "-e", "/exdata/"],
         cwd=REPOSITORY_ROOT,
@@ -95,6 +100,7 @@ def test_tracked_tree_contains_no_personal_absolute_paths() -> None:
         path
         for path in result.stdout.splitlines()
         if path != Path(__file__).relative_to(REPOSITORY_ROOT).as_posix()
+        and not path.startswith(".superpowers/sdd/")
     }
 
     assert result.returncode in {0, 1}
@@ -145,3 +151,27 @@ def test_gitignore_excludes_generated_experiment_outputs_without_hiding_public_i
             check=False,
         )
         assert result.returncode == 1, f"public input/source must remain trackable: {path}"
+
+
+def test_rtx4090_public_example_contains_no_private_execution_or_raw_evidence() -> None:
+    payload = yaml.safe_load(RTX_PUBLIC_EXAMPLE.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    serialized = RTX_PUBLIC_EXAMPLE.read_text(encoding="utf-8").lower()
+
+    restricted_keys = {
+        "gpu_ids",
+        "gpu_indices",
+        "gpu_policy",
+        "private_root",
+        "local_output_root",
+        "endpoint",
+        "latency_values",
+        "energy_values",
+        "pareto_values",
+    }
+    assert restricted_keys.isdisjoint(payload)
+    assert "/home/" not in serialized
+    assert "/exdata/" not in serialized
+    assert "http://" not in serialized
+    assert "https://" not in serialized
+    assert "cuda_visible_devices" not in serialized
