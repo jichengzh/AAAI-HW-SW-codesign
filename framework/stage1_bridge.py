@@ -586,8 +586,10 @@ class SpaceSpec:
         plan: hierarchical blocks, P/Q software candidates, model-level policy,
         and dense-core/full-model claim scope.
         """
+        backend_scope = _profile_backend_scope(self.hw)
         software_candidates = [
-            _software_candidate_from_knob(k, self.quant_units) for k in self.knobs
+            _software_candidate_from_knob(k, self.quant_units, backend_scope)
+            for k in self.knobs
         ]
         hierarchical_blocks = _hierarchical_blocks(self.raw, software_candidates, self.routing)
         claim_scope = _claim_scope(self.raw, hierarchical_blocks)
@@ -997,13 +999,17 @@ def _formal_q_mode_contract(
     return modes, {**payload, "digest": canonical_digest(payload)}
 
 
-def _quant_policies(knob: KnobSpec, quant_units: list[QuantUnit]) -> tuple[str, list[dict]]:
+def _quant_policies(
+    knob: KnobSpec,
+    quant_units: list[QuantUnit],
+    backend_scope: str = "measured_h800_tvm",
+) -> tuple[str, list[dict]]:
     unit = _quant_unit_for_knob(knob, quant_units)
     if unit is None:
         return "evidence_only_attribute", [
             {
                 "policy": "fp16",
-                "backend_scope": "measured_h800_tvm",
+                "backend_scope": backend_scope,
                 "provenance": "hw_capability_without_quant_unit",
                 "status": "fixed",
             }
@@ -1012,7 +1018,7 @@ def _quant_policies(knob: KnobSpec, quant_units: list[QuantUnit]) -> tuple[str, 
         return "fixed_quant_policy", [
             {
                 "policy": "fp16",
-                "backend_scope": "measured_h800_tvm",
+                "backend_scope": backend_scope,
                 "provenance": f"quant_unit:{unit.unit}",
                 "status": "fixed",
             }
@@ -1021,7 +1027,7 @@ def _quant_policies(knob: KnobSpec, quant_units: list[QuantUnit]) -> tuple[str, 
     policies = [
         {
             "policy": "fp16",
-            "backend_scope": "measured_h800_tvm",
+            "backend_scope": backend_scope,
             "provenance": f"quant_unit:{unit.unit}",
             "status": "active",
         }
@@ -1030,7 +1036,7 @@ def _quant_policies(knob: KnobSpec, quant_units: list[QuantUnit]) -> tuple[str, 
         policies.append(
             {
                 "policy": "int8",
-                "backend_scope": "measured_h800_tvm",
+                "backend_scope": backend_scope,
                 "provenance": f"quant_unit:{unit.unit}:legal_bits",
                 "status": "active",
             }
@@ -1113,8 +1119,14 @@ def _width_anchors(knob: KnobSpec) -> list[dict]:
     return anchors
 
 
-def _software_candidate_from_knob(knob: KnobSpec, quant_units: list[QuantUnit]) -> dict:
-    quant_axis_status, quant_policies = _quant_policies(knob, quant_units)
+def _software_candidate_from_knob(
+    knob: KnobSpec,
+    quant_units: list[QuantUnit],
+    backend_scope: str = "measured_h800_tvm",
+) -> dict:
+    quant_axis_status, quant_policies = _quant_policies(
+        knob, quant_units, backend_scope
+    )
     anchors = _width_anchors(knob)
     software_points = []
     for anchor in anchors:
@@ -1167,12 +1179,17 @@ def _hardware_candidates(hw: HwCapability, routing: list[RoutingSegment]) -> lis
         },
         {
             "id": "tvm_metaschedule_candidate",
-            "backend_scope": "measured_h800_tvm",
+            "backend_scope": _profile_backend_scope(hw),
             "hardware": hw.name,
             "schedule_policy": "tuned",
             "requires_latency_lut": True,
         },
     ]
+
+
+def _profile_backend_scope(hw: HwCapability) -> str:
+    normalized = "".join(character for character in hw.name.casefold() if character.isalnum())
+    return "measured_rtx4090_tvm" if "rtx4090" in normalized else "measured_h800_tvm"
 
 
 def _quant_unit_summary(unit: QuantUnit) -> dict:

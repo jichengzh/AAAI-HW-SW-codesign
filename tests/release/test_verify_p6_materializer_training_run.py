@@ -16,6 +16,9 @@ from framework.stage6.p6_public_report_v1 import (
     P6HardwareSpecificReportProvenance,
     validate_hardware_specific_report_provenance,
 )
+from framework.stage6.p6_post_source_adapter_profile_v1 import (
+    load_post_source_adapter_profile,
+)
 from framework.stage6.p6_history_measurement_v1 import (
     resolve_validated_history_round_paths,
 )
@@ -39,6 +42,11 @@ from tests.stage6.test_coptv2x_h800_search import (
     _write_profile_search_inputs,
     _write_yaml,
 )
+from tests.stage6.p6_performance_native_fixture import (
+    quant_contract_path,
+    sha256_file,
+)
+from tests.stage6.test_p6_performance_round_adapter import _PerformanceRunner
 
 
 @pytest.fixture(scope="module")
@@ -155,6 +163,10 @@ def _apply_completion_mutation(paths: dict[str, Any], mutation: str) -> None:
         (private_root / "post-source-adapter-profile.yaml").symlink_to(
             private_root / "missing-post-source-profile.yaml"
         )
+        return
+
+    if mutation.startswith("performance_"):
+        _mutate_performance_evidence(paths, private_root, interface, mutation)
         return
 
     if mutation == "context_missing":
@@ -318,6 +330,53 @@ def _write_json(path: Path, payload: Any) -> None:
     )
 
 
+def _mutate_performance_evidence(
+    paths: dict[str, Any],
+    private_root: Path,
+    interface: dict[str, Any],
+    mutation: str,
+) -> None:
+    round_root = _round_paths(paths, interface, private_root, 0)["round_root"]
+    performance_root = round_root / "performance"
+    if mutation == "performance_manifest_missing":
+        (performance_root / "performance_manifest.json").unlink()
+        return
+    jobs_path = performance_root / "performance_jobs.jsonl"
+    jobs = [json.loads(line) for line in jobs_path.read_text().splitlines() if line]
+    states_path = performance_root / "performance_state.jsonl"
+    states = [json.loads(line) for line in states_path.read_text().splitlines() if line]
+    if mutation == "performance_result_tampered":
+        Path(states[0]["result_json"]).write_text("{}\n", encoding="utf-8")
+        return
+    field, value = {
+        "performance_wrong_profile": ("hardware_profile", "h800"),
+        "performance_wrong_arch": ("tvm_arch", "sm90"),
+        "performance_wrong_cache": ("tvm_cache_namespace", "h800-sm90"),
+        "performance_wrong_candidate": ("candidate_id", "wrong-candidate"),
+        "performance_wrong_q_mode": ("q_mode", "int8"),
+        "performance_wrong_configuration": ("configuration_digest", "0" * 64),
+        "performance_wrong_checkpoint": ("checkpoint_digest", "1" * 64),
+        "performance_wrong_code": ("code_digest", "2" * 64),
+        "performance_wrong_toolchain": ("toolchain_id", "tensorrt"),
+        "performance_tensorrt_marker": ("engine_path", "/private/model.engine"),
+    }[mutation]
+    jobs[0]["expected_tvm_measurement_manifest"][field] = value
+    result_state = next(row for row in states if row["job_id"] == jobs[0]["job_id"])
+    result_path = Path(result_state["result_json"])
+    result = _read_json(result_path)
+    result["tvm_measurement_manifest"][field] = value
+    _write_json(result_path, result)
+    result_state["result_sha256"] = sha256_file(result_path)
+    jobs_path.write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in jobs),
+        encoding="utf-8",
+    )
+    states_path.write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in states),
+        encoding="utf-8",
+    )
+
+
 def _write_native_completion_leaves(paths: dict[str, Any]) -> None:
     binding = _read_json(paths["binding"])
     private_root = Path(binding["private_root"])
@@ -342,6 +401,75 @@ def _write_native_completion_leaves(paths: dict[str, Any]) -> None:
         _write_json(
             promotion_root / "actual_feedback_batch_audit_v3.json",
             {"schema_version": "stage5_actual_feedback_batch_audit_v3"},
+        )
+        if binding["target"]["hardware"] == "rtx4090":
+            _write_native_performance_leaves(
+                paths, binding, private_root, round_index, round_paths
+            )
+
+
+def _write_native_performance_leaves(
+    paths: dict[str, Any],
+    binding: dict[str, Any],
+    private_root: Path,
+    round_index: int,
+    round_paths: dict[str, Path],
+) -> None:
+    request_path = paths["output_root"] / f"round-{round_index:02d}/measurement_request.json"
+    request = _read_json(request_path)
+    round_root = round_paths["round_root"]
+    _write_native_quant_contracts(round_root, request)
+    profile = load_post_source_adapter_profile(
+        private_root / "post-source-adapter-profile.yaml", private_root=private_root
+    )
+    indices = tuple(binding["gpu_policy"]["indices"])
+    runner = _PerformanceRunner(
+        state_statuses=("success",) * 4,
+        tvm_manifest_profile=profile.hardware_profile,
+        gpu_indices=indices,
+    )
+    performance_root = round_root / "performance"
+    runner._run_planner(
+        (
+            "planner",
+            "--request-json",
+            str(request_path),
+            "--output-dir",
+            str(performance_root),
+            "--quant-contract-root",
+            str(round_root / "quant_contracts"),
+        )
+    )
+    runner._run_executor(
+        (
+            "executor",
+            "--jobs-jsonl",
+            str(performance_root / "performance_jobs.jsonl"),
+            "--state-jsonl",
+            str(performance_root / "performance_state.jsonl"),
+        )
+    )
+
+
+def _write_native_quant_contracts(round_root: Path, request: dict[str, Any]) -> None:
+    for row in request["rows"]:
+        if row["q_mode"] != "int8":
+            continue
+        source = row["source_contract"]
+        quant_path = quant_contract_path(round_root, row)
+        quant_path.parent.mkdir(parents=True, exist_ok=True)
+        _write_json(
+            quant_path,
+            {
+                "schema": "stage3_tvm_int8_quant_contract_v3",
+                "onnx_path": source["onnx_path"],
+                "onnx_sha256": sha256_file(Path(source["onnx_path"])),
+                "calibration_npz": source["calibration_npz"],
+                "calibration_npz_sha256": sha256_file(Path(source["calibration_npz"])),
+                "calibration_summary": source["calibration_summary"],
+                "calibration_summary_sha256": sha256_file(Path(source["calibration_summary"])),
+                "params": {"spatial_features": {"scale": 0.5}},
+            },
         )
 
 
@@ -478,8 +606,8 @@ def test_v3_rtx_verification_context_forwards_contract_to_search_inputs(
     )
     monkeypatch.setattr(verification, "validate_p6_candidate_plan", lambda *_a, **_k: {})
 
-    contract, local, _, _, frozen_gold, context = verification._load_verification_context(
-        contract_path, local_path, binding_path
+    contract, local, _, _, frozen_gold, context, *_ = (
+        verification._load_verification_context(contract_path, local_path, binding_path)
     )
 
     assert contract.hardware_profile is local.hardware_profile
@@ -511,22 +639,20 @@ def test_completion_accepts_four_round_current_run_with_shared_receipts(
 
     assert report.status == "completed"
     assert report.hardware_profile == "h800"
-    assert report.provenance == P6HardwareSpecificReportProvenance(
-        schema_version="p6_hardware_specific_report_provenance_v1",
-        comparison_scope="hardware_specific",
-        hardware_profile="h800",
-        target="h800",
-        execution_backend="tvm_auto",
-        tvm_arch="sm90",
-        latency_energy_hardware_profile="h800",
-        pareto_hardware_profile="h800",
-        ap_provenance={
-            "data_split": "v1",
-            "checkpoint_initial_state": "v2",
-            "seed": 73,
-            "metric_protocol": "coptv2x-ap30-ap50-ap70-v1",
-        },
-    )
+    binding = _read_json(completed_run["binding"])
+    training = binding["source_contract_template"]["external_training_binding"]
+    assert isinstance(report.provenance, P6HardwareSpecificReportProvenance)
+    assert report.provenance.schema_version == "p6_hardware_specific_report_provenance_v2"
+    assert report.provenance.hardware_model_family == "h800"
+    assert report.provenance.gpu_count == len(binding["gpu_policy"]["indices"])
+    assert report.provenance.code_revision == "test-revision"
+    assert report.provenance.ap_provenance == {
+        "data_split": "trainval_coptv2x",
+        "checkpoint_initial_state": training["base_checkpoint_sha256"],
+        "training_config_digest": training["pyramid_config_sha256"],
+        "seed": 20260821,
+        "metric_protocol": "coptv2x-ap30-ap50-ap70-v1",
+    }
     with pytest.raises(FrozenInstanceError):
         report.provenance.target = "rtx4090"  # type: ignore[misc]
     assert report.completed_rounds == 4
@@ -549,15 +675,51 @@ def test_completed_fake_rtx_hardware_profile_tree_reports_public_profile_id(
     assert report.provenance.tvm_arch == "sm89"
     assert report.provenance.latency_energy_hardware_profile == "rtx4090"
     assert report.provenance.pareto_hardware_profile == "rtx4090"
+    binding = _read_json(completed_rtx_run["binding"])
+    training = binding["source_contract_template"]["external_training_binding"]
+    assert report.provenance.target_model == "pyramid"
+    assert report.provenance.hardware_model_family == "rtx4090"
+    assert report.provenance.gpu_count == 4
+    assert report.provenance.tvm_cache_namespace == "rtx4090-sm89"
+    assert report.provenance.code_revision == "test-revision"
     assert report.provenance.ap_provenance == {
-        "data_split": "v1",
-        "checkpoint_initial_state": "v2",
-        "seed": 73,
+        "data_split": "trainval_coptv2x",
+        "checkpoint_initial_state": training["base_checkpoint_sha256"],
+        "training_config_digest": training["pyramid_config_sha256"],
+        "seed": 20260821,
         "metric_protocol": "coptv2x-ap30-ap50-ap70-v1",
     }
     assert report.completed_rounds == 4
     assert report.selected_rows == 16
     assert report.gold176_remeasured_rows == 0
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "performance_manifest_missing",
+        "performance_result_tampered",
+        "performance_wrong_profile",
+        "performance_wrong_arch",
+        "performance_wrong_cache",
+        "performance_wrong_candidate",
+        "performance_wrong_q_mode",
+        "performance_wrong_configuration",
+        "performance_wrong_checkpoint",
+        "performance_wrong_code",
+        "performance_wrong_toolchain",
+        "performance_tensorrt_marker",
+    ],
+)
+def test_completed_rtx_rejects_unbound_native_performance_evidence(
+    completed_rtx_run: dict[str, Any], mutation: str
+) -> None:
+    _apply_completion_mutation(completed_rtx_run, mutation)
+
+    with pytest.raises(P6CoptV2XExecutionError) as captured:
+        verify_materializer_training_run(**_verify_kwargs(completed_rtx_run))
+
+    assert captured.value.failure_code == "history_execution_invalid"
 
 
 @pytest.mark.parametrize(
@@ -680,22 +842,13 @@ def test_completion_cli_emits_only_allowlisted_fields(
     )
     payload = json.loads(output.out)
     assert payload["hardware_profile"] == "h800"
-    assert payload["provenance"] == {
-        "schema_version": "p6_hardware_specific_report_provenance_v1",
-        "comparison_scope": "hardware_specific",
-        "hardware_profile": "h800",
-        "target": "h800",
-        "execution_backend": "tvm_auto",
-        "tvm_arch": "sm90",
-        "latency_energy_hardware_profile": "h800",
-        "pareto_hardware_profile": "h800",
-        "ap_provenance": {
-            "data_split": "v1",
-            "checkpoint_initial_state": "v2",
-            "seed": 73,
-            "metric_protocol": "coptv2x-ap30-ap50-ap70-v1",
-        },
-    }
+    provenance = payload["provenance"]
+    assert provenance["schema_version"] == "p6_hardware_specific_report_provenance_v2"
+    assert provenance["hardware_profile"] == "h800"
+    assert provenance["target_model"] == "pyramid"
+    assert provenance["code_revision"] == "test-revision"
+    assert provenance["ap_provenance"]["seed"] == 20260821
+    assert all("/" not in str(value) for value in provenance.values())
 
 
 def test_completion_cli_rejects_profile_drift_in_constructed_provenance(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -38,6 +39,9 @@ from framework.stage6.hardware_execution_profile_v1 import (  # noqa: E402
 from framework.stage6.p6_history_binding_v1 import (  # noqa: E402
     validate_history_execution_binding,
 )
+from framework.stage6.p6_external_training_binding_v1 import (  # noqa: E402
+    external_training_binding_from_contract,
+)
 from framework.stage6.p6_history_feedback_validation_v1 import (  # noqa: E402
     translate_history_feedback,
 )
@@ -48,8 +52,13 @@ from framework.stage6.p6_history_source_materialization_v1 import (  # noqa: E40
     project_source_materialization_request,
 )
 from framework.stage6.p6_post_source_adapter_profile_v1 import (  # noqa: E402
+    ValidatedPostSourceAdapterProfile,
     load_post_source_adapter_profile,
     require_post_source_adapter_profile_v4,
+)
+from framework.stage6.p6_performance_round_adapter_v1 import (  # noqa: E402
+    ValidatedPerformanceEvidence,
+    validate_completed_performance_evidence,
 )
 from framework.stage6.p6_public_report_v1 import (  # noqa: E402
     P6HardwareSpecificReportProvenance,
@@ -178,6 +187,9 @@ def _load_verification_context(
     Path,
     list[Any],
     Any,
+    Mapping[str, Any],
+    ValidatedPostSourceAdapterProfile | None,
+    tuple[int, ...],
 ]:
     contract = load_public_contract(public_contract_path)
     local = load_local_config(local_config_path, contract)
@@ -190,7 +202,27 @@ def _load_verification_context(
     if not isinstance(private_root_value, str):
         raise ValueError
     private_root = Path(private_root_value).resolve(strict=True)
-    _require_post_source_profile(private_root, profile)
+    post_source = _require_post_source_profile(private_root, profile)
+    frozen_gold, context = _load_output_context(local, contract, profile)
+    indices = tuple(int(index) for index in binding["gpu_policy"]["indices"])
+    return (
+        contract,
+        local,
+        interface,
+        private_root,
+        frozen_gold,
+        context,
+        binding,
+        post_source,
+        indices,
+    )
+
+
+def _load_output_context(
+    local: Any,
+    contract: PublicP6CoptV2XContract,
+    profile: HardwareExecutionProfile,
+) -> tuple[list[Any], Any]:
     frozen_gold, _, _, capability_profile = _load_search_inputs(local, contract)
     task_contract = validate_search_task(
         _build_search_task(contract, capability_profile)
@@ -200,49 +232,107 @@ def _load_verification_context(
         root=local.local_output_root,
     )
     validate_p6_candidate_plan(candidate_plan, profile=profile)
-    context = load_fresh_run_context(
+    return frozen_gold, load_fresh_run_context(
         local_output_root=local.local_output_root,
         expected_task_id=task_contract["task_id"],
         expected_task_sha256=task_contract["task_sha256"],
     )
-    return contract, local, interface, private_root, frozen_gold, context
 
 
 def _completion_provenance(
     contract: PublicP6CoptV2XContract,
+    binding: Mapping[str, Any],
+    state: Mapping[str, Any],
+    source_digests: list[str],
+    performance_evidence: list[ValidatedPerformanceEvidence],
+    gpu_count: int,
 ) -> P6HardwareSpecificReportProvenance:
-    asset_versions = {asset.label: asset.version for asset in contract.assets}
     profile = contract.hardware_profile
+    training = external_training_binding_from_contract(
+        binding["source_contract_template"]
+    )
+    parameters = training["training_parameters"]
+    _require_performance_training_identity(training, performance_evidence)
     return validate_hardware_specific_report_provenance(
         {
-            "schema_version": "p6_hardware_specific_report_provenance_v1",
+            "schema_version": "p6_hardware_specific_report_provenance_v2",
             "comparison_scope": "hardware_specific",
             "hardware_profile": profile.profile_id,
             "target": contract.target,
+            "target_model": contract.target_model,
+            "hardware_model_family": profile.target_hardware_id,
+            "gpu_count": gpu_count,
             "execution_backend": contract.execution_backend,
             "tvm_arch": profile.tvm_arch,
+            "tvm_cache_namespace": profile.tvm_cache_namespace,
+            "environment_digest": _sha256_file(
+                REPOSITORY_ROOT / profile.environment_contract_path
+            ),
+            "code_revision": state["code_revision"],
+            "source_digest": _aggregate_digest("sources", source_digests),
+            "compiler_toolchain_digest": _compiler_digest(
+                state, performance_evidence
+            ),
             "latency_energy_hardware_profile": profile.profile_id,
             "pareto_hardware_profile": profile.profile_id,
             "ap_provenance": {
-                "data_split": asset_versions["training-data"],
-                "checkpoint_initial_state": asset_versions["model-init"],
-                "seed": contract.seed,
+                "data_split": parameters["dataset_split"],
+                "checkpoint_initial_state": training["base_checkpoint_sha256"],
+                "training_config_digest": training["pyramid_config_sha256"],
+                "seed": parameters["seed"],
                 "metric_protocol": P6_AP_METRIC_PROTOCOL,
             },
         }
     )
 
 
+def _require_performance_training_identity(
+    training: Mapping[str, Any], evidence: list[ValidatedPerformanceEvidence]
+) -> None:
+    for summary in evidence:
+        if set(summary.configuration_digests) != {training["pyramid_config_sha256"]}:
+            raise ValueError
+        if set(summary.checkpoint_digests) != {training["base_checkpoint_sha256"]}:
+            raise ValueError
+
+
+def _compiler_digest(
+    state: Mapping[str, Any], evidence: list[ValidatedPerformanceEvidence]
+) -> str:
+    return canonical_json_sha256(
+        {
+            "code_revision": state["code_revision"],
+            "code_digests": sorted(
+                digest for summary in evidence for digest in summary.code_digests
+            ),
+            "toolchain_ids": sorted(
+                toolchain for summary in evidence for toolchain in summary.toolchain_ids
+            )
+            or ["tvm_auto"],
+        }
+    )
+
+
+def _aggregate_digest(label: str, values: list[str]) -> str:
+    if not values:
+        raise ValueError
+    return canonical_json_sha256({label: sorted(values)})
+
+
+def _sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def _require_post_source_profile(
     private_root: Path, profile: HardwareExecutionProfile
-) -> None:
+) -> ValidatedPostSourceAdapterProfile | None:
     profile_path = private_root / "post-source-adapter-profile.yaml"
     try:
         profile_mode = profile_path.lstat().st_mode
     except FileNotFoundError:
         if profile.profile_id != "h800":
             raise ValueError
-        return
+        return None
     if stat.S_ISLNK(profile_mode) or not stat.S_ISREG(profile_mode):
         raise ValueError
     post_source = load_post_source_adapter_profile(
@@ -253,9 +343,10 @@ def _require_post_source_profile(
         require_post_source_adapter_profile_v4(post_source)
     if post_source.hardware_profile is not profile:
         raise ValueError
+    return post_source
 
 
-def _require_completed_state(local_output_root: Path) -> None:
+def _require_completed_state(local_output_root: Path) -> Mapping[str, Any]:
     state = _read_mapping(
         local_output_root / "state.json", root=local_output_root
     )
@@ -265,6 +356,7 @@ def _require_completed_state(local_output_root: Path) -> None:
         or state.get("measured_candidate_count") != 16
     ):
         raise ValueError
+    return state
 
 
 def _validated_round_request(
@@ -341,7 +433,11 @@ def _verify_completed_round(
     context: Any,
     row_ids: set[str],
     measurement_ids: set[str],
-) -> tuple[set[str], set[str]]:
+    post_source_profile: ValidatedPostSourceAdapterProfile | None,
+    gpu_indices: tuple[int, ...],
+) -> tuple[
+    set[str], set[str], ValidatedPerformanceEvidence | None, tuple[str, ...]
+]:
     public_round = local.local_output_root / f"round-{round_index:02d}"
     paths = resolve_validated_history_round_paths(
         interface, private_root, public_round, round_index
@@ -355,6 +451,13 @@ def _verify_completed_round(
         private_root=private_root,
         hardware_profile=local.hardware_profile,
     )
+    performance_evidence = (
+        validate_completed_performance_evidence(
+            post_source_profile, request, paths["round_root"], gpu_indices
+        )
+        if post_source_profile is not None
+        else None
+    )
     _require_native_finalization_leaves(paths)
     feedback = translate_history_feedback(
         request,
@@ -364,7 +467,11 @@ def _verify_completed_round(
     )
     if not _successful_feedback(feedback.get("rows")):
         raise ValueError
-    return _validated_round_ids(request.get("rows"), row_ids, measurement_ids)
+    next_rows, next_measurements = _validated_round_ids(
+        request.get("rows"), row_ids, measurement_ids
+    )
+    source_digests = tuple(str(row["source_evidence_sha256"]) for row in request["rows"])
+    return next_rows, next_measurements, performance_evidence, source_digests
 
 
 def verify_materializer_training_run(
@@ -375,37 +482,8 @@ def verify_materializer_training_run(
 ) -> P6MaterializerCompletionReport:
     """Resolve canonical evidence paths and prove all four rounds completed."""
     try:
-        contract, local, interface, private_root, frozen_gold, context = (
-            _load_verification_context(
-                public_contract_path,
-                local_config_path,
-                private_binding_path,
-            )
-        )
-        _require_completed_state(local.local_output_root)
-        row_ids: set[str] = set()
-        measurement_ids: set[str] = set()
-        for round_index in range(4):
-            row_ids, measurement_ids = _verify_completed_round(
-                round_index=round_index,
-                local=local,
-                interface=interface,
-                private_root=private_root,
-                context=context,
-                row_ids=row_ids,
-                measurement_ids=measurement_ids,
-            )
-        gold_ids = {_identity(row) for row in frozen_gold}
-        if len(row_ids) != 16 or len(measurement_ids) != 16 or measurement_ids & gold_ids:
-            raise ValueError
-        return P6MaterializerCompletionReport(
-            schema_version="p6_materializer_training_bridge_completion_v1",
-            status="completed",
-            hardware_profile=local.hardware_profile.profile_id,
-            provenance=_completion_provenance(contract),
-            completed_rounds=4,
-            selected_rows=16,
-            gold176_remeasured_rows=0,
+        return _verified_completion_report(
+            public_contract_path, local_config_path, private_binding_path
         )
     except P6CoptV2XExecutionError:
         raise
@@ -413,6 +491,77 @@ def verify_materializer_training_run(
         raise P6CoptV2XExecutionError(
             "history_execution_invalid", "history execution invalid"
         ) from None
+
+
+def _verified_completion_report(
+    public_contract_path: Path,
+    local_config_path: Path,
+    private_binding_path: Path,
+) -> P6MaterializerCompletionReport:
+    (
+        contract,
+        local,
+        interface,
+        private_root,
+        frozen_gold,
+        context,
+        binding,
+        post_source_profile,
+        gpu_indices,
+    ) = _load_verification_context(
+        public_contract_path, local_config_path, private_binding_path
+    )
+    state = _require_completed_state(local.local_output_root)
+    row_ids, measurement_ids, evidence, source_digests = _verify_all_rounds(
+        local, interface, private_root, context, post_source_profile, gpu_indices
+    )
+    gold_ids = {_identity(row) for row in frozen_gold}
+    if len(row_ids) != 16 or len(measurement_ids) != 16 or measurement_ids & gold_ids:
+        raise ValueError
+    provenance = _completion_provenance(
+        contract, binding, state, source_digests, evidence, len(gpu_indices)
+    )
+    return P6MaterializerCompletionReport(
+        schema_version="p6_materializer_training_bridge_completion_v1",
+        status="completed",
+        hardware_profile=local.hardware_profile.profile_id,
+        provenance=provenance,
+        completed_rounds=4,
+        selected_rows=16,
+        gold176_remeasured_rows=0,
+    )
+
+
+def _verify_all_rounds(
+    local: Any,
+    interface: Mapping[str, Any],
+    private_root: Path,
+    context: Any,
+    post_source_profile: ValidatedPostSourceAdapterProfile | None,
+    gpu_indices: tuple[int, ...],
+) -> tuple[set[str], set[str], list[ValidatedPerformanceEvidence], list[str]]:
+    row_ids: set[str] = set()
+    measurement_ids: set[str] = set()
+    evidence: list[ValidatedPerformanceEvidence] = []
+    source_digests: list[str] = []
+    for round_index in range(4):
+        row_ids, measurement_ids, round_evidence, round_sources = (
+            _verify_completed_round(
+                round_index=round_index,
+                local=local,
+                interface=interface,
+                private_root=private_root,
+                context=context,
+                row_ids=row_ids,
+                measurement_ids=measurement_ids,
+                post_source_profile=post_source_profile,
+                gpu_indices=gpu_indices,
+            )
+        )
+        if round_evidence is not None:
+            evidence.append(round_evidence)
+        source_digests.extend(round_sources)
+    return row_ids, measurement_ids, evidence, source_digests
 
 
 def main(argv: list[str] | None = None) -> int:

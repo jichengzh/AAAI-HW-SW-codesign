@@ -65,6 +65,21 @@ class _QuantBinding:
 class _TvmMeasurementIdentity:
     candidate_id: str
     source_digest: str
+    q_mode: str | None = None
+    configuration_digest: str | None = None
+    checkpoint_digest: str | None = None
+    code_digest: str | None = None
+
+
+@dataclass(frozen=True)
+class ValidatedPerformanceEvidence:
+    """Immutable public-safe digest summary of a validated native round."""
+
+    source_digests: tuple[str, ...]
+    configuration_digests: tuple[str, ...]
+    checkpoint_digests: tuple[str, ...]
+    code_digests: tuple[str, ...]
+    toolchain_ids: tuple[str, ...]
 
 
 def run_performance_round(
@@ -105,6 +120,56 @@ def run_performance_round(
         raise P6PerformanceRoundAdapterError() from None
     except Exception:
         raise P6PerformanceRoundAdapterError() from None
+
+
+def validate_completed_performance_evidence(
+    profile: ValidatedPostSourceAdapterProfile,
+    request: Mapping[str, Any],
+    round_root: Path,
+    gpu_indices: Sequence[int | str],
+) -> ValidatedPerformanceEvidence:
+    """Validate existing native plan/state/results without launching leaves."""
+    try:
+        context = RoundContext(
+            profile=profile,
+            request=request,
+            task_state={},
+            task_state_path=Path(round_root) / "task-state.json",
+            round_root=Path(round_root).resolve(strict=True),
+            gpu_indices=tuple(str(index) for index in gpu_indices),
+        )
+        performance_root = context.round_root / "performance"
+        bindings = _validate_int8_quant_contracts(context)
+        jobs, identities = _validate_native_plan(context, performance_root, bindings)
+        _validate_native_state(
+            performance_root / "performance_state.jsonl",
+            jobs,
+            performance_root,
+            profile,
+            identities,
+        )
+        return _performance_evidence_summary(jobs)
+    except P6PerformanceRoundAdapterError:
+        raise
+    except Exception:
+        raise P6PerformanceRoundAdapterError() from None
+
+
+def _performance_evidence_summary(
+    jobs: Sequence[Mapping[str, Any]],
+) -> ValidatedPerformanceEvidence:
+    manifests = tuple(job["expected_tvm_measurement_manifest"] for job in jobs)
+    return ValidatedPerformanceEvidence(
+        source_digests=tuple(sorted(str(item["source_digest"]) for item in manifests)),
+        configuration_digests=tuple(
+            sorted(str(item["configuration_digest"]) for item in manifests)
+        ),
+        checkpoint_digests=tuple(
+            sorted(str(item["checkpoint_digest"]) for item in manifests)
+        ),
+        code_digests=tuple(sorted(str(item["code_digest"]) for item in manifests)),
+        toolchain_ids=tuple(sorted(str(item["toolchain_id"]) for item in manifests)),
+    )
 
 
 def _run_planner(
@@ -201,10 +266,7 @@ def _validate_native_plan(
             binding,
             performance_root,
         )
-        identities[str(job["job_id"])] = _TvmMeasurementIdentity(
-            candidate_id=str(request_row["manifest_job_id"]),
-            source_digest=str(request_row["source_evidence_sha256"]),
-        )
+        identities[str(job["job_id"])] = _measurement_identity(request_row, job)
     if len(identities) != len(jobs):
         raise P6PerformanceRoundAdapterError()
     return jobs, identities
@@ -425,13 +487,36 @@ def _validate_job_tvm_manifest(
 ) -> None:
     if profile.schema_version != PROFILE_SCHEMA_VERSION_V4:
         return
+    identity = _measurement_identity(request_row, job)
     if not validate_tvm_measurement_manifest(
         job.get("expected_tvm_measurement_manifest"),
         profile=profile.hardware_profile,
-        candidate_id=str(request_row["manifest_job_id"]),
-        source_digest=str(request_row["source_evidence_sha256"]),
+        **identity.__dict__,
     ):
         raise P6PerformanceRoundAdapterError()
+
+
+def _measurement_identity(
+    request_row: Mapping[str, Any], job: Mapping[str, Any]
+) -> _TvmMeasurementIdentity:
+    base = {
+        "candidate_id": str(request_row["manifest_job_id"]),
+        "source_digest": str(request_row["source_evidence_sha256"]),
+    }
+    source = request_row.get("source_contract")
+    training = source.get("external_training_binding") if isinstance(source, Mapping) else None
+    if not isinstance(training, Mapping):
+        return _TvmMeasurementIdentity(**base)
+    command = job.get("command")
+    if not isinstance(command, list) or len(command) < 2:
+        raise P6PerformanceRoundAdapterError()
+    return _TvmMeasurementIdentity(
+        **base,
+        q_mode=str(request_row["q_mode"]),
+        configuration_digest=str(training["pyramid_config_sha256"]),
+        checkpoint_digest=str(training["base_checkpoint_sha256"]),
+        code_digest=_sha256_file(_plain_input_file(command[1])),
+    )
 
 
 def _validate_job_outputs(job: Mapping[str, Any], performance_root: Path) -> None:
@@ -668,8 +753,7 @@ def _validate_tvm_result_manifest(
     if not validate_tvm_measurement_manifest(
         payload.get("tvm_measurement_manifest"),
         profile=profile.hardware_profile,
-        candidate_id=measurement_identity.candidate_id,
-        source_digest=measurement_identity.source_digest,
+        **measurement_identity.__dict__,
     ):
         raise P6PerformanceRoundAdapterError()
 

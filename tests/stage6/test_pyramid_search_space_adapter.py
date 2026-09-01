@@ -164,6 +164,10 @@ def _profile_space(hardware_name: str) -> dict[str, Any]:
         hardware_target, ["fp16", "int8"]
     )
     payload["hardware_candidates"][0]["hardware"] = hardware_name
+    if "RTX 4090" in hardware_name:
+        payload["hardware_candidates"][0]["backend_scope"] = (
+            "measured_rtx4090_tvm"
+        )
     return payload
 
 

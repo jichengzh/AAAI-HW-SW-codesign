@@ -68,6 +68,7 @@ class _PerformanceRunner:
         tvm_manifest_profile: HardwareExecutionProfile | None = None,
         inject_result_manifest: bool = True,
         raise_unexpected: bool = False,
+        gpu_indices: Sequence[int] = (2, 5, 7),
     ) -> None:
         self.calls: list[Mapping[str, Any]] = []
         self._planner_returncode = planner_returncode
@@ -91,6 +92,7 @@ class _PerformanceRunner:
         self._inject_result_manifest = inject_result_manifest
         self._source_digest_by_candidate: dict[str, str] = {}
         self._raise_unexpected = raise_unexpected
+        self._gpu_indices = tuple(gpu_indices)
 
     def run(
         self,
@@ -154,8 +156,8 @@ class _PerformanceRunner:
                 "source_pool": "stage5_online_feedback",
                 "genome_count": 4,
                 "row_count": 4,
-                "group_count": 4,
-                "group_ids": [row["group_id"] for row in rows],
+                "group_count": len({row["group_id"] for row in rows}),
+                "group_ids": sorted({row["group_id"] for row in rows}),
                 self._manifest_field: manifest_rows,
                 **self._manifest_overrides,
             },
@@ -168,6 +170,7 @@ class _PerformanceRunner:
             self._first_job_overrides,
             self._job_count,
             self._tvm_manifest_profile,
+            self._gpu_indices,
         )
         (output_dir / "performance_jobs.jsonl").write_text(
             "".join(json.dumps(job, sort_keys=True) + "\n" for job in jobs),
@@ -243,13 +246,15 @@ def _native_jobs(
     first_overrides: Mapping[str, Any],
     job_count: int,
     tvm_manifest_profile: HardwareExecutionProfile | None,
+    gpu_indices: Sequence[int],
 ) -> list[dict[str, Any]]:
     return [
         {
             **_native_performance_job(
                 row,
                 row_id,
-                assigned_gpu=(2, 5, 7)[index % 3],
+                assigned_gpu=gpu_indices[index % len(gpu_indices)],
+                gpu_pool=",".join(str(item) for item in gpu_indices),
                 performance_root=output_dir,
                 quant_root=quant_root,
                 tvm_manifest_profile=tvm_manifest_profile,
@@ -274,8 +279,11 @@ def _tvm_manifest(
     *,
     candidate_id: str = "candidate-1",
     source_digest: str = "a" * 64,
+    q_mode: str | None = None,
+    source_contract: Mapping[str, Any] | None = None,
+    code_path: Path | None = None,
 ) -> dict[str, Any]:
-    return {
+    manifest = {
         "schema_version": "p6_tvm_measurement_manifest_v1",
         "hardware_profile": profile.profile_id,
         "tvm_arch": profile.tvm_arch,
@@ -283,6 +291,22 @@ def _tvm_manifest(
         "toolchain_id": "tvm_auto",
         "candidate_id": candidate_id,
         "source_digest": source_digest,
+    }
+    training = (
+        source_contract.get("external_training_binding")
+        if isinstance(source_contract, Mapping)
+        else None
+    )
+    if not isinstance(training, Mapping):
+        return manifest
+    assert q_mode in {"fp16", "int8"} and code_path is not None
+    return {
+        **manifest,
+        "schema_version": "p6_tvm_measurement_manifest_v2",
+        "q_mode": q_mode,
+        "configuration_digest": training["pyramid_config_sha256"],
+        "checkpoint_digest": training["base_checkpoint_sha256"],
+        "code_digest": _sha256_file(code_path),
     }
 
 
@@ -946,6 +970,7 @@ def _native_performance_job(
     row_id: str | None = None,
     *,
     assigned_gpu: int = 2,
+    gpu_pool: str = "2,5,7",
     performance_root: Path | None = None,
     quant_root: Path | None = None,
     tvm_manifest_profile: HardwareExecutionProfile | None = None,
@@ -958,7 +983,7 @@ def _native_performance_job(
     result_path = output_dir / "result.json"
     command = [
         "/native/python",
-        "measure.py",
+        str(Path(__file__).resolve()) if "external_training_binding" in source_contract else "measure.py",
         "--gpu",
         str(assigned_gpu),
         "--out-dir",
@@ -980,11 +1005,13 @@ def _native_performance_job(
         "dispatch_key": str(row["dispatch_key"]),
         "split": "online_feedback",
         "onnx_path": str(source_contract["onnx_path"]),
-        "calibration_root": f"/native/calibration/{manifest_id}",
+        "calibration_root": source_contract.get(
+            "calibration_root", f"/native/calibration/{manifest_id}"
+        ),
         "source_contract": source_contract,
         "command": command,
         "assigned_gpu": assigned_gpu,
-        "gpu_pool": "2,5,7",
+        "gpu_pool": gpu_pool,
         "remote_artifact_root": str(artifact_root),
         "expected_result_json": str(result_path),
         "max_attempts": 2,
@@ -998,6 +1025,9 @@ def _native_performance_job(
             tvm_manifest_profile,
             candidate_id=manifest_id,
             source_digest=str(row["source_evidence_sha256"]),
+            q_mode=str(row["q_mode"]),
+            source_contract=source_contract,
+            code_path=Path(command[1]),
         ),
     }
 
@@ -1010,7 +1040,9 @@ def _native_source_contract(
 ) -> dict[str, Any]:
     contract = {
         **dict(row["source_contract"]),
-        "calibration_root": f"/native/calibration/{manifest_id}",
+        "calibration_root": row["source_contract"].get(
+            "calibration_root", f"/native/calibration/{manifest_id}"
+        ),
         "onnx_sha256": _sha256_file(Path(str(row["source_contract"]["onnx_path"]))),
         "calibration_npz_sha256": _sha256_file(
             Path(str(row["source_contract"]["calibration_npz"]))

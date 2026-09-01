@@ -62,17 +62,26 @@ def _read_yaml(path: Path) -> dict[str, Any]:
 def _report_provenance(profile_id: str) -> dict[str, Any]:
     profile = load_hardware_execution_profile(profile_id)
     return {
-        "schema_version": "p6_hardware_specific_report_provenance_v1",
+        "schema_version": "p6_hardware_specific_report_provenance_v2",
         "comparison_scope": "hardware_specific",
         "hardware_profile": profile.profile_id,
         "target": profile.target_hardware_id,
+        "target_model": "pyramid",
+        "hardware_model_family": profile.target_hardware_id,
+        "gpu_count": 4,
         "execution_backend": "tvm_auto",
         "tvm_arch": profile.tvm_arch,
+        "tvm_cache_namespace": profile.tvm_cache_namespace,
+        "environment_digest": "a" * 64,
+        "code_revision": "abc123",
+        "source_digest": "b" * 64,
+        "compiler_toolchain_digest": "c" * 64,
         "latency_energy_hardware_profile": profile.profile_id,
         "pareto_hardware_profile": profile.profile_id,
         "ap_provenance": {
             "data_split": "coptv2x-test-v1",
-            "checkpoint_initial_state": "shared-initial-state-v1",
+            "checkpoint_initial_state": "e" * 64,
+            "training_config_digest": "d" * 64,
             "seed": 73,
             "metric_protocol": "coptv2x-ap-v1",
         },

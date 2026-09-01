@@ -113,6 +113,10 @@ new scheduling layer.
    The legacy executable name remains an alias; no new RTX controller or
    verifier executable is introduced.
 
+`tools/release/provision_p6_history_local_config.py` is a legacy H800-only,
+non-materializing diagnostic.  It is not an RTX entrypoint.  The only RTX
+provision boundary is `tools/release/provision_p6_full_chain_local_config.py`.
+
 ## TVM evidence and cache policy
 
 The measured native result must record a manifest with the selected profile id,

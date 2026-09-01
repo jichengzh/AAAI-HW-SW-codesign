@@ -410,7 +410,7 @@ def test_cli_rejects_obsolete_framework_provisioning_without_output_or_tracked_l
     assert _tracked_snapshot() == tracked_before
 
 
-def test_rtx_hardware_profile_admits_four_fake_cards_with_exactly_two_snapshots(
+def test_legacy_cli_rejects_rtx_before_any_gpu_snapshot(
     tmp_path: Path,
     monkeypatch: Any,
     capsys: Any,
@@ -467,10 +467,26 @@ def test_rtx_hardware_profile_admits_four_fake_cards_with_exactly_two_snapshots(
     captured = capsys.readouterr()
     assert exit_code == 1
     assert captured.out == ""
-    assert captured.err == "stage1_scan_unavailable\n"
-    assert probe_calls == [RTX_GPU_INDICES, RTX_GPU_INDICES]
+    assert captured.err == "legacy_h800_only\n"
+    assert probe_calls == []
     assert not binding_path.exists()
     assert not config_path.exists()
+
+
+def test_legacy_cli_help_names_h800_diagnostic_and_only_rtx_provision_boundary() -> None:
+    result = subprocess.run(
+        [sys.executable, str(PROVISIONER), "--help"],
+        cwd=REPOSITORY_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "legacy H800-only" in result.stdout
+    assert "non-materializing diagnostic" in result.stdout
+    assert "provision_p6_full_chain_local_config.py" in result.stdout
+    assert "RTX" in result.stdout
 
 
 def test_obsolete_framework_route_does_not_reach_loader_without_stage1_step(

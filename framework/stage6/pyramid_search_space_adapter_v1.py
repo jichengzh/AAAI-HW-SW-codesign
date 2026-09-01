@@ -184,7 +184,7 @@ def build_pyramid_candidate_plan(
         _fail("TVM hardware candidate is required")
     required_hardware = {
         "id": "tvm_metaschedule_candidate",
-        "backend_scope": "measured_h800_tvm",
+        "backend_scope": f"measured_{selected_profile.target_hardware_id}_tvm",
         "hardware": hardware_name,
         "schedule_policy": "tuned",
     }

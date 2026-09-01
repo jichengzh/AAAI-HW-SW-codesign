@@ -22,6 +22,7 @@ FAILURE_STATUSES = frozenset(
 ALLOWED_STATUSES = frozenset({SUCCESS_STATUS, *FAILURE_STATUSES})
 PUBLIC_FAILURE_REASON = re.compile(r"^[a-z0-9_-]+$")
 TVM_MEASUREMENT_MANIFEST_SCHEMA = "p6_tvm_measurement_manifest_v1"
+TVM_MEASUREMENT_MANIFEST_SCHEMA_V2 = "p6_tvm_measurement_manifest_v2"
 TVM_TOOLCHAIN_ID = "tvm_auto"
 TVM_MEASUREMENT_MANIFEST_KEYS = frozenset(
     {
@@ -32,6 +33,15 @@ TVM_MEASUREMENT_MANIFEST_KEYS = frozenset(
         "toolchain_id",
         "candidate_id",
         "source_digest",
+    }
+)
+TVM_MEASUREMENT_MANIFEST_KEYS_V2 = frozenset(
+    {
+        *TVM_MEASUREMENT_MANIFEST_KEYS,
+        "q_mode",
+        "configuration_digest",
+        "checkpoint_digest",
+        "code_digest",
     }
 )
 
@@ -49,6 +59,10 @@ def validate_tvm_measurement_manifest(
     profile: HardwareExecutionProfile,
     candidate_id: str,
     source_digest: str,
+    q_mode: str | None = None,
+    configuration_digest: str | None = None,
+    checkpoint_digest: str | None = None,
+    code_digest: str | None = None,
 ) -> bool:
     """Return whether TVM cache evidence exactly matches the active work."""
     try:
@@ -61,22 +75,57 @@ def validate_tvm_measurement_manifest(
             raise P6HistoryFeedbackValidationError()
         if not isinstance(manifest, Mapping):
             return False
-        expected = {
-            "schema_version": TVM_MEASUREMENT_MANIFEST_SCHEMA,
-            "hardware_profile": profile.profile_id,
-            "tvm_arch": profile.tvm_arch,
-            "tvm_cache_namespace": profile.tvm_cache_namespace,
-            "toolchain_id": TVM_TOOLCHAIN_ID,
-            "candidate_id": candidate_id,
-            "source_digest": source_digest,
-        }
-        return set(manifest) == TVM_MEASUREMENT_MANIFEST_KEYS and dict(
-            manifest
-        ) == expected
+        expected, keys = _expected_tvm_manifest(
+            profile,
+            candidate_id,
+            source_digest,
+            q_mode,
+            configuration_digest,
+            checkpoint_digest,
+            code_digest,
+        )
+        return set(manifest) == keys and dict(manifest) == expected
     except P6HistoryFeedbackValidationError:
         raise
     except (TypeError, ValueError):
         raise P6HistoryFeedbackValidationError() from None
+
+
+def _expected_tvm_manifest(
+    profile: HardwareExecutionProfile,
+    candidate_id: str,
+    source_digest: str,
+    q_mode: str | None,
+    configuration_digest: str | None,
+    checkpoint_digest: str | None,
+    code_digest: str | None,
+) -> tuple[dict[str, object], frozenset[str]]:
+    expected: dict[str, object] = {
+        "schema_version": TVM_MEASUREMENT_MANIFEST_SCHEMA,
+        "hardware_profile": profile.profile_id,
+        "tvm_arch": profile.tvm_arch,
+        "tvm_cache_namespace": profile.tvm_cache_namespace,
+        "toolchain_id": TVM_TOOLCHAIN_ID,
+        "candidate_id": candidate_id,
+        "source_digest": source_digest,
+    }
+    extended = (q_mode, configuration_digest, checkpoint_digest, code_digest)
+    if not any(value is not None for value in extended):
+        return expected, TVM_MEASUREMENT_MANIFEST_KEYS
+    if q_mode not in {"fp16", "int8"} or not all(
+        _is_sha(value) for value in extended[1:]
+    ):
+        raise ValueError
+    expected.update(
+        {
+            "schema_version": TVM_MEASUREMENT_MANIFEST_SCHEMA_V2,
+            "q_mode": q_mode,
+            "configuration_digest": configuration_digest,
+            "checkpoint_digest": checkpoint_digest,
+            "code_digest": code_digest,
+        }
+    )
+    return expected, TVM_MEASUREMENT_MANIFEST_KEYS_V2
 
 
 def _contains_tensorrt_engine_marker(value: object) -> bool:

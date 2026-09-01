@@ -96,9 +96,18 @@ def test_rtx_profile_accepts_committed_hardware_yaml_and_emits_canonical_target(
     assert result["hw_capability"]["name"] == "rtx4090"
     assert source_manifest["hw_capability"]["name"] == "NVIDIA RTX 4090"
     assert json.loads(output_path.read_text(encoding="utf-8")) == result
-    assert load_stage2_search_space(output_path)["hardware_target"]["name"] == (
-        "rtx4090"
+    stage2_space = load_stage2_search_space(output_path)
+    assert stage2_space["hardware_target"]["name"] == "rtx4090"
+    tvm_candidate = next(
+        candidate
+        for candidate in stage2_space["hardware_candidates"]
+        if candidate["id"] == "tvm_metaschedule_candidate"
     )
+    assert tvm_candidate["backend_scope"] == "measured_rtx4090_tvm"
+    assert "measured_h800_tvm" not in json.dumps(stage2_space, sort_keys=True)
+    candidate_plan = build_pyramid_candidate_plan(stage2_space, profile=profile)
+    assert candidate_plan["hardware_target"] == "rtx4090"
+    assert candidate_plan["candidate_count"] == len(candidate_plan["candidates"])
     assert calls == [
         (
             "pyramid_lidar",
@@ -205,6 +214,13 @@ def test_h800_profile_candidate_plan_preserves_scanner_owned_343_by_686_space(
     assert plan["structure_count"] == 343
     assert plan["candidate_count"] == 686
     assert len(mapping) == 686
+    stage2_space = scanner_owned_pyramid_stage2_space(PAPER_STAGE_WIDTHS)
+    tvm_candidate = next(
+        candidate
+        for candidate in stage2_space["hardware_candidates"]
+        if candidate["id"] == "tvm_metaschedule_candidate"
+    )
+    assert tvm_candidate["backend_scope"] == "measured_h800_tvm"
 
 
 def test_profile_candidate_plan_rejects_target_drift() -> None:

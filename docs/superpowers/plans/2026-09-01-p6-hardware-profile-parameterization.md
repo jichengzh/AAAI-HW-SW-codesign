@@ -13,6 +13,9 @@
 ## Global Constraints
 
 - Preserve current public v2 H800 contract/local-config behavior and existing release CLI arguments.
+- Treat `provision_p6_history_local_config.py` only as a legacy H800-only,
+  non-materializing diagnostic.  RTX provisioning uses only
+  `provision_p6_full_chain_local_config.py`.
 - Add no RTX controller, verifier, four-round chain, proxy metric, manual candidate plan, static fallback, TensorRT-as-TVM substitution, or broad historical/security work.
 - Keep fixed 4 rounds, 4 rows per round, 16 unique measured candidates, five real metrics, and Gold176 overlap zero.
 - `rtx4090` requires one ordered four-card policy; H800 preserves current nonempty ordered-policy compatibility.

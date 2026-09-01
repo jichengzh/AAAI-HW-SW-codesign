@@ -1,4 +1,7 @@
-"""Provision one private P6 history binding and framework local configuration."""
+"""Run the legacy H800-only, non-materializing diagnostic provision check.
+
+RTX provisioning is supported only by provision_p6_full_chain_local_config.py.
+"""
 
 from __future__ import annotations
 
@@ -123,7 +126,7 @@ def _absolute_path(value: str) -> Path:
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = _ArgumentParser(allow_abbrev=False)
+    parser = _ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--history-root", required=True, type=_absolute_path)
     parser.add_argument("--local-output-root", required=True, type=_absolute_path)
     parser.add_argument("--binding-output", required=True, type=_absolute_path)
@@ -362,6 +365,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             REPOSITORY_ROOT,
         )
         contract = load_public_contract(PUBLIC_CONTRACT_PATH)
+        if contract.hardware_profile.profile_id != "h800":
+            raise P6HistoryBindingError(
+                "legacy_h800_only",
+                "RTX requires provision_p6_full_chain_local_config.py",
+            )
         discover_history_binding(
             args.history_root,
             NvidiaSmiGpuProbe(),
