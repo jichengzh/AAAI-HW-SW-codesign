@@ -9,6 +9,7 @@ from framework.stage1.structural_axis_contract import (
     seal_dataflow_relation,
     seal_materializer_binding,
 )
+from framework.stage1.structural_axis_digest import canonical_digest
 
 
 def resolved_binding_authority(
@@ -20,13 +21,7 @@ def resolved_binding_authority(
     }
     raw_sources = canonical_source_dataflow_relations(
         [
-            {
-                **dict(item.relation),
-                "canonical_group_id": item.group["group_id"],
-                "materializer_binding_projections": bindings_by_axis[
-                    item.source.axis_id
-                ],
-            }
+            _source_relation(item, bindings_by_axis[item.source.axis_id])
             for item in resolved
         ]
     )
@@ -42,6 +37,37 @@ def resolved_binding_authority(
         for binding in bindings_by_axis[item.source.axis_id]
     ]
     return raw_sources, derived, bindings
+
+
+def _source_relation(
+    item: Any, bindings: Sequence[Mapping[str, Any]]
+) -> dict[str, Any]:
+    relation = dict(item.relation)
+    if relation.get("member_relations") is None:
+        members = tuple(
+            sorted(
+                (
+                    {
+                        "group_id": str(member.group["group_id"]),
+                        "role": member.role,
+                    }
+                    for member in item.members
+                ),
+                key=lambda row: row["group_id"],
+            )
+        )
+        group_ids = tuple(row["group_id"] for row in members)
+        relation = {
+            **relation,
+            "member_relations": members,
+            "declared_member_group_ids": group_ids,
+            "member_relations_digest": canonical_digest(group_ids),
+        }
+    return {
+        **relation,
+        "canonical_group_id": item.group["group_id"],
+        "materializer_binding_projections": list(bindings),
+    }
 
 
 def _binding_row(item: Any, member: Any) -> dict[str, Any]:

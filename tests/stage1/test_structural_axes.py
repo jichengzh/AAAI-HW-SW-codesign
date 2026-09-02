@@ -398,3 +398,80 @@ def test_build_inputs_infers_members_from_exact_depgraph_layer_relations() -> No
     )
 
     assert [row["group_id"] for row in inputs["prune_groups"]] == ["g0", "g1"]
+
+
+def test_inferred_members_stop_at_the_nearest_materializer_axis() -> None:
+    """A shared path belongs to its nearest declared axis, not every axis."""
+    base = selector_context()
+    sources = tuple(
+        MaterializerParameterSource(
+            axis_id=axis_id,
+            config_selector=f"model.{config_key}",
+            mutation_kind="out_channels",
+            module_root_selector=module_path,
+            allowed_roles=("output",),
+            provenance={"adapter": "unit", "declaration": "chain endpoint"},
+        )
+        for axis_id, config_key, module_path in (
+            ("chain.left", "left", "backbone.0"),
+            ("chain.right", "right", "backbone.3"),
+        )
+    )
+    modules = {
+        f"backbone.{index}": nn.Conv2d(32, 32, 1)
+        for index in range(4)
+    }
+    relations = tuple(
+        {
+            "module_root_selector": source.module_root_selector,
+            "canonical_axis_id": source.axis_id,
+        }
+        for source in sources
+    )
+    context = TraceContext(
+        net=base.net,
+        example_inputs=base.example_inputs,
+        full_model=base.full_model,
+        loaded_config={"model": {"left": 32, "right": 32}},
+        checkpoint_evidence={
+            "digest": "b" * 64,
+            "module_widths": {
+                module_path: 32 for module_path in modules
+            },
+        },
+        materializer_sources=sources,
+        trace_modules=modules,
+        dataflow_relations=relations,
+    )
+    groups = [
+        {
+            **selector_groups()[0],
+            "group_id": f"g{index}",
+            "root_layer": f"backbone.{index}",
+            "member_layers": [
+                f"backbone.{index}",
+                *([f"backbone.{index + 1}"] if index < 3 else []),
+            ],
+        }
+        for index in range(4)
+    ]
+
+    inputs = build_structural_axis_inputs(
+        trace_context=context,
+        prune_groups=groups,
+        scenario=selector_scenario(),
+        group_manifest=selector_group_manifest(
+            groups,
+            source_relations=[dict(row) for row in relations],
+        ),
+    )
+
+    assert [
+        (row["b1_group_id"], row["axis_id"])
+        for row in inputs["materializer_bindings"]
+    ] == [
+        ("g0", "chain.left"),
+        ("g1", "chain.left"),
+        ("g3", "chain.right"),
+        ("g2", "chain.right"),
+    ]
