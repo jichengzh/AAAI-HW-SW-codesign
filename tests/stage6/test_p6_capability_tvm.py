@@ -53,6 +53,11 @@ def _fake_modules(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     package.mkdir(parents=True)
     init = package / "__init__.py"
     library = package / "libtvm.so"
+    legacy_ffi = package / "_ffi"
+    legacy_ffi.mkdir()
+    (legacy_ffi / "__init__.py").write_text("# legacy ffi\n", encoding="utf-8")
+    legacy_locator = legacy_ffi / "libinfo.py"
+    legacy_locator.write_text("# library locator\n", encoding="utf-8")
     init.write_text("# tvm\n", encoding="utf-8")
     library.write_bytes(b"compiler-library")
     dimensions = [SimpleNamespace(dim_value=value) for value in (1, 16, 8, 8)]
@@ -97,7 +102,10 @@ def _fake_modules(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     frontend_onnx = ModuleType("tvm.relax.frontend.onnx")
     frontend_onnx.from_onnx = lambda model, **kwargs: (model, kwargs)
     ffi = ModuleType("tvm._ffi")
-    ffi.libinfo = SimpleNamespace(find_lib_path=lambda: [str(library)])
+    libinfo = ModuleType("tvm._ffi.libinfo")
+    libinfo.__file__ = str(legacy_locator)
+    libinfo.find_lib_path = lambda: [str(library)]
+    ffi.libinfo = libinfo
     tvm.relax = relax
     for name, module in {
         "onnx": onnx,
@@ -106,6 +114,7 @@ def _fake_modules(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         "tvm.relax.frontend": frontend,
         "tvm.relax.frontend.onnx": frontend_onnx,
         "tvm._ffi": ffi,
+        "tvm._ffi.libinfo": libinfo,
     }.items():
         monkeypatch.setitem(sys.modules, name, module)
     return site, model
@@ -155,7 +164,7 @@ def test_tvm_runtime_identity_is_path_free_and_byte_bound(
     )
 
     assert identity["tvm_arch"] == "sm89"
-    assert len(identity["compiler_file_sha256"]) == 2
+    assert len(identity["compiler_file_sha256"]) == 4
     assert "/" not in json.dumps(identity)
     assert require_cuda_sm89()[1].kind.name == "cuda"
 
@@ -165,13 +174,22 @@ def test_tvm_runtime_identity_supports_top_level_tvm_ffi_libinfo(
 ) -> None:
     site, _ = _fake_modules(tmp_path, monkeypatch)
     monkeypatch.delitem(sys.modules, "tvm._ffi")
+    monkeypatch.delitem(sys.modules, "tvm._ffi.libinfo")
+    (site / "tvm" / "_ffi" / "libinfo.py").unlink()
+    (site / "tvm" / "_ffi" / "__init__.py").unlink()
+    (site / "tvm" / "_ffi").rmdir()
     ffi_root = site / "tvm_ffi"
     ffi_root.mkdir()
     (ffi_root / "__init__.py").write_text("# tvm ffi\n", encoding="utf-8")
-    (ffi_root / "libinfo.py").write_text("# library locator\n", encoding="utf-8")
+    locator = ffi_root / "libinfo.py"
+    locator.write_text("# library locator\n", encoding="utf-8")
     tvm_ffi = ModuleType("tvm_ffi")
-    tvm_ffi.libinfo = SimpleNamespace(find_lib_path=lambda: [str(site / "tvm" / "libtvm.so")])
+    libinfo = ModuleType("tvm_ffi.libinfo")
+    libinfo.__file__ = str(locator)
+    libinfo.find_lib_path = lambda: [str(site / "tvm" / "libtvm.so")]
+    tvm_ffi.libinfo = libinfo
     monkeypatch.setitem(sys.modules, "tvm_ffi", tvm_ffi)
+    monkeypatch.setitem(sys.modules, "tvm_ffi.libinfo", libinfo)
     nvlibs = tmp_path / "nvlibs.json"
     nvlibs.write_text("{}\n", encoding="utf-8")
 
@@ -183,6 +201,113 @@ def test_tvm_runtime_identity_supports_top_level_tvm_ffi_libinfo(
 
     assert identity["target"] == "cuda -arch=sm_89"
     assert len(identity["compiler_file_sha256"]) == 4
+
+
+def test_tvm_runtime_rejects_ambiguous_library_locators(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site, _ = _fake_modules(tmp_path, monkeypatch)
+    ffi_root = site / "tvm_ffi"
+    ffi_root.mkdir()
+    (ffi_root / "__init__.py").write_text("# tvm ffi\n", encoding="utf-8")
+    (ffi_root / "libinfo.py").write_text("# second locator\n", encoding="utf-8")
+    nvlibs = tmp_path / "nvlibs.json"
+    nvlibs.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="library locator invalid"):
+        collect_tvm_runtime_identity(
+            tvm_site=site,
+            nvlibs_file=nvlibs,
+            support_root_sha256="a" * 64,
+        )
+
+
+def test_tvm_runtime_rejects_ambient_libinfo_without_locator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site, _ = _fake_modules(tmp_path, monkeypatch)
+    (site / "tvm" / "_ffi" / "libinfo.py").unlink()
+    sys.modules["tvm._ffi.libinfo"].find_lib_path = lambda: pytest.fail(
+        "ambient locator must not be called"
+    )
+    nvlibs = tmp_path / "nvlibs.json"
+    nvlibs.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="library locator invalid"):
+        collect_tvm_runtime_identity(
+            tvm_site=site,
+            nvlibs_file=nvlibs,
+            support_root_sha256="a" * 64,
+        )
+
+
+def test_tvm_runtime_rejects_imported_libinfo_from_different_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site, _ = _fake_modules(tmp_path, monkeypatch)
+    outside = tmp_path / "outside-libinfo.py"
+    outside.write_text("# ambient locator\n", encoding="utf-8")
+    sys.modules["tvm._ffi.libinfo"].__file__ = str(outside)
+    sys.modules["tvm._ffi.libinfo"].find_lib_path = lambda: pytest.fail(
+        "mismatched locator must not be called"
+    )
+    nvlibs = tmp_path / "nvlibs.json"
+    nvlibs.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="library locator invalid"):
+        collect_tvm_runtime_identity(
+            tvm_site=site,
+            nvlibs_file=nvlibs,
+            support_root_sha256="a" * 64,
+        )
+
+
+@pytest.mark.parametrize("locator_kind", ("symlink", "directory"))
+def test_tvm_runtime_rejects_nonregular_library_locator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, locator_kind: str
+) -> None:
+    site, _ = _fake_modules(tmp_path, monkeypatch)
+    locator = site / "tvm" / "_ffi" / "libinfo.py"
+    locator.unlink()
+    if locator_kind == "symlink":
+        outside = tmp_path / "outside-libinfo.py"
+        outside.write_text("# outside locator\n", encoding="utf-8")
+        locator.symlink_to(outside)
+    else:
+        locator.mkdir()
+    nvlibs = tmp_path / "nvlibs.json"
+    nvlibs.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        collect_tvm_runtime_identity(
+            tvm_site=site,
+            nvlibs_file=nvlibs,
+            support_root_sha256="a" * 64,
+        )
+
+
+def test_tvm_runtime_manifest_binds_library_locator_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site, _ = _fake_modules(tmp_path, monkeypatch)
+    nvlibs = tmp_path / "nvlibs.json"
+    nvlibs.write_text("{}\n", encoding="utf-8")
+    baseline = collect_tvm_runtime_identity(
+        tvm_site=site,
+        nvlibs_file=nvlibs,
+        support_root_sha256="a" * 64,
+    )
+
+    (site / "tvm" / "_ffi" / "libinfo.py").write_text(
+        "# changed library locator\n", encoding="utf-8"
+    )
+    changed = collect_tvm_runtime_identity(
+        tvm_site=site,
+        nvlibs_file=nvlibs,
+        support_root_sha256="a" * 64,
+    )
+
+    assert changed["compiler_fingerprint"] != baseline["compiler_fingerprint"]
 
 
 def test_tvm_runtime_fails_closed_without_cuda_or_with_invalid_compiler_tree(

@@ -36,6 +36,10 @@ def _regular_file(path: Path) -> bool:
 
 
 _TVM_PACKAGE_ROOT_NAMES = ("tvm", "tvm_ffi")
+_TVM_LIBRARY_LOCATORS = (
+    Path("tvm_ffi/libinfo.py"),
+    Path("tvm/_ffi/libinfo.py"),
+)
 _COMPILER_REJECTION_PATTERNS = {
     "frontend": re.compile(r"unsupported onnx operator(?: [A-Za-z0-9_.:-]+)?", re.I),
     "lowering": re.compile(r"cannot legalize operator(?: [A-Za-z0-9_.:-]+)?", re.I),
@@ -69,16 +73,47 @@ def _package_authority_files(root: Path) -> list[Path]:
     return files
 
 
-def _required_tvm_libraries(root: Path) -> tuple[Path, ...]:
+def _entry_exists(path: Path) -> bool:
     try:
-        if (root / "tvm_ffi" / "libinfo.py").is_file():
+        path.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError as error:
+        raise ValueError("TVM compiler library locator invalid") from error
+    return True
+
+
+def _library_locator(root: Path, files: list[Path]) -> Path:
+    candidates = tuple(root / relative for relative in _TVM_LIBRARY_LOCATORS)
+    present = tuple(candidate for candidate in candidates if _entry_exists(candidate))
+    if len(present) != 1 or not _regular_file(present[0]) or present[0] not in files:
+        raise ValueError("TVM compiler library locator invalid")
+    return present[0]
+
+
+def _import_library_locator(root: Path, locator: Path) -> Any:
+    try:
+        if locator == root / _TVM_LIBRARY_LOCATORS[0]:
             from tvm_ffi import libinfo
         else:
             from tvm._ffi import libinfo
-
-        libraries = tuple(Path(value).resolve(strict=True) for value in libinfo.find_lib_path())
     except ImportError as error:
         raise ValueError("TVM compiler library unavailable") from error
+    origin = getattr(libinfo, "__file__", None)
+    try:
+        imported_locator = Path(origin) if isinstance(origin, str) else None
+        resolved_locator = imported_locator.resolve(strict=True) if imported_locator else None
+    except OSError as error:
+        raise ValueError("TVM compiler library locator invalid") from error
+    if imported_locator != locator or resolved_locator != locator:
+        raise ValueError("TVM compiler library locator invalid")
+    return libinfo
+
+
+def _required_tvm_libraries(root: Path, files: list[Path]) -> tuple[Path, ...]:
+    locator = _library_locator(root, files)
+    libinfo = _import_library_locator(root, locator)
+    libraries = tuple(Path(value).resolve(strict=True) for value in libinfo.find_lib_path())
     if not libraries or any(not path.is_relative_to(root) for path in libraries):
         raise ValueError("TVM compiler library unavailable")
     return libraries
@@ -89,7 +124,7 @@ def _tvm_authority_files(tvm_site: Path) -> tuple[Path, ...]:
         raise ValueError("TVM compiler site invalid")
     root = tvm_site.resolve(strict=True)
     files = _package_authority_files(root)
-    if any(path not in files for path in _required_tvm_libraries(root)):
+    if any(path not in files for path in _required_tvm_libraries(root, files)):
         raise ValueError("TVM compiler library unavailable")
     return tuple(files)
 
