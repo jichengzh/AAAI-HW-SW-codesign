@@ -74,7 +74,9 @@ def _historical_source_authority(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(execution, "probe_normalized_capability_authority", rebuild)
 
 
-def _write_rtx_context_source(tmp_path: Path) -> tuple[Path, list[dict[str, Any]]]:
+def _write_rtx_context_source(
+    tmp_path: Path, *, tvm_python: str = "/usr/bin/python3.10"
+) -> tuple[Path, list[dict[str, Any]]]:
     source_map, runner = v5_private_source_map(tmp_path)
     source_map["hardware_profile"] = "rtx4090"
     support = next(
@@ -94,7 +96,7 @@ def _write_rtx_context_source(tmp_path: Path) -> tuple[Path, list[dict[str, Any]
         {
             "P6_TVM_PYTHON": {
                 "kind": "external_executable",
-                "value": "/usr/bin/python3.10",
+                "value": tvm_python,
             },
             "P6_TVM_SITE": {
                 "kind": "external_directory",

@@ -148,7 +148,6 @@ def _normalized_runtime_inputs(
         support = Path(declared["P6_TVM_SUPPORT_ROOT"])
         if (
             profile.hardware_profile.profile_id != "rtx4090"
-            or python != profile.adapter_python
             or profile.adapter_dependency_root is None
             or support != profile.tvm_support_root
             or declared["P6_TVM_SUPPORT_ROOT_SHA256"]

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shutil
 from types import SimpleNamespace
 
 import pytest
@@ -117,6 +118,24 @@ def test_runtime_inputs_are_locked_to_normalized_profile_and_runner(
             private_root=normalized,
             expected_gpu_indices=tuple(reversed(inputs.gpu_indices)),
         )
+
+
+def test_runtime_inputs_keep_adapter_and_formal_tvm_python_roles_distinct(
+    tmp_path: Path,
+) -> None:
+    tvm_python = tmp_path / "tvm-runtime/bin/python3.10"
+    tvm_python.parent.mkdir(parents=True)
+    shutil.copyfile("/usr/bin/python3.10", tvm_python)
+    tvm_python.chmod(0o700)
+    normalized, _ = _write_rtx_context_source(
+        tmp_path, tvm_python=str(tvm_python)
+    )
+
+    inputs = _normalized_runtime_inputs(
+        private_root=normalized, expected_gpu_indices=None
+    )
+
+    assert inputs.python == tvm_python
 
 
 def test_context_path_and_helper_environment_fail_closed(
