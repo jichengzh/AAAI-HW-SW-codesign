@@ -897,6 +897,11 @@ def _validated_incoming_env(context: RoundContext) -> dict[str, str]:
         "P6_HISTORY_PRIVATE_ROOT",
         "P6_HISTORY_TASK_STATE",
         "P6_HISTORY_ROUND_OUTPUT_ROOT",
+        "P6_TVM_PYTHON",
+        "P6_TVM_SITE",
+        "P6_TVM_NVLIBS_FILE",
+        "P6_TVM_SUPPORT_ROOT",
+        "P6_TVM_SUPPORT_ROOT_SHA256",
     )
     inherited = {key: os.environ[key] for key in keys if key in os.environ}
     if set(inherited) != set(keys):

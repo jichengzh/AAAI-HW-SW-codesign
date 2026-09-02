@@ -656,6 +656,34 @@ def test_performance_round_plans_once_then_executes_with_historical_argv(
     assert _read_json(task_state) == {"stage": "performance", "rows": original_rows}
 
 
+def test_performance_round_forwards_only_allowlisted_formal_tvm_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_runtime_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("P6_PRIVATE_AMBIENT_SENTINEL", "must-not-forward")
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_quantized_task_state(round_root, request)
+    runner = _PerformanceRunner()
+
+    run_performance_round(profile, task_state, round_root, runner)
+
+    for call in runner.calls:
+        assert call["env"] == _expected_env(
+            profile, tmp_path, task_state, round_root
+        )
+        assert "P6_PRIVATE_AMBIENT_SENTINEL" not in call["env"]
+        assert {
+            "P6_TVM_PYTHON",
+            "P6_TVM_SITE",
+            "P6_TVM_NVLIBS_FILE",
+            "P6_TVM_SUPPORT_ROOT",
+            "P6_TVM_SUPPORT_ROOT_SHA256",
+        }.issubset(call["env"])
+
+
 def test_performance_round_accepts_native_manifest_jobs_and_state_rows(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1191,6 +1219,11 @@ def _expected_env(
         "P6_HISTORY_PRIVATE_ROOT": str(tmp_path / "private"),
         "P6_HISTORY_TASK_STATE": str(task_state),
         "P6_HISTORY_ROUND_OUTPUT_ROOT": str(round_root),
+        "P6_TVM_PYTHON": str(tmp_path / "tvm-runtime" / "bin" / "python"),
+        "P6_TVM_SITE": str(tmp_path / "tvm-runtime" / "site-packages"),
+        "P6_TVM_NVLIBS_FILE": str(tmp_path / "tvm-runtime" / "nvlibs.path"),
+        "P6_TVM_SUPPORT_ROOT": str(tmp_path / "tvm-support"),
+        "P6_TVM_SUPPORT_ROOT_SHA256": "e" * 64,
         "PATH": f"{profile.project_python.parent}:/usr/bin:/bin",
         "PYTHONPATH": f"{profile.private_root}:{Path.cwd()}",
     }
@@ -1213,3 +1246,18 @@ def _set_runtime_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("P6_HISTORY_PRIVATE_ROOT", str(tmp_path / "private"))
     monkeypatch.setenv("P6_HISTORY_TASK_STATE", str(task_state))
     monkeypatch.setenv("P6_HISTORY_ROUND_OUTPUT_ROOT", str(round_root))
+    tvm_python = tmp_path / "tvm-runtime" / "bin" / "python"
+    tvm_python.parent.mkdir(parents=True)
+    tvm_python.write_text("#!/bin/sh\n", encoding="utf-8")
+    tvm_python.chmod(0o700)
+    tvm_site = tmp_path / "tvm-runtime" / "site-packages"
+    tvm_site.mkdir(parents=True)
+    nvlibs = tmp_path / "tvm-runtime" / "nvlibs.path"
+    nvlibs.write_text("", encoding="utf-8")
+    support_root = tmp_path / "tvm-support"
+    support_root.mkdir()
+    monkeypatch.setenv("P6_TVM_PYTHON", str(tvm_python))
+    monkeypatch.setenv("P6_TVM_SITE", str(tvm_site))
+    monkeypatch.setenv("P6_TVM_NVLIBS_FILE", str(nvlibs))
+    monkeypatch.setenv("P6_TVM_SUPPORT_ROOT", str(support_root))
+    monkeypatch.setenv("P6_TVM_SUPPORT_ROOT_SHA256", "e" * 64)
