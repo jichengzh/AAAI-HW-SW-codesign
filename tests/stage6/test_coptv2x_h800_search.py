@@ -3148,7 +3148,7 @@ def test_v3_hardware_profile_contract_and_local_config_share_registry_profile(
     assert contract.execution_backend in contract.hardware_profile.backend_scope
 
 
-def test_v3_rtx_capability_profile_reaches_profile_derived_search_task(
+def test_v3_rtx_rejects_unmeasured_relabelled_capability_profiles(
     tmp_path: Path,
 ) -> None:
     rows, graphs = _gold176(
@@ -3162,13 +3162,8 @@ def test_v3_rtx_capability_profile_reaches_profile_derived_search_task(
     )
     contract, local = _load_v3_profile_pair(tmp_path, "rtx4090")
 
-    _, _, _, selected_profile = execution._load_search_inputs(local, contract)
-    task = execution._build_search_task(contract, selected_profile)
-    execution.validate_search_task(task)
-
-    assert selected_profile["hardware_target"] == "rtx4090"
-    assert selected_profile["dispatch_key"] == "tvm_auto"
-    assert task.hardware_id == "rtx4090"
+    with pytest.raises(P6CoptV2XContractError, match="capability context"):
+        execution._load_search_inputs(local, contract)
 
 
 def test_v3_rtx_controller_builds_scanner_owned_source_registry_plan(
@@ -3285,7 +3280,7 @@ def test_v3_rtx_hardware_profile_rejects_mixed_h800_capability_context(
     )
     contract, local = _load_v3_profile_pair(tmp_path, "rtx4090")
 
-    with pytest.raises(P6CoptV2XContractError, match="hardware profile"):
+    with pytest.raises(P6CoptV2XContractError, match="capability context"):
         execution._load_search_inputs(local, contract)
 
 

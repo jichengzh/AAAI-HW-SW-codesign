@@ -36,9 +36,20 @@ from framework.stage6.hardware_execution_profile_v1 import (
     load_hardware_execution_profile,
     validate_profile_backend,
 )
+from framework.stage6.p6_capability_context_v1 import (
+    CONTEXT_SCHEMA_VERSION,
+    P6CapabilityContextError,
+    canonical_probe_code_sha256,
+    validate_rtx_capability_context,
+)
 from framework.stage6.p6_history_source_materialization_v1 import (
     P6HistorySourceMaterializationError,
     project_source_materialization_request,
+)
+from framework.stage6.p6_post_source_adapter_profile_v1 import (
+    P6PostSourceAdapterProfileError,
+    load_post_source_adapter_profile,
+    require_post_source_adapter_profile_v4,
 )
 from framework.stage6.p6_source_reuse_evidence_v1 import (
     P6SourceReuseEvidenceError,
@@ -475,31 +486,95 @@ def _load_search_inputs(
             "gold176 graph features",
         )
     )
-    raw_profiles = _require_mapping_rows(
-        _read_local_input_json(local.local_input_paths["capability_profiles"]),
-        "capability profiles",
+    raw_profiles = _read_local_input_json(
+        local.local_input_paths["capability_profiles"]
     )
     closure = _read_local_input_json(local.local_input_paths["closure"])
     _validate_closure(closure)
     frozen_gold = freeze_initial_coldstart(gold_rows)
-    capability_profiles = [
-        validate_capability_profile(profile) for profile in raw_profiles
-    ]
+    capability_profiles, coldstart_profiles, profile = _load_capability_profiles(
+        raw_profiles, local=local, contract=contract
+    )
     coldstart_profile_ids = {
         str(row.get("capability_profile_id") or "") for row in frozen_gold
     }
     capability_profile_ids = {
         str(profile.get("capability_profile_id") or "")
-        for profile in capability_profiles
+        for profile in coldstart_profiles
     }
     if (
         len(coldstart_profile_ids) != FIXED_COLDSTART_PROFILE_COUNT
-        or len(capability_profiles) != FIXED_COLDSTART_PROFILE_COUNT
+        or len(coldstart_profiles) != FIXED_COLDSTART_PROFILE_COUNT
         or capability_profile_ids != coldstart_profile_ids
     ):
         raise P6CoptV2XContractError("coldstart capability context is incomplete")
-    profile = _select_profile(capability_profiles, contract)
     return frozen_gold, gold_graphs, capability_profiles, profile
+
+
+def _load_capability_profiles(
+    raw: object,
+    *,
+    local: LocalP6CoptV2XConfig,
+    contract: PublicP6CoptV2XContract | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    hardware_profile = (
+        contract.hardware_profile
+        if contract is not None
+        else default_hardware_execution_profile()
+    )
+    if isinstance(raw, Mapping) and raw.get("schema_version") == CONTEXT_SCHEMA_VERSION:
+        if hardware_profile.profile_id != "rtx4090":
+            raise P6CoptV2XContractError("capability context does not match hardware profile")
+        measured = _validated_rtx_context(raw, local=local, profile=hardware_profile)
+        historical = [copy.deepcopy(item) for item in measured.historical_profiles]
+        active = copy.deepcopy(measured.active_profile)
+        return [*historical, active], historical, active
+    if hardware_profile.profile_id == "rtx4090":
+        raise P6CoptV2XContractError("measured RTX capability context is required")
+    raw_rows = _require_mapping_rows(raw, "capability profiles")
+    profiles = [validate_capability_profile(profile) for profile in raw_rows]
+    return profiles, profiles, _select_profile(profiles, contract)
+
+
+def _validated_rtx_context(
+    raw: object,
+    *,
+    local: LocalP6CoptV2XConfig,
+    profile: HardwareExecutionProfile,
+) -> Any:
+    repository_root = Path(__file__).resolve().parents[2]
+    capability_path = local.local_input_paths["capability_profiles"]
+    try:
+        resolved = capability_path.resolve(strict=True)
+        private_root = resolved.parent.parent
+        if resolved.parent != private_root / "inputs":
+            raise ValueError
+        post_source = load_post_source_adapter_profile(
+            private_root / "post-source-adapter-profile.yaml",
+            private_root=private_root,
+        )
+        require_post_source_adapter_profile_v4(post_source)
+        if (
+            post_source.hardware_profile.profile_id != profile.profile_id
+            or post_source.tvm_support_root_sha256 is None
+        ):
+            raise ValueError
+        return validate_rtx_capability_context(
+            raw,
+            profile=profile,
+            repository_root=repository_root,
+            expected_probe_code_sha256=canonical_probe_code_sha256(repository_root),
+            expected_support_root_sha256=post_source.tvm_support_root_sha256,
+        )
+    except (
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        P6CapabilityContextError,
+        P6PostSourceAdapterProfileError,
+    ) as error:
+        raise P6CoptV2XContractError("measured RTX capability context is invalid") from error
 
 
 def _normalize_gold_graph_features(
@@ -790,6 +865,33 @@ def _validate_closure(closure: object) -> None:
         raise P6CoptV2XContractError("closure does not admit the P6 search")
 
 
+def _round_capability_profiles(
+    capability_profiles: Sequence[Mapping[str, Any]],
+    *,
+    frozen_gold: Sequence[Mapping[str, Any]],
+    task: SearchTask,
+    round_index: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Keep Gold contexts in round zero while encoding against the active target."""
+    profiles = [validate_capability_profile(item) for item in capability_profiles]
+    profile_by_id = {
+        str(item["capability_profile_id"]): item for item in profiles
+    }
+    gold_ids = {str(row.get("capability_profile_id") or "") for row in frozen_gold}
+    active_id = str(task.capability_profile["capability_profile_id"])
+    if (
+        len(profile_by_id) != len(profiles)
+        or len(gold_ids) != FIXED_COLDSTART_PROFILE_COUNT
+        or not gold_ids.issubset(profile_by_id)
+        or active_id not in profile_by_id
+        or any(tuple(item["features"]) != tuple(profiles[0]["features"]) for item in profiles)
+    ):
+        raise P6CoptV2XContractError("capability context partition is invalid")
+    historical = [item for item in profiles if item["capability_profile_id"] in gold_ids]
+    fit_profiles = historical if round_index == 0 else profiles
+    return fit_profiles, [profile_by_id[active_id]]
+
+
 def _run_search_round(
     *,
     contract: PublicP6CoptV2XContract,
@@ -815,13 +917,19 @@ def _run_search_round(
     training_graphs = _unique_graph_features(
         [*gold_graphs, *[dict(row["graph_features"]) for row in successful_feedback_rows]]
     )
+    fit_profiles, prediction_profiles = _round_capability_profiles(
+        capability_profiles,
+        frozen_gold=frozen_gold,
+        task=task,
+        round_index=round_index,
+    )
     bundle = (
         fit_initial_coldstart_bundle(
-            frozen_gold, gold_graphs, capability_profiles, seed=contract.seed
+            frozen_gold, gold_graphs, fit_profiles, seed=contract.seed
         )
         if round_index == 0
         else fit_online_bundle(
-            training_rows, training_graphs, capability_profiles, seed=contract.seed
+            training_rows, training_graphs, fit_profiles, seed=contract.seed
         )
     )
     manifest = build_task_candidate_manifest(
@@ -830,7 +938,7 @@ def _run_search_round(
         measured_row_ids=measured_row_ids,
         frozen_holdout_group_ids=frozen_holdout_group_ids,
     )
-    predicted = predict_candidate_rows(bundle, manifest["rows"], capability_profiles)
+    predicted = predict_candidate_rows(bundle, manifest["rows"], prediction_profiles)
     selection = select_task_batch(
         predicted,
         [*gold_selection_rows, *online_feedback_rows],

@@ -1,0 +1,304 @@
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from framework.stage2.canonical_search_v3 import build_capability_profile
+from framework.stage6.hardware_execution_profile_v1 import (
+    load_hardware_execution_profile,
+)
+from framework.stage6.p6_capability_artifacts_v1 import build_probe_artifact_blobs
+from framework.stage6.p6_capability_context_v1 import (
+    P6CapabilityContextError,
+    build_rtx_capability_context,
+    capability_context_to_mapping,
+    compiler_fingerprint,
+    validate_rtx_capability_context,
+)
+from framework.stage6.p6_capability_probe_specs_v1 import (
+    FEATURE_NAMES,
+    NEUTRAL_PROBE_IDS,
+    PRUNING_PROBE_IDS,
+)
+
+
+RECORD_FIELDS = {
+    "schema_version",
+    "probe_id",
+    "q_mode",
+    "onnx_sha256",
+    "build_success",
+    "observation_status",
+    "compiler_ir_sha256",
+    "int8_propagated_ops",
+    "precision_eligible_ops",
+    "qdq_folded_pairs",
+    "qdq_pairs",
+    "reformat_ops",
+    "total_ops",
+    "fused_ops",
+    "fusible_ops",
+}
+
+
+def _sha(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def _file_sha(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _historical_profile(profile_id: str, dispatch: str) -> dict[str, Any]:
+    return build_capability_profile(
+        capability_profile_id=profile_id,
+        hardware_target="h800",
+        compiler_fingerprint=_sha(f"compiler:{dispatch}"),
+        dispatch_key=dispatch,
+        features={name: float(index + 1) / 100.0 for index, name in enumerate(FEATURE_NAMES)},
+    )
+
+
+def historical_profiles() -> list[dict[str, Any]]:
+    return [
+        _historical_profile("h800-tvm-auto", "tvm_auto"),
+        _historical_profile("h800-trt-engine", "trt_engine"),
+    ]
+
+
+def _record(probe_id: str, q_mode: str, *, offset: int) -> dict[str, Any]:
+    int8 = q_mode == "int8"
+    return {
+        "schema_version": "p6_compiler_capability_probe_record_v1",
+        "probe_id": probe_id,
+        "q_mode": q_mode,
+        "onnx_sha256": _sha(f"onnx:{probe_id}:{q_mode}"),
+        "build_success": True,
+        "observation_status": "observed_build_success",
+        "compiler_ir_sha256": _sha(f"ir:{probe_id}:{q_mode}"),
+        "int8_propagated_ops": 1 if int8 else None,
+        "precision_eligible_ops": 2 if int8 else None,
+        "qdq_folded_pairs": offset % 2 if int8 else None,
+        "qdq_pairs": 1 if int8 else None,
+        "reformat_ops": offset % 3,
+        "total_ops": 4,
+        "fused_ops": offset % 2,
+        "fusible_ops": 2,
+    }
+
+
+def _records(probe_ids: tuple[str, ...]) -> list[dict[str, Any]]:
+    return [
+        _record(probe_id, q_mode, offset=index)
+        for index, probe_id in enumerate(probe_ids)
+        for q_mode in ("fp16", "int8")
+    ]
+
+
+def runtime_identity() -> dict[str, Any]:
+    identity = {
+        "schema_version": "p6_tvm_compiler_runtime_identity_v1",
+        "tvm_version": "0.20.dev0",
+        "python_version": "3.10.16",
+        "target": "cuda -arch=sm_89",
+        "tvm_arch": "sm89",
+        "support_root_sha256": _sha("support-root"),
+        "tvm_site_sha256": _sha("tvm-site"),
+        "nvlibs_file_sha256": _sha("nvlibs"),
+        "compiler_file_sha256": sorted([_sha("lib-a"), _sha("lib-b")]),
+    }
+    return {**identity, "compiler_fingerprint": compiler_fingerprint(identity)}
+
+
+def probe_evidence() -> dict[str, Any]:
+    root = Path(__file__).resolve().parents[2]
+    profile = load_hardware_execution_profile("rtx4090")
+    neutral_records = _records(NEUTRAL_PROBE_IDS)
+    pruning_records = _records(PRUNING_PROBE_IDS)
+    artifact_blobs = []
+    manifest_digests = {}
+    for family, records in (
+        ("neutral", neutral_records),
+        ("pruning", pruning_records),
+    ):
+        cells = {(row["probe_id"], row["q_mode"]): row for row in records}
+        blobs, digest = build_probe_artifact_blobs(
+            family=family,
+            records=records,
+            onnx_by_cell={cell: f"onnx:{cell[0]}:{cell[1]}".encode() for cell in cells},
+            output_by_cell={cell: f"ir:{cell[0]}:{cell[1]}".encode() for cell in cells},
+        )
+        artifact_blobs.extend(blobs)
+        manifest_digests[family] = digest
+    return {
+        "schema_version": "p6_rtx_compiler_capability_evidence_v1",
+        "hardware_profile": "rtx4090",
+        "hardware_target": "rtx4090",
+        "dispatch_key": "tvm_auto",
+        "tvm_arch": "sm89",
+        "verified_gpu_count": 4,
+        "hardware_capability_sha256": _file_sha(
+            root.joinpath(*profile.hardware_capability_path.parts)
+        ),
+        "environment_contract_sha256": _file_sha(
+            root.joinpath(*profile.environment_contract_path.parts)
+        ),
+        "runtime_identity": runtime_identity(),
+        "probe_code_sha256": _sha("probe-code"),
+        "neutral_probe_manifest_sha256": manifest_digests["neutral"],
+        "pruning_probe_manifest_sha256": manifest_digests["pruning"],
+        "neutral_records": neutral_records,
+        "pruning_records": pruning_records,
+        "artifact_blobs": artifact_blobs,
+    }
+
+
+def capability_context(tmp_path: Path) -> dict[str, Any]:
+    profile = load_hardware_execution_profile("rtx4090")
+    return capability_context_to_mapping(
+        build_rtx_capability_context(
+            historical_profiles=historical_profiles(),
+            evidence=probe_evidence(),
+            profile=profile,
+            repository_root=Path(__file__).resolve().parents[2],
+            expected_probe_code_sha256=_sha("probe-code"),
+            expected_support_root_sha256=runtime_identity()["support_root_sha256"],
+        )
+    )
+
+
+def test_rtx_context_preserves_historical_profiles_and_rebuilds_measured_features(
+    tmp_path: Path,
+) -> None:
+    original = historical_profiles()
+    context = capability_context(tmp_path)
+    validated = validate_rtx_capability_context(
+        context,
+        profile=load_hardware_execution_profile("rtx4090"),
+        repository_root=Path(__file__).resolve().parents[2],
+        expected_probe_code_sha256=_sha("probe-code"),
+        expected_support_root_sha256=runtime_identity()["support_root_sha256"],
+    )
+
+    assert list(validated.historical_profiles) == original
+    assert context["historical_profiles"] == original
+    assert validated.active_profile["hardware_target"] == "rtx4090"
+    assert validated.active_profile["dispatch_key"] == "tvm_auto"
+    assert len(validated.active_profile["features"]) == 23
+    assert set(validated.evidence["neutral_records"][0]) == RECORD_FIELDS
+    assert len(validated.evidence["neutral_records"]) == 12
+    assert len(validated.evidence["pruning_records"]) == 12
+    assert len(validated.evidence["artifact_blobs"]) == 24
+    assert not {
+        "latency_ms",
+        "energy_j",
+        "ap30",
+        "ap50",
+        "ap70",
+    } & set(json.dumps(context))
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        pytest.param("missing", id="missing-cell"),
+        pytest.param("duplicate", id="duplicate-cell"),
+        pytest.param("extra", id="extra-cell"),
+        pytest.param("unobserved", id="unobserved-cell"),
+    ],
+)
+def test_rtx_context_rejects_incomplete_or_nonunique_probe_partition(
+    tmp_path: Path, mutation: str
+) -> None:
+    context = capability_context(tmp_path)
+    rows = context["measurement_evidence"]["neutral_records"]
+    if mutation == "missing":
+        rows.pop()
+    elif mutation == "duplicate":
+        rows[-1] = copy.deepcopy(rows[0])
+    elif mutation == "extra":
+        rows.append({**copy.deepcopy(rows[0]), "probe_id": "alternate"})
+    else:
+        rows[0]["observation_status"] = "not_observed"
+    context["context_digest"] = _sha("resealed-by-attacker")
+
+    with pytest.raises(P6CapabilityContextError):
+        validate_rtx_capability_context(
+            context,
+            profile=load_hardware_execution_profile("rtx4090"),
+            repository_root=Path(__file__).resolve().parents[2],
+            expected_probe_code_sha256=_sha("probe-code"),
+            expected_support_root_sha256=runtime_identity()["support_root_sha256"],
+        )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        pytest.param("feature", id="resealed-feature"),
+        pytest.param("runtime", id="runtime-drift"),
+        pytest.param("target", id="wrong-target"),
+        pytest.param("code", id="wrong-probe-code"),
+        pytest.param("path", id="private-path"),
+        pytest.param("artifact", id="artifact-byte-drift"),
+    ],
+)
+def test_rtx_context_rejects_resealed_or_private_mutations(tmp_path: Path, mutation: str) -> None:
+    context = capability_context(tmp_path)
+    if mutation == "feature":
+        context["active_profile"]["features"]["s1q_build_success_coverage"] = 0.125
+        context["active_profile"]["capability_digest"] = _sha("resealed-profile")
+    elif mutation == "runtime":
+        context["measurement_evidence"]["runtime_identity"]["tvm_arch"] = "sm90"
+    elif mutation == "target":
+        context["measurement_evidence"]["hardware_target"] = "h800"
+    elif mutation == "code":
+        context["measurement_evidence"]["probe_code_sha256"] = _sha("alternate-code")
+    elif mutation == "path":
+        context["measurement_evidence"]["runtime_identity"]["compiler_path"] = "/private/compiler"
+    else:
+        context["measurement_evidence"]["artifact_blobs"][0]["onnx_base64"] = context[
+            "measurement_evidence"
+        ]["artifact_blobs"][1]["onnx_base64"]
+    context["context_digest"] = _sha("resealed-by-attacker")
+
+    with pytest.raises(P6CapabilityContextError):
+        validate_rtx_capability_context(
+            context,
+            profile=load_hardware_execution_profile("rtx4090"),
+            repository_root=Path(__file__).resolve().parents[2],
+            expected_probe_code_sha256=_sha("probe-code"),
+            expected_support_root_sha256=runtime_identity()["support_root_sha256"],
+        )
+
+
+def test_compiler_fingerprint_depends_on_actual_runtime_identity() -> None:
+    runtime = runtime_identity()
+    fingerprint = runtime.pop("compiler_fingerprint")
+    assert compiler_fingerprint(runtime) == fingerprint
+
+    changed = {**runtime, "tvm_version": "0.21.dev0"}
+    assert compiler_fingerprint(changed) != fingerprint
+    changed = {**runtime, "compiler_file_sha256": [_sha("lib-c")]}
+    assert compiler_fingerprint(changed) != fingerprint
+
+
+def test_context_validation_is_stable_after_canonical_sorted_json_round_trip(
+    tmp_path: Path,
+) -> None:
+    context = json.loads(json.dumps(capability_context(tmp_path), sort_keys=True))
+
+    validated = validate_rtx_capability_context(
+        context,
+        profile=load_hardware_execution_profile("rtx4090"),
+        repository_root=Path(__file__).resolve().parents[2],
+        expected_probe_code_sha256=_sha("probe-code"),
+        expected_support_root_sha256=runtime_identity()["support_root_sha256"],
+    )
+
+    assert len(validated.historical_profiles) == 2
