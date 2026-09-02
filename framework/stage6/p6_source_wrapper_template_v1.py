@@ -397,6 +397,7 @@ def render_wrapper_template(
     if project_python is None:
         return body
     project_literal = str(project_python)
+    runtime_path = _project_runtime_path(project_python)
     body = _replace_once(
         body,
         f"IMPLEMENTATION_CWD_RELATIVE = {implementation_cwd.as_posix()!r}\n",
@@ -432,7 +433,7 @@ def render_wrapper_template(
         (
             '            "PYTHONPATH": str(implementation_cwd),\n'
             '            "PY": PROJECT_PYTHON,\n'
-            '            "PATH": f"{Path(PROJECT_PYTHON).parent}:/usr/bin:/bin",\n'
+            f'            "PATH": {runtime_path!r},\n'
         ),
     )
     return _replace_once(
@@ -450,6 +451,16 @@ def render_wrapper_template(
             "            )\n"
         ),
     )
+
+
+def _project_runtime_path(project_python: Path) -> str:
+    path_parts = [str(project_python.parent)]
+    environment_root = project_python.parent.parent
+    environments_root = environment_root.parent
+    if environments_root.name == "envs":
+        path_parts.append(str(environments_root.parent / "bin"))
+    path_parts.extend(("/usr/bin", "/bin"))
+    return ":".join(path_parts)
 
 
 def _replace_once(body: str, old: str, new: str) -> str:
