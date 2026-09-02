@@ -155,6 +155,8 @@ def _load_source_map(path: Path) -> dict[str, Any]:
         if schema_version == SOURCE_MAP_V3
         else PROCEDURAL_SOURCE_MAP_KEYS
     )
+    if schema_version == SOURCE_MAP_V5 and "hardware_profile" in payload:
+        expected_keys = expected_keys | {"hardware_profile"}
     if (
         not isinstance(payload, dict)
         or set(payload) != set(expected_keys)

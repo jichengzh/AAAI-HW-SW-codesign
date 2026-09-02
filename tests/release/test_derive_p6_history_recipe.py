@@ -204,6 +204,35 @@ def test_cli_derives_recipe_from_exact_v5_source_map_without_dependency_echo(
     assert "dependency-overlay" not in text
 
 
+def test_cli_derives_recipe_from_v5_rtx_hardware_profile_without_profile_echo(
+    tmp_path: Path,
+) -> None:
+    source_map, runner_template = v5_private_source_map(tmp_path)
+    source_map["hardware_profile"] = "rtx4090"
+    source_path = _write_json(
+        tmp_path / "private-inputs" / "source-map-v5-rtx.json", source_map
+    )
+    recipe_path = tmp_path / "private-output" / "recipe.json"
+    recipe_path.parent.mkdir()
+
+    result = _run_cli(
+        "--source-map",
+        str(source_path),
+        "--runner-template",
+        str(runner_template),
+        "--recipe-json",
+        str(recipe_path),
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == "p6_history_recipe_derived\n"
+    assert result.stderr == ""
+    text = recipe_path.read_text(encoding="utf-8")
+    assert json.loads(text)["schema_version"] == RECIPE_V2
+    assert "hardware_profile" not in text
+    assert "rtx4090" not in text
+
+
 @pytest.mark.parametrize("mutation", ("missing", "extra"))
 def test_cli_rejects_nonexact_v5_source_map_keys(
     tmp_path: Path,
