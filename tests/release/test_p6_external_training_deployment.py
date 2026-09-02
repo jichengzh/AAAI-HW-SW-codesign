@@ -308,6 +308,117 @@ def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
     )
 
 
+def _replace_mapper_once(source: str, old: str, new: str) -> str:
+    assert source.count(old) == 1
+    return source.replace(old, new)
+
+
+def _mutated_stage1_mapper(
+    canonical: str,
+    *,
+    accepts_scenario: bool,
+    splits_scenario_contract: bool,
+    uses_foreign_scenario: bool,
+    shadows_scan: bool,
+    reimports_alias: str | None,
+    uses_tuple_scenario: bool,
+    rebinds_args: bool,
+) -> str:
+    source = canonical
+    if not accepts_scenario:
+        source = _replace_mapper_once(
+            source,
+            '    parser.add_argument("--scenario", required=True, type=_absolute_path)\n',
+            "",
+        )
+    scenario_expression = "args.scenario"
+    if splits_scenario_contract:
+        scenario_expression = "Path(args.stage1_repo_root)"
+    elif uses_foreign_scenario:
+        scenario_expression = "StaticScenario.scenario"
+        source = _replace_mapper_once(
+            source,
+            "class _ArgumentParser(argparse.ArgumentParser):\n",
+            "class StaticScenario:\n"
+            "    scenario = Path('/alternate-scenario')\n\n\n"
+            "class _ArgumentParser(argparse.ArgumentParser):\n",
+        )
+    elif uses_tuple_scenario:
+        scenario_expression = "(Path(args.scenario), Path(args.stage1_repo_root))[1]"
+    source = _replace_mapper_once(
+        source,
+        "            scenario_path=args.scenario,\n",
+        f"            scenario_path={scenario_expression},\n",
+    )
+    if splits_scenario_contract:
+        source = _replace_mapper_once(
+            source,
+            "        args = _parse_args(argv)\n",
+            "        args = _parse_args(argv)\n        _ = Path(args.scenario)\n",
+        )
+    if shadows_scan:
+        source = _replace_mapper_once(
+            source,
+            "class _ArgumentParser(argparse.ArgumentParser):\n",
+            "def run_real_stage1_scan(*args, **kwargs):\n"
+            "    del args, kwargs\n"
+            "    raise RuntimeError('shadow scanner called')\n\n\n"
+            "class _ArgumentParser(argparse.ArgumentParser):\n",
+        )
+    if reimports_alias is not None:
+        source = _replace_mapper_once(
+            source,
+            "\n\nclass _ArgumentParser(argparse.ArgumentParser):\n",
+            f"\nfrom alternate.module import replacement as {reimports_alias}\n\n"
+            "class _ArgumentParser(argparse.ArgumentParser):\n",
+        )
+    if rebinds_args:
+        source = _replace_mapper_once(
+            source,
+            "        args = _parse_args(argv)\n",
+            "        parsed = _parse_args(argv)\n"
+            "        args = _ScenarioProxy(parsed)\n",
+        )
+        source = _replace_mapper_once(
+            source,
+            "class _ArgumentParser(argparse.ArgumentParser):\n",
+            "class _ScenarioProxy:\n"
+            "    def __init__(self, parsed):\n"
+            "        self.__dict__.update(vars(parsed))\n"
+            "        self.scenario = Path(parsed.stage1_repo_root)\n\n\n"
+            "class _ArgumentParser(argparse.ArgumentParser):\n",
+        )
+    return source
+
+
+def _write_synthetic_stage1_bridge(path: Path, *, schema_key: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    (path.parents[1] / "__init__.py").write_text("", encoding="utf-8")
+    (path.parent / "__init__.py").write_text("", encoding="utf-8")
+    path.write_text(
+        f"""from pathlib import Path
+import json
+
+class P6Stage1BridgeError(ValueError):
+    pass
+
+def run_real_stage1_scan(model, hardware, device, environment, scenario):
+    del hardware, environment
+    expected = Path(__file__).resolve().parents[2] / "configs" / "stage1" / "p6_h800_formal_scan.yaml"
+    if model != "pyramid_lidar" or device != "cuda:0" or scenario != expected:
+        raise P6Stage1BridgeError()
+    if scenario.read_text() != "scenario-version: original\\n":
+        raise P6Stage1BridgeError()
+    return {{{schema_key!r}: "stage1_partition_manifest_v1", "stage": "stage1_partition", "model": "pyramid_lidar", "scan_status": "ok"}}
+
+def build_p6_stage1_partition_manifest(output, hardware, device, environment, scanner, *, scenario_path):
+    payload = scanner("pyramid_lidar", hardware, device, environment, scenario_path)
+    Path(output).write_text(json.dumps(payload), encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
+
+
 def _write_synthetic_real_stage1_launcher(
     root: Path,
     *,
@@ -317,92 +428,28 @@ def _write_synthetic_real_stage1_launcher(
     mapper_splits_scenario_contract: bool = False,
     mapper_uses_foreign_scenario: bool = False,
     mapper_imports_then_shadows_scan: bool = False,
+    mapper_reimports_alias: str | None = None,
+    mapper_uses_tuple_scenario: bool = False,
+    mapper_rebinds_args: bool = False,
     scenario_path: Path | None = None,
 ) -> Path:
+    canonical = (
+        REPOSITORY_ROOT / "tools" / "release" / "build_p6_stage1_manifest.py"
+    ).read_text(encoding="utf-8")
     private_bin = root / "private-runner" / "bin"
     private_bin.mkdir(parents=True, exist_ok=True)
     mapper = private_bin / "stage1-map-real-private.py"
-    scenario_argument = (
-        'parser.add_argument("--scenario", required=True)'
-        if mapper_accepts_scenario
-        else ""
-    )
-    shadow_scan = (
-        "def real_scan(*args, **kwargs):\n"
-        "    del args, kwargs\n"
-        "    raise SystemExit(\"shadow scanner called\")\n"
-        if mapper_imports_then_shadows_scan
-        else ""
-    )
-    build_call = (
-        "build_manifest(\n"
-        "    Path(args.output), Path(args.hardware), args.device,\n"
-        "    {{\"STAGE1_REPO_ROOT\": args.stage1_repo_root,\n"
-        "     \"HEAL_ROOT\": args.heal_root,\n"
-        "     \"HEAL_CKPT_ROOT\": args.heal_checkpoint_root}},\n"
-        "    real_scan,\n"
-        "    scenario_path={scenario},\n"
-        ")"
-    )
-    if mapper_uses_foreign_scenario:
-        mapper_invocation = (
-            "class StaticScenario:\n"
-            "    scenario = expected_scenario\n\n"
-            + build_call.format(scenario="StaticScenario.scenario")
-        )
-    elif mapper_splits_scenario_contract:
-        mapper_invocation = (
-            "consume_scenario(scenario_path=Path(args.scenario))\n"
-            + build_call.format(scenario="expected_scenario")
-        )
-    else:
-        mapper_invocation = build_call.format(scenario="Path(args.scenario)")
     mapper.write_text(
-        f"""#!{sys.executable}
-import argparse
-from pathlib import Path
-from framework.stage6.p6_stage1_bridge_v1 import (
-    build_p6_stage1_partition_manifest as build_manifest,
-    run_real_stage1_scan as real_scan,
-)
-
-class _ArgumentParser(argparse.ArgumentParser):
-    def error(self, message: str) -> None:
-        del message
-        self.exit(2, "argument_error\\n")
-
-
-parser = _ArgumentParser()
-parser.add_argument("--hardware", required=True)
-parser.add_argument("--output", required=True)
-parser.add_argument("--device", required=True)
-{scenario_argument}
-parser.add_argument("--stage1-repo-root", required=True)
-parser.add_argument("--heal-root", required=True)
-parser.add_argument("--heal-checkpoint-root", required=True)
-args = parser.parse_args()
-expected_scenario = (
-    Path(__file__).resolve().parents[2]
-    / "public-code"
-    / "configs"
-    / "stage1"
-    / "p6_h800_formal_scan.yaml"
-)
-if args.device != "cuda:0":
-    raise SystemExit("invalid device")
-if Path(args.scenario) != expected_scenario:
-    raise SystemExit("invalid scenario path")
-if expected_scenario.read_text(encoding="utf-8") != "scenario-version: original\\n":
-    raise SystemExit("invalid scenario content")
-
-
-def consume_scenario(*, scenario_path: Path) -> None:
-    del scenario_path
-
-
-{shadow_scan}
-{mapper_invocation}
-""",
+        _mutated_stage1_mapper(
+            canonical,
+            accepts_scenario=mapper_accepts_scenario,
+            splits_scenario_contract=mapper_splits_scenario_contract,
+            uses_foreign_scenario=mapper_uses_foreign_scenario,
+            shadows_scan=mapper_imports_then_shadows_scan,
+            reimports_alias=mapper_reimports_alias,
+            uses_tuple_scenario=mapper_uses_tuple_scenario,
+            rebinds_args=mapper_rebinds_args,
+        ),
         encoding="utf-8",
     )
     mapper.chmod(0o700)
@@ -422,46 +469,14 @@ def consume_scenario(*, scenario_path: Path) -> None:
     )
     tracked_scenario.parent.mkdir(parents=True, exist_ok=True)
     tracked_scenario.write_text("scenario-version: original\n", encoding="utf-8")
-    bridge = public_code / "framework" / "stage6" / "p6_stage1_bridge_v1.py"
-    bridge.parent.mkdir(parents=True, exist_ok=True)
-    (public_code / "framework" / "__init__.py").write_text("", encoding="utf-8")
-    (bridge.parent / "__init__.py").write_text("", encoding="utf-8")
-    bridge.write_text(
-        f"""from pathlib import Path
-import json
-
-
-def run_real_stage1_scan(
-    model_name, hardware_path, device, environment, scenario_path,
-):
-    del hardware_path, environment
-    expected = (
-        Path(__file__).resolve().parents[2]
-        / "configs" / "stage1" / "p6_h800_formal_scan.yaml"
+    canonical_path = (
+        public_code / "tools" / "release" / "build_p6_stage1_manifest.py"
     )
-    if model_name != "pyramid_lidar" or device != "cuda:0":
-        raise RuntimeError("invalid scan request")
-    if scenario_path != expected or scenario_path.read_text() != (
-        "scenario-version: original\\n"
-    ):
-        raise RuntimeError("formal scenario not consumed")
-    return {{
-        {schema_key!r}: "stage1_partition_manifest_v1",
-        "stage": "stage1_partition",
-        "model": "pyramid_lidar",
-        "scan_status": "ok",
-    }}
-
-
-def build_p6_stage1_partition_manifest(
-    output_path, hardware_path, device, environment, scanner, *, scenario_path,
-):
-    payload = scanner(
-        "pyramid_lidar", hardware_path, device, environment, scenario_path,
-    )
-    Path(output_path).write_text(json.dumps(payload), encoding="utf-8")
-""",
-        encoding="utf-8",
+    canonical_path.parent.mkdir(parents=True, exist_ok=True)
+    canonical_path.write_text(canonical, encoding="utf-8")
+    _write_synthetic_stage1_bridge(
+        public_code / "framework" / "stage6" / "p6_stage1_bridge_v1.py",
+        schema_key=schema_key,
     )
     (root / "dependency-overlay").mkdir(exist_ok=True)
     for name in ("heal", "checkpoints"):
@@ -846,6 +861,41 @@ def test_stage1_launcher_rejects_locally_shadowed_real_scan_import(
         _write_synthetic_real_stage1_launcher(
             tmp_path / "history",
             mapper_imports_then_shadows_scan=True,
+        )
+
+
+@pytest.mark.parametrize(
+    "alias",
+    ["build_p6_stage1_partition_manifest", "run_real_stage1_scan"],
+)
+def test_stage1_launcher_rejects_alternate_import_rebinding(
+    tmp_path: Path,
+    alias: str,
+) -> None:
+    with pytest.raises(P6Stage1LauncherRenderError):
+        _write_synthetic_real_stage1_launcher(
+            tmp_path / "history",
+            mapper_reimports_alias=alias,
+        )
+
+
+def test_stage1_launcher_rejects_tuple_selected_alternate_scenario(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(P6Stage1LauncherRenderError):
+        _write_synthetic_real_stage1_launcher(
+            tmp_path / "history",
+            mapper_uses_tuple_scenario=True,
+        )
+
+
+def test_stage1_launcher_rejects_rebound_parser_result(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(P6Stage1LauncherRenderError):
+        _write_synthetic_real_stage1_launcher(
+            tmp_path / "history",
+            mapper_rebinds_args=True,
         )
 
 

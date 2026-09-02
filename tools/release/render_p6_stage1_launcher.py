@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import ast
 import os
 from pathlib import Path
 import shlex
@@ -15,94 +14,6 @@ from typing import Sequence
 
 class P6Stage1LauncherRenderError(ValueError):
     """Stable path-free renderer failure."""
-
-
-_MAPPER_ARGUMENTS = frozenset(
-    {
-        "--device",
-        "--hardware",
-        "--heal-checkpoint-root",
-        "--heal-root",
-        "--output",
-        "--scenario",
-        "--stage1-repo-root",
-    }
-)
-_STAGE1_BRIDGE_MODULE = "framework.stage6.p6_stage1_bridge_v1"
-
-
-def _uses_cli_scenario(node: ast.AST) -> bool:
-    return any(
-        isinstance(value, ast.Attribute)
-        and value.attr == "scenario"
-        and isinstance(value.value, ast.Name)
-        and value.value.id == "args"
-        for value in ast.walk(node)
-    )
-
-
-def _bridge_aliases(tree: ast.Module) -> tuple[str, str] | None:
-    imported: dict[str, str] = {}
-    for node in tree.body:
-        if not isinstance(node, ast.ImportFrom) or node.module != _STAGE1_BRIDGE_MODULE:
-            continue
-        for name in node.names:
-            if name.name in {
-                "build_p6_stage1_partition_manifest",
-                "run_real_stage1_scan",
-            }:
-                if name.name in imported:
-                    return None
-                imported[name.name] = name.asname or name.name
-    if set(imported) != {
-        "build_p6_stage1_partition_manifest",
-        "run_real_stage1_scan",
-    }:
-        return None
-    aliases = tuple(imported.values())
-    if len(set(aliases)) != 2 or _aliases_are_shadowed(tree, frozenset(aliases)):
-        return None
-    return imported["build_p6_stage1_partition_manifest"], imported[
-        "run_real_stage1_scan"
-    ]
-
-
-def _aliases_are_shadowed(tree: ast.Module, aliases: frozenset[str]) -> bool:
-    return any(
-        (
-            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-            and node.name in aliases
-        )
-        or (isinstance(node, ast.arg) and node.arg in aliases)
-        or (
-            isinstance(node, ast.Name)
-            and isinstance(node.ctx, (ast.Store, ast.Del))
-            and node.id in aliases
-        )
-        for node in ast.walk(tree)
-    )
-
-
-def _is_stage1_bridge_call(
-    node: ast.AST, *, builder_alias: str, scanner_alias: str
-) -> bool:
-    if (
-        not isinstance(node, ast.Call)
-        or not isinstance(node.func, ast.Name)
-        or node.func.id != builder_alias
-    ):
-        return False
-    scenario_keywords = tuple(
-        keyword
-        for keyword in node.keywords
-        if keyword.arg == "scenario_path" and _uses_cli_scenario(keyword.value)
-    )
-    if not scenario_keywords:
-        return False
-    return any(
-        isinstance(argument, ast.Name) and argument.id == scanner_alias
-        for argument in node.args
-    )
 
 
 def _contains_symlink_component(path: Path) -> bool:
@@ -161,36 +72,14 @@ def _existing_regular_file(path: Path) -> Path:
     return resolved
 
 
-def _validate_mapper_contract(path: Path) -> None:
+def _validate_mapper_contract(path: Path, canonical_path: Path) -> None:
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-    except (OSError, SyntaxError, UnicodeError) as error:
+        matches = path.read_bytes() == canonical_path.read_bytes()
+    except OSError as error:
         raise P6Stage1LauncherRenderError(
             "stage1 launcher input is invalid"
         ) from error
-    arguments = frozenset(
-        value.value
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "add_argument"
-        for value in node.args
-        if isinstance(value, ast.Constant)
-        and isinstance(value.value, str)
-        and value.value.startswith("--")
-    )
-    aliases = _bridge_aliases(tree)
-    if arguments != _MAPPER_ARGUMENTS or aliases is None:
-        raise P6Stage1LauncherRenderError("stage1 launcher input is invalid")
-    builder_alias, scanner_alias = aliases
-    if not any(
-        _is_stage1_bridge_call(
-            node,
-            builder_alias=builder_alias,
-            scanner_alias=scanner_alias,
-        )
-        for node in ast.walk(tree)
-    ):
+    if not matches:
         raise P6Stage1LauncherRenderError("stage1 launcher input is invalid")
 
 
@@ -227,92 +116,17 @@ if canonical_output == root:
 PY_CONTAINMENT"""
 
 
-_MAPPER_AUDIT = """PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$CODE_ROOT:$OVERLAY_ROOT" "$TOOLING_PYTHON" - "$MAPPER" <<'PY_AUDIT'
-import ast
+_MAPPER_AUDIT = """PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$CODE_ROOT:$OVERLAY_ROOT" "$TOOLING_PYTHON" - "$MAPPER" "$CODE_ROOT/tools/release/build_p6_stage1_manifest.py" <<'PY_AUDIT'
 from pathlib import Path
 import sys
 
-tree = ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"))
-required = {
-    "--device", "--hardware", "--heal-checkpoint-root", "--heal-root",
-    "--output", "--scenario", "--stage1-repo-root",
-}
-arguments = {
-    value.value
-    for node in ast.walk(tree)
-    if isinstance(node, ast.Call)
-    and isinstance(node.func, ast.Attribute)
-    and node.func.attr == "add_argument"
-    for value in node.args
-    if isinstance(value, ast.Constant)
-    and isinstance(value.value, str)
-    and value.value.startswith("--")
-}
-def uses_cli_scenario(node):
-    return any(
-        isinstance(value, ast.Attribute)
-        and value.attr == "scenario"
-        and isinstance(value.value, ast.Name)
-        and value.value.id == "args"
-        for value in ast.walk(node)
-    )
-
-imported = {}
-for node in tree.body:
-    if not isinstance(node, ast.ImportFrom) or node.module != (
-        "framework.stage6.p6_stage1_bridge_v1"
-    ):
-        continue
-    for name in node.names:
-        if name.name in {
-            "build_p6_stage1_partition_manifest", "run_real_stage1_scan",
-        }:
-            if name.name in imported:
-                raise SystemExit(71)
-            imported[name.name] = name.asname or name.name
-if set(imported) != {
-    "build_p6_stage1_partition_manifest", "run_real_stage1_scan",
-}:
-    raise SystemExit(71)
-aliases = frozenset(imported.values())
-shadowed = any(
-    (
-        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-        and node.name in aliases
-    )
-    or (isinstance(node, ast.arg) and node.arg in aliases)
-    or (
-        isinstance(node, ast.Name)
-        and isinstance(node.ctx, (ast.Store, ast.Del))
-        and node.id in aliases
-    )
-    for node in ast.walk(tree)
-)
-if len(aliases) != 2 or shadowed:
-    raise SystemExit(71)
-builder = imported["build_p6_stage1_partition_manifest"]
-scanner = imported["run_real_stage1_scan"]
-
-def is_stage1_bridge_call(node):
-    if (
-        not isinstance(node, ast.Call)
-        or not isinstance(node.func, ast.Name)
-        or node.func.id != builder
-    ):
-        return False
-    if not any(
-        keyword.arg == "scenario_path" and uses_cli_scenario(keyword.value)
-        for keyword in node.keywords
-    ):
-        return False
-    return any(
-        isinstance(argument, ast.Name) and argument.id == scanner
-        for argument in node.args
-    )
-
-if arguments != required or not any(
-    is_stage1_bridge_call(node) for node in ast.walk(tree)
-):
+mapper = Path(sys.argv[1])
+canonical = Path(sys.argv[2])
+try:
+    matches = mapper.read_bytes() == canonical.read_bytes()
+except OSError:
+    raise SystemExit(71) from None
+if not matches:
     raise SystemExit(71)
 PY_AUDIT"""
 
@@ -461,8 +275,11 @@ def _validated_render_inputs(
     mapper = _existing_executable(
         execution_root / "private-runner" / "bin" / "stage1-map-real-private.py"
     )
-    _validate_mapper_contract(mapper)
-    _existing_directory(execution_root / "public-code")
+    public_code = _existing_directory(execution_root / "public-code")
+    canonical_mapper = _existing_regular_file(
+        public_code / "tools" / "release" / "build_p6_stage1_manifest.py"
+    )
+    _validate_mapper_contract(mapper, canonical_mapper)
     _existing_directory(execution_root / "dependency-overlay")
     _existing_regular_file(
         execution_root / "public-code" / "configs" / "hardware" / "h800.yaml"

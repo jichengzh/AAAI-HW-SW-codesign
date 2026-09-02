@@ -248,6 +248,11 @@ def test_source_bound_mapper_launcher_consumes_formal_scenario(
     mapper = private_bin / "stage1-map-real-private.py"
     shutil.copy2(CLI, mapper)
     mapper.chmod(0o700)
+    canonical_mapper = (
+        public_code / "tools" / "release" / "build_p6_stage1_manifest.py"
+    )
+    canonical_mapper.parent.mkdir(parents=True)
+    shutil.copy2(CLI, canonical_mapper)
     heal_root = execution_root / "heal"
     checkpoint_root = execution_root / "checkpoints"
     heal_root.mkdir()
