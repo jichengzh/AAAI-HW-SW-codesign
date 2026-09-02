@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 from typing import Any
@@ -10,6 +12,7 @@ from framework.stage1_bridge import load_stage2_search_space
 from tests.stage6.pyramid_formal_space_support import (
     scanner_owned_pyramid_stage1_manifest,
 )
+from tools.release.render_p6_stage1_launcher import render_stage1_launcher
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -25,7 +28,7 @@ def _valid_stage1_manifest(*, hardware_name: str = "h800") -> dict[str, Any]:
 
 def _write_fake_stage1_repo(path: Path, *, manifest: dict[str, Any]) -> Path:
     stage1 = path / "framework" / "stage1"
-    stage1.mkdir(parents=True)
+    stage1.mkdir(parents=True, exist_ok=True)
     (path / "framework" / "__init__.py").write_text("", encoding="utf-8")
     (stage1 / "__init__.py").write_text("", encoding="utf-8")
     (stage1 / "adapters.py").write_text(
@@ -217,6 +220,66 @@ def test_cli_builds_stage1_manifest_with_private_paths_hidden(tmp_path: Path) ->
     )
     assert str(tmp_path) not in result.stdout + result.stderr
     assert load_stage2_search_space(output_path)["axis_schema"]["free_axes"]
+
+
+def test_source_bound_mapper_launcher_consumes_formal_scenario(
+    tmp_path: Path,
+) -> None:
+    execution_root = tmp_path / "execution"
+    public_code = execution_root / "public-code"
+    shutil.copytree(REPOSITORY_ROOT / "framework", public_code / "framework")
+    shutil.copytree(
+        REPOSITORY_ROOT / "configs" / "hardware",
+        public_code / "configs" / "hardware",
+    )
+    shutil.copytree(
+        REPOSITORY_ROOT / "configs" / "environment",
+        public_code / "configs" / "environment",
+    )
+    _write_fake_stage1_repo(public_code, manifest=_valid_stage1_manifest())
+    hardware = public_code / "configs" / "hardware" / "h800.yaml"
+    _write_hardware(hardware)
+    scenario = _write_scenario(
+        public_code / "configs" / "stage1" / "p6_h800_formal_scan.yaml"
+    )
+    (execution_root / "dependency-overlay").mkdir()
+    private_bin = execution_root / "private-runner" / "bin"
+    private_bin.mkdir(parents=True)
+    mapper = private_bin / "stage1-map-real-private.py"
+    shutil.copy2(CLI, mapper)
+    mapper.chmod(0o700)
+    heal_root = execution_root / "heal"
+    checkpoint_root = execution_root / "checkpoints"
+    heal_root.mkdir()
+    checkpoint_root.mkdir()
+    launcher = render_stage1_launcher(
+        output_path=private_bin / "stage1-launch-real-private.sh",
+        tooling_python=Path(sys.executable).resolve(strict=True),
+        heal_root=heal_root,
+        heal_checkpoint_root=checkpoint_root,
+        scenario_path=scenario,
+    )
+    output_root = tmp_path / "output"
+    output_root.mkdir()
+    output = output_root / "stage1_partition_manifest.json"
+    call_log = tmp_path / "call.log"
+
+    completed = subprocess.run(
+        [str(launcher), str(output), str(output_root)],
+        cwd=tmp_path,
+        env={
+            "PATH": os.environ["PATH"],
+            "P6_STAGE1_TEST_CALL_LOG": str(call_log),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(output.read_text(encoding="utf-8")) == _valid_stage1_manifest()
+    assert "|ScanScenario|" in call_log.read_text(encoding="utf-8")
+    assert str(tmp_path) not in completed.stdout + completed.stderr
 
 
 def test_cli_requires_explicit_scenario_without_running_scanner(tmp_path: Path) -> None:

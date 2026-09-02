@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import os
 from pathlib import Path
 import shlex
@@ -14,6 +15,44 @@ from typing import Sequence
 
 class P6Stage1LauncherRenderError(ValueError):
     """Stable path-free renderer failure."""
+
+
+_MAPPER_ARGUMENTS = frozenset(
+    {
+        "--device",
+        "--hardware",
+        "--heal-checkpoint-root",
+        "--heal-root",
+        "--output",
+        "--scenario",
+        "--stage1-repo-root",
+    }
+)
+
+
+def _uses_cli_scenario(node: ast.AST) -> bool:
+    return any(
+        isinstance(value, ast.Attribute) and value.attr == "scenario"
+        for value in ast.walk(node)
+    )
+
+
+def _is_stage1_bridge_call(node: ast.AST) -> bool:
+    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+        return False
+    scenario_keywords = tuple(
+        keyword
+        for keyword in node.keywords
+        if keyword.arg == "scenario_path" and _uses_cli_scenario(keyword.value)
+    )
+    if not scenario_keywords:
+        return False
+    if node.func.id == "run_real_stage1_scan":
+        return True
+    return node.func.id == "build_p6_stage1_partition_manifest" and any(
+        isinstance(argument, ast.Name) and argument.id == "run_real_stage1_scan"
+        for argument in node.args
+    )
 
 
 def _contains_symlink_component(path: Path) -> bool:
@@ -72,6 +111,30 @@ def _existing_regular_file(path: Path) -> Path:
     return resolved
 
 
+def _validate_mapper_contract(path: Path) -> None:
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, UnicodeError) as error:
+        raise P6Stage1LauncherRenderError(
+            "stage1 launcher input is invalid"
+        ) from error
+    arguments = frozenset(
+        value.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "add_argument"
+        for value in node.args
+        if isinstance(value, ast.Constant)
+        and isinstance(value.value, str)
+        and value.value.startswith("--")
+    )
+    if arguments != _MAPPER_ARGUMENTS or not any(
+        _is_stage1_bridge_call(node) for node in ast.walk(tree)
+    ):
+        raise P6Stage1LauncherRenderError("stage1 launcher input is invalid")
+
+
 def _planned_output(path: Path) -> Path:
     if not path.is_absolute() or _contains_symlink_component(path):
         raise P6Stage1LauncherRenderError("stage1 launcher output is invalid")
@@ -111,11 +174,44 @@ from pathlib import Path
 import sys
 
 tree = ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"))
-if not any(
-    isinstance(node, ast.Call)
-    and isinstance(node.func, ast.Name)
-    and node.func.id == "run_real_stage1_scan"
+required = {
+    "--device", "--hardware", "--heal-checkpoint-root", "--heal-root",
+    "--output", "--scenario", "--stage1-repo-root",
+}
+arguments = {
+    value.value
     for node in ast.walk(tree)
+    if isinstance(node, ast.Call)
+    and isinstance(node.func, ast.Attribute)
+    and node.func.attr == "add_argument"
+    for value in node.args
+    if isinstance(value, ast.Constant)
+    and isinstance(value.value, str)
+    and value.value.startswith("--")
+}
+def uses_cli_scenario(node):
+    return any(
+        isinstance(value, ast.Attribute) and value.attr == "scenario"
+        for value in ast.walk(node)
+    )
+
+def is_stage1_bridge_call(node):
+    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+        return False
+    if not any(
+        keyword.arg == "scenario_path" and uses_cli_scenario(keyword.value)
+        for keyword in node.keywords
+    ):
+        return False
+    if node.func.id == "run_real_stage1_scan":
+        return True
+    return node.func.id == "build_p6_stage1_partition_manifest" and any(
+        isinstance(argument, ast.Name) and argument.id == "run_real_stage1_scan"
+        for argument in node.args
+    )
+
+if arguments != required or not any(
+    is_stage1_bridge_call(node) for node in ast.walk(tree)
 ):
     raise SystemExit(71)
 PY_AUDIT"""
@@ -262,9 +358,10 @@ def _validated_render_inputs(
     heal = _existing_directory(heal_root)
     checkpoints = _existing_directory(heal_checkpoint_root)
     execution_root = destination.parent.parent.parent
-    _existing_executable(
+    mapper = _existing_executable(
         execution_root / "private-runner" / "bin" / "stage1-map-real-private.py"
     )
+    _validate_mapper_contract(mapper)
     _existing_directory(execution_root / "public-code")
     _existing_directory(execution_root / "dependency-overlay")
     _existing_regular_file(

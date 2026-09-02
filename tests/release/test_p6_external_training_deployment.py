@@ -313,11 +313,30 @@ def _write_synthetic_real_stage1_launcher(
     *,
     schema_key: str = "schema",
     hardware_via_symlink: bool = False,
+    mapper_accepts_scenario: bool = True,
+    mapper_splits_scenario_contract: bool = False,
     scenario_path: Path | None = None,
 ) -> Path:
     private_bin = root / "private-runner" / "bin"
     private_bin.mkdir(parents=True, exist_ok=True)
     mapper = private_bin / "stage1-map-real-private.py"
+    scenario_argument = (
+        'parser.add_argument("--scenario", required=True)'
+        if mapper_accepts_scenario
+        else ""
+    )
+    mapper_invocation = (
+        "consume_scenario(scenario_path=Path(args.scenario))\n"
+        "run_real_stage1_scan(\n"
+        "    output_path=Path(args.output),\n"
+        "    scenario_path=expected_scenario,\n"
+        ")"
+        if mapper_splits_scenario_contract
+        else "run_real_stage1_scan(\n"
+        "    output_path=Path(args.output),\n"
+        "    scenario_path=Path(args.scenario),\n"
+        ")"
+    )
     mapper.write_text(
         f"""#!{sys.executable}
 import argparse
@@ -334,7 +353,7 @@ parser = _ArgumentParser()
 parser.add_argument("--hardware", required=True)
 parser.add_argument("--output", required=True)
 parser.add_argument("--device", required=True)
-parser.add_argument("--scenario", required=True)
+{scenario_argument}
 parser.add_argument("--stage1-repo-root", required=True)
 parser.add_argument("--heal-root", required=True)
 parser.add_argument("--heal-checkpoint-root", required=True)
@@ -354,7 +373,9 @@ if expected_scenario.read_text(encoding="utf-8") != "scenario-version: original\
     raise SystemExit("invalid scenario content")
 
 
-def run_real_stage1_scan(*, output_path: Path) -> None:
+def run_real_stage1_scan(*, output_path: Path, scenario_path: Path) -> None:
+    if scenario_path != expected_scenario:
+        raise SystemExit("formal scenario not consumed")
     output_path.write_text(
         json.dumps(
             {{
@@ -368,7 +389,11 @@ def run_real_stage1_scan(*, output_path: Path) -> None:
     )
 
 
-run_real_stage1_scan(output_path=Path(args.output))
+def consume_scenario(*, scenario_path: Path) -> None:
+    del scenario_path
+
+
+{mapper_invocation}
 """,
         encoding="utf-8",
     )
@@ -725,6 +750,34 @@ def test_stage1_launcher_uses_tracked_public_code_scenario(
     )
     assert tracked_scenario.read_text(encoding="utf-8") == "scenario-version: original\n"
     assert completed.returncode == 0, completed.stderr
+
+
+def test_stage1_launcher_rejects_mapper_without_scenario_contract(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(P6Stage1LauncherRenderError):
+        _write_synthetic_real_stage1_launcher(
+            tmp_path / "history",
+            mapper_accepts_scenario=False,
+        )
+
+    assert not (
+        tmp_path
+        / "history"
+        / "private-runner"
+        / "bin"
+        / "stage1-launch-real-private.sh"
+    ).exists()
+
+
+def test_stage1_launcher_rejects_scenario_consumed_by_unrelated_call(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(P6Stage1LauncherRenderError):
+        _write_synthetic_real_stage1_launcher(
+            tmp_path / "history",
+            mapper_splits_scenario_contract=True,
+        )
 
 
 def test_stage1_launcher_rolls_back_launcher_when_temporary_write_fails(
