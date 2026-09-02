@@ -35,31 +35,12 @@ def _regular_file(path: Path) -> bool:
     return stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and not path.is_symlink()
 
 
-_IGNORED_RUNTIME_DIRECTORY_NAMES = frozenset({"__pycache__"})
-_IGNORED_RUNTIME_SUFFIXES = frozenset({".pyc", ".pyo"})
 _TVM_PACKAGE_ROOT_NAMES = ("tvm", "tvm_ffi")
-_INFRASTRUCTURE_ERROR_MARKERS = (
-    "out of memory",
-    "cuda driver",
-    "driver initialization",
-    "invalid device",
-    "device ordinal",
-    "device-side",
-    "cannot open shared object",
-    "failed to load shared",
-    "module not found",
-    "modulenotfounderror",
-    "importerror",
-    "permission denied",
-    "input/output error",
-    "cuda runtime",
-)
-
-
-def _ignored_runtime_path(path: Path) -> bool:
-    return bool(_IGNORED_RUNTIME_DIRECTORY_NAMES & set(path.parts)) or (
-        path.suffix in _IGNORED_RUNTIME_SUFFIXES
-    )
+_COMPILER_REJECTION_PATTERNS = {
+    "frontend": re.compile(r"unsupported onnx operator(?: [A-Za-z0-9_.:-]+)?", re.I),
+    "lowering": re.compile(r"cannot legalize operator(?: [A-Za-z0-9_.:-]+)?", re.I),
+    "codegen": re.compile(r"unsupported (?:instruction|operator|operation) for cuda target", re.I),
+}
 
 
 def _package_authority_files(root: Path) -> list[Path]:
@@ -76,9 +57,6 @@ def _package_authority_files(root: Path) -> list[Path]:
             package_root.rglob("*"),
             key=lambda item: item.relative_to(root).as_posix(),
         ):
-            relative = path.relative_to(root)
-            if _ignored_runtime_path(relative):
-                continue
             if path.is_symlink():
                 raise ValueError("TVM compiler file invalid")
             if path.is_dir():
@@ -95,9 +73,7 @@ def _required_tvm_libraries(root: Path) -> tuple[Path, ...]:
     try:
         from tvm._ffi import libinfo
 
-        libraries = tuple(
-            Path(value).resolve(strict=True) for value in libinfo.find_lib_path()
-        )
+        libraries = tuple(Path(value).resolve(strict=True) for value in libinfo.find_lib_path())
     except ImportError as error:
         raise ValueError("TVM compiler library unavailable") from error
     if not libraries or any(not path.is_relative_to(root) for path in libraries):
@@ -106,6 +82,8 @@ def _required_tvm_libraries(root: Path) -> tuple[Path, ...]:
 
 
 def _tvm_authority_files(tvm_site: Path) -> tuple[Path, ...]:
+    if tvm_site.is_symlink() or not tvm_site.is_dir():
+        raise ValueError("TVM compiler site invalid")
     root = tvm_site.resolve(strict=True)
     files = _package_authority_files(root)
     if any(path not in files for path in _required_tvm_libraries(root)):
@@ -138,12 +116,10 @@ def require_cuda_sm89() -> tuple[Any, Any]:
 
 def _raise_tvm_compiler_error(stage: str, error: Exception) -> NoReturn:
     detail = f"{type(error).__name__}:{error}"
-    normalized = detail.lower()
-    if any(marker in normalized for marker in _INFRASTRUCTURE_ERROR_MARKERS):
+    pattern = _COMPILER_REJECTION_PATTERNS.get(stage)
+    if pattern is None or pattern.fullmatch(str(error).strip()) is None:
         raise error
-    raise P6CompilerRejection(
-        detail, category=f"tvm_{stage}_compiler_rejection"
-    ) from error
+    raise P6CompilerRejection(detail, category=f"tvm_{stage}_compiler_rejection") from error
 
 
 def compile_tvm_probe(payload: bytes, q_mode: str) -> tuple[dict[str, int | None], bytes]:

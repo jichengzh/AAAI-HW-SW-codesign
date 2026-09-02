@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import py_compile
 import sys
 from types import ModuleType, SimpleNamespace
 
@@ -185,7 +187,7 @@ def test_tvm_compile_only_translates_allowlisted_tvm_rejections(
 ) -> None:
     _fake_modules(tmp_path, monkeypatch)
     sys.modules["tvm"].compile = lambda module, target: (_ for _ in ()).throw(
-        _TVMError("compiler detail")
+        _TVMError("Unsupported instruction for CUDA target")
     )
     with pytest.raises(P6CompilerRejection) as captured:
         compile_tvm_probe(b"onnx", "int8")
@@ -248,23 +250,133 @@ def test_tvm_runtime_manifest_is_import_state_independent_and_tree_complete(
         )
 
 
+def test_tvm_runtime_manifest_binds_sourceless_top_level_bytecode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site, _ = _fake_modules(tmp_path, monkeypatch)
+    nvlibs = tmp_path / "nvlibs.json"
+    nvlibs.write_text("{}\n", encoding="utf-8")
+    baseline = collect_tvm_runtime_identity(
+        tvm_site=site,
+        nvlibs_file=nvlibs,
+        support_root_sha256="a" * 64,
+    )
+    source = site / "tvm" / "sourceless_authority.py"
+    bytecode = site / "tvm" / "sourceless_authority.pyc"
+    source.write_text("AUTHORITY = 'changed'\n", encoding="utf-8")
+    py_compile.compile(str(source), cfile=str(bytecode), doraise=True)
+    source.unlink()
+
+    changed = collect_tvm_runtime_identity(
+        tvm_site=site,
+        nvlibs_file=nvlibs,
+        support_root_sha256="a" * 64,
+    )
+
+    assert changed["compiler_fingerprint"] != baseline["compiler_fingerprint"]
+
+
+def test_tvm_runtime_manifest_binds_native_library_under_bytecode_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site, _ = _fake_modules(tmp_path, monkeypatch)
+    nvlibs = tmp_path / "nvlibs.json"
+    nvlibs.write_text("{}\n", encoding="utf-8")
+    baseline = collect_tvm_runtime_identity(
+        tvm_site=site,
+        nvlibs_file=nvlibs,
+        support_root_sha256="a" * 64,
+    )
+    cache = site / "tvm" / "__pycache__"
+    cache.mkdir()
+    (cache / "native_compiler.so").write_bytes(b"native-compiler-authority")
+
+    changed = collect_tvm_runtime_identity(
+        tvm_site=site,
+        nvlibs_file=nvlibs,
+        support_root_sha256="a" * 64,
+    )
+
+    assert changed["compiler_fingerprint"] != baseline["compiler_fingerprint"]
+
+
+def test_tvm_runtime_rejects_symlink_named_bytecode_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site, _ = _fake_modules(tmp_path, monkeypatch)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "native_compiler.so").write_bytes(b"outside-authority")
+    (site / "tvm" / "__pycache__").symlink_to(outside, target_is_directory=True)
+    nvlibs = tmp_path / "nvlibs.json"
+    nvlibs.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="compiler file invalid"):
+        collect_tvm_runtime_identity(
+            tvm_site=site,
+            nvlibs_file=nvlibs,
+            support_root_sha256="a" * 64,
+        )
+
+
+def test_tvm_runtime_rejects_symlinked_site_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site, _ = _fake_modules(tmp_path, monkeypatch)
+    alias = tmp_path / "site-alias"
+    alias.symlink_to(site, target_is_directory=True)
+    nvlibs = tmp_path / "nvlibs.json"
+    nvlibs.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="compiler site invalid"):
+        collect_tvm_runtime_identity(
+            tvm_site=alias,
+            nvlibs_file=nvlibs,
+            support_root_sha256="a" * 64,
+        )
+
+
+def test_tvm_runtime_rejects_special_file_with_ignored_suffix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site, _ = _fake_modules(tmp_path, monkeypatch)
+    os.mkfifo(site / "tvm" / "special.pyc")
+    nvlibs = tmp_path / "nvlibs.json"
+    nvlibs.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="compiler file invalid"):
+        collect_tvm_runtime_identity(
+            tvm_site=site,
+            nvlibs_file=nvlibs,
+            support_root_sha256="a" * 64,
+        )
+
+
 @pytest.mark.parametrize(
     "detail",
     (
+        "no CUDA-capable device is detected",
+        "CUDA_ERROR_NO_DEVICE",
+        "CUDA_ERROR_OUT_OF_MEMORY",
         "CUDA out of memory",
         "CUDA driver initialization failed",
         "invalid device ordinal",
+        "nvcc not found",
+        "No such file or directory",
         "cannot open shared object file",
         "ModuleNotFoundError: runtime package missing",
+        "ImportError: binary ABI mismatch",
+        "Read-only file system",
+        "CUDA runtime failure",
+        "InternalError: invariant violated",
+        "compiler detail",
     ),
 )
 def test_tvmerror_infrastructure_categories_fail_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, detail: str
 ) -> None:
     _fake_modules(tmp_path, monkeypatch)
-    sys.modules["tvm"].compile = lambda module, target: (_ for _ in ()).throw(
-        _TVMError(detail)
-    )
+    sys.modules["tvm"].compile = lambda module, target: (_ for _ in ()).throw(_TVMError(detail))
 
     with pytest.raises(_TVMError, match=detail):
         compile_tvm_probe(b"onnx", "int8")
@@ -274,13 +386,38 @@ def test_tvm_compiler_rejection_evidence_binds_exact_stage(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _fake_modules(tmp_path, monkeypatch)
-    sys.modules["tvm.relax.frontend.onnx"].from_onnx = (
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            _TVMError("Unsupported ONNX operator")
-        )
-    )
+    sys.modules["tvm.relax.frontend.onnx"].from_onnx = lambda *args, **kwargs: (
+        _ for _ in ()
+    ).throw(_TVMError("Unsupported ONNX operator"))
 
     with pytest.raises(P6CompilerRejection) as captured:
         compile_tvm_probe(b"onnx", "int8")
     evidence = json.loads(captured.value.evidence_bytes())
     assert evidence["category"] == "tvm_frontend_compiler_rejection"
+
+
+def test_tvm_lowering_compiler_rejection_binds_lowering_stage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_modules(tmp_path, monkeypatch)
+    sys.modules["tvm"].transform.Sequential = lambda passes: (
+        lambda module: (_ for _ in ()).throw(_TVMError("Cannot legalize operator nn.conv2d"))
+    )
+
+    with pytest.raises(P6CompilerRejection) as captured:
+        compile_tvm_probe(b"onnx", "int8")
+
+    evidence = json.loads(captured.value.evidence_bytes())
+    assert evidence["category"] == "tvm_lowering_compiler_rejection"
+
+
+def test_tvm_rejection_message_is_allowlisted_for_its_exact_stage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_modules(tmp_path, monkeypatch)
+    sys.modules["tvm"].compile = lambda module, target: (_ for _ in ()).throw(
+        _TVMError("Unsupported ONNX operator")
+    )
+
+    with pytest.raises(_TVMError, match="Unsupported ONNX operator"):
+        compile_tvm_probe(b"onnx", "int8")
