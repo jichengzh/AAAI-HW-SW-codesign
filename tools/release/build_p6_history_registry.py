@@ -24,7 +24,8 @@ from framework.stage6.p6_history_registry_v1 import (  # noqa: E402
 )
 
 
-MAX_PRIVATE_JSON_SIZE = 32 * 1024 * 1024
+MAX_PRIVATE_BINDING_JSON_SIZE = 16 * 1024 * 1024
+MAX_PRIVATE_CANDIDATE_PLAN_JSON_SIZE = 32 * 1024 * 1024
 
 
 class _ArgumentParser(argparse.ArgumentParser):
@@ -51,14 +52,14 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _load_private_json(path: Path) -> Mapping[str, Any]:
+def _load_private_json(path: Path, *, max_bytes: int) -> Mapping[str, Any]:
     if path.is_symlink():
         raise P6HistoryRegistryError(
             "source_registry_invalid", "private JSON input is invalid"
         )
     try:
         resolved = path.resolve(strict=True)
-        if not resolved.is_file() or resolved.stat().st_size > MAX_PRIVATE_JSON_SIZE:
+        if not resolved.is_file() or resolved.stat().st_size > max_bytes:
             raise OSError
         payload = json.loads(resolved.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
@@ -80,8 +81,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         return int(error.code)
 
     try:
-        binding = _load_private_json(args.binding)
-        plan = _load_private_json(args.pyramid_candidate_plan)
+        binding = _load_private_json(
+            args.binding, max_bytes=MAX_PRIVATE_BINDING_JSON_SIZE
+        )
+        plan = _load_private_json(
+            args.pyramid_candidate_plan,
+            max_bytes=MAX_PRIVATE_CANDIDATE_PLAN_JSON_SIZE,
+        )
         materialize_history_registry(
             plan,
             binding,

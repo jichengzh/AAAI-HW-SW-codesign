@@ -449,6 +449,22 @@ def _write_json(path: Path, payload: Any) -> Path:
     return path
 
 
+def _write_exact_size_json_mapping(path: Path, size_bytes: int) -> Path:
+    empty_document = json.dumps(
+        {"formal_plan_payload": ""}, separators=(",", ":")
+    )
+    payload_size = size_bytes - len(empty_document.encode("utf-8"))
+    assert payload_size >= 0
+    path.write_text(
+        json.dumps(
+            {"formal_plan_payload": "x" * payload_size}, separators=(",", ":")
+        ),
+        encoding="utf-8",
+    )
+    assert path.stat().st_size == size_bytes
+    return path
+
+
 def _run_registry_cli(
     binding_path: Path,
     plan_path: Path,
@@ -478,15 +494,79 @@ def _run_registry_cli(
     )
 
 
-def test_registry_loader_accepts_real_formal_plan_size_above_16_mib(
+def test_registry_loader_keeps_binding_limit_at_16_mib(
     tmp_path: Path,
 ) -> None:
-    plan_path = tmp_path / "pyramid-candidate-plan.json"
-    payload = {"formal_plan_payload": "x" * (16 * 1024 * 1024)}
-    _write_json(plan_path, payload)
+    binding_path = _write_exact_size_json_mapping(
+        tmp_path / "binding.json", 16 * 1024 * 1024 + 1
+    )
 
-    assert plan_path.stat().st_size > 16 * 1024 * 1024
-    assert registry_cli._load_private_json(plan_path) == payload
+    with pytest.raises(registry_cli.P6HistoryRegistryError) as error:
+        registry_cli._load_private_json(
+            binding_path, max_bytes=16 * 1024 * 1024
+        )
+
+    assert error.value.category == "source_registry_invalid"
+
+
+def test_registry_loader_accepts_real_23mb_formal_plan(tmp_path: Path) -> None:
+    plan_path = _write_exact_size_json_mapping(
+        tmp_path / "pyramid-candidate-plan.json", 23_275_947
+    )
+
+    assert registry_cli._load_private_json(
+        plan_path, max_bytes=32 * 1024 * 1024
+    )["formal_plan_payload"].startswith("x")
+
+
+def test_registry_loader_rejects_formal_plan_over_32_mib(tmp_path: Path) -> None:
+    plan_path = _write_exact_size_json_mapping(
+        tmp_path / "pyramid-candidate-plan.json", 32 * 1024 * 1024 + 1
+    )
+
+    with pytest.raises(registry_cli.P6HistoryRegistryError) as error:
+        registry_cli._load_private_json(
+            plan_path, max_bytes=32 * 1024 * 1024
+        )
+
+    assert error.value.category == "source_registry_invalid"
+
+
+def test_registry_cli_routes_binding_and_plan_to_distinct_size_limits(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    observed_limits: list[tuple[Path, int]] = []
+
+    def fake_load_private_json(path: Path, *, max_bytes: int) -> Mapping[str, Any]:
+        observed_limits.append((path, max_bytes))
+        return {}
+
+    monkeypatch.setattr(registry_cli, "_load_private_json", fake_load_private_json)
+    monkeypatch.setattr(
+        registry_cli, "materialize_history_registry", lambda *args: None
+    )
+
+    result = registry_cli.main(
+        [
+            "--binding",
+            str(tmp_path / "binding.json"),
+            "--pyramid-candidate-plan",
+            str(tmp_path / "plan.json"),
+            "--source-registry-json",
+            str(tmp_path / "registry.json"),
+            "--local-output-root",
+            str(tmp_path / "output"),
+        ]
+    )
+
+    assert result == 0
+    assert observed_limits == [
+        (tmp_path / "binding.json", 16 * 1024 * 1024),
+        (tmp_path / "plan.json", 32 * 1024 * 1024),
+    ]
+    assert capsys.readouterr().out == "source_registry_written\n"
 
 
 def _identity_map(rows: list[Mapping[str, Any]]) -> set[tuple[tuple[int, ...], str]]:
