@@ -113,7 +113,12 @@ def _import_library_locator(root: Path, locator: Path) -> Any:
 def _required_tvm_libraries(root: Path, files: list[Path]) -> tuple[Path, ...]:
     locator = _library_locator(root, files)
     libinfo = _import_library_locator(root, locator)
-    libraries = tuple(Path(value).resolve(strict=True) for value in libinfo.find_lib_path())
+    discovered = (
+        (libinfo.find_libtvm_ffi(),)
+        if locator == root / _TVM_LIBRARY_LOCATORS[0]
+        else libinfo.find_lib_path()
+    )
+    libraries = tuple(Path(value).resolve(strict=True) for value in discovered)
     if not libraries or any(not path.is_relative_to(root) for path in libraries):
         raise ValueError("TVM compiler library unavailable")
     return libraries

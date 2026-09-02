@@ -183,10 +183,14 @@ def test_tvm_runtime_identity_supports_top_level_tvm_ffi_libinfo(
     (ffi_root / "__init__.py").write_text("# tvm ffi\n", encoding="utf-8")
     locator = ffi_root / "libinfo.py"
     locator.write_text("# library locator\n", encoding="utf-8")
+    library_root = ffi_root / "lib"
+    library_root.mkdir()
+    library = library_root / "libtvm_ffi.so"
+    library.write_bytes(b"ffi-compiler-library")
     tvm_ffi = ModuleType("tvm_ffi")
     libinfo = ModuleType("tvm_ffi.libinfo")
     libinfo.__file__ = str(locator)
-    libinfo.find_lib_path = lambda: [str(site / "tvm" / "libtvm.so")]
+    libinfo.find_libtvm_ffi = lambda: str(library)
     tvm_ffi.libinfo = libinfo
     monkeypatch.setitem(sys.modules, "tvm_ffi", tvm_ffi)
     monkeypatch.setitem(sys.modules, "tvm_ffi.libinfo", libinfo)
@@ -200,7 +204,7 @@ def test_tvm_runtime_identity_supports_top_level_tvm_ffi_libinfo(
     )
 
     assert identity["target"] == "cuda -arch=sm_89"
-    assert len(identity["compiler_file_sha256"]) == 4
+    assert len(identity["compiler_file_sha256"]) == 5
 
 
 def test_tvm_runtime_rejects_ambiguous_library_locators(
