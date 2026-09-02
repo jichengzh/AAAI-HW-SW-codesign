@@ -39,6 +39,7 @@ from framework.stage6.p6_post_source_wrapper_template_v1 import (
 from framework.stage6.p6_source_wrapper_profile_v1 import (
     render_self_contained_source_wrapper,
 )
+from framework.stage6.p6_tvm_runtime_authority_v1 import TVM_SUPPORT_CLOSURE_ID
 
 
 INPUT_NAMES = (
@@ -338,11 +339,27 @@ def _stage_runner_template(
     copied_roles: Mapping[str, Path],
     post_source_wrapper_paths: Mapping[str, Path] | None,
 ) -> Path:
+    support_roots = tuple(
+        declaration
+        for declaration in canonical["execution_closure"].roots
+        if declaration.closure_id == TVM_SUPPORT_CLOSURE_ID
+    )
+    if len(support_roots) > 1:
+        _invalid("TVM support authority is ambiguous")
+    support_authority = None
+    if support_roots:
+        declaration = support_roots[0]
+        support_authority = (
+            declaration.source_root,
+            staged / declaration.destination_relative_root,
+            declaration.sha256,
+        )
     payload = render_normalized_runner_template(
         canonical["source_runner"],
         normalized_private_root=staged,
         copied_role_paths=copied_roles,
         post_source_wrapper_paths=post_source_wrapper_paths,
+        tvm_support_authority=support_authority,
     )
     runner_path = staged / "runner-template.yaml"
     _atomic_write_yaml(runner_path, payload)
@@ -416,5 +433,43 @@ def publish_normalized_history(
     relative_paths = {
         name: path.relative_to(staged) for name, path in final_paths.items()
     }
+    _rebase_formal_tvm_support_path(
+        canonical,
+        runner_path=staged_paths.get("runner_template"),
+        staged=staged,
+        destination=destination,
+    )
     os.replace(staged, destination)
     return {name: destination / relative for name, relative in relative_paths.items()}
+
+
+def _rebase_formal_tvm_support_path(
+    canonical: Mapping[str, Any],
+    *,
+    runner_path: Path | None,
+    staged: Path,
+    destination: Path,
+) -> None:
+    if runner_path is None:
+        return
+    support_roots = tuple(
+        declaration
+        for declaration in canonical["execution_closure"].roots
+        if declaration.closure_id == TVM_SUPPORT_CLOSURE_ID
+    )
+    if len(support_roots) > 1:
+        _invalid("TVM support authority is ambiguous")
+    payload = yaml.safe_load(runner_path.read_text(encoding="utf-8"))
+    values = payload["execution_interface"]["environment"]["values"]
+    if "P6_TVM_SUPPORT_ROOT" not in values:
+        return
+    if len(support_roots) != 1:
+        _invalid("TVM support authority is unavailable")
+    relative = support_roots[0].destination_relative_root
+    if values["P6_TVM_SUPPORT_ROOT"] != {
+        "kind": "private_path",
+        "value": str(staged / relative),
+    }:
+        _invalid("TVM support authority drifted")
+    values["P6_TVM_SUPPORT_ROOT"]["value"] = str(destination / relative)
+    _atomic_write_yaml(runner_path, payload)

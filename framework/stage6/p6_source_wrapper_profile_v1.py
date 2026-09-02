@@ -13,7 +13,10 @@ from typing import Any, Literal
 
 import yaml
 
-from framework.stage6.p6_history_binding_v1 import EXPECTED_HISTORY_ENV_KEYS
+from framework.stage6.p6_history_binding_v1 import (
+    EXPECTED_HISTORY_ENV_KEYS,
+    FORMAL_TVM_ENV_KEYS,
+)
 from framework.stage6.p6_runner_template_validator_v1 import (
     ValidatedRunnerTemplate,
 )
@@ -239,7 +242,11 @@ def validate_self_contained_source_wrapper(
         _invalid()
     environment = validated_template.execution_interface.get("environment")
     values = environment.get("values") if isinstance(environment, Mapping) else None
-    if not isinstance(values, Mapping) or set(values) != set(EXPECTED_HISTORY_ENV_KEYS):
+    allowed_environment_keys = {
+        frozenset(EXPECTED_HISTORY_ENV_KEYS),
+        frozenset((*EXPECTED_HISTORY_ENV_KEYS, *FORMAL_TVM_ENV_KEYS)),
+    }
+    if not isinstance(values, Mapping) or frozenset(values) not in allowed_environment_keys:
         _invalid()
     return _validate_rendered_wrapper(plan)
 

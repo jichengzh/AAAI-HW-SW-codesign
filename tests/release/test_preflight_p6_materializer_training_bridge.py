@@ -15,12 +15,15 @@ import yaml
 from framework.stage6.coptv2x_h800_search_v2 import P6CoptV2XExecutionError
 from framework.stage6 import p6_full_chain_bootstrap_v1 as bootstrap
 from framework.stage6.p6_full_chain_bootstrap_v1 import materialize_full_chain_binding
-from framework.stage6.p6_history_binding_v1 import GpuRecord
+from framework.stage6.p6_history_binding_v1 import FORMAL_TVM_ENV_KEYS, GpuRecord
 from framework.stage6.p6_history_measurement_v1 import (
     plan_validated_history_round_paths,
 )
 from framework.stage6.p6_history_normalization_v1 import normalize_history_inputs
 from framework.stage6.p6_history_recipe_profiles_v1 import SHARED_SOURCE_PATH_KEYS
+from framework.stage6.p6_tvm_runtime_authority_v1 import (
+    canonical_tvm_support_tree_sha256,
+)
 from framework.stage6.p6_source_reuse_evidence_v1 import (
     GROUP_RECEIPT_RELATIVE_ROOT,
     RUN_CONTEXT_RELATIVE_PATH,
@@ -138,9 +141,49 @@ def _build_v5_preflight_inputs(root: Path) -> dict[str, Path]:
 def _build_rtx_preflight_inputs(
     root: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
+    with_formal_runtime: bool = True,
 ) -> tuple[dict[str, Path], _RtxGpuProbe]:
     source_map, source_runner = v5_private_source_map(root)
     source_map["hardware_profile"] = "rtx4090"
+    if with_formal_runtime:
+        runtime_root = root / "approved-runtime"
+        runtime_python = _write_executable(runtime_root / "bin" / "python")
+        runtime_site = runtime_root / "site"
+        runtime_site.mkdir(parents=True)
+        runtime_nvlibs = runtime_root / "nvlibs.json"
+        runtime_nvlibs.write_text("{}\n", encoding="utf-8")
+        support = next(
+            item
+            for item in source_map["execution_code_closure"]["roots"]
+            if item["closure_id"] == "tvm-support"
+        )
+        source_runner_payload = yaml.safe_load(source_runner.read_text(encoding="utf-8"))
+        source_runner_payload["execution_interface"]["environment"]["values"].update(
+            {
+                "P6_TVM_PYTHON": {
+                    "kind": "external_executable",
+                    "value": str(runtime_python),
+                },
+                "P6_TVM_SITE": {
+                    "kind": "external_directory",
+                    "value": str(runtime_site),
+                },
+                "P6_TVM_NVLIBS_FILE": {
+                    "kind": "external_file",
+                    "value": str(runtime_nvlibs),
+                },
+                "P6_TVM_SUPPORT_ROOT": {
+                    "kind": "private_path",
+                    "value": support["source_root"],
+                },
+                "P6_TVM_SUPPORT_ROOT_SHA256": {
+                    "kind": "literal",
+                    "value": support["sha256"],
+                },
+            }
+        )
+        _write_yaml(source_runner, source_runner_payload)
     private_root = root / "rtx-normalized-private-root"
     normalized = normalize_history_inputs(
         source_map,
@@ -446,6 +489,86 @@ def test_rtx_hardware_profile_preflight_accepts_four_planned_rounds_without_laun
         historical_process_launch_count=0,
         gpu_probe_count=0,
     )
+
+
+def test_rtx_preflight_rejects_missing_formal_tvm_runtime_before_launch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inputs, _ = _build_rtx_preflight_inputs(
+        tmp_path,
+        monkeypatch,
+        with_formal_runtime=False,
+    )
+
+    with pytest.raises(P6CoptV2XExecutionError):
+        preflight_materializer_training_bridge(**inputs)
+
+
+@pytest.mark.parametrize("missing_key", FORMAL_TVM_ENV_KEYS)
+def test_rtx_preflight_rejects_each_missing_formal_runtime_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    missing_key: str,
+) -> None:
+    inputs, _ = _build_rtx_preflight_inputs(tmp_path, monkeypatch)
+    binding = _read_json(inputs["private_binding_path"])
+    binding["execution_interface"]["environment"]["values"].pop(missing_key)
+    inputs["private_binding_path"].write_text(json.dumps(binding), encoding="utf-8")
+
+    with pytest.raises(P6CoptV2XExecutionError):
+        preflight_materializer_training_bridge(**inputs)
+
+
+@pytest.mark.parametrize("mutation", ("symlink", "non_executable", "valid_drift"))
+def test_rtx_preflight_rejects_invalid_or_drifted_formal_python(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    inputs, _ = _build_rtx_preflight_inputs(tmp_path, monkeypatch)
+    alternate = tmp_path / "alternate-runtime" / "python"
+    alternate.parent.mkdir()
+    alternate.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    if mutation == "non_executable":
+        alternate.chmod(0o600)
+    else:
+        alternate.chmod(0o700)
+    selected = alternate
+    if mutation == "symlink":
+        selected = alternate.with_name("python-link")
+        selected.symlink_to(alternate)
+    binding = _read_json(inputs["private_binding_path"])
+    binding["execution_interface"]["environment"]["values"]["P6_TVM_PYTHON"][
+        "value"
+    ] = str(selected)
+    inputs["private_binding_path"].write_text(json.dumps(binding), encoding="utf-8")
+
+    with pytest.raises(P6CoptV2XExecutionError):
+        preflight_materializer_training_bridge(**inputs)
+
+
+def test_rtx_preflight_rejects_alternate_self_consistent_support_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inputs, _ = _build_rtx_preflight_inputs(tmp_path, monkeypatch)
+    private_root = _post_source_private_root(inputs)
+    alternate_root = private_root / "alternate-support"
+    alternate_root.mkdir()
+    (alternate_root / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
+    alternate_digest = canonical_tvm_support_tree_sha256(alternate_root)
+    binding = _read_json(inputs["private_binding_path"])
+    runner = yaml.safe_load(inputs["runner_template_path"].read_text(encoding="utf-8"))
+    for payload in (binding["execution_interface"], runner["execution_interface"]):
+        values = payload["environment"]["values"]
+        values["P6_TVM_SUPPORT_ROOT"]["value"] = str(alternate_root)
+        values["P6_TVM_SUPPORT_ROOT_SHA256"]["value"] = alternate_digest
+    inputs["private_binding_path"].write_text(json.dumps(binding), encoding="utf-8")
+    _write_yaml(inputs["runner_template_path"], runner)
+
+    with pytest.raises(P6CoptV2XExecutionError):
+        preflight_materializer_training_bridge(**inputs)
 
 
 def test_rtx_hardware_profile_binding_mismatch_stops_before_profile_or_runner_probe(

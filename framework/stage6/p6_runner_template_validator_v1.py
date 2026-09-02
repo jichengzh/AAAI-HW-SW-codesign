@@ -12,7 +12,10 @@ from typing import Any
 
 import yaml
 
-from framework.stage6.p6_history_binding_v1 import EXPECTED_HISTORY_ENV_KEYS
+from framework.stage6.p6_history_binding_v1 import (
+    EXPECTED_HISTORY_ENV_KEYS,
+    FORMAL_TVM_ENV_KEYS,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -256,9 +259,13 @@ def _validate_interface(
         raise RunnerTemplateValidationError(
             "execution_interface_unavailable", "execution interface is invalid"
         )
-    if require_exact_history_environment and set(environment["values"]) != set(
-        EXPECTED_HISTORY_ENV_KEYS
-    ):
+    allowed_environment_keys = {
+        frozenset(EXPECTED_HISTORY_ENV_KEYS),
+        frozenset((*EXPECTED_HISTORY_ENV_KEYS, *FORMAL_TVM_ENV_KEYS)),
+    }
+    if require_exact_history_environment and frozenset(
+        environment["values"]
+    ) not in allowed_environment_keys:
         raise RunnerTemplateValidationError(
             "execution_interface_unavailable", "execution interface is invalid"
         )

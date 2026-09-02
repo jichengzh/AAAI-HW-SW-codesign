@@ -26,6 +26,8 @@ from framework.stage6.hardware_execution_profile_v1 import (  # noqa: E402
     HardwareExecutionProfile,
 )
 from framework.stage6.p6_history_binding_v1 import (  # noqa: E402
+    EXPECTED_HISTORY_ENV_KEYS,
+    FORMAL_TVM_ENV_KEYS,
     validate_history_execution_binding,
 )
 from framework.stage6.p6_external_training_binding_v1 import (  # noqa: E402
@@ -48,6 +50,7 @@ from framework.stage6.p6_runner_template_validator_v1 import (  # noqa: E402
 )
 from framework.stage6.p6_post_source_adapter_profile_v1 import (  # noqa: E402
     PROFILE_SCHEMA_VERSION_V4,
+    ValidatedPostSourceAdapterProfile,
     load_post_source_adapter_profile,
     require_post_source_adapter_profile_v3,
     require_post_source_adapter_profile_v4,
@@ -104,11 +107,11 @@ def _validate_post_source_profile(
     private_root: Path,
     runner_template_path: Path,
     hardware_profile: HardwareExecutionProfile,
-) -> None:
+) -> ValidatedPostSourceAdapterProfile | None:
     if profile_path is None:
         if (private_root / "post-source-adapter-profile.yaml").is_file():
             raise ValueError
-        return
+        return None
     profile = load_post_source_adapter_profile(profile_path, private_root=private_root)
     if profile.schema_version == PROFILE_SCHEMA_VERSION_V4:
         require_post_source_adapter_profile_v4(profile)
@@ -125,6 +128,42 @@ def _validate_post_source_profile(
         normalized_private_root=private_root,
         post_source_wrapper_paths=wrapper_paths,
     )
+    return profile
+
+
+def _validate_runtime_environment_authority(
+    interface: Mapping[str, Any],
+    runner_template: Any,
+    profile: ValidatedPostSourceAdapterProfile | None,
+    hardware_profile: HardwareExecutionProfile,
+) -> None:
+    binding_values = interface["environment"]["values"]
+    runner_values = runner_template.execution_interface["environment"]["values"]
+    if hardware_profile.profile_id == "h800":
+        if set(binding_values) != set(EXPECTED_HISTORY_ENV_KEYS) or set(
+            runner_values
+        ) != set(EXPECTED_HISTORY_ENV_KEYS):
+            raise ValueError
+        return
+    if (
+        profile is None
+        or profile.schema_version != PROFILE_SCHEMA_VERSION_V4
+        or profile.tvm_support_root is None
+        or profile.tvm_support_root_sha256 is None
+        or set(binding_values)
+        != set((*EXPECTED_HISTORY_ENV_KEYS, *FORMAL_TVM_ENV_KEYS))
+    ):
+        raise ValueError
+    if any(binding_values[key] != runner_values[key] for key in FORMAL_TVM_ENV_KEYS):
+        raise ValueError
+    if binding_values["P6_TVM_SUPPORT_ROOT"] != {
+        "kind": "private_path",
+        "value": str(profile.tvm_support_root),
+    } or binding_values["P6_TVM_SUPPORT_ROOT_SHA256"] != {
+        "kind": "literal",
+        "value": profile.tvm_support_root_sha256,
+    }:
+        raise ValueError
 
 
 def _reserved_paths(
@@ -208,7 +247,7 @@ def _load_preflight_inputs(
     validated_template = validate_recipe_v2_training_template(
         template, private_root=private_root
     )
-    _validate_post_source_profile(
+    post_source_profile = _validate_post_source_profile(
         post_source_adapter_profile_path,
         private_root=private_root,
         runner_template_path=runner_template_path,
@@ -216,6 +255,12 @@ def _load_preflight_inputs(
     )
     runner_template = validate_pre_provision_runner_template(
         runner_template_path, private_root, require_exact_history_environment=True
+    )
+    _validate_runtime_environment_authority(
+        interface,
+        runner_template,
+        post_source_profile,
+        contract.hardware_profile,
     )
     wrapper = validate_self_contained_source_wrapper(
         runner_template, source_wrapper_profile=source_wrapper_profile_path

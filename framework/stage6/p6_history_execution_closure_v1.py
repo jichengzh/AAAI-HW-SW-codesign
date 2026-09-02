@@ -19,7 +19,10 @@ import tempfile
 from typing import Any, Literal
 
 from framework.stage6.p6_external_training_binding_v1 import P6ExternalTrainingBinding
-from framework.stage6.p6_history_binding_v1 import REQUIRED_STAGE_PLACEHOLDERS
+from framework.stage6.p6_history_binding_v1 import (
+    FORMAL_TVM_ENV_KEYS,
+    REQUIRED_STAGE_PLACEHOLDERS,
+)
 from framework.stage6.p6_runner_template_validator_v1 import (
     ValidatedRunnerTemplate,
     validate_pre_provision_runner_template,
@@ -164,6 +167,7 @@ def render_normalized_runner_template(
     normalized_private_root: Path,
     copied_role_paths: Mapping[str, Path],
     post_source_wrapper_paths: Mapping[str, Path] | None = None,
+    tvm_support_authority: tuple[Path, Path, str] | None = None,
 ) -> dict[str, Any]:
     """Rewrite every repository-local executable to its normalized role path."""
     if not isinstance(source_template, ValidatedRunnerTemplate) or set(copied_role_paths) != set(
@@ -182,6 +186,11 @@ def render_normalized_runner_template(
         entry["argv"][0] = target.as_posix()
         entry["required_placeholders"] = list(REQUIRED_STAGE_PLACEHOLDERS[entry["stage"]])
     interface["environment"]["activation_argv"][0] = canonical["activation"].as_posix()
+    _relocate_formal_tvm_support(
+        interface,
+        source_template=source_template,
+        authority=tvm_support_authority,
+    )
     return {
         "schema_version": "p6_history_runner_template_v1",
         "stage1_scan": {
@@ -192,6 +201,33 @@ def render_normalized_runner_template(
             ],
         },
         "execution_interface": interface,
+    }
+
+
+def _relocate_formal_tvm_support(
+    interface: dict[str, Any],
+    *,
+    source_template: ValidatedRunnerTemplate,
+    authority: tuple[Path, Path, str] | None,
+) -> None:
+    source_values = source_template.execution_interface["environment"]["values"]
+    present = set(source_values).intersection(FORMAL_TVM_ENV_KEYS)
+    if not present:
+        return
+    if present != set(FORMAL_TVM_ENV_KEYS) or authority is None:
+        _invalid()
+    source_root, normalized_root, digest = authority
+    if (
+        source_values["P6_TVM_SUPPORT_ROOT"]
+        != {"kind": "private_path", "value": str(source_root)}
+        or source_values["P6_TVM_SUPPORT_ROOT_SHA256"]
+        != {"kind": "literal", "value": digest}
+    ):
+        _invalid()
+    values = interface["environment"]["values"]
+    values["P6_TVM_SUPPORT_ROOT"] = {
+        "kind": "private_path",
+        "value": str(normalized_root),
     }
 
 

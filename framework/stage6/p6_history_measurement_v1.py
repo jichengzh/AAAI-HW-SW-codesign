@@ -30,6 +30,7 @@ from framework.stage6.p6_external_training_binding_v1 import (
 )
 from framework.stage6.p6_history_binding_v1 import (
     EXPECTED_HISTORY_ENV_KEYS,
+    FORMAL_TVM_ENV_KEYS,
     GpuProbe,
     GpuRecord,
     P6HistoryBindingError,
@@ -179,9 +180,9 @@ def run_history_measurement_batch(
         if source_group_ids
         else ()
     )
+    environment = _render_environment(interface, paths, profile=selected_profile)
     _validate_gpu(gpu_probe, gpu_policy, selected_profile)
     _initialize_private_round(canonical_request, interface, paths)
-    environment = _render_environment(interface, paths)
     substitutions = _substitutions(paths)
     _execute(interface["environment"]["activation_argv"], substitutions, runner, paths, environment)
     try:
@@ -693,20 +694,33 @@ def _initialize_private_round(
     except (KeyError, OSError, TypeError, ValueError):
         raise P6HistoryMeasurementError("history_execution_invalid") from None
 
-def _render_environment(interface: Mapping[str, Any], paths: Mapping[str, Path]) -> dict[str, str]:
+def _render_environment(
+    interface: Mapping[str, Any],
+    paths: Mapping[str, Path],
+    *,
+    profile: HardwareExecutionProfile | None = None,
+) -> dict[str, str]:
     substitutions = _substitutions(paths)
     rendered: dict[str, str] = {}
     try:
         for key, specification in interface["environment"]["values"].items():
             kind = specification["kind"]
             value = specification["value"]
-            if kind in {"literal", "private_path"}:
+            if kind in {"literal", "private_path"} or str(kind).startswith(
+                "external_"
+            ):
                 rendered[key] = value
             elif kind == "placeholder" and value in substitutions:
                 rendered[key] = substitutions[value]
             else:
                 raise ValueError
-        if set(rendered) != set(EXPECTED_HISTORY_ENV_KEYS):
+        selected_profile = profile or default_hardware_execution_profile()
+        expected_keys = (
+            (*EXPECTED_HISTORY_ENV_KEYS, *FORMAL_TVM_ENV_KEYS)
+            if selected_profile.profile_id != "h800"
+            else EXPECTED_HISTORY_ENV_KEYS
+        )
+        if set(rendered) != set(expected_keys):
             raise ValueError
         return rendered
     except (KeyError, TypeError, ValueError):

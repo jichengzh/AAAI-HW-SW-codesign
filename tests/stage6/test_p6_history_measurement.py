@@ -198,6 +198,37 @@ def _binding(
             },
         },
     }
+    if hardware_profile == "rtx4090":
+        runtime_root = private_root / "formal-runtime"
+        runtime_python = Path(_executable(runtime_root / "bin" / "python"))
+        runtime_site = runtime_root / "site"
+        runtime_site.mkdir(parents=True)
+        runtime_nvlibs = runtime_root / "nvlibs.json"
+        runtime_nvlibs.write_text("{}\n", encoding="utf-8")
+        interface["environment"]["values"].update(
+            {
+                "P6_TVM_PYTHON": {
+                    "kind": "external_executable",
+                    "value": str(runtime_python),
+                },
+                "P6_TVM_SITE": {
+                    "kind": "external_directory",
+                    "value": str(runtime_site),
+                },
+                "P6_TVM_NVLIBS_FILE": {
+                    "kind": "external_file",
+                    "value": str(runtime_nvlibs),
+                },
+                "P6_TVM_SUPPORT_ROOT": {
+                    "kind": "private_path",
+                    "value": str(private_root),
+                },
+                "P6_TVM_SUPPORT_ROOT_SHA256": {
+                    "kind": "literal",
+                    "value": "a" * 64,
+                },
+            }
+        )
     return {
         "schema_version": "p6_history_binding_v1",
         "target": {
@@ -692,6 +723,44 @@ def test_rendered_runtime_environment_rejects_any_key_beyond_binding_owner(
     assert str(captured.value) == "history_execution_invalid"
 
 
+def test_rtx_rendered_environment_forwards_exact_formal_tvm_runtime(
+    tmp_path: Path,
+) -> None:
+    paths = {
+        "measurement_request": tmp_path / "request.json",
+        "round_root": tmp_path,
+        "task_state": tmp_path / "state.json",
+        "actual_feedback": tmp_path / "feedback.json",
+        "actual_receipt": tmp_path / "receipt.json",
+        "finalization_barrier": tmp_path / "barrier.json",
+    }
+    values = {
+        "CUDA_VISIBLE_DEVICES": {"kind": "literal", "value": "0,1,2,3"},
+        "P6_HISTORY_RUN_MODE": {"kind": "literal", "value": "bound"},
+        "P6_HISTORY_PRIVATE_ROOT": {"kind": "private_path", "value": str(tmp_path)},
+        "P6_HISTORY_TASK_STATE": {"kind": "placeholder", "value": "{task_state}"},
+        "P6_HISTORY_ROUND_OUTPUT_ROOT": {
+            "kind": "placeholder",
+            "value": "{round_output_root}",
+        },
+        "P6_TVM_PYTHON": {"kind": "external_executable", "value": "/runtime/python"},
+        "P6_TVM_SITE": {"kind": "external_directory", "value": "/runtime/site"},
+        "P6_TVM_NVLIBS_FILE": {"kind": "external_file", "value": "/runtime/nvlibs"},
+        "P6_TVM_SUPPORT_ROOT": {"kind": "private_path", "value": str(tmp_path)},
+        "P6_TVM_SUPPORT_ROOT_SHA256": {"kind": "literal", "value": "a" * 64},
+    }
+
+    rendered = _render_environment(
+        {"environment": {"values": values}},
+        paths,
+        profile=load_hardware_execution_profile("rtx4090"),
+    )
+
+    assert set(rendered) == set(values)
+    assert rendered["P6_TVM_PYTHON"] == "/runtime/python"
+    assert "PYTHONPATH" not in rendered
+
+
 def test_measurement_revalidates_the_binding_private_policy_before_and_after_execution(
     tmp_path: Path,
 ) -> None:
@@ -820,6 +889,24 @@ def test_runtime_hardware_profile_rtx_admits_four_cards_in_existing_order(
     ]
     assert probe.calls == [policy_indices, policy_indices]
     assert [call.argv[8] for call in source_calls] == ["109", "103", "107", "101"]
+    assert all(
+        set(call.env)
+        == {
+            *EXPECTED_HISTORY_ENV_KEYS,
+            "P6_TVM_PYTHON",
+            "P6_TVM_SITE",
+            "P6_TVM_NVLIBS_FILE",
+            "P6_TVM_SUPPORT_ROOT",
+            "P6_TVM_SUPPORT_ROOT_SHA256",
+        }
+        for call in runner.calls
+    )
+    assert [Path(call.argv[0]).name for call in runner.calls[-4:]] == [
+        "quantize",
+        "stage5_build_performance_plan_v2.py",
+        "measure-ap",
+        "stage5_finalize_feedback_v2.py",
+    ]
     assert len(feedback["rows"]) == 4
 
 

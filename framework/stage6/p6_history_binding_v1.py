@@ -100,6 +100,14 @@ WRAPPER_ENVIRONMENT_SPEC = {
     "P6_HISTORY_ROUND_OUTPUT_ROOT": ("placeholder", "{round_output_root}"),
 }
 EXPECTED_HISTORY_ENV_KEYS = tuple(WRAPPER_ENVIRONMENT_SPEC)
+FORMAL_TVM_ENVIRONMENT_SPEC = {
+    "P6_TVM_PYTHON": ("external_executable", None),
+    "P6_TVM_SITE": ("external_directory", None),
+    "P6_TVM_NVLIBS_FILE": ("external_file", None),
+    "P6_TVM_SUPPORT_ROOT": ("private_path", None),
+    "P6_TVM_SUPPORT_ROOT_SHA256": ("literal", None),
+}
+FORMAL_TVM_ENV_KEYS = tuple(FORMAL_TVM_ENVIRONMENT_SPEC)
 INTERFACE_TOP_LEVEL_KEYS = frozenset(
     {
         "schema_version",
@@ -739,10 +747,19 @@ def _validate_environment(raw: object, root: Path) -> dict[str, Any]:
         raise _execution_interface_error()
     _require_exact_keys(raw, {"values", "activation_argv"})
     values = raw.get("values")
-    if not isinstance(values, Mapping) or set(values) != set(WRAPPER_ENVIRONMENT_SPEC):
+    formal_spec = {**WRAPPER_ENVIRONMENT_SPEC, **FORMAL_TVM_ENVIRONMENT_SPEC}
+    if not isinstance(values, Mapping):
+        raise _execution_interface_error()
+    if set(values) == set(WRAPPER_ENVIRONMENT_SPEC):
+        expected_spec = WRAPPER_ENVIRONMENT_SPEC
+    elif set(values) == set(formal_spec):
+        expected_spec = formal_spec
+    else:
+        raise _execution_interface_error()
+    if set(values) != set(expected_spec):
         raise _execution_interface_error()
     normalized_values: dict[str, dict[str, str]] = {}
-    for key, expected in WRAPPER_ENVIRONMENT_SPEC.items():
+    for key, expected in expected_spec.items():
         value = values.get(key)
         if (
             not isinstance(value, Mapping)
@@ -781,6 +798,25 @@ def _validate_environment_value(
         if not Path(value).is_absolute() or not _is_relative_to(resolved, root):
             raise _execution_interface_error()
         return {"kind": kind, "value": str(resolved)}
+    if kind.startswith("external_"):
+        path = Path(value)
+        try:
+            resolved = path.resolve(strict=True)
+        except OSError as error:
+            raise _execution_interface_error() from error
+        if not path.is_absolute() or _contains_symlink_component(path):
+            raise _execution_interface_error()
+        if kind == "external_directory" and not resolved.is_dir():
+            raise _execution_interface_error()
+        if kind in {"external_file", "external_executable"} and not resolved.is_file():
+            raise _execution_interface_error()
+        if kind == "external_executable" and not os.access(resolved, os.X_OK):
+            raise _execution_interface_error()
+        return {"kind": kind, "value": str(resolved)}
+    if key == "P6_TVM_SUPPORT_ROOT_SHA256" and (
+        len(value) != 64 or set(value) - set("0123456789abcdef")
+    ):
+        raise _execution_interface_error()
     if (
         (expected_value is not None and value != expected_value)
         or "/" in value
@@ -1224,3 +1260,11 @@ def _is_relative_to(path: Path, parent: Path) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _contains_symlink_component(path: Path) -> bool:
+    anchor = Path(path.anchor)
+    return any(
+        component != anchor and component.is_symlink()
+        for component in (path, *path.parents)
+    )
