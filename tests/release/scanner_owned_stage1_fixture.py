@@ -46,8 +46,10 @@ def scanner_owned_pyramid_stage1_manifest(
 ) -> dict[str, Any]:
     """Return a release seed upgraded to scanner-owned Stage2 inputs."""
     scenario = _scenario()
+    context = _trace_context()
+    trusted_declarations = context.dataflow_relations
     inputs = build_structural_axis_inputs(
-        trace_context=_trace_context(),
+        trace_context=context,
         prune_groups=_prune_groups(),
         scenario=scenario,
         group_manifest=selector_group_manifest(
@@ -56,8 +58,18 @@ def scanner_owned_pyramid_stage1_manifest(
             list(_dataflow_relations()),
         ),
     )
-    bundle = derive_structural_axes({"structural_axis_inputs": inputs})
-    axes = [axis_to_scanner_dict(axis, inputs) for axis in bundle.axes]
+    bundle = derive_structural_axes(
+        {"structural_axis_inputs": inputs},
+        trusted_source_relation_declarations=trusted_declarations,
+    )
+    axes = [
+        axis_to_scanner_dict(
+            axis,
+            inputs,
+            trusted_source_relation_declarations=trusted_declarations,
+        )
+        for axis in bundle.axes
+    ]
     return {
         **deepcopy(dict(manifest)),
         "backend_support": {"precisions": list(scenario.backend_precisions)},

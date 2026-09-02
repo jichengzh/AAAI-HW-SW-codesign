@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 
 import pytest
 import torch.nn as nn
@@ -35,6 +36,27 @@ from tests.stage1.structural_axis_selector_test_support import (
 from tests.stage1.structural_axis_test_support import (
     resign_structural_inputs,
 )
+
+
+def _trusted_selector_relations() -> tuple[dict, ...]:
+    return tuple(dict(row) for row in selector_context().dataflow_relations)
+
+
+def _trusted_cross_interface_relations() -> tuple[dict, ...]:
+    return (
+        {
+            "module_root_selector": "backbone.0",
+            "canonical_axis_id": "backbone.output",
+            "independent_interface": True,
+        },
+    )
+
+
+def _derive_selector_inputs(inputs: dict):
+    return derive_structural_axes(
+        {"structural_axis_inputs": inputs},
+        trusted_source_relation_declarations=_trusted_selector_relations(),
+    )
 
 
 def _attach_source_dataflow_relations(inputs: dict, relations: list[dict]) -> None:
@@ -88,7 +110,7 @@ def test_derive_requires_retained_source_dataflow_relations() -> None:
     resign_structural_inputs(inputs)
 
     with pytest.raises(ValueError, match="source dataflow relations"):
-        derive_structural_axes({"structural_axis_inputs": inputs})
+        _derive_selector_inputs(inputs)
 
 
 def test_derive_rejects_duplicate_source_dataflow_relation_identity() -> None:
@@ -97,7 +119,7 @@ def test_derive_rejects_duplicate_source_dataflow_relation_identity() -> None:
     _attach_source_dataflow_relations(inputs, [source, source])
 
     with pytest.raises(ValueError, match="duplicate source dataflow relation"):
-        derive_structural_axes({"structural_axis_inputs": inputs})
+        _derive_selector_inputs(inputs)
 
 
 def test_derive_rejects_self_signed_independent_interface_tamper() -> None:
@@ -117,7 +139,7 @@ def test_derive_rejects_self_signed_independent_interface_tamper() -> None:
         ValueError,
         match="retained source relation|interface proof|binding relation authority",
     ):
-        derive_structural_axes({"structural_axis_inputs": inputs})
+        _derive_selector_inputs(inputs)
 
 
 def test_derive_rejects_derived_relation_without_matching_raw_identity() -> None:
@@ -131,7 +153,7 @@ def test_derive_rejects_derived_relation_without_matching_raw_identity() -> None
     with pytest.raises(
         ValueError, match="retained source relation|binding relation authority"
     ):
-        derive_structural_axes({"structural_axis_inputs": inputs})
+        _derive_selector_inputs(inputs)
 
 
 def test_build_inputs_requires_scanner_group_manifest_provenance() -> None:
@@ -191,13 +213,13 @@ def test_derive_rejects_missing_scanner_owned_digest(
     target.pop(field, None)
 
     with pytest.raises(ValueError, match=field):
-        derive_structural_axes({"structural_axis_inputs": inputs})
+        _derive_selector_inputs(inputs)
 
 
 def test_derived_axis_retains_verified_scanner_digest_provenance() -> None:
     inputs = built_selector_inputs()
 
-    axis = derive_structural_axes({"structural_axis_inputs": inputs}).free_axes[0]
+    axis = _derive_selector_inputs(inputs).free_axes[0]
 
     for field in (
         "scanner_input_digest",
@@ -237,7 +259,10 @@ def test_derive_rejects_free_cross_interface_without_verified_relation(
     resign_structural_inputs(inputs)
 
     with pytest.raises(ValueError, match="independent interface|relation provenance|relation digest"):
-        derive_structural_axes({"structural_axis_inputs": inputs})
+        derive_structural_axes(
+            {"structural_axis_inputs": inputs},
+            trusted_source_relation_declarations=_trusted_cross_interface_relations(),
+        )
 
 
 def test_build_inputs_preserves_generic_materializer_writeback_transforms() -> None:
@@ -542,6 +567,77 @@ def _built_chain_inputs() -> tuple[dict, list[dict]]:
     return inputs, groups
 
 
+def _fully_rebuilt_chain_inputs(
+    *, selector_override: bool = False, declared_downgrade: bool = False
+) -> tuple[dict, tuple[dict, ...]]:
+    context, groups, trusted_relations = _chain_axis_fixture()
+    sources = context.materializer_sources
+    if selector_override:
+        sources = (
+            sources[0],
+            replace(sources[1], module_root_selector="backbone.1"),
+        )
+    declarations = tuple(
+        {
+            "module_root_selector": source.module_root_selector,
+            "canonical_axis_id": source.axis_id,
+        }
+        for source in sources
+    )
+    if declared_downgrade:
+        declared_members = {
+            "chain.left": ("g0", "g1"),
+            "chain.right": ("g2", "g3"),
+        }
+        declarations = tuple(
+            {
+                **relation,
+                "member_relations": [
+                    {
+                        "group_id": group_id,
+                        "role": (
+                            "output"
+                            if group_id in {"g0", "g3"}
+                            else "internal"
+                        ),
+                    }
+                    for group_id in declared_members[relation["canonical_axis_id"]]
+                ],
+                "declared_member_group_ids": declared_members[
+                    relation["canonical_axis_id"]
+                ],
+                "member_relations_digest": canonical_digest(
+                    declared_members[relation["canonical_axis_id"]]
+                ),
+            }
+            for relation in declarations
+        )
+        groups = [
+            {key: value for key, value in group.items() if key != "member_layers"}
+            for group in groups
+        ]
+    alternate_context = TraceContext(
+        net=context.net,
+        example_inputs=context.example_inputs,
+        full_model=context.full_model,
+        loaded_config=context.loaded_config,
+        checkpoint_evidence=context.checkpoint_evidence,
+        materializer_sources=sources,
+        trace_modules=context.trace_modules,
+        dataflow_relations=declarations,
+    )
+    inputs = build_structural_axis_inputs(
+        trace_context=alternate_context,
+        prune_groups=groups,
+        scenario=selector_scenario(),
+        group_manifest=selector_group_manifest(
+            groups,
+            source_relations=[dict(row) for row in declarations],
+        ),
+    )
+    return inputs, trusted_relations
+
+
 def _fully_resealed_wrong_chain_inputs(
     *, boundary_override: bool = False, declared_downgrade: bool = False
 ) -> dict:
@@ -677,15 +773,55 @@ def test_graph_partition_cannot_be_downgraded_to_declared_members() -> None:
 def test_full_reseal_cannot_override_selector_resolved_boundary() -> None:
     inputs = _fully_resealed_wrong_chain_inputs(boundary_override=True)
 
-    with pytest.raises(ValueError, match="canonical group.*selector"):
-        derive_structural_axes({"structural_axis_inputs": inputs})
+    with pytest.raises(
+        ValueError,
+        match="canonical group.*selector|trusted source relation declarations",
+    ):
+        derive_structural_axes(
+            {"structural_axis_inputs": inputs},
+            trusted_source_relation_declarations=_chain_axis_fixture()[2],
+        )
 
 
 def test_full_reseal_cannot_delete_graph_and_downgrade_to_declared() -> None:
     inputs = _fully_resealed_wrong_chain_inputs(declared_downgrade=True)
 
     with pytest.raises(ValueError, match="source relation authority"):
+        derive_structural_axes(
+            {"structural_axis_inputs": inputs},
+            trusted_source_relation_declarations=_chain_axis_fixture()[2],
+        )
+
+
+def test_formal_derivation_requires_trusted_source_relation_declarations() -> None:
+    inputs, _ = _built_chain_inputs()
+
+    with pytest.raises(ValueError, match="trusted source relation declarations"):
         derive_structural_axes({"structural_axis_inputs": inputs})
+
+
+def test_full_reseal_cannot_replace_code_side_selector_partition() -> None:
+    inputs, trusted_relations = _fully_rebuilt_chain_inputs(
+        selector_override=True
+    )
+
+    with pytest.raises(ValueError, match="trusted source relation declarations"):
+        derive_structural_axes(
+            {"structural_axis_inputs": inputs},
+            trusted_source_relation_declarations=trusted_relations,
+        )
+
+
+def test_full_reseal_cannot_downgrade_code_side_inferred_schema() -> None:
+    inputs, trusted_relations = _fully_rebuilt_chain_inputs(
+        declared_downgrade=True
+    )
+
+    with pytest.raises(ValueError, match="trusted source relation declarations"):
+        derive_structural_axes(
+            {"structural_axis_inputs": inputs},
+            trusted_source_relation_declarations=trusted_relations,
+        )
 
 
 def test_inferred_partition_rejects_disconnected_retained_group() -> None:

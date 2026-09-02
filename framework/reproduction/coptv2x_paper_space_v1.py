@@ -158,7 +158,7 @@ def derive_paper_axis_bundle(
         dataflow_relations=tuple(evidence_payload["dataflow_relations"]),
     )
     inputs = _build_axis_inputs(context, evidence_payload)
-    bundle = _derive_axes(inputs)
+    bundle = _derive_axes(inputs, context.dataflow_relations)
     return evidence_payload, inputs, bundle
 
 
@@ -168,7 +168,15 @@ def build_stage1_scanner_manifest(
     """Build a public Stage1 scanner manifest from purified evidence."""
     evidence_payload, inputs, bundle = derive_paper_axis_bundle(model, evidence)
     scenario = _mapping(evidence_payload["scan_scenario"], "scan_scenario")
-    scanner_axes = [axis_to_scanner_dict(axis, inputs) for axis in bundle.axes]
+    trusted_declarations = tuple(evidence_payload["dataflow_relations"])
+    scanner_axes = [
+        axis_to_scanner_dict(
+            axis,
+            inputs,
+            trusted_source_relation_declarations=trusted_declarations,
+        )
+        for axis in bundle.axes
+    ]
     return _stage1_manifest(evidence_payload, scenario, scanner_axes)
 
 
@@ -214,10 +222,16 @@ def _build_axis_inputs(context: TraceContext, evidence: Mapping[str, Any]) -> di
     )
 
 
-def _derive_axes(inputs: Mapping[str, Any]) -> Any:
+def _derive_axes(
+    inputs: Mapping[str, Any],
+    trusted_declarations: Sequence[Mapping[str, Any]],
+) -> Any:
     from framework.stage1.structural_axes import derive_structural_axes
 
-    return derive_structural_axes({"structural_axis_inputs": inputs})
+    return derive_structural_axes(
+        {"structural_axis_inputs": inputs},
+        trusted_source_relation_declarations=trusted_declarations,
+    )
 
 
 def _stage1_manifest(

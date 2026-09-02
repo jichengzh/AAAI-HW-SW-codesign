@@ -15,10 +15,21 @@ from tests.stage1.structural_axis_test_support import (
     stage_with_non_integral_member_width,
     resign_structural_inputs,
     set_scanner_owned_group_width,
+    trusted_test_source_relation_declarations,
 )
 
+
+def _derive_fixture(scan: dict):
+    return derive_structural_axes(
+        scan,
+        trusted_source_relation_declarations=(
+            trusted_test_source_relation_declarations(scan)
+        ),
+    )
+
+
 def test_derive_structural_axis_uses_canonical_base_not_max_internal_width() -> None:
-    bundle = derive_structural_axes(pyramid_stage_with_output_c_and_internal_2c())
+    bundle = _derive_fixture(pyramid_stage_with_output_c_and_internal_2c())
     axis = bundle.free_axes[0]
 
     assert axis.axis_id == "backbone.stage3"
@@ -32,7 +43,7 @@ def test_derive_structural_axis_uses_canonical_base_not_max_internal_width() -> 
 
 def test_derive_structural_axes_rejects_non_integral_member_ratio() -> None:
     with pytest.raises(ValueError, match="integer widths"):
-        derive_structural_axes(stage_with_non_integral_member_width())
+        _derive_fixture(stage_with_non_integral_member_width())
 
 
 def test_derive_structural_axes_preserves_reduced_rational_member_ratio() -> None:
@@ -41,7 +52,7 @@ def test_derive_structural_axes_preserves_reduced_rational_member_ratio() -> Non
         scan["structural_axis_inputs"], "stage3.inner", 384
     )
 
-    axis = derive_structural_axes(scan).free_axes[0]
+    axis = _derive_fixture(scan).free_axes[0]
 
     assert (
         axis.member_b1_groups[1].canonical_to_member_num,
@@ -55,7 +66,7 @@ def test_derive_structural_axes_rejects_missing_canonical_base_width() -> None:
     resign_structural_inputs(scan["structural_axis_inputs"])
 
     with pytest.raises(ValueError, match="base width authority"):
-        derive_structural_axes(scan)
+        _derive_fixture(scan)
 
 
 def test_derive_structural_axes_rejects_missing_backend_constraint() -> None:
@@ -64,13 +75,13 @@ def test_derive_structural_axes_rejects_missing_backend_constraint() -> None:
     resign_structural_inputs(scan["structural_axis_inputs"])
 
     with pytest.raises(ValueError, match="backend constraint"):
-        derive_structural_axes(scan)
+        _derive_fixture(scan)
 
 
 def test_derive_structural_axes_rejects_mixed_axis_kind_bindings() -> None:
     scan = codriving_scan_with_neck_binding()
     set_scanner_owned_binding_fields(
-        scan["structural_axis_inputs"],
+        scan,
         0,
         axis_id="neck.output",
         role="bad_free_mix",
@@ -83,11 +94,11 @@ def test_derive_structural_axes_rejects_mixed_axis_kind_bindings() -> None:
             "base width authority duplicate raw source relation"
         ),
     ):
-        derive_structural_axes(scan)
+        _derive_fixture(scan)
 
 
 def test_codriving_neck_is_fixed_derived_not_free_axis() -> None:
-    bundle = derive_structural_axes(codriving_scan_with_neck_binding())
+    bundle = _derive_fixture(codriving_scan_with_neck_binding())
 
     assert [axis.axis_id for axis in bundle.free_axes] == [
         "backbone.stage1",
@@ -101,51 +112,51 @@ def test_codriving_neck_is_fixed_derived_not_free_axis() -> None:
 def test_fixed_derived_axis_rejects_unknown_source_axis() -> None:
     scan = codriving_scan_with_neck_binding()
     set_scanner_owned_binding_fields(
-        scan["structural_axis_inputs"], -1, derived_from="backbone.unknown"
+        scan, -1, derived_from="backbone.unknown"
     )
 
     with pytest.raises(ValueError, match="derived_from.*existing free structural axis"):
-        derive_structural_axes(scan)
+        _derive_fixture(scan)
 
 
 def test_fixed_derived_axis_rejects_self_reference() -> None:
     scan = codriving_scan_with_neck_binding()
     set_scanner_owned_binding_fields(
-        scan["structural_axis_inputs"], -1, derived_from="neck.output"
+        scan, -1, derived_from="neck.output"
     )
 
     with pytest.raises(ValueError, match="derived_from.*existing free structural axis"):
-        derive_structural_axes(scan)
+        _derive_fixture(scan)
 
 
 def test_fixed_derived_axis_rejects_fixed_source_axis() -> None:
     scan = codriving_scan_with_neck_binding()
     set_scanner_owned_binding_fields(
-        scan["structural_axis_inputs"],
+        scan,
         -2,
         axis_kind="fixed_derived",
         derived_from="backbone.stage2",
     )
 
     with pytest.raises(ValueError, match="derived_from.*existing free structural axis"):
-        derive_structural_axes(scan)
+        _derive_fixture(scan)
 
 
 def test_fixed_derived_axis_rejects_cycle() -> None:
     scan = codriving_scan_with_neck_binding()
     set_scanner_owned_binding_fields(
-        scan["structural_axis_inputs"],
+        scan,
         -2,
         axis_kind="fixed_derived",
         derived_from="neck.output",
     )
 
     with pytest.raises(ValueError, match="derived_from.*existing free structural axis"):
-        derive_structural_axes(scan)
+        _derive_fixture(scan)
 
 
 def test_fcooper_neck_interfaces_are_free_when_bindings_are_independent() -> None:
-    bundle = derive_structural_axes(fcooper_scan_with_independent_neck_bindings())
+    bundle = _derive_fixture(fcooper_scan_with_independent_neck_bindings())
 
     assert [axis.axis_id for axis in bundle.free_axes] == [
         "backbone.s0",

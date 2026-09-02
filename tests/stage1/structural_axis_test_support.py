@@ -21,6 +21,20 @@ from framework.stage1.structural_axis_digest import canonical_digest
 from framework.stage1.structural_axis_widths import scenario_axis_constraint
 
 
+class StructuralAxisTestScan(dict):
+    """Mutable test payload with an out-of-envelope immutable source anchor."""
+
+    trusted_source_relation_declarations: tuple[dict, ...]
+
+
+def trusted_test_source_relation_declarations(
+    scan: StructuralAxisTestScan,
+) -> tuple[dict, ...]:
+    """Return the fixture-owned source declarations, never the mutated payload."""
+
+    return scan.trusted_source_relation_declarations
+
+
 def paper_scanner_evidence(name: str) -> dict:
     """Load one purified paper scanner-evidence fixture via production code."""
     return load_paper_scanner_evidence(name)
@@ -230,9 +244,13 @@ def _sealed_scan_payload(
             },
         },
     }
-    return {
-        "structural_axis_inputs": seal_scanner_inputs(payload)
-    }
+    scan = StructuralAxisTestScan(
+        structural_axis_inputs=seal_scanner_inputs(payload)
+    )
+    scan.trusted_source_relation_declarations = tuple(
+        dict(row) for row in declarations
+    )
+    return scan
 
 
 def _scanner_base_width_authority(

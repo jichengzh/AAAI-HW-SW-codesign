@@ -498,11 +498,12 @@ def _materializer_role(roles: Sequence[str]) -> str:
     return normalized[0]
 
 
-def derive_structural_axes(raw_scan: Mapping[str, Any]) -> StructuralAxisBundle:
+def derive_structural_axes(raw_scan: Mapping[str, Any], *,
+                           trusted_source_relation_declarations=None) -> StructuralAxisBundle:
     inputs = raw_scan.get("structural_axis_inputs")
     if not isinstance(inputs, Mapping):
         raise ValueError("structural_axis_inputs are required")
-    scanner_provenance = validate_scanner_inputs(inputs)
+    scanner_provenance = validate_scanner_inputs(inputs, trusted_source_relation_declarations=trusted_source_relation_declarations)
     retained_groups = validated_retained_groups(inputs)
     prune_groups = _retained_groups_by_id(retained_groups)
     binding_rows = validated_materializer_bindings(inputs)
@@ -617,12 +618,11 @@ def axis_to_dict(axis: StructuralAxis) -> dict[str, Any]:
     }
 
 
-def axis_to_scanner_dict(
-    axis: StructuralAxis,
-    inputs: Mapping[str, Any],
-) -> dict[str, Any]:
+def axis_to_scanner_dict(axis: StructuralAxis, inputs: Mapping[str, Any], *,
+                         trusted_source_relation_declarations=None) -> dict[str, Any]:
     payload = axis_to_dict(axis)
-    validate_axis_provenance(payload["provenance"], inputs)
+    validate_axis_provenance(payload["provenance"], inputs,
+                             trusted_source_relation_declarations=trusted_source_relation_declarations)
     return payload
 
 

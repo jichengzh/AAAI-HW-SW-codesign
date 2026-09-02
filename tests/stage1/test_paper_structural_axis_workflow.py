@@ -19,6 +19,24 @@ from tests.stage1.structural_axis_test_support import (
     paper_scanner_evidence,
 )
 
+
+def _trusted_paper_relations(name: str = "pyramid") -> tuple[dict, ...]:
+    return tuple(paper_scanner_evidence(name)["dataflow_relations"])
+
+
+def _derive_pyramid_inputs(inputs: dict):
+    return derive_structural_axes(
+        {"structural_axis_inputs": inputs},
+        trusted_source_relation_declarations=_trusted_paper_relations(),
+    )
+
+
+def _validate_pyramid_inputs(inputs: dict):
+    return validate_scanner_inputs(
+        inputs,
+        trusted_source_relation_declarations=_trusted_paper_relations(),
+    )
+
 @pytest.mark.parametrize(
     ("name", "free_axis_ids", "legal_widths", "fixed_axis_ids"),
     [
@@ -92,7 +110,16 @@ def _assert_paper_axes(
     evidence_ids = [group["group_id"] for group in evidence["prune_groups"]]
     assert len(member_ids) == len(evidence_ids)
     assert set(member_ids) == set(evidence_ids)
-    scanner_axes = [axis_to_scanner_dict(axis, inputs) for axis in bundle.axes]
+    scanner_axes = [
+        axis_to_scanner_dict(
+            axis,
+            inputs,
+            trusted_source_relation_declarations=tuple(
+                evidence["dataflow_relations"]
+            ),
+        )
+        for axis in bundle.axes
+    ]
     assert all(axis["provenance"]["input_digest"] == inputs["digest"] for axis in scanner_axes)
     scanner_evidence = inputs["scanner_evidence"]
     assert inputs["materializer_bindings"] == scanner_evidence[
@@ -241,9 +268,7 @@ def test_derive_rejects_group_outside_matched_raw_relation_members() -> None:
         ValueError,
         match="member group|retained prune group|binding relation authority",
     ):
-        derive_structural_axes(
-            {"structural_axis_inputs": _resign_structural_inputs(inputs)}
-        )
+        _derive_pyramid_inputs(_resign_structural_inputs(inputs))
 
 
 def test_derive_rejects_retained_group_owned_by_another_source_relation() -> None:
@@ -272,9 +297,7 @@ def test_derive_rejects_retained_group_owned_by_another_source_relation() -> Non
     with pytest.raises(
         ValueError, match="source member group|binding relation authority"
     ):
-        derive_structural_axes(
-            {"structural_axis_inputs": _resign_structural_inputs(inputs)}
-        )
+        _derive_pyramid_inputs(_resign_structural_inputs(inputs))
 
 
 @pytest.mark.parametrize("field", ["cur_width", "module_path"])
@@ -286,9 +309,7 @@ def test_derive_rejects_outer_prune_group_field_drift(field: str) -> None:
     )
 
     with pytest.raises(ValueError, match="retained prune group evidence"):
-        derive_structural_axes(
-            {"structural_axis_inputs": _resign_structural_inputs(inputs)}
-        )
+        _derive_pyramid_inputs(_resign_structural_inputs(inputs))
 
 
 @pytest.mark.parametrize("mutation", ["missing", "duplicate"])
@@ -300,16 +321,14 @@ def test_validate_rejects_outer_prune_group_membership_drift(mutation: str) -> N
         inputs["prune_groups"].append(dict(inputs["prune_groups"][0]))
 
     with pytest.raises(ValueError, match="retained prune group (evidence|identity)"):
-        validate_scanner_inputs(_resign_structural_inputs(inputs))
+        _validate_pyramid_inputs(_resign_structural_inputs(inputs))
 
 
 def test_outer_prune_group_order_is_not_an_authority_difference() -> None:
     _, inputs, expected = paper_axis_bundle("pyramid")
     inputs["prune_groups"].reverse()
 
-    actual = derive_structural_axes(
-        {"structural_axis_inputs": _resign_structural_inputs(inputs)}
-    )
+    actual = _derive_pyramid_inputs(_resign_structural_inputs(inputs))
 
     assert actual == expected
 
@@ -319,12 +338,8 @@ def test_derive_rejects_self_signed_noncanonical_outer_group_order() -> None:
     inputs["prune_groups"].reverse()
 
     with pytest.raises(ValueError, match="canonical retained prune group order"):
-        derive_structural_axes(
-            {
-                "structural_axis_inputs": _resign_preserving_group_order(
-                    inputs
-                )
-            }
+        _derive_pyramid_inputs(
+            _resign_preserving_group_order(inputs)
         )
 
 
@@ -358,9 +373,7 @@ def test_validate_rejects_binding_tamper_against_relation_authority(
     )
 
     with pytest.raises(ValueError, match="binding relation authority"):
-        validate_scanner_inputs(
-            _resign_structural_inputs(inputs)
-        )
+        _validate_pyramid_inputs(_resign_structural_inputs(inputs))
 
 
 def test_validate_rejects_missing_binding_to_relation_identity() -> None:
@@ -372,7 +385,7 @@ def test_validate_rejects_missing_binding_to_relation_identity() -> None:
     )
 
     with pytest.raises(ValueError, match="binding relation authority"):
-        validate_scanner_inputs(_resign_structural_inputs(inputs))
+        _validate_pyramid_inputs(_resign_structural_inputs(inputs))
 
 
 def test_derive_rejects_self_signed_base_width_tamper() -> None:
@@ -380,9 +393,7 @@ def test_derive_rejects_self_signed_base_width_tamper() -> None:
     inputs["base_widths"][0]["width"] //= 2
 
     with pytest.raises(ValueError, match="base width authority"):
-        derive_structural_axes(
-            {"structural_axis_inputs": _resign_structural_inputs(inputs)}
-        )
+        _derive_pyramid_inputs(_resign_structural_inputs(inputs))
 
 
 @pytest.mark.parametrize(
@@ -429,7 +440,7 @@ def test_validate_rejects_base_proof_coordinate_tamper(mutation: str) -> None:
     )
 
     with pytest.raises(ValueError, match="base width authority"):
-        validate_scanner_inputs(_resign_structural_inputs(inputs))
+        _validate_pyramid_inputs(_resign_structural_inputs(inputs))
 
 
 def test_validate_rejects_foreign_member_as_canonical_base() -> None:
@@ -453,7 +464,7 @@ def test_validate_rejects_foreign_member_as_canonical_base() -> None:
     )
 
     with pytest.raises(ValueError, match="base width authority"):
-        validate_scanner_inputs(_resign_structural_inputs(inputs))
+        _validate_pyramid_inputs(_resign_structural_inputs(inputs))
 
 
 @pytest.mark.parametrize("collection", ["materializer_bindings", "base_widths"])
@@ -473,7 +484,7 @@ def test_validate_rejects_structural_authority_alias_drift(
     with pytest.raises(
         ValueError, match="materializer binding authority|base width authority"
     ):
-        validate_scanner_inputs(_resign_structural_inputs(inputs))
+        _validate_pyramid_inputs(_resign_structural_inputs(inputs))
 
 
 @pytest.mark.parametrize("mutation", ["missing", "duplicate"])
@@ -499,9 +510,7 @@ def test_derive_requires_one_relation_per_declared_source_member(mutation: str) 
         )
 
     with pytest.raises(ValueError, match="complete|duplicate"):
-        derive_structural_axes(
-            {"structural_axis_inputs": _resign_structural_inputs(inputs)}
-        )
+        _derive_pyramid_inputs(_resign_structural_inputs(inputs))
 
 
 def test_pyramid_multi_member_relation_keeps_exact_declared_group_set() -> None:

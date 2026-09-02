@@ -89,9 +89,15 @@ def axis_provenance(
 
 
 def validate_axis_provenance(
-    axis: Mapping[str, Any], inputs: Mapping[str, Any]
+    axis: Mapping[str, Any],
+    inputs: Mapping[str, Any],
+    *,
+    trusted_source_relation_declarations: Sequence[Mapping[str, Any]] | None = None,
 ) -> None:
-    source = validate_scanner_inputs(inputs)
+    source = validate_scanner_inputs(
+        inputs,
+        trusted_source_relation_declarations=trusted_source_relation_declarations,
+    )
     if axis.get("scanner_input_digest") != inputs["scanner_input_digest"]:
         raise ValueError("axis scanner_input_digest disagrees with scanner inputs")
     if any(
@@ -249,9 +255,21 @@ def seal_scanner_inputs(payload: Mapping[str, Any]) -> dict[str, Any]:
     return sealed
 
 
-def validate_scanner_inputs(inputs: Mapping[str, Any]) -> Mapping[str, Any]:
+def validate_scanner_inputs(
+    inputs: Mapping[str, Any],
+    *,
+    trusted_source_relation_declarations: Sequence[Mapping[str, Any]] | None = None,
+) -> Mapping[str, Any]:
     """Fail closed unless all scanner provenance and digests are canonical."""
 
+    if trusted_source_relation_declarations is None:
+        raise ValueError("trusted source relation declarations are required")
+    trusted_declarations = _required_sequence(
+        trusted_source_relation_declarations,
+        "trusted source relation declarations",
+    )
+    if not trusted_declarations:
+        raise ValueError("trusted source relation declarations are required")
     provenance = _required_mapping(inputs.get("provenance"), "provenance")
     if provenance.get("source") != SCANNER_AXIS_PROVENANCE_SOURCE:
         raise ValueError("scanner provenance source is invalid")
@@ -264,7 +282,7 @@ def validate_scanner_inputs(inputs: Mapping[str, Any]) -> Mapping[str, Any]:
     bindings = validated_materializer_bindings(inputs)
     validated_base_widths(inputs, retained_groups, bindings)
     source_authority = _validated_source_relation_authority(
-        evidence, retained_groups, provenance
+        evidence, retained_groups, provenance, trusted_declarations
     )
     _validate_retained_source_relations(
         inputs,
@@ -621,13 +639,14 @@ def _validated_source_relation_authority(
     evidence: Mapping[str, Any],
     groups: Sequence[Mapping[str, Any]],
     provenance: Mapping[str, Any],
+    trusted_declarations: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
     authority = _required_mapping(
         evidence.get("source_relation_authority"), "source relation authority"
     )
     if set(authority) != {"schema", "source_relations", "group_manifest_digest"}:
         raise ValueError("source relation authority fields are invalid")
-    declarations = canonical_source_dataflow_relations(
+    canonical_source_dataflow_relations(
         _required_sequence(
             authority.get("source_relations"), "source relation declarations"
         )
@@ -636,10 +655,12 @@ def _validated_source_relation_authority(
         groups,
         _required_mapping(evidence.get("group_manifest"), "group manifest"),
         _required_mapping(evidence.get("scenario"), "scanner evidence scenario"),
-        declarations,
+        trusted_declarations,
     )
     if dict(authority) != expected:
-        raise ValueError("source relation authority is not canonical")
+        raise ValueError(
+            "source relation authority disagrees with trusted source relation declarations"
+        )
     if provenance.get("source_relation_authority_schema") != expected["schema"]:
         raise ValueError("source relation authority provenance mismatch")
     if provenance.get("source_group_manifest_digest") != expected[

@@ -25,6 +25,18 @@ from tests.stage1.structural_axis_selector_test_support import (
 )
 from tests.stage1.structural_axis_test_support import resign_structural_inputs
 
+
+def _trusted_selector_relations():
+    return selector_context().dataflow_relations
+
+
+def _derive_selector_inputs(inputs: dict):
+    return derive_structural_axes(
+        {"structural_axis_inputs": inputs},
+        trusted_source_relation_declarations=_trusted_selector_relations(),
+    )
+
+
 def test_legal_widths_use_max_rate_and_alignment_not_probe_anchors() -> None:
     """Diagnostic probe samples must not truncate the formal pruning lattice."""
     inputs = built_selector_inputs()
@@ -32,10 +44,10 @@ def test_legal_widths_use_max_rate_and_alignment_not_probe_anchors() -> None:
     constraint["probe_anchors"] = [8, 32]
     resign_structural_inputs(inputs)
 
-    first = derive_structural_axes({"structural_axis_inputs": inputs}).free_axes[0]
+    first = _derive_selector_inputs(inputs).free_axes[0]
     constraint["probe_anchors"] = [16, 24]
     resign_structural_inputs(inputs)
-    second = derive_structural_axes({"structural_axis_inputs": inputs}).free_axes[0]
+    second = _derive_selector_inputs(inputs).free_axes[0]
 
     assert first.legal_widths == (8, 16, 24, 32)
     assert second.legal_widths == first.legal_widths
@@ -63,7 +75,7 @@ def test_formal_max_rate_comes_from_scenario_policy_not_depgraph_diagnostic() ->
         group_manifest=selector_group_manifest(groups),
     )
     constraint = inputs["backend_constraints"][0]
-    axis = derive_structural_axes({"structural_axis_inputs": inputs}).free_axes[0]
+    axis = _derive_selector_inputs(inputs).free_axes[0]
 
     assert "max_rate" not in constraint
     assert constraint["max_rate_numerator"] == 3
@@ -99,7 +111,7 @@ def test_derive_rejects_unverified_formal_rate_policy(
     resign_structural_inputs(inputs)
 
     with pytest.raises(ValueError, match="formal max_rate policy"):
-        derive_structural_axes({"structural_axis_inputs": inputs})
+        _derive_selector_inputs(inputs)
 
 
 def test_derive_rejects_constraint_tamper_against_scanner_evidence_seal() -> None:
@@ -108,7 +120,7 @@ def test_derive_rejects_constraint_tamper_against_scanner_evidence_seal() -> Non
     resign_structural_inputs(inputs)
 
     with pytest.raises(ValueError, match="scanner evidence|formal max_rate policy"):
-        derive_structural_axes({"structural_axis_inputs": inputs})
+        _derive_selector_inputs(inputs)
 
 
 def test_formal_axis_fails_closed_without_scenario_max_rate_policy() -> None:
@@ -181,18 +193,26 @@ def test_canonical_digests_ignore_mapping_insertion_order_after_freeze() -> None
         group_manifest=selector_group_manifest(),
     )
     first_axis = derive_structural_axes(
-        {"structural_axis_inputs": first_inputs}
+        {"structural_axis_inputs": first_inputs},
+        trusted_source_relation_declarations=first.dataflow_relations,
     ).axes[0]
     second_axis = derive_structural_axes(
-        {"structural_axis_inputs": second_inputs}
+        {"structural_axis_inputs": second_inputs},
+        trusted_source_relation_declarations=second.dataflow_relations,
     ).axes[0]
 
     assert first_inputs["provenance"]["config_digest"] == second_inputs[
         "provenance"
     ]["config_digest"]
     assert first_inputs["digest"] == second_inputs["digest"]
-    assert axis_to_scanner_dict(first_axis, first_inputs) == axis_to_scanner_dict(
-        second_axis, second_inputs
+    assert axis_to_scanner_dict(
+        first_axis,
+        first_inputs,
+        trusted_source_relation_declarations=first.dataflow_relations,
+    ) == axis_to_scanner_dict(
+        second_axis,
+        second_inputs,
+        trusted_source_relation_declarations=second.dataflow_relations,
     )
 
 

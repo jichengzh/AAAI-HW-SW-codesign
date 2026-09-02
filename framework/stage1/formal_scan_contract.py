@@ -74,9 +74,17 @@ def formal_axis_payload(
             context.dataflow_relations,
         ),
     )
+    trusted_declarations = context.dataflow_relations
     axes = [
-        axis_to_scanner_dict(axis, inputs)
-        for axis in derive_structural_axes({"structural_axis_inputs": inputs}).axes
+        axis_to_scanner_dict(
+            axis,
+            inputs,
+            trusted_source_relation_declarations=trusted_declarations,
+        )
+        for axis in derive_structural_axes(
+            {"structural_axis_inputs": inputs},
+            trusted_source_relation_declarations=trusted_declarations,
+        ).axes
     ]
     return _axis_manifest_payload(axes, inputs)
 

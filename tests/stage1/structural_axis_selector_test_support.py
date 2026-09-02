@@ -214,9 +214,10 @@ def built_cross_interface_inputs() -> dict:
 
 
 def set_scanner_owned_binding_fields(
-    inputs: dict, index: int, **changes: object
+    scan: dict, index: int, **changes: object
 ) -> None:
     """Update one outer/sealed binding and every dependent authority seal."""
+    inputs = scan["structural_axis_inputs"]
     outer = inputs["materializer_bindings"][index]
     group_id = outer["b1_group_id"]
     sealed = next(
@@ -232,10 +233,38 @@ def set_scanner_owned_binding_fields(
     canonical_sources = _update_scanner_binding_relation(inputs, group_id, binding)
     _update_base_binding_seals(inputs, group_id, binding, canonical_sources)
     refresh_source_relation_authority(inputs)
+    scan.trusted_source_relation_declarations = tuple(
+        _updated_trusted_declaration(row, group_id, binding)
+        for row in scan.trusted_source_relation_declarations
+    )
     inputs["provenance"]["scan_manifest_digest"] = canonical_digest(
         inputs["scanner_evidence"]
     )
     resign_structural_inputs(inputs)
+
+
+def _updated_trusted_declaration(
+    declaration: dict, group_id: str, binding: dict
+) -> dict:
+    member_ids = declaration.get("declared_member_group_ids", ())
+    if group_id not in member_ids:
+        return dict(declaration)
+    updated = {
+        **declaration,
+        "canonical_axis_id": binding["axis_id"],
+        "axis_kind": binding["axis_kind"],
+        "member_relations": [
+            {
+                **member,
+                **({"role": binding["role"]} if member["group_id"] == group_id else {}),
+            }
+            for member in declaration["member_relations"]
+        ],
+    }
+    if "derived_from" in binding:
+        return {**updated, "derived_from": binding["derived_from"]}
+    updated.pop("derived_from", None)
+    return updated
 
 
 def _update_scanner_binding_relation(

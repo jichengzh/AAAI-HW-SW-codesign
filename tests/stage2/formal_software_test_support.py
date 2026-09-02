@@ -15,7 +15,15 @@ def with_scanner_owned_contract(
     """Return a demo manifest migrated to the current scanner-owned contract."""
     evidence, inputs, bundle = paper_axis_bundle(paper_name)
     scenario = evidence["scan_scenario"]
-    axes = [axis_to_scanner_dict(axis, inputs) for axis in bundle.axes]
+    trusted_declarations = tuple(evidence["dataflow_relations"])
+    axes = [
+        axis_to_scanner_dict(
+            axis,
+            inputs,
+            trusted_source_relation_declarations=trusted_declarations,
+        )
+        for axis in bundle.axes
+    ]
     return {
         **deepcopy(manifest),
         "backend_support": {"precisions": scenario["backend_precisions"]},
