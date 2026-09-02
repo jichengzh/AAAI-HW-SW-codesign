@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 from typing import Any
 
@@ -280,6 +281,36 @@ def test_probe_cli_requires_exact_normalized_five_key_runtime(
         with pytest.raises(ValueError, match="runtime"):
             probe_cli._runtime_values(normalized, profile_path, runner_path)
         monkeypatch.setenv(missing, runtime[missing])
+
+
+def test_probe_cli_accepts_formal_tvm_python_distinct_from_adapter_python(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    formal_tvm_python = str(Path(sys.executable).resolve())
+    normalized, _ = _write_rtx_context_source(tmp_path, tvm_python=formal_tvm_python)
+    runner_path = normalized / "runner-template.yaml"
+    profile_path = normalized / "post-source-adapter-profile.yaml"
+    runner = yaml.safe_load(runner_path.read_text(encoding="utf-8"))
+    values = runner["execution_interface"]["environment"]["values"]
+    runtime = {
+        key: values[key]["value"]
+        for key in (
+            "P6_TVM_PYTHON",
+            "P6_TVM_SITE",
+            "P6_TVM_NVLIBS_FILE",
+            "P6_TVM_SUPPORT_ROOT",
+            "P6_TVM_SUPPORT_ROOT_SHA256",
+        )
+    }
+    profile = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
+    assert profile["adapter_python"] != formal_tvm_python
+    for key, value in runtime.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr(probe_cli.sys, "executable", formal_tvm_python)
+
+    _, validated = probe_cli._runtime_values(normalized, profile_path, runner_path)
+
+    assert validated == runtime
 
 
 def test_rtx_controller_fit_predict_and_measurement_context_split(

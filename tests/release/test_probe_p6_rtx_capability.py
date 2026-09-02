@@ -4,6 +4,8 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -20,6 +22,32 @@ from tests.stage6.test_p6_capability_context import (
     runtime_identity,
 )
 from tools.release import probe_p6_rtx_capability as cli
+
+
+def test_producer_cli_import_does_not_require_controller_ml_dependencies() -> None:
+    script = """
+import importlib.abc
+import sys
+
+class BlockControllerDependencies(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path, target=None):
+        if fullname == 'sklearn' or fullname.startswith('sklearn.'):
+            raise ModuleNotFoundError("blocked controller dependency")
+        return None
+
+sys.meta_path.insert(0, BlockControllerDependencies())
+sys.path.insert(0, sys.argv[1])
+import tools.release.probe_p6_rtx_capability
+"""
+
+    completed = subprocess.run(
+        [sys.executable, "-I", "-c", script, str(Path(__file__).resolve().parents[2])],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
 
 
 def _counts(q_mode: str) -> dict:

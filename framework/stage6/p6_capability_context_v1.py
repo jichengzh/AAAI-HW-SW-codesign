@@ -300,7 +300,7 @@ def _profiles_from_historical_source(
         raw = json.loads(payload)
     except (UnicodeError, json.JSONDecodeError) as error:
         raise P6CapabilityContextError() from error
-    if _sha(raw) != expected_sha256:
+    if hashlib.sha256(payload).hexdigest() != expected_sha256 and _sha(raw) != expected_sha256:
         raise P6CapabilityContextError()
     return _validated_historical_profiles(raw)
 

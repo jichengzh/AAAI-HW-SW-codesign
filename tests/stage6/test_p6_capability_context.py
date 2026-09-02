@@ -25,6 +25,7 @@ from framework.stage6.p6_capability_context_v1 import (
     build_rtx_capability_context,
     capability_context_to_mapping,
     compiler_fingerprint,
+    validate_historical_capability_source,
     validate_rtx_capability_context,
 )
 from framework.stage6.p6_capability_probe_specs_v1 import (
@@ -522,3 +523,11 @@ def test_historical_source_uses_canonical_json_digest_and_ordering(
                 historical_source_bytes=json.dumps(changed).encode("utf-8"),
                 **arguments,
             )
+
+
+def test_historical_source_accepts_exact_external_byte_authority() -> None:
+    payload = (json.dumps(historical_profiles(), indent=2) + "\n").encode("utf-8")
+
+    validated = validate_historical_capability_source(payload, expected_sha256=_sha_bytes(payload))
+
+    assert list(validated) == historical_profiles()

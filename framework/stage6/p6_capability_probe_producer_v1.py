@@ -12,7 +12,6 @@ from framework.stage6.hardware_execution_profile_v1 import (
     validate_profile_gpu_policy,
     validate_profile_gpu_records,
 )
-from framework.stage6.p6_history_binding_v1 import GpuRecord
 from framework.stage6.p6_capability_probe_worker_v1 import ProbeFamilyResult
 
 
@@ -23,25 +22,33 @@ class P6CapabilityProbeProducerError(ValueError):
         super().__init__("capability_probe_invalid")
 
 
-def _identity(records: Sequence[GpuRecord]) -> tuple[tuple[int, str, str], ...]:
+def _identity(records: Sequence[object]) -> tuple[tuple[int, str, str], ...]:
     if any(
-        not isinstance(record, GpuRecord)
-        or not isinstance(record.uuid, str)
-        or not record.uuid
-        or not isinstance(record.model_name, str)
-        or not record.model_name
+        isinstance(getattr(record, "index", None), bool)
+        or not isinstance(getattr(record, "index", None), int)
+        or not isinstance(getattr(record, "uuid", None), str)
+        or not getattr(record, "uuid", "")
+        or not isinstance(getattr(record, "model_name", None), str)
+        or not getattr(record, "model_name", "")
         for record in records
     ):
         raise P6CapabilityProbeProducerError()
-    return tuple((record.index, record.uuid, record.model_name) for record in records)
+    return tuple(
+        (
+            int(getattr(record, "index")),
+            str(getattr(record, "uuid")),
+            str(getattr(record, "model_name")),
+        )
+        for record in records
+    )
 
 
 def validate_live_gpu_snapshots(
     *,
     profile: HardwareExecutionProfile,
     indices: tuple[int, ...],
-    first: Sequence[GpuRecord],
-    second: Sequence[GpuRecord],
+    first: Sequence[object],
+    second: Sequence[object],
 ) -> int:
     """Require two admitted snapshots with stable order and immutable identity."""
     try:

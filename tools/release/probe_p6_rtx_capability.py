@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
 import stat
+import subprocess
 import sys
 from typing import Any, Mapping, Sequence
 
@@ -49,7 +51,6 @@ from framework.stage6.p6_capability_tvm_v1 import (  # noqa: E402
     require_cuda_sm89,
 )
 from framework.stage6.p6_gpu_policy_v1 import canonical_gpu_indices  # noqa: E402
-from framework.stage6.p6_history_binding_v1 import FORMAL_TVM_ENV_KEYS  # noqa: E402
 from framework.stage6.p6_post_source_adapter_profile_v1 import (  # noqa: E402
     load_post_source_adapter_profile,
     require_post_source_adapter_profile_v4,
@@ -58,15 +59,58 @@ from framework.stage6.p6_python_runtime_v1 import validate_adapter_python  # noq
 from framework.stage6.p6_runner_template_validator_v1 import (  # noqa: E402
     validate_pre_provision_runner_template,
 )
-from tools.release.provision_p6_history_local_config import (  # noqa: E402
-    NvidiaSmiGpuProbe,
-)
 
 
 class _ArgumentParser(argparse.ArgumentParser):
     def error(self, message: str) -> None:
         del message
         self.exit(2, "argument_error\n")
+
+
+@dataclass(frozen=True)
+class _GpuRecord:
+    index: int
+    uuid: str
+    model_name: str
+    occupancy: float
+
+
+class NvidiaSmiGpuProbe:
+    """Read only the four admission fields required by the capability producer."""
+
+    def snapshot(self, indices: tuple[int, ...]) -> tuple[_GpuRecord, ...]:
+        completed = subprocess.run(
+            (
+                "nvidia-smi",
+                "--id=" + ",".join(map(str, indices)),
+                "--query-gpu=index,uuid,name,memory.used,memory.total",
+                "--format=csv,noheader,nounits",
+            ),
+            shell=False,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=10,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError("GPU query failed")
+        by_index = {record.index: record for record in _gpu_records(completed.stdout)}
+        return tuple(by_index[index] for index in indices if index in by_index)
+
+
+def _gpu_records(output: str) -> tuple[_GpuRecord, ...]:
+    records = []
+    for line in output.splitlines():
+        fields = tuple(field.strip() for field in line.split(","))
+        if len(fields) != 5:
+            raise ValueError("invalid GPU query row")
+        index_text, uuid, model_name, used_text, total_text = fields
+        index = int(index_text)
+        total = float(total_text)
+        if index in {record.index for record in records} or total <= 0.0:
+            raise ValueError("invalid GPU query row")
+        records.append(_GpuRecord(index, uuid, model_name, float(used_text) / total))
+    return tuple(records)
 
 
 def _read_json(path: Path) -> Any:
@@ -116,7 +160,7 @@ def _runtime_values(
         "P6_TVM_SUPPORT_ROOT": "private_path",
         "P6_TVM_SUPPORT_ROOT_SHA256": "literal",
     }
-    for key in FORMAL_TVM_ENV_KEYS:
+    for key in kinds:
         entry = values.get(key)
         if not isinstance(entry, Mapping) or set(entry) != {"kind", "value"}:
             raise ValueError("capability probe runtime invalid")
@@ -129,11 +173,11 @@ def _runtime_values(
         ):
             raise ValueError("capability probe runtime invalid")
         runtime[key] = value
+    formal_python = validate_adapter_python(runtime["P6_TVM_PYTHON"])
     if (
         post_source.hardware_profile.profile_id != "rtx4090"
         or post_source.adapter_python is None
-        or validate_adapter_python(runtime["P6_TVM_PYTHON"]) != post_source.adapter_python
-        or Path(sys.executable).resolve(strict=True) != post_source.adapter_python
+        or Path(sys.executable).resolve(strict=True) != formal_python
         or Path(runtime["P6_TVM_SUPPORT_ROOT"]) != post_source.tvm_support_root
         or runtime["P6_TVM_SUPPORT_ROOT_SHA256"] != post_source.tvm_support_root_sha256
     ):

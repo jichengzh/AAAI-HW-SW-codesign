@@ -13,7 +13,6 @@ import tempfile
 from typing import Any, Protocol
 from types import MappingProxyType
 
-from framework.stage5.production_search_v1 import validate_source_contract
 from framework.stage6.hardware_execution_profile_v1 import (
     HardwareExecutionProfile,
     default_hardware_execution_profile,
@@ -533,6 +532,8 @@ def _resolve_beneath_root(path: Path, root: Path) -> Path:
 
 
 def _discover_source_contract(root: Path) -> tuple[Path, dict[str, Any]]:
+    from framework.stage5.production_search_v1 import validate_source_contract
+
     registries: list[tuple[Path, Mapping[str, Any]]] = []
     for raw_path in root.rglob("*.json"):
         path = _resolve_beneath_root(raw_path, root)
