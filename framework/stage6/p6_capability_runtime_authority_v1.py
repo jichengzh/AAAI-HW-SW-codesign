@@ -19,19 +19,6 @@ from framework.stage6.p6_capability_probe_specs_v1 import (
 )
 from framework.stage6.p6_gpu_policy_v1 import parse_gpu_indices_csv
 from framework.stage6.hardware_execution_profile_v1 import validate_profile_gpu_policy
-from framework.stage6.p6_history_binding_v1 import (
-    EXPECTED_HISTORY_ENV_KEYS,
-    FORMAL_TVM_ENVIRONMENT_SPEC,
-    FORMAL_TVM_ENV_KEYS,
-)
-from framework.stage6.p6_post_source_adapter_profile_v1 import (
-    load_post_source_adapter_profile,
-    require_post_source_adapter_profile_v4,
-)
-from framework.stage6.p6_python_runtime_v1 import validate_adapter_python
-from framework.stage6.p6_runner_template_validator_v1 import (
-    validate_pre_provision_runner_template,
-)
 
 
 AUTHORITY_SCHEMA_VERSION = "p6_normalized_capability_authority_v1"
@@ -105,6 +92,12 @@ def _runtime_value(values: Mapping[str, Any], key: str, kind: str) -> str:
 def _runtime_declarations(
     *, profile: Any, runner: Any, expected_gpu_indices: tuple[int, ...] | None
 ) -> tuple[dict[str, str], tuple[int, ...]]:
+    from framework.stage6.p6_history_binding_v1 import (
+        EXPECTED_HISTORY_ENV_KEYS,
+        FORMAL_TVM_ENVIRONMENT_SPEC,
+        FORMAL_TVM_ENV_KEYS,
+    )
+
     values = runner.execution_interface["environment"]["values"]
     if not isinstance(values, Mapping) or set(values) != set(
         (*EXPECTED_HISTORY_ENV_KEYS, *FORMAL_TVM_ENV_KEYS)
@@ -123,20 +116,35 @@ def _runtime_declarations(
     return declared, indices
 
 
+def _load_normalized_profile_and_runner(private_root: Path) -> tuple[Any, Any]:
+    from framework.stage6.p6_post_source_adapter_profile_v1 import (
+        load_post_source_adapter_profile,
+        require_post_source_adapter_profile_v4,
+    )
+    from framework.stage6.p6_runner_template_validator_v1 import (
+        validate_pre_provision_runner_template,
+    )
+
+    profile = load_post_source_adapter_profile(
+        private_root / "post-source-adapter-profile.yaml",
+        private_root=private_root,
+    )
+    require_post_source_adapter_profile_v4(profile)
+    runner = validate_pre_provision_runner_template(
+        private_root / "runner-template.yaml",
+        private_root,
+        require_exact_history_environment=True,
+    )
+    return profile, runner
+
+
 def _normalized_runtime_inputs(
     *, private_root: Path, expected_gpu_indices: tuple[int, ...] | None
 ) -> _NormalizedRuntimeInputs:
+    from framework.stage6.p6_python_runtime_v1 import validate_adapter_python
+
     try:
-        profile = load_post_source_adapter_profile(
-            private_root / "post-source-adapter-profile.yaml",
-            private_root=private_root,
-        )
-        require_post_source_adapter_profile_v4(profile)
-        runner = validate_pre_provision_runner_template(
-            private_root / "runner-template.yaml",
-            private_root,
-            require_exact_history_environment=True,
-        )
+        profile, runner = _load_normalized_profile_and_runner(private_root)
         declared, indices = _runtime_declarations(
             profile=profile,
             runner=runner,

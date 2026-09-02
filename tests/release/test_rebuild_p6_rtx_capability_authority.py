@@ -2,12 +2,40 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
 
 from tests.stage6.test_p6_capability_context import probe_evidence
 from tools.release import rebuild_p6_rtx_capability_authority as cli
+
+
+def test_helper_import_does_not_require_controller_ml_dependencies() -> None:
+    script = """
+import importlib.abc
+import sys
+
+class BlockControllerDependencies(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path, target=None):
+        if fullname == 'sklearn' or fullname.startswith('sklearn.'):
+            raise ModuleNotFoundError("blocked controller dependency")
+        return None
+
+sys.meta_path.insert(0, BlockControllerDependencies())
+sys.path.insert(0, sys.argv[1])
+import tools.release.rebuild_p6_rtx_capability_authority
+"""
+
+    completed = subprocess.run(
+        [sys.executable, "-I", "-c", script, str(Path(__file__).resolve().parents[2])],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
 
 
 def _arguments(tmp_path: Path) -> SimpleNamespace:
