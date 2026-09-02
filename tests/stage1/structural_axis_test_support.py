@@ -15,6 +15,7 @@ from framework.stage1.structural_axis_contract import (
     seal_dataflow_relation,
     seal_materializer_binding,
     seal_scanner_inputs,
+    source_relation_authority_payload,
 )
 from framework.stage1.structural_axis_digest import canonical_digest
 from framework.stage1.structural_axis_widths import scenario_axis_constraint
@@ -57,6 +58,39 @@ def resign_structural_inputs(inputs: dict) -> None:
     inputs["digest"] = inputs["scanner_input_digest"]
 
 
+def refresh_source_relation_authority(inputs: dict) -> None:
+    """Refresh upstream authority for a deliberate source/group fixture mutation."""
+
+    evidence = inputs["scanner_evidence"]
+    authority = evidence["source_relation_authority"]
+    generated = {
+        "canonical_group_id",
+        "materializer_binding_projections",
+        "member_relations_source",
+    }
+    if authority["schema"] == "scanner_retained_graph_inference_v1":
+        generated |= {
+            "member_relations",
+            "declared_member_group_ids",
+            "member_relations_digest",
+        }
+    declarations = [
+        {key: value for key, value in source.items() if key not in generated}
+        for source in inputs["source_dataflow_relations"]
+    ]
+    refreshed = source_relation_authority_payload(
+        inputs["prune_groups"],
+        evidence["group_manifest"],
+        evidence["scenario"],
+        declarations,
+    )
+    evidence["source_relation_authority"] = refreshed
+    inputs["provenance"]["source_relation_authority_schema"] = refreshed["schema"]
+    inputs["provenance"]["source_group_manifest_digest"] = refreshed[
+        "group_manifest_digest"
+    ]
+
+
 def set_scanner_owned_group_width(
     inputs: dict, group_id: str, width: int
 ) -> None:
@@ -73,6 +107,7 @@ def set_scanner_owned_group_width(
         if group.get("group_id", group.get("id")) == group_id
     )
     sealed_group["cur_width"] = width
+    refresh_source_relation_authority(inputs)
     inputs["provenance"]["scan_manifest_digest"] = canonical_digest(
         inputs["scanner_evidence"]
     )
@@ -155,10 +190,20 @@ def _sealed_scan_payload(
         "config_digest": config_digest,
         "checkpoint_digest": checkpoint_digest,
     }
+    generated_fields = {
+        "canonical_group_id",
+        "materializer_binding_projections",
+        "member_relations_source",
+    }
+    declarations = [
+        {key: value for key, value in source.items() if key not in generated_fields}
+        for source in source_relations
+    ]
     scanner_evidence = formal_scanner_evidence_payload(
         prune_groups, group_manifest, scenario, source_relations,
-        sealed_bindings, base_authority, base_provenance,
+        sealed_bindings, base_authority, base_provenance, declarations,
     )
+    relation_authority = scanner_evidence["source_relation_authority"]
     payload = {
         "prune_groups": prune_groups,
         "source_dataflow_relations": source_relations,
@@ -173,6 +218,10 @@ def _sealed_scan_payload(
             "checkpoint_digest": checkpoint_digest,
             "scenario_digest": canonical_digest(scenario),
             "scan_manifest_digest": formal_scanner_evidence_digest(scanner_evidence),
+            "source_relation_authority_schema": relation_authority["schema"],
+            "source_group_manifest_digest": relation_authority[
+                "group_manifest_digest"
+            ],
             "digest_sources": {
                 "config_digest": "trace_context.loaded_config",
                 "checkpoint_digest": "trace_context.checkpoint_evidence",
@@ -267,7 +316,7 @@ def _scanner_owned_sources(
         sources.append(
             {
                 **source,
-                "group_id": member_ids[0],
+                "group_id": canonical_binding["b1_group_id"],
                 "canonical_group_id": canonical_binding["b1_group_id"],
                 "module_root_selector": canonical_group["module_path"],
                 "member_relations_source": "adapter_declared_v1",

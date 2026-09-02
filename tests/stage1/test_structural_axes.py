@@ -17,7 +17,10 @@ from framework.stage1.structural_axes import (
     derive_structural_axes,
 )
 from framework.stage1.structural_axis_contract import (
+    canonical_source_dataflow_relations,
     seal_dataflow_relation,
+    seal_materializer_binding,
+    source_relation_authority_payload,
     validate_dataflow_relations,
 )
 from framework.stage1.structural_axis_digest import canonical_digest
@@ -539,12 +542,121 @@ def _built_chain_inputs() -> tuple[dict, list[dict]]:
     return inputs, groups
 
 
+def _fully_resealed_wrong_chain_inputs(
+    *, boundary_override: bool = False, declared_downgrade: bool = False
+) -> dict:
+    inputs, _ = _built_chain_inputs()
+    members_by_axis = {
+        "chain.left": ("g0",),
+        "chain.right": ("g1", "g2", "g3"),
+    }
+    bindings = deepcopy(inputs["materializer_bindings"])
+    moved = next(row for row in bindings if row["b1_group_id"] == "g1")
+    moved.update(axis_id="chain.right", param="model.right")
+    moved = seal_materializer_binding(moved)
+    bindings = [
+        moved if row["b1_group_id"] == "g1" else row for row in bindings
+    ]
+    binding_by_group = {row["b1_group_id"]: row for row in bindings}
+    sources = deepcopy(inputs["source_dataflow_relations"])
+    for source in sources:
+        axis_id = source["canonical_axis_id"]
+        member_ids = members_by_axis[axis_id]
+        if boundary_override and axis_id == "chain.right":
+            source["group_id"] = "g1"
+        if declared_downgrade:
+            source["member_relations_source"] = "adapter_declared_v1"
+        source["member_relations"] = tuple(
+            {
+                "group_id": group_id,
+                "role": binding_by_group[group_id]["role"],
+            }
+            for group_id in member_ids
+        )
+        source["declared_member_group_ids"] = member_ids
+        source["member_relations_digest"] = canonical_digest(member_ids)
+        source["materializer_binding_projections"] = [
+            binding_by_group[group_id] for group_id in member_ids
+        ]
+    sources = canonical_source_dataflow_relations(sources)
+    source_by_axis = {row["canonical_axis_id"]: row for row in sources}
+    derived = [
+        seal_dataflow_relation(
+            {
+                "group_id": group_id,
+                "canonical_axis_id": axis_id,
+                "materializer_binding_digest": binding_by_group[group_id][
+                    "materializer_binding_digest"
+                ],
+            },
+            source_by_axis[axis_id],
+        )
+        for axis_id, member_ids in members_by_axis.items()
+        for group_id in member_ids
+    ]
+    bases = deepcopy(inputs["base_widths"])
+    for row in bases:
+        source = source_by_axis[row["axis_id"]]
+        row["source_relation_digest"] = canonical_digest(source)
+        row["materializer_binding_digest"] = binding_by_group[
+            row["canonical_group_id"]
+        ]["materializer_binding_digest"]
+    if declared_downgrade:
+        for group in inputs["prune_groups"]:
+            group.pop("member_layers")
+        inputs["scanner_evidence"]["prune_groups"] = deepcopy(
+            inputs["prune_groups"]
+        )
+    inputs.update(
+        source_dataflow_relations=sources,
+        dataflow_relations=derived,
+        materializer_bindings=bindings,
+        base_widths=bases,
+    )
+    inputs["scanner_evidence"].update(
+        source_dataflow_relations=sources,
+        materializer_bindings=bindings,
+        base_widths=bases,
+    )
+    if boundary_override:
+        authority = deepcopy(
+            inputs["scanner_evidence"]["source_relation_authority"]
+        )
+        declaration = next(
+            row
+            for row in authority["source_relations"]
+            if row["canonical_axis_id"] == "chain.right"
+        )
+        declaration["group_id"] = "g1"
+        inputs["scanner_evidence"]["source_relation_authority"] = (
+            source_relation_authority_payload(
+                inputs["prune_groups"],
+                inputs["scanner_evidence"]["group_manifest"],
+                inputs["scanner_evidence"]["scenario"],
+                authority["source_relations"],
+            )
+        )
+        inputs["provenance"]["source_group_manifest_digest"] = inputs[
+            "scanner_evidence"
+        ]["source_relation_authority"]["group_manifest_digest"]
+    inputs["provenance"]["scan_manifest_digest"] = canonical_digest(
+        inputs["scanner_evidence"]
+    )
+    resign_structural_inputs(inputs)
+    return inputs
+
+
 def test_validator_recomputes_inferred_partition_after_complete_reseal() -> None:
     inputs, groups = _built_chain_inputs()
     sources, derived = _resealed_wrong_chain_partition(inputs)
 
     with pytest.raises(ValueError, match="canonical inferred member partition"):
-        validate_dataflow_relations(derived, sources, groups)
+        validate_dataflow_relations(
+            derived,
+            sources,
+            groups,
+            inputs["provenance"]["source_relation_authority_schema"],
+        )
 
 
 def test_graph_partition_cannot_be_downgraded_to_declared_members() -> None:
@@ -553,8 +665,27 @@ def test_graph_partition_cannot_be_downgraded_to_declared_members() -> None:
     for source in sources:
         source["member_relations_source"] = "adapter_declared_v1"
 
-    with pytest.raises(ValueError, match="cannot replace retained graph inference"):
-        validate_dataflow_relations(derived, sources, groups)
+    with pytest.raises(ValueError, match="member relation authority"):
+        validate_dataflow_relations(
+            derived,
+            sources,
+            groups,
+            inputs["provenance"]["source_relation_authority_schema"],
+        )
+
+
+def test_full_reseal_cannot_override_selector_resolved_boundary() -> None:
+    inputs = _fully_resealed_wrong_chain_inputs(boundary_override=True)
+
+    with pytest.raises(ValueError, match="canonical group.*selector"):
+        derive_structural_axes({"structural_axis_inputs": inputs})
+
+
+def test_full_reseal_cannot_delete_graph_and_downgrade_to_declared() -> None:
+    inputs = _fully_resealed_wrong_chain_inputs(declared_downgrade=True)
+
+    with pytest.raises(ValueError, match="source relation authority"):
+        derive_structural_axes({"structural_axis_inputs": inputs})
 
 
 def test_inferred_partition_rejects_disconnected_retained_group() -> None:

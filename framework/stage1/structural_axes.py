@@ -140,7 +140,7 @@ def _scanner_input_payload(
     base_provenance = _base_provenance(config_digest, checkpoint_digest, config_file_digest)
     scanner_evidence = formal_scanner_evidence_payload(
         groups, group_manifest, scenario_evidence, authority_sources, bindings,
-        base_widths, base_provenance,
+        base_widths, base_provenance, source_relations,
     )
     return {
         "prune_groups": [dict(group) for group in groups],
@@ -161,10 +161,12 @@ def _scanner_input_payload(
             "scenario_digest": scenario_digest,
             "digest_sources": scanner_digest_sources(),
             **group_provenance,
+            "source_relation_authority_schema": scanner_evidence[
+                "source_relation_authority"]["schema"],
+            "source_group_manifest_digest": group_provenance["scan_manifest_digest"],
             "scan_manifest_digest": canonical_digest(scanner_evidence),
         },
     }
-
 
 def _base_provenance(
     config_digest: str,
@@ -508,7 +510,10 @@ def derive_structural_axes(raw_scan: Mapping[str, Any]) -> StructuralAxisBundle:
     source_relations = _required_list(inputs, "source_dataflow_relations")
     scanner_evidence = inputs["scanner_evidence"]
     validate_dataflow_relations(
-        relation_rows, source_relations, retained_groups
+        relation_rows,
+        source_relations,
+        retained_groups,
+        scanner_provenance["source_relation_authority_schema"],
     )
     dataflow = _dataflow_axes(relation_rows)
     base_rows = validated_base_widths(inputs, retained_groups, binding_rows)

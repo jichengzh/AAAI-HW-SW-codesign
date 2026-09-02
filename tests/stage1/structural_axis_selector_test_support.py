@@ -18,7 +18,10 @@ from framework.stage1.structural_axis_contract import (
     seal_materializer_binding,
 )
 from framework.stage1.structural_axis_digest import canonical_digest
-from tests.stage1.structural_axis_test_support import resign_structural_inputs
+from tests.stage1.structural_axis_test_support import (
+    refresh_source_relation_authority,
+    resign_structural_inputs,
+)
 
 
 def selector_context(
@@ -228,6 +231,7 @@ def set_scanner_owned_binding_fields(
     sealed.update(binding)
     canonical_sources = _update_scanner_binding_relation(inputs, group_id, binding)
     _update_base_binding_seals(inputs, group_id, binding, canonical_sources)
+    refresh_source_relation_authority(inputs)
     inputs["provenance"]["scan_manifest_digest"] = canonical_digest(
         inputs["scanner_evidence"]
     )

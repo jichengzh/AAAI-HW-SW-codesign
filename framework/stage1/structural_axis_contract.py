@@ -36,6 +36,8 @@ _PROVENANCE_DIGESTS = (
 )
 _INFERRED_MEMBER_SOURCE = "scanner_inferred_nearest_boundary_v1"
 _DECLARED_MEMBER_SOURCE = "adapter_declared_v1"
+_INFERRED_AUTHORITY_SCHEMA = "scanner_retained_graph_inference_v1"
+_DECLARED_AUTHORITY_SCHEMA = "adapter_declared_member_relations_v1"
 _DIGEST_SOURCES = {
     "config_digest": "trace_context.loaded_config",
     "checkpoint_digest": "trace_context.checkpoint_evidence",
@@ -71,6 +73,7 @@ def axis_provenance(
             field: value
             for field, value in scanner_provenance.items()
             if field.endswith("_digest")
+            and field != "source_group_manifest_digest"
         },
         "digest_sources": scanner_provenance["digest_sources"],
     }
@@ -95,6 +98,7 @@ def validate_axis_provenance(
         axis.get(field) != value
         for field, value in source.items()
         if field.endswith("_digest")
+        and field != "source_group_manifest_digest"
     ):
         raise ValueError("axis provenance disagrees with scanner inputs")
     if axis.get("digest_sources") != source["digest_sources"]:
@@ -124,6 +128,7 @@ def formal_scanner_evidence_payload(
     materializer_bindings: Sequence[Mapping[str, Any]],
     base_widths: Sequence[Mapping[str, Any]],
     base_width_provenance: Mapping[str, Any],
+    source_relation_declarations: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
     """Canonical payload sealed by ``scan_manifest_digest``.
 
@@ -139,6 +144,9 @@ def formal_scanner_evidence_payload(
         "materializer_bindings": [dict(row) for row in materializer_bindings],
         "base_widths": [dict(row) for row in base_widths],
         "base_width_provenance": dict(base_width_provenance),
+        "source_relation_authority": source_relation_authority_payload(
+            groups, manifest, scenario, source_relation_declarations
+        ),
     }
 
 
@@ -196,6 +204,30 @@ def scanner_group_manifest(
     return {**manifest, "scan_manifest_digest": formal_scanner_evidence_digest(evidence)}
 
 
+def source_relation_authority_payload(
+    groups: Sequence[Mapping[str, Any]],
+    manifest: Mapping[str, Any],
+    scenario: Mapping[str, Any],
+    source_relations: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Retain the pre-resolution relation schema sealed by the group manifest."""
+
+    declarations = canonical_source_dataflow_relations(source_relations)
+    declared = tuple(row.get("member_relations") is not None for row in declarations)
+    if any(declared) and not all(declared):
+        raise ValueError("declared and inferred source relations cannot mix")
+    schema = (
+        _DECLARED_AUTHORITY_SCHEMA if all(declared) else _INFERRED_AUTHORITY_SCHEMA
+    )
+    return {
+        "schema": schema,
+        "source_relations": declarations,
+        "group_manifest_digest": formal_scanner_evidence_digest(
+            scanner_group_evidence_payload(groups, manifest, scenario, declarations)
+        ),
+    }
+
+
 def seal_scanner_inputs(payload: Mapping[str, Any]) -> dict[str, Any]:
     """Attach canonical structural and whole-input digests to scanner evidence."""
 
@@ -231,7 +263,15 @@ def validate_scanner_inputs(inputs: Mapping[str, Any]) -> Mapping[str, Any]:
     retained_groups = validated_retained_groups(inputs)
     bindings = validated_materializer_bindings(inputs)
     validated_base_widths(inputs, retained_groups, bindings)
-    _validate_retained_source_relations(inputs, evidence)
+    source_authority = _validated_source_relation_authority(
+        evidence, retained_groups, provenance
+    )
+    _validate_retained_source_relations(
+        inputs,
+        evidence,
+        source_authority["source_relations"],
+        source_authority["schema"],
+    )
     if formal_scanner_evidence_digest(evidence) != provenance["scan_manifest_digest"]:
         raise ValueError("formal scanner evidence seal mismatch")
     scenario = _required_mapping(evidence.get("scenario"), "scanner evidence scenario")
@@ -352,10 +392,13 @@ def validate_dataflow_relations(
     rows: Sequence[Any],
     source_rows: Sequence[Mapping[str, Any]],
     retained_groups: Sequence[Mapping[str, Any]],
+    source_authority_schema: str,
 ) -> None:
     sources = _source_relation_index(source_rows)
     groups = _retained_group_index(retained_groups)
-    allowed_by_source = _canonical_source_member_partition(sources, groups)
+    allowed_by_source = _canonical_source_member_partition(
+        sources, groups, source_authority_schema
+    )
     emitted = {digest: [] for digest in sources}
     for row in rows:
         relation = _required_mapping(row, "dataflow relation")
@@ -409,7 +452,10 @@ def canonical_source_dataflow_relations(
 
 
 def _validate_retained_source_relations(
-    inputs: Mapping[str, Any], evidence: Mapping[str, Any]
+    inputs: Mapping[str, Any],
+    evidence: Mapping[str, Any],
+    declarations: Sequence[Mapping[str, Any]],
+    authority_schema: str,
 ) -> None:
     raw = inputs.get("source_dataflow_relations")
     if isinstance(raw, (str, bytes)) or not isinstance(raw, Sequence):
@@ -419,6 +465,9 @@ def _validate_retained_source_relations(
         raise ValueError("source dataflow relations must be canonical")
     if evidence.get("source_dataflow_relations") != canonical:
         raise ValueError("scanner evidence source dataflow relations mismatch")
+    _validate_source_declaration_projection(
+        canonical, declarations, authority_schema
+    )
 
 
 def _source_relation_index(
@@ -531,6 +580,7 @@ def _validate_structural_authority_aliases(inputs: Mapping[str, Any]) -> None:
 def _canonical_source_member_partition(
     sources: Mapping[str, Mapping[str, Any]],
     groups: Mapping[str, Mapping[str, Any]],
+    authority_schema: str,
 ) -> dict[str, frozenset[str]]:
     boundary_by_source = {
         digest: _canonical_source_group_id(source, groups)
@@ -542,11 +592,13 @@ def _canonical_source_member_partition(
         )
         for source in sources.values()
     }
-    if not modes <= {_INFERRED_MEMBER_SOURCE, _DECLARED_MEMBER_SOURCE}:
-        raise ValueError("member relations source is invalid")
-    if len(modes) != 1:
-        raise ValueError("inferred and declared member relation sources cannot mix")
-    if modes == {_INFERRED_MEMBER_SOURCE}:
+    expected_mode = {
+        _INFERRED_AUTHORITY_SCHEMA: _INFERRED_MEMBER_SOURCE,
+        _DECLARED_AUTHORITY_SCHEMA: _DECLARED_MEMBER_SOURCE,
+    }.get(authority_schema)
+    if expected_mode is None or modes != {expected_mode}:
+        raise ValueError("member relation authority disagrees with source schema")
+    if expected_mode == _INFERRED_MEMBER_SOURCE:
         partition = canonical_member_partition(
             tuple(groups.values()), tuple(boundary_by_source.values())
         )
@@ -557,16 +609,79 @@ def _canonical_source_member_partition(
             for digest, source in sources.items()
         }
     else:
-        if any("member_layers" in group for group in groups.values()):
-            raise ValueError(
-                "declared member relations cannot replace retained graph inference"
-            )
         allowed = {
             digest: _validated_source_member_partition(source, None)
             for digest, source in sources.items()
         }
     _validate_exact_retained_group_ownership(allowed, groups)
     return allowed
+
+
+def _validated_source_relation_authority(
+    evidence: Mapping[str, Any],
+    groups: Sequence[Mapping[str, Any]],
+    provenance: Mapping[str, Any],
+) -> dict[str, Any]:
+    authority = _required_mapping(
+        evidence.get("source_relation_authority"), "source relation authority"
+    )
+    if set(authority) != {"schema", "source_relations", "group_manifest_digest"}:
+        raise ValueError("source relation authority fields are invalid")
+    declarations = canonical_source_dataflow_relations(
+        _required_sequence(
+            authority.get("source_relations"), "source relation declarations"
+        )
+    )
+    expected = source_relation_authority_payload(
+        groups,
+        _required_mapping(evidence.get("group_manifest"), "group manifest"),
+        _required_mapping(evidence.get("scenario"), "scanner evidence scenario"),
+        declarations,
+    )
+    if dict(authority) != expected:
+        raise ValueError("source relation authority is not canonical")
+    if provenance.get("source_relation_authority_schema") != expected["schema"]:
+        raise ValueError("source relation authority provenance mismatch")
+    if provenance.get("source_group_manifest_digest") != expected[
+        "group_manifest_digest"
+    ]:
+        raise ValueError("source relation authority group manifest mismatch")
+    return expected
+
+
+def _validate_source_declaration_projection(
+    sources: Sequence[Mapping[str, Any]],
+    declarations: Sequence[Mapping[str, Any]],
+    authority_schema: str,
+) -> None:
+    declared_by_axis = {
+        _required_text(row.get("canonical_axis_id"), "declared canonical_axis_id"): row
+        for row in declarations
+    }
+    if len(declared_by_axis) != len(declarations):
+        raise ValueError("duplicate source relation declaration axis")
+    if len(sources) != len(declared_by_axis):
+        raise ValueError("resolved source relations disagree with declarations")
+    generated = {
+        "canonical_group_id",
+        "materializer_binding_projections",
+        "member_relations_source",
+    }
+    if authority_schema == _INFERRED_AUTHORITY_SCHEMA:
+        generated |= {
+            "member_relations",
+            "declared_member_group_ids",
+            "member_relations_digest",
+        }
+    for source in sources:
+        axis_id = _required_text(source.get("canonical_axis_id"), "canonical_axis_id")
+        declaration = declared_by_axis.get(axis_id)
+        if declaration is None:
+            raise ValueError("resolved source relation has no declaration authority")
+        if any(source.get(key) != value for key, value in declaration.items()):
+            raise ValueError("resolved source relation disagrees with declaration authority")
+        if set(source) - set(declaration) != generated:
+            raise ValueError("resolved source relation fields exceed declaration authority")
 
 
 def _validated_source_member_partition(
@@ -655,9 +770,6 @@ def _declared_source_member_ids(
 def _canonical_source_group_id(
     source: Mapping[str, Any], groups: Mapping[str, Mapping[str, Any]]
 ) -> str:
-    raw_group_id = str(source.get("group_id") or "")
-    if raw_group_id in groups:
-        return raw_group_id
     selector = _required_text(
         source.get("module_root_selector"), "source module_root_selector"
     )
@@ -670,7 +782,18 @@ def _canonical_source_group_id(
     ]
     if len(matches) != 1:
         raise ValueError("source relation must resolve one canonical retained group")
-    return matches[0]
+    resolved = matches[0]
+    canonical = _required_text(
+        source.get("canonical_group_id"), "source canonical_group_id"
+    )
+    if canonical != resolved:
+        raise ValueError("source canonical group disagrees with selector")
+    raw_group_id = source.get("group_id")
+    if raw_group_id is not None and _required_text(
+        raw_group_id, "source group_id"
+    ) != resolved:
+        raise ValueError("source group_id disagrees with canonical group and selector")
+    return resolved
 
 
 def _binding_crosses_interface(binding: Mapping[str, Any]) -> bool:
@@ -772,6 +895,7 @@ __all__ = [
     "scanner_group_evidence_payload",
     "scanner_digest_sources",
     "scanner_scenario_payload",
+    "source_relation_authority_payload",
     "seal_dataflow_relation",
     "seal_materializer_binding",
     "seal_scanner_inputs",

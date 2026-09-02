@@ -60,32 +60,33 @@ _PAPER_ORACLES = [
 
 def _production_like_inferred_pyramid_evidence() -> dict:
     evidence = load_paper_scanner_evidence("pyramid")
-    groups = {row["group_id"]: row for row in evidence["prune_groups"]}
-    inferred_relations = []
-    for source in evidence["dataflow_relations"]:
-        axis_id = source["canonical_axis_id"]
-        member_ids = list(source["declared_member_group_ids"])
-        for index, group_id in enumerate(member_ids):
-            links = [f"{axis_id}.edge.{index}"]
-            if index:
-                links.append(f"{axis_id}.edge.{index - 1}")
-            groups[group_id] = {
-                **groups[group_id],
-                "member_layers": [groups[group_id]["root_layer"], *links],
-            }
-        inferred_relations.append(
-            {
-                key: source[key]
-                for key in (
-                    "canonical_axis_id",
-                    "module_root_selector",
-                    "axis_kind",
-                    "derived_from",
-                )
-                if key in source
-            }
-        )
-    retained_groups = list(groups.values())
+    fixture_path = (
+        Path(__file__).parents[1]
+        / "fixtures"
+        / "paper_spaces"
+        / "pyramid_source_bound_retained_graph.yaml"
+    )
+    graph = yaml.safe_load(fixture_path.read_text(encoding="utf-8"))
+    assert graph["schema"] == "pyramid_source_bound_retained_graph_v1"
+    assert graph["source_group_count"] == 43
+    assert graph["groups_digest"] == canonical_digest(graph["groups"])
+    paper_groups = {row["group_id"]: row for row in evidence["prune_groups"]}
+    retained_groups = [
+        {**paper_groups[row["group_id"]], **row} for row in graph["groups"]
+    ]
+    inferred_relations = [
+        {
+            key: source[key]
+            for key in (
+                "canonical_axis_id",
+                "module_root_selector",
+                "axis_kind",
+                "derived_from",
+            )
+            if key in source
+        }
+        for source in evidence["dataflow_relations"]
+    ]
     provenance = scanner_group_manifest(
         retained_groups,
         evidence["scan_scenario"],
