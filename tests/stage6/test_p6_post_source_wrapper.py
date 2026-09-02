@@ -14,7 +14,13 @@ from typing import Any
 import pytest
 import yaml
 
-from framework.stage6.p6_history_binding_v1 import EXPECTED_HISTORY_ENV_KEYS
+from framework.stage6.hardware_execution_profile_v1 import (
+    load_hardware_execution_profile,
+)
+from framework.stage6.p6_history_binding_v1 import (
+    EXPECTED_HISTORY_ENV_KEYS,
+    FORMAL_TVM_ENV_KEYS,
+)
 from framework.stage6.p6_post_source_adapter_profile_v1 import (
     PROFILE_SCHEMA_VERSION,
     POST_SOURCE_ADAPTER_STAGES,
@@ -28,6 +34,9 @@ from framework.stage6.p6_post_source_wrapper_template_v1 import (
     P6PostSourceWrapperError,
     render_post_source_adapter_wrappers,
     validate_post_source_adapter_wrappers,
+)
+from framework.stage6.p6_tvm_runtime_authority_v1 import (
+    canonical_tvm_support_tree_sha256,
 )
 
 
@@ -196,6 +205,47 @@ def _dependency_runtime_profile_fixture(
         encoding="utf-8",
     )
     return private_root, profile_path, profile
+
+
+def _formal_runtime_profile_fixture(
+    tmp_path: Path,
+) -> tuple[Path, Path, ValidatedPostSourceAdapterProfile, dict[str, str]]:
+    private_root, _, v3_profile = _dependency_runtime_profile_fixture(tmp_path)
+    support_root = private_root / "execution-closure/tvm-support"
+    support_root.mkdir()
+    support_root.joinpath("capability.py").write_text(
+        "CAPABILITY = True\n", encoding="utf-8"
+    )
+    runtime_site = tmp_path / "tvm-runtime/site-packages"
+    runtime_site.mkdir(parents=True)
+    nvlibs = tmp_path / "tvm-runtime/nvlibs.path"
+    nvlibs.write_text("/runtime/lib\n", encoding="utf-8")
+    profile = ValidatedPostSourceAdapterProfile(
+        "p6_post_source_adapter_profile_v4",
+        v3_profile.private_root,
+        v3_profile.project_python,
+        v3_profile.adapters,
+        v3_profile.leaves,
+        adapter_python=v3_profile.adapter_python,
+        adapter_dependency_root=v3_profile.adapter_dependency_root,
+        hardware_profile=load_hardware_execution_profile("rtx4090"),
+        tvm_support_root=support_root,
+        tvm_support_root_sha256=canonical_tvm_support_tree_sha256(support_root),
+    )
+    profile_path = private_root / "post-source-adapter-profile.yaml"
+    profile_path.write_text(
+        yaml.safe_dump(post_source_adapter_profile_to_mapping(profile), sort_keys=False),
+        encoding="utf-8",
+    )
+    runtime = {
+        "P6_TVM_PYTHON": str(profile.adapter_python),
+        "P6_TVM_SITE": str(runtime_site),
+        "P6_TVM_NVLIBS_FILE": str(nvlibs),
+        "P6_TVM_SUPPORT_ROOT": str(support_root),
+        "P6_TVM_SUPPORT_ROOT_SHA256": profile.tvm_support_root_sha256,
+    }
+    assert set(runtime) == set(FORMAL_TVM_ENV_KEYS)
+    return private_root, profile_path, profile, runtime
 
 
 def _help_adapter_body(stage: str) -> str:
@@ -469,6 +519,105 @@ def test_v3_wrappers_import_declared_dependency_for_all_public_no_role_help_call
         }
         wrapper_text = wrapper.read_text(encoding="utf-8")
         assert "ADAPTER_DEPENDENCY_ROOT = PRIVATE_ROOT / " in wrapper_text
+
+
+def test_v4_wrappers_forward_exact_formal_environment_and_overlay_for_all_stages(
+    tmp_path: Path,
+) -> None:
+    private_root, _, profile, runtime = _formal_runtime_profile_fixture(tmp_path)
+
+    wrappers = render_post_source_adapter_wrappers(profile, private_root=private_root)
+
+    for stage, wrapper in wrappers.items():
+        completed = _run_wrapper(
+            wrapper,
+            private_root,
+            ["--help"],
+            extra_env=runtime,
+        )
+        assert completed.returncode == 0, completed.stderr
+        adapter_cwd = next(
+            item.implementation_cwd
+            for item in profile.adapters
+            if item.stage == stage
+        )
+        report = json.loads(
+            adapter_cwd.joinpath(f"{stage}-help.json").read_text(encoding="utf-8")
+        )
+        assert report["argv0"] == str(profile.adapter_python)
+        assert str(profile.adapter_dependency_root) in report["pythonpath"]
+        wrapper_text = wrapper.read_text(encoding="utf-8")
+        assert f"EXPECTED_ENV_KEYS = {(*EXPECTED_HISTORY_ENV_KEYS, *FORMAL_TVM_ENV_KEYS)!r}" in wrapper_text
+        assert f"ADAPTER_PYTHON = Path({str(profile.adapter_python)!r})" in wrapper_text
+        assert "ADAPTER_DEPENDENCY_ROOT = PRIVATE_ROOT / " in wrapper_text
+
+
+@pytest.mark.parametrize("mutation", ("missing", "extra"))
+def test_v4_wrapper_rejects_nonexact_formal_environment_before_adapter(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    private_root, _, profile, runtime = _formal_runtime_profile_fixture(tmp_path)
+    wrapper = render_post_source_adapter_wrappers(profile, private_root=private_root)[
+        "quantization"
+    ]
+    if mutation == "missing":
+        runtime.pop("P6_TVM_SITE")
+    else:
+        runtime["UNEXPECTED"] = "private"
+
+    completed = _run_wrapper(
+        wrapper,
+        private_root,
+        ["--help"],
+        extra_env=runtime,
+    )
+
+    assert completed.returncode == 1
+    adapter_cwd = next(
+        item.implementation_cwd
+        for item in profile.adapters
+        if item.stage == "quantization"
+    )
+    assert not (adapter_cwd / "quantization-help.json").exists()
+
+
+@pytest.mark.parametrize("field", ("adapter_python", "adapter_dependency_root"))
+def test_v4_wrapper_rejects_normalized_runtime_authority_drift(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    private_root, profile_path, profile, runtime = _formal_runtime_profile_fixture(
+        tmp_path
+    )
+    wrapper = render_post_source_adapter_wrappers(profile, private_root=private_root)[
+        "quantization"
+    ]
+    payload = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
+    if field == "adapter_python":
+        payload["adapter_python"] = "/usr/bin/python3.10"
+    else:
+        alternate = private_root / "execution-closure/alternate-overlay"
+        alternate.mkdir()
+        payload["adapter_dependency_root_relative_path"] = str(
+            alternate.relative_to(private_root)
+        )
+    profile_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+
+    completed = _run_wrapper(
+        wrapper,
+        private_root,
+        ["--help"],
+        extra_env=runtime,
+    )
+
+    assert completed.returncode == 1
+    adapter_cwd = next(
+        item.implementation_cwd
+        for item in profile.adapters
+        if item.stage == "quantization"
+    )
+    assert not (adapter_cwd / "quantization-help.json").exists()
 
 
 @pytest.mark.parametrize("mutation", ("profile", "symlink"))

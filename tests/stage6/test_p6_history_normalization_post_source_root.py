@@ -2,9 +2,15 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+import subprocess
 
 import pytest
+import yaml
 
+from framework.stage6.p6_history_binding_v1 import (
+    EXPECTED_HISTORY_ENV_KEYS,
+    FORMAL_TVM_ENV_KEYS,
+)
 from framework.stage6.p6_history_normalization_v1 import (
     P6HistoryNormalizationError,
     normalize_history_inputs,
@@ -20,8 +26,11 @@ from framework.stage6.p6_post_source_wrapper_template_v1 import (
 from framework.stage6.p6_source_wrapper_profile_v1 import (
     expected_wrapper_bytes_from_profile,
 )
-from tests.stage6.test_p6_history_normalization import _history_root
-from tests.stage6.test_p6_post_source_adapter_profile import v3_private_source_map
+from tests.stage6.test_p6_history_normalization import _history_root, _tree_sha
+from tests.stage6.test_p6_post_source_adapter_profile import (
+    v3_private_source_map,
+    v5_private_source_map,
+)
 
 
 def _normalize_v3(tmp_path: Path, name: str) -> tuple[Path, dict[str, Path]]:
@@ -88,6 +97,103 @@ def test_v3_normalization_wrapper_bytes_follow_final_destination(tmp_path: Path)
         assert first != second
         assert str(first_root).encode() in first
         assert str(second_root).encode() in second
+
+
+def test_rtx_v4_normalization_generates_exact_formal_overlay_wrappers(
+    tmp_path: Path,
+) -> None:
+    source_map, runner = v5_private_source_map(tmp_path)
+    source_map["hardware_profile"] = "rtx4090"
+    closure = source_map["execution_code_closure"]
+    roots = {item["closure_id"]: item for item in closure["roots"]}
+    for role_name in ("quantization", "performance", "ap", "finalization"):
+        role = closure["roles"][role_name]
+        implementation = (
+            Path(roots[role["closure_id"]]["source_root"])
+            / role["entrypoint_relative_path"]
+        )
+        implementation.write_text(
+            "#!/usr/bin/env python3\nraise SystemExit(0)\n",
+            encoding="utf-8",
+        )
+        implementation.chmod(0o700)
+    for declaration in roots.values():
+        declaration["sha256"] = _tree_sha(Path(declaration["source_root"]))
+    support = roots["tvm-support"]
+    runtime_site = tmp_path / "approved-runtime/site-packages"
+    runtime_site.mkdir(parents=True)
+    nvlibs = tmp_path / "approved-runtime/nvlibs.path"
+    nvlibs.write_text("/runtime/lib\n", encoding="utf-8")
+    runner_payload = yaml.safe_load(runner.read_text(encoding="utf-8"))
+    runner_payload["execution_interface"]["environment"]["values"].update(
+        {
+            "P6_TVM_PYTHON": {
+                "kind": "external_executable",
+                "value": "/usr/bin/python3.10",
+            },
+            "P6_TVM_SITE": {
+                "kind": "external_directory",
+                "value": str(runtime_site),
+            },
+            "P6_TVM_NVLIBS_FILE": {
+                "kind": "external_file",
+                "value": str(nvlibs),
+            },
+            "P6_TVM_SUPPORT_ROOT": {
+                "kind": "private_path",
+                "value": support["source_root"],
+            },
+            "P6_TVM_SUPPORT_ROOT_SHA256": {
+                "kind": "literal",
+                "value": support["sha256"],
+            },
+        }
+    )
+    runner.write_text(yaml.safe_dump(runner_payload, sort_keys=False), encoding="utf-8")
+    destination = tmp_path / "normalized-rtx"
+
+    paths = normalize_history_inputs(
+        source_map,
+        _history_root(source_map),
+        destination,
+        runner_template_path=runner,
+    )
+    profile = load_post_source_adapter_profile(
+        paths["post_source_adapter_profile"], private_root=destination
+    )
+    wrappers = validate_post_source_adapter_wrappers(
+        profile,
+        private_root=destination,
+    )
+    runtime = {
+        "CUDA_VISIBLE_DEVICES": "0,1,2,3",
+        "P6_HISTORY_RUN_MODE": "bound",
+        "P6_HISTORY_PRIVATE_ROOT": str(destination),
+        "P6_HISTORY_TASK_STATE": "task-state.json",
+        "P6_HISTORY_ROUND_OUTPUT_ROOT": "round-root",
+        "P6_TVM_PYTHON": "/usr/bin/python3.10",
+        "P6_TVM_SITE": str(runtime_site),
+        "P6_TVM_NVLIBS_FILE": str(nvlibs),
+        "P6_TVM_SUPPORT_ROOT": str(profile.tvm_support_root),
+        "P6_TVM_SUPPORT_ROOT_SHA256": str(profile.tvm_support_root_sha256),
+    }
+    assert set(runtime) == set((*EXPECTED_HISTORY_ENV_KEYS, *FORMAL_TVM_ENV_KEYS))
+
+    for wrapper in wrappers.values():
+        completed = subprocess.run(
+            [str(wrapper), "--help"],
+            cwd=destination,
+            env=runtime,
+            shell=False,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert completed.returncode == 0, completed.stderr
+        text = wrapper.read_text(encoding="utf-8")
+        assert f"ADAPTER_PYTHON = Path({str(profile.adapter_python)!r})" in text
+        assert "ADAPTER_DEPENDENCY_ROOT = PRIVATE_ROOT / " in text
+        assert f"EXPECTED_ENV_KEYS = {tuple(runtime)!r}" in text
 
 
 def test_v3_publish_failure_leaves_no_destination_or_staging_tree(

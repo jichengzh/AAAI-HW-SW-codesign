@@ -8,11 +8,16 @@ from pathlib import Path
 import stat
 import tempfile
 
-from framework.stage6.p6_history_binding_v1 import EXPECTED_HISTORY_ENV_KEYS
+from framework.stage6.p6_history_binding_v1 import (
+    EXPECTED_HISTORY_ENV_KEYS,
+    FORMAL_TVM_ENV_KEYS,
+)
 from framework.stage6.p6_post_source_adapter_profile_v1 import (
     PROFILE_SCHEMA_VERSION_V2,
     PROFILE_SCHEMA_VERSION_V3,
+    PROFILE_SCHEMA_VERSION_V4,
     PROFILE_V3_KEYS,
+    PROFILE_V4_KEYS,
     POST_SOURCE_ADAPTER_STAGES,
     ValidatedPostSourceAdapterProfile,
 )
@@ -104,6 +109,11 @@ def _wrapper_text(
         ).as_posix(),
     }
     expected_leaves = _expected_leaves(profile)
+    environment_keys = (
+        (*EXPECTED_HISTORY_ENV_KEYS, *FORMAL_TVM_ENV_KEYS)
+        if profile.schema_version == PROFILE_SCHEMA_VERSION_V4
+        else EXPECTED_HISTORY_ENV_KEYS
+    )
     rendered = _SCRIPT_TEMPLATE.format(
         stage=stage,
         private_root=str(declared_private_root or profile.private_root),
@@ -111,13 +121,14 @@ def _wrapper_text(
         adapter_path=expected_adapter["implementation_relative_path"],
         adapter_cwd=expected_adapter["implementation_cwd_relative_path"],
         adapter_sha256=_sha256(adapter.implementation),
-        env_keys=tuple(EXPECTED_HISTORY_ENV_KEYS),
+        env_keys=tuple(environment_keys),
         expected_adapter=expected_adapter,
         expected_leaves=expected_leaves,
     )
     if profile.schema_version not in {
         PROFILE_SCHEMA_VERSION_V2,
         PROFILE_SCHEMA_VERSION_V3,
+        PROFILE_SCHEMA_VERSION_V4,
     }:
         return rendered
     try:
@@ -133,7 +144,17 @@ def _wrapper_text(
     if profile.schema_version == PROFILE_SCHEMA_VERSION_V2:
         return runtime_rendered
     dependency_root = _dependency_root_relative_path(profile)
-    return _v3_wrapper_text(runtime_rendered, dependency_root=dependency_root)
+    profile_keys = (
+        PROFILE_V4_KEYS
+        if profile.schema_version == PROFILE_SCHEMA_VERSION_V4
+        else PROFILE_V3_KEYS
+    )
+    return _v3_wrapper_text(
+        runtime_rendered,
+        dependency_root=dependency_root,
+        schema_version=profile.schema_version,
+        profile_keys=profile_keys,
+    )
 
 
 def _dependency_root_relative_path(
@@ -208,15 +229,21 @@ def _v2_wrapper_text(
     )
 
 
-def _v3_wrapper_text(rendered: str, *, dependency_root: Path) -> str:
+def _v3_wrapper_text(
+    rendered: str,
+    *,
+    dependency_root: Path,
+    schema_version: str,
+    profile_keys: frozenset[str],
+) -> str:
     rendered = _replace_once(
         rendered,
-        f"PROFILE_SCHEMA_VERSION = {PROFILE_SCHEMA_VERSION_V3!r}\n",
+        f"PROFILE_SCHEMA_VERSION = {schema_version!r}\n",
         (
-            f"PROFILE_SCHEMA_VERSION = {PROFILE_SCHEMA_VERSION_V3!r}\n"
+            f"PROFILE_SCHEMA_VERSION = {schema_version!r}\n"
             f"ADAPTER_DEPENDENCY_ROOT = PRIVATE_ROOT / {dependency_root.as_posix()!r}\n"
             f"ADAPTER_DEPENDENCY_ROOT_RELATIVE_PATH = {dependency_root.as_posix()!r}\n"
-            f"EXPECTED_PROFILE_KEYS = {tuple(sorted(PROFILE_V3_KEYS))!r}\n"
+            f"EXPECTED_PROFILE_KEYS = {tuple(sorted(profile_keys))!r}\n"
         ),
     )
     rendered = _replace_once(

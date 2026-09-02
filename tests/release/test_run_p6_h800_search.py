@@ -456,13 +456,68 @@ def _history_cli_fixture(
         post_source_workspace.mkdir()
         source_map, runner_template = v5_private_source_map(post_source_workspace)
         source_map["hardware_profile"] = hardware_profile
-        normalize_history_inputs(
+        runtime_site = post_source_workspace / "approved-runtime/site-packages"
+        runtime_site.mkdir(parents=True)
+        nvlibs = post_source_workspace / "approved-runtime/nvlibs.path"
+        nvlibs.write_text("/runtime/lib\n", encoding="utf-8")
+        support = next(
+            item
+            for item in source_map["execution_code_closure"]["roots"]
+            if item["closure_id"] == "tvm-support"
+        )
+        source_runner = yaml.safe_load(runner_template.read_text(encoding="utf-8"))
+        source_runner["execution_interface"]["environment"]["values"].update(
+            {
+                "P6_TVM_PYTHON": {
+                    "kind": "external_executable",
+                    "value": "/usr/bin/python3.10",
+                },
+                "P6_TVM_SITE": {
+                    "kind": "external_directory",
+                    "value": str(runtime_site),
+                },
+                "P6_TVM_NVLIBS_FILE": {
+                    "kind": "external_file",
+                    "value": str(nvlibs),
+                },
+                "P6_TVM_SUPPORT_ROOT": {
+                    "kind": "private_path",
+                    "value": support["source_root"],
+                },
+                "P6_TVM_SUPPORT_ROOT_SHA256": {
+                    "kind": "literal",
+                    "value": support["sha256"],
+                },
+            }
+        )
+        runner_template.write_text(
+            yaml.safe_dump(source_runner, sort_keys=False), encoding="utf-8"
+        )
+        normalized = normalize_history_inputs(
             source_map,
             _history_root(source_map),
             private_root / "synthetic-history",
             runner_template_path=runner_template,
         )
         binding = _synthetic_rtx_history_binding(private_root)
+        normalized_runner = yaml.safe_load(
+            normalized["runner_template"].read_text(encoding="utf-8")
+        )
+        formal_values = normalized_runner["execution_interface"]["environment"][
+            "values"
+        ]
+        binding["execution_interface"]["environment"]["values"].update(
+            {
+                key: formal_values[key]
+                for key in (
+                    "P6_TVM_PYTHON",
+                    "P6_TVM_SITE",
+                    "P6_TVM_NVLIBS_FILE",
+                    "P6_TVM_SUPPORT_ROOT",
+                    "P6_TVM_SUPPORT_ROOT_SHA256",
+                )
+            }
+        )
     else:
         binding = _synthetic_history_binding(private_root)
     profile = get_recipe_profile(PROFILE_V1)
