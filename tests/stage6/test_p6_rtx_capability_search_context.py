@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -19,6 +21,9 @@ from framework.stage6.p6_capability_context_v1 import (
     capability_context_to_mapping,
     compiler_fingerprint,
 )
+from framework.stage6.p6_capability_runtime_authority_v1 import (
+    P6CapabilityRuntimeAuthorityError,
+)
 from framework.stage6.p6_history_normalization_v1 import normalize_history_inputs
 from tools.release import probe_p6_rtx_capability as probe_cli
 from tests.stage6.test_coptv2x_h800_search import (
@@ -35,6 +40,7 @@ from tests.stage6.test_coptv2x_h800_search import (
 )
 from tests.stage6.test_p6_capability_context import (
     historical_profiles,
+    historical_source_bytes,
     probe_evidence,
 )
 from tests.stage6.test_p6_history_normalization import _history_root
@@ -42,6 +48,30 @@ from tests.stage6.test_p6_post_source_adapter_profile import v5_private_source_m
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.fixture(autouse=True)
+def _historical_source_authority(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        execution,
+        "historical_capability_source_sha256",
+        lambda root: hashlib.sha256(historical_source_bytes()).hexdigest(),
+    )
+
+    def rebuild(**kwargs: Any) -> SimpleNamespace:
+        context = json.loads(
+            kwargs["capability_context_path"].read_text(encoding="utf-8")
+        )
+        evidence = context["measurement_evidence"]
+        return SimpleNamespace(
+            runtime_identity=evidence["runtime_identity"],
+            probe_records={
+                "neutral": evidence["neutral_records"],
+                "pruning": evidence["pruning_records"],
+            },
+        )
+
+    monkeypatch.setattr(execution, "probe_normalized_capability_authority", rebuild)
 
 
 def _write_rtx_context_source(tmp_path: Path) -> tuple[Path, list[dict[str, Any]]]:
@@ -57,6 +87,9 @@ def _write_rtx_context_source(tmp_path: Path) -> tuple[Path, list[dict[str, Any]
     nvlibs = tmp_path / "approved-runtime" / "nvlibs.path"
     nvlibs.write_text("/runtime/lib\n", encoding="utf-8")
     runner_payload = yaml.safe_load(runner.read_text(encoding="utf-8"))
+    runner_payload["execution_interface"]["environment"]["values"][
+        "CUDA_VISIBLE_DEVICES"
+    ]["value"] = "0,1,2,3"
     runner_payload["execution_interface"]["environment"]["values"].update(
         {
             "P6_TVM_PYTHON": {
@@ -88,15 +121,22 @@ def _write_rtx_context_source(tmp_path: Path) -> tuple[Path, list[dict[str, Any]
     runtime = dict(evidence["runtime_identity"])
     runtime.pop("compiler_fingerprint")
     evidence["runtime_identity"]["compiler_fingerprint"] = compiler_fingerprint(runtime)
+    source_bytes = historical_source_bytes()
     profiles = historical_profiles()
     context = capability_context_to_mapping(
         build_rtx_capability_context(
-            historical_profiles=profiles,
+            historical_source_bytes=source_bytes,
             evidence=evidence,
             profile=execution.load_hardware_execution_profile("rtx4090"),
             repository_root=REPOSITORY_ROOT,
             expected_probe_code_sha256=canonical_probe_code_sha256(REPOSITORY_ROOT),
             expected_support_root_sha256=support["sha256"],
+            expected_historical_source_sha256=hashlib.sha256(source_bytes).hexdigest(),
+            trusted_runtime_identity=evidence["runtime_identity"],
+            trusted_probe_records={
+                "neutral": evidence["neutral_records"],
+                "pruning": evidence["pruning_records"],
+            },
         )
     )
     source_path = _history_root(source_map) / "rtx-capability-context.json"
@@ -190,6 +230,20 @@ def test_rtx_loader_rejects_legacy_relabelled_profiles(tmp_path: Path) -> None:
         _write_yaml(tmp_path / "local.yaml", _local_v3_config(tmp_path, "rtx4090")),
         contract,
     )
+    with pytest.raises(P6CoptV2XContractError, match="capability context"):
+        execution._load_search_inputs(local, contract)
+
+
+def test_rtx_loader_fails_closed_without_external_runtime_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    contract, local, _ = _loaded_pair(tmp_path)
+    monkeypatch.setattr(
+        execution,
+        "probe_normalized_capability_authority",
+        lambda **kwargs: (_ for _ in ()).throw(P6CapabilityRuntimeAuthorityError()),
+    )
+
     with pytest.raises(P6CoptV2XContractError, match="capability context"):
         execution._load_search_inputs(local, contract)
 

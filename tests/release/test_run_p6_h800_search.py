@@ -7,12 +7,14 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 import yaml
 
 from framework.stage2.canonical_search_v3 import build_capability_profile
+from framework.stage6 import coptv2x_h800_search_v2 as execution
 from framework.stage6.p6_history_normalization_v1 import normalize_history_inputs
 from framework.stage6.p6_history_recipe_profiles_v1 import (
     PROFILE_V1,
@@ -30,6 +32,11 @@ from tests.release.scanner_owned_stage1_fixture import (
 )
 from tests.stage6.test_p6_history_normalization import _history_root
 from tests.stage6.test_p6_post_source_adapter_profile import v5_private_source_map
+from tests.stage6.test_p6_capability_context import historical_source_bytes
+from tests.stage6.test_p6_rtx_capability_search_context import (
+    _write_rtx_context_source,
+)
+from tools.release import run_p6_h800_search as search_cli
 
 try:
     import resource
@@ -704,6 +711,34 @@ def _run_cli(
     )
 
 
+def _install_measured_rtx_context(tmp_path: Path, paths: Mapping[str, Any]) -> Path:
+    normalized, _ = _write_rtx_context_source(tmp_path / "measured-context")
+    local = yaml.safe_load(paths["local"].read_text(encoding="utf-8"))
+    local["local_input_paths"] = {
+        name: str(normalized / "inputs" / f"{name}.json")
+        for name in (
+            "gold176_rows",
+            "gold176_graph_features",
+            "capability_profiles",
+            "closure",
+        )
+    }
+    _write_yaml(paths["local"], local)
+    return normalized
+
+
+def _fixture_runtime_authority(**kwargs: Any) -> SimpleNamespace:
+    raw = json.loads(kwargs["capability_context_path"].read_text(encoding="utf-8"))
+    evidence = raw["measurement_evidence"]
+    return SimpleNamespace(
+        runtime_identity=evidence["runtime_identity"],
+        probe_records={
+            "neutral": evidence["neutral_records"],
+            "pruning": evidence["pruning_records"],
+        },
+    )
+
+
 def test_cli_runs_v2_loop_without_public_summary_and_keeps_outputs_local(tmp_path: Path) -> None:
     paths = _cli_fixture(tmp_path)
 
@@ -733,14 +768,35 @@ def test_cli_runs_v2_loop_without_public_summary_and_keeps_outputs_local(tmp_pat
 
 
 def test_cli_runs_v3_rtx_hardware_profile_through_existing_executable(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     paths = _history_cli_fixture(tmp_path, hardware_profile="rtx4090")
+    _install_measured_rtx_context(tmp_path, paths)
+    monkeypatch.setattr(
+        execution,
+        "historical_capability_source_sha256",
+        lambda root: hashlib.sha256(historical_source_bytes()).hexdigest(),
+    )
+    monkeypatch.setattr(
+        execution,
+        "probe_normalized_capability_authority",
+        _fixture_runtime_authority,
+    )
+    monkeypatch.setenv("PATH", paths["env"]["PATH"])
 
-    result = _run_cli(paths, env=paths["env"])
+    result = search_cli.main(
+        [
+            "--contract",
+            str(paths["contract"]),
+            "--local-config",
+            str(paths["local"]),
+            "--code-revision",
+            "test-revision",
+        ]
+    )
 
-    assert result.returncode == 0, result.stderr
-    assert result.stdout == "completed\n"
+    assert result == 0
+    assert capsys.readouterr().out == "completed\n"
     requests = [
         json.loads(
             (paths["output_root"] / f"round-{round_index:02d}" / "measurement_request.json")

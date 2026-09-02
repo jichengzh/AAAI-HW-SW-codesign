@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import base64
 import hashlib
+import json
 
 import pytest
 
-from framework.stage6.p6_capability_probe_worker_v1 import run_probe_family
+from framework.stage6.p6_capability_probe_worker_v1 import (
+    P6CompilerRejection,
+    run_probe_family,
+)
 
 
 def _counts(q_mode: str) -> dict[str, int | None]:
@@ -52,7 +57,7 @@ def test_probe_family_runs_exact_fp16_int8_partition_and_seals_raw_bytes() -> No
 def test_probe_family_seals_a_real_compiler_failure_as_observed() -> None:
     def compiler(_payload: bytes, q_mode: str) -> tuple[dict, bytes]:
         if q_mode == "int8":
-            raise RuntimeError("compiler rejected probe")
+            raise P6CompilerRejection("compiler rejected probe at /private/location")
         return _counts(q_mode), b"real compiler IR"
 
     result = run_probe_family(
@@ -67,6 +72,9 @@ def test_probe_family_seals_a_real_compiler_failure_as_observed() -> None:
     assert failed["observation_status"] == "observed_build_failure"
     assert failed["compiler_ir_sha256"] is None
     assert result.artifact_blobs[1]["compiler_output_kind"] == "error"
+    error = json.loads(base64.b64decode(result.artifact_blobs[1]["compiler_output_base64"]))
+    assert error["category"] == "tvm_compiler_rejection"
+    assert "private" not in json.dumps(error)
 
 
 def test_probe_family_does_not_relabel_malformed_observation_as_compiler_failure() -> None:
@@ -76,4 +84,20 @@ def test_probe_family_does_not_relabel_malformed_observation_as_compiler_failure
             probe_ids=("P1",),
             model_builder=lambda probe_id, q_mode: f"{probe_id}:{q_mode}".encode(),
             compiler=lambda payload, q_mode: ({"total_ops": 1}, b"compiler-ir"),
+        )
+
+
+@pytest.mark.parametrize("error_type", [RuntimeError, OSError, ImportError])
+def test_probe_family_fails_closed_on_noncompiler_infrastructure_errors(
+    error_type: type[Exception],
+) -> None:
+    def infrastructure_failure(_payload: bytes, _q_mode: str):
+        raise error_type("private infrastructure detail")
+
+    with pytest.raises(error_type, match="private infrastructure detail"):
+        run_probe_family(
+            family="neutral",
+            probe_ids=("P1",),
+            model_builder=lambda probe_id, q_mode: f"{probe_id}:{q_mode}".encode(),
+            compiler=infrastructure_failure,
         )

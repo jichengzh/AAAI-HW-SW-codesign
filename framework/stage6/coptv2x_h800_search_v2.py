@@ -40,7 +40,12 @@ from framework.stage6.p6_capability_context_v1 import (
     CONTEXT_SCHEMA_VERSION,
     P6CapabilityContextError,
     canonical_probe_code_sha256,
+    historical_capability_source_sha256,
     validate_rtx_capability_context,
+)
+from framework.stage6.p6_capability_runtime_authority_v1 import (
+    P6CapabilityRuntimeAuthorityError,
+    probe_normalized_capability_authority,
 )
 from framework.stage6.p6_history_source_materialization_v1 import (
     P6HistorySourceMaterializationError,
@@ -470,6 +475,8 @@ def _validate_stage2_hardware_target(
 def _load_search_inputs(
     local: LocalP6CoptV2XConfig,
     contract: PublicP6CoptV2XContract | None = None,
+    *,
+    runtime_gpu_indices: tuple[int, ...] | None = None,
 ) -> tuple[
     list[dict[str, Any]],
     list[dict[str, Any]],
@@ -493,7 +500,10 @@ def _load_search_inputs(
     _validate_closure(closure)
     frozen_gold = freeze_initial_coldstart(gold_rows)
     capability_profiles, coldstart_profiles, profile = _load_capability_profiles(
-        raw_profiles, local=local, contract=contract
+        raw_profiles,
+        local=local,
+        contract=contract,
+        runtime_gpu_indices=runtime_gpu_indices,
     )
     coldstart_profile_ids = {
         str(row.get("capability_profile_id") or "") for row in frozen_gold
@@ -516,6 +526,7 @@ def _load_capability_profiles(
     *,
     local: LocalP6CoptV2XConfig,
     contract: PublicP6CoptV2XContract | None,
+    runtime_gpu_indices: tuple[int, ...] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     hardware_profile = (
         contract.hardware_profile
@@ -525,7 +536,12 @@ def _load_capability_profiles(
     if isinstance(raw, Mapping) and raw.get("schema_version") == CONTEXT_SCHEMA_VERSION:
         if hardware_profile.profile_id != "rtx4090":
             raise P6CoptV2XContractError("capability context does not match hardware profile")
-        measured = _validated_rtx_context(raw, local=local, profile=hardware_profile)
+        measured = _validated_rtx_context(
+            raw,
+            local=local,
+            profile=hardware_profile,
+            runtime_gpu_indices=runtime_gpu_indices,
+        )
         historical = [copy.deepcopy(item) for item in measured.historical_profiles]
         active = copy.deepcopy(measured.active_profile)
         return [*historical, active], historical, active
@@ -541,6 +557,7 @@ def _validated_rtx_context(
     *,
     local: LocalP6CoptV2XConfig,
     profile: HardwareExecutionProfile,
+    runtime_gpu_indices: tuple[int, ...] | None = None,
 ) -> Any:
     repository_root = Path(__file__).resolve().parents[2]
     capability_path = local.local_input_paths["capability_profiles"]
@@ -559,12 +576,22 @@ def _validated_rtx_context(
             or post_source.tvm_support_root_sha256 is None
         ):
             raise ValueError
+        authority = probe_normalized_capability_authority(
+            private_root=private_root,
+            capability_context_path=resolved,
+            expected_gpu_indices=runtime_gpu_indices,
+        )
         return validate_rtx_capability_context(
             raw,
             profile=profile,
             repository_root=repository_root,
             expected_probe_code_sha256=canonical_probe_code_sha256(repository_root),
             expected_support_root_sha256=post_source.tvm_support_root_sha256,
+            expected_historical_source_sha256=historical_capability_source_sha256(
+                repository_root
+            ),
+            trusted_runtime_identity=authority.runtime_identity,
+            trusted_probe_records=authority.probe_records,
         )
     except (
         OSError,
@@ -573,6 +600,7 @@ def _validated_rtx_context(
         ValueError,
         P6CapabilityContextError,
         P6PostSourceAdapterProfileError,
+        P6CapabilityRuntimeAuthorityError,
     ) as error:
         raise P6CoptV2XContractError("measured RTX capability context is invalid") from error
 

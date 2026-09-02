@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 import hashlib
+import json
 from typing import Any
 
 from framework.stage6.p6_capability_artifacts_v1 import build_probe_artifact_blobs
@@ -16,6 +17,28 @@ from framework.stage6.p6_capability_probe_specs_v1 import (
 
 ModelBuilder = Callable[[str, str], bytes]
 Compiler = Callable[[bytes, str], tuple[Mapping[str, Any], bytes]]
+COMPILER_REJECTION_SCHEMA_VERSION = "p6_compiler_rejection_evidence_v1"
+
+
+class P6CompilerRejection(Exception):
+    """One allowlisted compiler rejection with path-free retained evidence."""
+
+    def __init__(self, detail: str) -> None:
+        if not isinstance(detail, str) or not detail:
+            raise ValueError("compiler rejection detail invalid")
+        self.detail_sha256 = hashlib.sha256(detail.encode("utf-8")).hexdigest()
+        super().__init__("tvm_compiler_rejection")
+
+    def evidence_bytes(self) -> bytes:
+        return json.dumps(
+            {
+                "schema_version": COMPILER_REJECTION_SCHEMA_VERSION,
+                "category": "tvm_compiler_rejection",
+                "detail_sha256": self.detail_sha256,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("ascii")
 
 
 @dataclass(frozen=True)
@@ -75,9 +98,9 @@ def _observe_cell(
         raise ValueError("probe model bytes invalid")
     try:
         counts, compiler_output = compiler(onnx, q_mode)
-    except Exception as error:  # a real compiler rejection is measured evidence
+    except P6CompilerRejection as error:
         record = _failed_record(probe_id=probe_id, q_mode=q_mode, onnx=onnx)
-        compiler_output = type(error).__name__.encode("ascii", errors="replace")
+        compiler_output = error.evidence_bytes()
     else:
         record = _successful_record(
             probe_id=probe_id,
@@ -124,4 +147,9 @@ def run_probe_family(
     return ProbeFamilyResult(tuple(records), tuple(blobs), manifest_sha256)
 
 
-__all__ = ["ProbeFamilyResult", "run_probe_family"]
+__all__ = [
+    "COMPILER_REJECTION_SCHEMA_VERSION",
+    "P6CompilerRejection",
+    "ProbeFamilyResult",
+    "run_probe_family",
+]

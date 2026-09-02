@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,7 +14,11 @@ from framework.stage6.p6_capability_probe_specs_v1 import (
     PRUNING_PROBE_IDS,
 )
 from framework.stage6.p6_capability_probe_worker_v1 import run_probe_family
-from tests.stage6.test_p6_capability_context import historical_profiles, runtime_identity
+from tests.stage6.test_p6_capability_context import (
+    historical_profiles,
+    historical_source_bytes,
+    runtime_identity,
+)
 from tools.release import probe_p6_rtx_capability as cli
 
 
@@ -88,9 +93,26 @@ def test_cli_build_context_recomputes_all_authorities(
 ) -> None:
     runtime = runtime_identity()
     monkeypatch.setattr(cli, "collect_tvm_runtime_identity", lambda **kwargs: runtime)
+    monkeypatch.setattr(
+        cli,
+        "rebuild_probe_records",
+        lambda blobs, *, family, probe_ids: list(
+            item
+            for item in (
+                _family("neutral", NEUTRAL_PROBE_IDS).records
+                if family == "neutral"
+                else _family("pruning", PRUNING_PROBE_IDS).records
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "historical_capability_source_sha256",
+        lambda root: hashlib.sha256(historical_source_bytes()).hexdigest(),
+    )
     context = cli._build_context(
         profile=cli.load_hardware_execution_profile("rtx4090"),
-        historical=historical_profiles(),
+        historical_source=historical_source_bytes(),
         runtime={
             "P6_TVM_SITE": "/unused/site",
             "P6_TVM_NVLIBS_FILE": "/unused/nvlibs",

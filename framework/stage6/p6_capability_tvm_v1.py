@@ -11,19 +11,12 @@ import stat
 import sys
 from typing import Any
 
-from framework.stage6.p6_capability_context_v1 import compiler_fingerprint
-
-
-_COUNT_KEYS = (
-    "int8_propagated_ops",
-    "precision_eligible_ops",
-    "qdq_folded_pairs",
-    "qdq_pairs",
-    "reformat_ops",
-    "total_ops",
-    "fused_ops",
-    "fusible_ops",
+from framework.stage6.p6_capability_context_v1 import (
+    canonical_cuda_target,
+    compiler_fingerprint,
 )
+from framework.stage6.p6_capability_observation_v1 import derive_successful_counts
+from framework.stage6.p6_capability_probe_worker_v1 import P6CompilerRejection
 
 
 def _sha_file(path: Path) -> str:
@@ -95,13 +88,6 @@ def require_cuda_sm89() -> tuple[Any, Any]:
     return device, target
 
 
-def _onnx_counts(model: Any) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for node in model.graph.node:
-        counts[node.op_type] = counts.get(node.op_type, 0) + 1
-    return counts
-
-
 def compile_tvm_probe(payload: bytes, q_mode: str) -> tuple[dict[str, int | None], bytes]:
     """Compile one ONNX probe with the live CUDA target and return raw lowered IR."""
     import onnx
@@ -114,41 +100,25 @@ def compile_tvm_probe(payload: bytes, q_mode: str) -> tuple[dict[str, int | None
         item.name: tuple(int(dim.dim_value) for dim in item.type.tensor_type.shape.dim)
         for item in model.graph.input
     }
-    module = from_onnx(model, shape_dict=shapes, keep_params_in_input=False)
-    _, target = require_cuda_sm89()
-    passes = tvm.transform.Sequential(
-        [
-            relax.transform.LegalizeOps(),
-            relax.transform.AnnotateTIROpPattern(),
-            relax.transform.FuseOps(),
-            relax.transform.FuseTIR(),
-        ]
-    )
-    with target, tvm.transform.PassContext(opt_level=3):
-        lowered = passes(module)
-        tvm.compile(lowered, target=target)
+    try:
+        module = from_onnx(model, shape_dict=shapes, keep_params_in_input=False)
+        _, target = require_cuda_sm89()
+        passes = tvm.transform.Sequential(
+            [
+                relax.transform.LegalizeOps(),
+                relax.transform.AnnotateTIROpPattern(),
+                relax.transform.FuseOps(),
+                relax.transform.FuseTIR(),
+            ]
+        )
+        with target, tvm.transform.PassContext(opt_level=3):
+            lowered = passes(module)
+            tvm.compile(lowered, target=target)
+    except tvm.error.TVMError as error:
+        raise P6CompilerRejection(f"{type(error).__name__}:{error}") from error
     script = lowered.script(show_meta=True)
-    counts = _onnx_counts(model)
-    conv_count = counts.get("Conv", 0)
-    qdq_pairs = min(counts.get("QuantizeLinear", 0), counts.get("DequantizeLinear", 0))
-    sections = script.split("    @T.prim_func")
-    int8_convs = sum(
-        "int8" in item.lower() for item in sections if "def conv" in item[:300].lower()
-    )
-    result: dict[str, int | None] = {
-        "int8_propagated_ops": min(conv_count, int8_convs) if qdq_pairs else 0,
-        "precision_eligible_ops": conv_count,
-        "qdq_folded_pairs": qdq_pairs if "quantize" not in script.lower() else 0,
-        "qdq_pairs": qdq_pairs,
-        "reformat_ops": script.lower().count("layout_transform"),
-        "total_ops": max(1, script.count("@T.prim_func")),
-        "fused_ops": 0,
-        "fusible_ops": conv_count,
-    }
-    if q_mode == "fp16":
-        for key in _COUNT_KEYS[:4]:
-            result[key] = None
-    return result, script.encode("utf-8")
+    raw_ir = script.encode("utf-8")
+    return derive_successful_counts(payload, raw_ir, q_mode), raw_ir
 
 
 def collect_tvm_runtime_identity(
@@ -160,16 +130,24 @@ def collect_tvm_runtime_identity(
     """Collect normalized versions and compiler-byte identities after compilation."""
     import tvm
 
-    _, target = require_cuda_sm89()
+    device, _ = require_cuda_sm89()
     files = _loaded_tvm_files(tvm_site)
     if not _regular_file(nvlibs_file):
         raise ValueError("NVLIBS authority invalid")
+    python = Path(sys.executable).resolve(strict=True)
+    if not _regular_file(python):
+        raise ValueError("Python runtime invalid")
+    cuda_compute_version = str(getattr(device, "compute_version", "")).strip()
+    if cuda_compute_version != "8.9":
+        raise ValueError("CUDA compute version invalid")
     identity = {
         "schema_version": "p6_tvm_compiler_runtime_identity_v1",
         "tvm_version": str(tvm.__version__),
         "python_version": platform.python_version(),
-        "target": str(target),
+        "python_executable_sha256": _sha_file(python),
+        "target": canonical_cuda_target("sm89"),
         "tvm_arch": "sm89",
+        "cuda_compute_version": cuda_compute_version,
         "support_root_sha256": support_root_sha256,
         "tvm_site_sha256": _site_digest(tvm_site, files),
         "nvlibs_file_sha256": _sha_file(nvlibs_file),

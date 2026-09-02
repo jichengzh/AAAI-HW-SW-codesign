@@ -12,6 +12,7 @@ from framework.stage6.p6_capability_tvm_v1 import (
     compile_tvm_probe,
     require_cuda_sm89,
 )
+from framework.stage6.p6_capability_probe_worker_v1 import P6CompilerRejection
 
 
 class _Context:
@@ -38,6 +39,10 @@ class _Lowered:
     def script(self, show_meta: bool) -> str:
         assert show_meta is True
         return "@T.prim_func\ndef conv_int8():\n    layout_transform()\n"
+
+
+class _TVMError(Exception):
+    pass
 
 
 def _fake_modules(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -71,13 +76,14 @@ def _fake_modules(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     tvm = ModuleType("tvm")
     tvm.__file__ = str(init)
     tvm.__version__ = "0.20.dev0"
-    tvm.cuda = lambda index: SimpleNamespace(exist=index == 0)
+    tvm.cuda = lambda index: SimpleNamespace(exist=index == 0, compute_version="8.9")
     tvm.target = SimpleNamespace(Target=_Target)
     tvm.transform = SimpleNamespace(
         Sequential=lambda passes: lambda module: _Lowered(),
         PassContext=lambda opt_level: _Context(),
     )
     tvm.compile = lambda module, target: (module, target)
+    tvm.error = SimpleNamespace(TVMError=_TVMError)
     relax = ModuleType("tvm.relax")
     relax.transform = SimpleNamespace(
         LegalizeOps=lambda: "legalize",
@@ -172,3 +178,20 @@ def test_tvm_runtime_fails_closed_without_cuda_or_with_outside_compiler_file(
             nvlibs_file=nvlibs,
             support_root_sha256="a" * 64,
         )
+
+
+def test_tvm_compile_only_translates_allowlisted_tvm_rejections(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_modules(tmp_path, monkeypatch)
+    sys.modules["tvm"].compile = lambda module, target: (_ for _ in ()).throw(
+        _TVMError("compiler detail")
+    )
+    with pytest.raises(P6CompilerRejection):
+        compile_tvm_probe(b"onnx", "int8")
+
+    sys.modules["tvm"].compile = lambda module, target: (_ for _ in ()).throw(
+        OSError("runtime infrastructure")
+    )
+    with pytest.raises(OSError, match="infrastructure"):
+        compile_tvm_probe(b"onnx", "int8")

@@ -104,7 +104,10 @@ def _validated_blob(
     return blob
 
 
-def _manifest_sha256(blobs: Sequence[Mapping[str, Any]]) -> str:
+def _manifest_sha256(
+    blobs: Sequence[Mapping[str, Any]],
+    records: Mapping[tuple[str, str], Mapping[str, Any]],
+) -> str:
     rows = [
         {
             "schema_version": blob["schema_version"],
@@ -114,6 +117,7 @@ def _manifest_sha256(blobs: Sequence[Mapping[str, Any]]) -> str:
             "onnx_sha256": _sha(_decode(blob["onnx_base64"])),
             "compiler_output_kind": blob["compiler_output_kind"],
             "compiler_output_sha256": blob["compiler_output_sha256"],
+            "record": dict(records[_cell(blob)]),
         }
         for blob in blobs
     ]
@@ -143,7 +147,7 @@ def validate_probe_artifact_blobs(
     if seen != set(record_by_cell):
         raise P6CapabilityArtifactError()
     ordered = tuple(sorted(blobs, key=lambda item: (item["probe_id"], item["q_mode"])))
-    return ordered, _manifest_sha256(ordered)
+    return ordered, _manifest_sha256(ordered, record_by_cell)
 
 
 def build_probe_artifact_blobs(

@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 import shutil
+from types import SimpleNamespace
 from typing import Any, Iterator
+from unittest import mock
 
 import pytest
 import yaml
 
+from framework.stage6 import coptv2x_h800_search_v2 as execution
 from framework.stage6.coptv2x_h800_search_v2 import P6CoptV2XExecutionError
 from framework.stage6.p6_public_report_v1 import (
     P6HardwareSpecificReportProvenance,
@@ -36,14 +40,16 @@ from tools.release.verify_p6_materializer_training_run import (
     verify_materializer_training_run,
 )
 import tools.release.verify_p6_materializer_training_run as verification
-from tests.release.test_run_p6_h800_search import _history_cli_fixture, _run_cli
+from tests.release.test_run_p6_h800_search import (
+    _fixture_runtime_authority,
+    _history_cli_fixture,
+    _install_measured_rtx_context,
+    _run_cli,
+)
+from tools.release import run_p6_h800_search as search_cli
 from tests.stage6.test_coptv2x_h800_search import (
-    _gold176,
     _local_v3_config,
-    _non_target_profile,
-    _profile,
     _public_v3_contract,
-    _write_profile_search_inputs,
     _write_yaml,
 )
 from tests.stage6.p6_performance_native_fixture import (
@@ -51,6 +57,10 @@ from tests.stage6.p6_performance_native_fixture import (
     sha256_file,
 )
 from tests.stage6.test_p6_performance_round_adapter import _PerformanceRunner
+from tests.stage6.test_p6_capability_context import historical_source_bytes
+from tests.stage6.test_p6_rtx_capability_search_context import (
+    _write_rtx_context_source,
+)
 
 
 @pytest.fixture(scope="module")
@@ -75,8 +85,31 @@ def _completed_rtx_template(
     live = workspace / "live"
     live.mkdir()
     paths = _history_cli_fixture(live, hardware_profile="rtx4090")
-    result = _run_cli(paths, env=paths["env"])
-    assert result.returncode == 0, result.stderr
+    _install_measured_rtx_context(workspace, paths)
+    with (
+        mock.patch.object(
+            execution,
+            "historical_capability_source_sha256",
+            lambda root: hashlib.sha256(historical_source_bytes()).hexdigest(),
+        ),
+        mock.patch.object(
+            execution,
+            "probe_normalized_capability_authority",
+            _fixture_runtime_authority,
+        ),
+        mock.patch.dict("os.environ", paths["env"], clear=True),
+    ):
+        result = search_cli.main(
+            [
+                "--contract",
+                str(paths["contract"]),
+                "--local-config",
+                str(paths["local"]),
+                "--code-revision",
+                "test-revision",
+            ]
+        )
+    assert result == 0
     _write_native_completion_leaves(paths)
     snapshot = workspace / "snapshot"
     shutil.copytree(live, snapshot, symlinks=True)
@@ -92,10 +125,22 @@ def completed_run(_completed_template: dict[str, Any]) -> dict[str, Any]:
 
 
 @pytest.fixture
-def completed_rtx_run(_completed_rtx_template: dict[str, Any]) -> dict[str, Any]:
+def completed_rtx_run(
+    _completed_rtx_template: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> dict[str, Any]:
     live = _completed_rtx_template["live"]
     shutil.rmtree(live)
     shutil.copytree(_completed_rtx_template["snapshot"], live, symlinks=True)
+    monkeypatch.setattr(
+        execution,
+        "historical_capability_source_sha256",
+        lambda root: hashlib.sha256(historical_source_bytes()).hexdigest(),
+    )
+    monkeypatch.setattr(
+        execution,
+        "probe_normalized_capability_authority",
+        _fixture_runtime_authority,
+    )
     return dict(_completed_rtx_template["paths"])
 
 
@@ -591,20 +636,25 @@ def test_completion_report_publishes_only_profile_provenance_and_counts() -> Non
 def test_v3_rtx_verification_context_forwards_contract_to_search_inputs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    rows, graphs = _gold176(
-        include_non_target_backend=True, hardware_target="rtx4090"
-    )
-    _write_profile_search_inputs(
-        tmp_path,
-        rows=rows,
-        graphs=graphs,
-        profiles=[_profile("rtx4090"), _non_target_profile("rtx4090")],
-    )
+    normalized, _ = _write_rtx_context_source(tmp_path / "context-source")
     contract_path = _write_yaml(
         tmp_path / "contract-v3.yaml", _public_v3_contract("rtx4090")
     )
+    local_payload = _local_v3_config(
+        tmp_path,
+        "rtx4090",
+        local_input_paths={
+            name: str(normalized / "inputs" / f"{name}.json")
+            for name in (
+                "gold176_rows",
+                "gold176_graph_features",
+                "capability_profiles",
+                "closure",
+            )
+        },
+    )
     local_path = _write_yaml(
-        tmp_path / "local-v3.yaml", _local_v3_config(tmp_path, "rtx4090")
+        tmp_path / "local-v3.yaml", local_payload
     )
     binding_root = tmp_path / "binding-fixture"
     binding_root.mkdir()
@@ -613,11 +663,33 @@ def test_v3_rtx_verification_context_forwards_contract_to_search_inputs(
     output_root.mkdir()
     _write_json(output_root / "pyramid_candidate_plan.json", {})
     expected_context = object()
+    observed_indices: list[tuple[int, ...] | None] = []
 
     def load_context(**_: Any) -> object:
         return expected_context
 
     monkeypatch.setattr(verification, "load_fresh_run_context", load_context)
+    monkeypatch.setattr(
+        "framework.stage6.coptv2x_h800_search_v2.historical_capability_source_sha256",
+        lambda root: hashlib.sha256(historical_source_bytes()).hexdigest(),
+    )
+
+    def rebuild(**kwargs: Any) -> SimpleNamespace:
+        observed_indices.append(kwargs["expected_gpu_indices"])
+        raw = _read_json(kwargs["capability_context_path"])
+        evidence = raw["measurement_evidence"]
+        return SimpleNamespace(
+            runtime_identity=evidence["runtime_identity"],
+            probe_records={
+                "neutral": evidence["neutral_records"],
+                "pruning": evidence["pruning_records"],
+            },
+        )
+
+    monkeypatch.setattr(
+        "framework.stage6.coptv2x_h800_search_v2.probe_normalized_capability_authority",
+        rebuild,
+    )
     monkeypatch.setattr(
         verification,
         "validate_history_execution_binding",
@@ -636,6 +708,8 @@ def test_v3_rtx_verification_context_forwards_contract_to_search_inputs(
     assert local.hardware_profile.target_hardware_id == "rtx4090"
     assert len(frozen_gold) == 176
     assert context is expected_context
+    binding = _read_json(binding_path)
+    assert observed_indices == [tuple(binding["gpu_policy"]["indices"])]
 
 
 def test_completion_accepts_four_round_current_run_with_shared_receipts(

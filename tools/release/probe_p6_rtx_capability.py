@@ -23,6 +23,10 @@ from framework.stage6.p6_capability_context_v1 import (  # noqa: E402
     build_rtx_capability_context,
     canonical_probe_code_sha256,
     capability_context_to_mapping,
+    historical_capability_source_sha256,
+)
+from framework.stage6.p6_capability_observation_v1 import (  # noqa: E402
+    rebuild_probe_records,
 )
 from framework.stage6.p6_capability_probe_models_v1 import (  # noqa: E402
     build_probe_onnx,
@@ -72,6 +76,19 @@ def _read_json(path: Path) -> Any:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise ValueError("capability probe input invalid") from error
+
+
+def _read_bytes(path: Path) -> bytes:
+    try:
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or path.is_symlink():
+            raise OSError
+        payload = path.read_bytes()
+    except OSError as error:
+        raise ValueError("capability probe input invalid") from error
+    if not payload:
+        raise ValueError("capability probe input invalid")
+    return payload
 
 
 def _private_root(path: Path) -> Path:
@@ -204,10 +221,26 @@ def _run_probe_families() -> tuple[Any, Any]:
     return neutral, pruning
 
 
+def _trusted_probe_records(evidence: Mapping[str, Any]) -> dict[str, Any]:
+    blobs = evidence["artifact_blobs"]
+    return {
+        "neutral": rebuild_probe_records(
+            [item for item in blobs if item["family"] == "neutral"],
+            family="neutral",
+            probe_ids=NEUTRAL_PROBE_IDS,
+        ),
+        "pruning": rebuild_probe_records(
+            [item for item in blobs if item["family"] == "pruning"],
+            family="pruning",
+            probe_ids=PRUNING_PROBE_IDS,
+        ),
+    }
+
+
 def _build_context(
     *,
     profile: Any,
-    historical: object,
+    historical_source: bytes,
     runtime: Mapping[str, str],
     verified_count: int,
     neutral: Any,
@@ -230,12 +263,17 @@ def _build_context(
     )
     return capability_context_to_mapping(
         build_rtx_capability_context(
-            historical_profiles=historical,
+            historical_source_bytes=historical_source,
             evidence=evidence,
             profile=profile,
             repository_root=REPOSITORY_ROOT,
             expected_probe_code_sha256=code_sha,
             expected_support_root_sha256=runtime["P6_TVM_SUPPORT_ROOT_SHA256"],
+            expected_historical_source_sha256=historical_capability_source_sha256(
+                REPOSITORY_ROOT
+            ),
+            trusted_runtime_identity=runtime_identity,
+            trusted_probe_records=_trusted_probe_records(evidence),
         )
     )
 
@@ -256,7 +294,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     neutral, pruning = _run_probe_families()
     context = _build_context(
         profile=profile,
-        historical=_read_json(args.historical_profiles),
+        historical_source=_read_bytes(args.historical_profiles),
         runtime=runtime,
         verified_count=verified_count,
         neutral=neutral,

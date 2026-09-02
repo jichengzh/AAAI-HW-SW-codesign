@@ -204,8 +204,10 @@ def _load_verification_context(
         raise ValueError
     private_root = Path(private_root_value).resolve(strict=True)
     post_source = _require_post_source_profile(private_root, profile)
-    frozen_gold, context = _load_output_context(local, contract, profile)
     indices = tuple(int(index) for index in binding["gpu_policy"]["indices"])
+    frozen_gold, context = _load_output_context(
+        local, contract, profile, runtime_gpu_indices=indices
+    )
     return (
         contract,
         local,
@@ -223,8 +225,12 @@ def _load_output_context(
     local: Any,
     contract: PublicP6CoptV2XContract,
     profile: HardwareExecutionProfile,
+    *,
+    runtime_gpu_indices: tuple[int, ...] | None = None,
 ) -> tuple[list[Any], Any]:
-    frozen_gold, _, _, capability_profile = _load_search_inputs(local, contract)
+    frozen_gold, _, _, capability_profile = _load_search_inputs(
+        local, contract, runtime_gpu_indices=runtime_gpu_indices
+    )
     task_contract = validate_search_task(
         _build_search_task(contract, capability_profile)
     )
