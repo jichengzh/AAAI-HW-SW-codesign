@@ -11,6 +11,7 @@ from framework.stage1.structural_axis_contract import (
     scanner_group_evidence_payload,
 )
 from framework.stage1.structural_axis_digest import canonical_digest
+from framework.stage1.structural_axis_partition import canonical_member_partition
 
 
 @dataclass(frozen=True)
@@ -170,82 +171,13 @@ def _inferred_member_rows(
             for selector in boundary_selectors
         )
     )
-    selected = _nearest_connected_group_ids(groups, seed_id, boundary_ids)
+    selected = canonical_member_partition(groups, tuple(boundary_ids))[seed_id]
     return tuple(
         {
             "group_id": group_id,
             "role": canonical_role if group_id == seed_id else "internal",
         }
         for group_id in selected
-    )
-
-
-def _nearest_connected_group_ids(
-    groups: Sequence[Mapping[str, Any]],
-    seed_id: str,
-    boundary_ids: frozenset[str],
-) -> tuple[str, ...]:
-    if seed_id not in boundary_ids:
-        raise ValueError("canonical group is not a materializer boundary")
-    distances = {
-        boundary_id: _group_distances(
-            groups, boundary_id, boundary_ids - {boundary_id}
-        )
-        for boundary_id in boundary_ids
-    }
-    selected = []
-    for group_id in distances[seed_id]:
-        owners = {
-            boundary_id: by_group[group_id]
-            for boundary_id, by_group in distances.items()
-            if group_id in by_group
-        }
-        nearest_distance = min(owners.values())
-        nearest = {
-            boundary_id
-            for boundary_id, distance in owners.items()
-            if distance == nearest_distance
-        }
-        if seed_id not in nearest:
-            continue
-        if len(nearest) != 1:
-            raise ValueError(
-                "inferred member group is equidistant between materializer axes"
-            )
-        selected.append(group_id)
-    return tuple(selected)
-
-
-def _group_distances(
-    groups: Sequence[Mapping[str, Any]],
-    seed_id: str,
-    blocked: frozenset[str],
-) -> dict[str, int]:
-    by_id = {str(group["group_id"]): group for group in groups}
-    distances = {seed_id: 0}
-    frontier = (seed_id,)
-    while frontier:
-        additions = {
-            candidate_id: distances[current_id] + 1
-            for current_id in frontier
-            for candidate_id, candidate in by_id.items()
-            if candidate_id not in distances
-            and candidate_id not in blocked
-            and _groups_share_layer_relation(by_id[current_id], candidate)
-        }
-        frontier = tuple(additions)
-        distances = {**distances, **additions}
-    return distances
-
-
-def _groups_share_layer_relation(
-    left: Mapping[str, Any], right: Mapping[str, Any]
-) -> bool:
-    left_members = {str(item) for item in left.get("member_layers", ())}
-    right_members = {str(item) for item in right.get("member_layers", ())}
-    return (
-        str(left["root_layer"]) in right_members
-        or str(right["root_layer"]) in left_members
     )
 
 

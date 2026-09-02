@@ -17,6 +17,7 @@ from framework.stage1.structural_axis_digest import (
     SCANNER_AXIS_PROVENANCE_SOURCE,
     canonical_digest,
 )
+from framework.stage1.structural_axis_partition import canonical_member_partition
 
 _STRUCTURAL_KEYS = (
     "prune_groups",
@@ -33,6 +34,8 @@ _PROVENANCE_DIGESTS = (
     "scan_manifest_digest",
     "structural_evidence_digest",
 )
+_INFERRED_MEMBER_SOURCE = "scanner_inferred_nearest_boundary_v1"
+_DECLARED_MEMBER_SOURCE = "adapter_declared_v1"
 _DIGEST_SOURCES = {
     "config_digest": "trace_context.loaded_config",
     "checkpoint_digest": "trace_context.checkpoint_evidence",
@@ -352,6 +355,7 @@ def validate_dataflow_relations(
 ) -> None:
     sources = _source_relation_index(source_rows)
     groups = _retained_group_index(retained_groups)
+    allowed_by_source = _canonical_source_member_partition(sources, groups)
     emitted = {digest: [] for digest in sources}
     for row in rows:
         relation = _required_mapping(row, "dataflow relation")
@@ -371,9 +375,11 @@ def validate_dataflow_relations(
         if source is None:
             raise ValueError("derived relation has no retained source relation identity")
         emitted[source_digest].append(
-            _validate_derived_relation_source(relation, source, groups)
+            _validate_derived_relation_source(
+                relation, source, groups, allowed_by_source[source_digest]
+            )
         )
-    _validate_source_member_coverage(sources, emitted, groups)
+    _validate_source_member_coverage(emitted, allowed_by_source)
 
 
 def require_free_interface_proof(
@@ -429,6 +435,7 @@ def _validate_derived_relation_source(
     derived: Mapping[str, Any],
     source: Mapping[str, Any],
     groups: Mapping[str, Mapping[str, Any]],
+    allowed_group_ids: frozenset[str],
 ) -> str:
     fields = {
         "canonical_axis_id": (derived.get("canonical_axis_id"), source.get("canonical_axis_id")),
@@ -443,21 +450,19 @@ def _validate_derived_relation_source(
     group_id = _required_text(derived.get("group_id"), "derived relation group_id")
     if group_id not in groups:
         raise ValueError("derived relation group_id is not a retained prune group")
-    if group_id not in _allowed_source_group_ids(source, groups):
+    if group_id not in allowed_group_ids:
         raise ValueError("derived relation group_id is not a source member group")
     return group_id
 
 
 def _validate_source_member_coverage(
-    sources: Mapping[str, Mapping[str, Any]],
     emitted: Mapping[str, list[str]],
-    groups: Mapping[str, Mapping[str, Any]],
+    allowed_by_source: Mapping[str, frozenset[str]],
 ) -> None:
     all_group_ids = [group_id for ids in emitted.values() for group_id in ids]
     if len(all_group_ids) != len(set(all_group_ids)):
         raise ValueError("duplicate derived relation member group")
-    for digest, source in sources.items():
-        allowed = _allowed_source_group_ids(source, groups)
+    for digest, allowed in allowed_by_source.items():
         if set(emitted[digest]) != allowed:
             raise ValueError("derived relation member groups are not complete")
 
@@ -523,19 +528,102 @@ def _validate_structural_authority_aliases(inputs: Mapping[str, Any]) -> None:
     validated_base_widths(inputs, groups, bindings)
 
 
-def _allowed_source_group_ids(
-    source: Mapping[str, Any], groups: Mapping[str, Mapping[str, Any]]
-) -> set[str]:
-    canonical_id = _canonical_source_group_id(source, groups)
-    members = source.get("member_relations")
-    if members is None:
-        return _connected_retained_group_ids(groups, canonical_id)
-    member_ids = _declared_source_member_ids(source, members)
-    if canonical_id not in member_ids:
-        raise ValueError("source member groups omit the canonical group")
-    if any(group_id not in groups for group_id in member_ids):
-        raise ValueError("source member group is not a retained prune group")
-    return set(member_ids)
+def _canonical_source_member_partition(
+    sources: Mapping[str, Mapping[str, Any]],
+    groups: Mapping[str, Mapping[str, Any]],
+) -> dict[str, frozenset[str]]:
+    boundary_by_source = {
+        digest: _canonical_source_group_id(source, groups)
+        for digest, source in sources.items()
+    }
+    modes = {
+        _required_text(
+            source.get("member_relations_source"), "member relations source"
+        )
+        for source in sources.values()
+    }
+    if not modes <= {_INFERRED_MEMBER_SOURCE, _DECLARED_MEMBER_SOURCE}:
+        raise ValueError("member relations source is invalid")
+    if len(modes) != 1:
+        raise ValueError("inferred and declared member relation sources cannot mix")
+    if modes == {_INFERRED_MEMBER_SOURCE}:
+        partition = canonical_member_partition(
+            tuple(groups.values()), tuple(boundary_by_source.values())
+        )
+        allowed = {
+            digest: _validated_source_member_partition(
+                source, partition[boundary_by_source[digest]]
+            )
+            for digest, source in sources.items()
+        }
+    else:
+        if any("member_layers" in group for group in groups.values()):
+            raise ValueError(
+                "declared member relations cannot replace retained graph inference"
+            )
+        allowed = {
+            digest: _validated_source_member_partition(source, None)
+            for digest, source in sources.items()
+        }
+    _validate_exact_retained_group_ownership(allowed, groups)
+    return allowed
+
+
+def _validated_source_member_partition(
+    source: Mapping[str, Any], expected_group_ids: Sequence[str] | None
+) -> frozenset[str]:
+    members = _required_sequence(
+        source.get("member_relations"), "source member relations"
+    )
+    member_rows = tuple(
+        dict(_required_mapping(row, "source member relation")) for row in members
+    )
+    if any(set(row) != {"group_id", "role"} for row in member_rows):
+        raise ValueError("source member relation fields are invalid")
+    member_ids = _declared_source_member_ids(source, member_rows)
+    declared_ids = tuple(sorted(member_ids))
+    expected_ids = (
+        declared_ids
+        if expected_group_ids is None
+        else tuple(sorted(expected_group_ids))
+    )
+    if declared_ids != expected_ids:
+        raise ValueError("source disagrees with canonical inferred member partition")
+    roles = {
+        _required_text(row.get("b1_group_id"), "binding projection group_id"):
+        _required_text(row.get("role"), "binding projection role")
+        for row in _required_sequence(
+            source.get("materializer_binding_projections"),
+            "materializer binding projections",
+        )
+    }
+    expected_rows = tuple(
+        sorted(
+            ({"group_id": group_id, "role": roles.get(group_id)}
+             for group_id in expected_ids),
+            key=canonical_digest,
+        )
+    )
+    if any(row["role"] is None for row in expected_rows):
+        raise ValueError("canonical inferred member projection is incomplete")
+    if tuple(sorted(member_rows, key=canonical_digest)) != expected_rows:
+        raise ValueError("source member rows disagree with canonical inferred partition")
+    return frozenset(expected_ids)
+
+
+def _validate_exact_retained_group_ownership(
+    allowed_by_source: Mapping[str, frozenset[str]],
+    groups: Mapping[str, Mapping[str, Any]],
+) -> None:
+    owned = tuple(
+        group_id
+        for group_ids in allowed_by_source.values()
+        for group_id in group_ids
+    )
+    if len(owned) != len(set(owned)):
+        raise ValueError("retained group belongs to multiple materializer axes")
+    if set(owned) != set(groups):
+        raise ValueError("retained groups must all belong to one materializer axis")
 
 
 def _declared_source_member_ids(
@@ -556,6 +644,11 @@ def _declared_source_member_ids(
         raise ValueError("duplicate source member group identity")
     if set(member_ids) != set(declared_ids):
         raise ValueError("source member groups disagree with declared member groups")
+    digest = _sha256(
+        source.get("member_relations_digest"), "source member relations digest"
+    )
+    if digest != canonical_digest(tuple(sorted(declared_ids))):
+        raise ValueError("source member relations digest mismatch")
     return member_ids
 
 
@@ -578,30 +671,6 @@ def _canonical_source_group_id(
     if len(matches) != 1:
         raise ValueError("source relation must resolve one canonical retained group")
     return matches[0]
-
-
-def _connected_retained_group_ids(
-    groups: Mapping[str, Mapping[str, Any]], seed_id: str
-) -> set[str]:
-    selected = [seed_id]
-    for current_id in selected:
-        current = groups[current_id]
-        for candidate_id, candidate in groups.items():
-            if candidate_id not in selected and _groups_share_member_layer(
-                current, candidate
-            ):
-                selected.append(candidate_id)
-    return set(selected)
-
-
-def _groups_share_member_layer(
-    left: Mapping[str, Any], right: Mapping[str, Any]
-) -> bool:
-    left_root = str(left.get("root_layer", left.get("module_path")) or "")
-    right_root = str(right.get("root_layer", right.get("module_path")) or "")
-    left_members = {str(item) for item in left.get("member_layers", ())}
-    right_members = {str(item) for item in right.get("member_layers", ())}
-    return left_root in right_members or right_root in left_members
 
 
 def _binding_crosses_interface(binding: Mapping[str, Any]) -> bool:

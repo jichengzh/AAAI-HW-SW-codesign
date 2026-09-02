@@ -59,9 +59,15 @@ def _source_relation(
         group_ids = tuple(row["group_id"] for row in members)
         relation = {
             **relation,
+            "member_relations_source": "scanner_inferred_nearest_boundary_v1",
             "member_relations": members,
             "declared_member_group_ids": group_ids,
             "member_relations_digest": canonical_digest(group_ids),
+        }
+    else:
+        relation = {
+            **relation,
+            "member_relations_source": "adapter_declared_v1",
         }
     return {
         **relation,

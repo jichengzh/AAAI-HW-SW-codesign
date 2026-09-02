@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
+
 import pytest
 import torch.nn as nn
 
@@ -14,7 +16,10 @@ from framework.stage1.structural_axes import (
     build_structural_axis_inputs,
     derive_structural_axes,
 )
-from framework.stage1.structural_axis_contract import seal_dataflow_relation
+from framework.stage1.structural_axis_contract import (
+    seal_dataflow_relation,
+    validate_dataflow_relations,
+)
 from framework.stage1.structural_axis_digest import canonical_digest
 from tests.stage1.structural_axis_selector_test_support import (
     built_cross_interface_inputs,
@@ -400,8 +405,9 @@ def test_build_inputs_infers_members_from_exact_depgraph_layer_relations() -> No
     assert [row["group_id"] for row in inputs["prune_groups"]] == ["g0", "g1"]
 
 
-def test_inferred_members_stop_at_the_nearest_materializer_axis() -> None:
-    """A shared path belongs to its nearest declared axis, not every axis."""
+def _chain_axis_fixture(
+    *, group_count: int = 4, right_index: int = 3
+) -> tuple[TraceContext, list[dict], tuple[dict, ...]]:
     base = selector_context()
     sources = tuple(
         MaterializerParameterSource(
@@ -414,12 +420,12 @@ def test_inferred_members_stop_at_the_nearest_materializer_axis() -> None:
         )
         for axis_id, config_key, module_path in (
             ("chain.left", "left", "backbone.0"),
-            ("chain.right", "right", "backbone.3"),
+            ("chain.right", "right", f"backbone.{right_index}"),
         )
     )
     modules = {
         f"backbone.{index}": nn.Conv2d(32, 32, 1)
-        for index in range(4)
+        for index in range(group_count)
     }
     relations = tuple(
         {
@@ -450,11 +456,21 @@ def test_inferred_members_stop_at_the_nearest_materializer_axis() -> None:
             "root_layer": f"backbone.{index}",
             "member_layers": [
                 f"backbone.{index}",
-                *([f"backbone.{index + 1}"] if index < 3 else []),
+                *(
+                    [f"backbone.{index + 1}"]
+                    if index < right_index
+                    else []
+                ),
             ],
         }
-        for index in range(4)
+        for index in range(group_count)
     ]
+    return context, groups, relations
+
+
+def test_inferred_members_stop_at_the_nearest_materializer_axis() -> None:
+    """A shared path belongs to its nearest declared axis, not every axis."""
+    context, groups, relations = _chain_axis_fixture()
 
     inputs = build_structural_axis_inputs(
         trace_context=context,
@@ -475,3 +491,99 @@ def test_inferred_members_stop_at_the_nearest_materializer_axis() -> None:
         ("g3", "chain.right"),
         ("g2", "chain.right"),
     ]
+
+
+def _resealed_wrong_chain_partition(inputs: dict) -> tuple[list[dict], list[dict]]:
+    sources = deepcopy(inputs["source_dataflow_relations"])
+    members_by_axis = {
+        "chain.left": (
+            {"group_id": "g0", "role": "output"},
+        ),
+        "chain.right": (
+            {"group_id": "g1", "role": "internal"},
+            {"group_id": "g2", "role": "internal"},
+            {"group_id": "g3", "role": "output"},
+        ),
+    }
+    derived = []
+    for source in sources:
+        members = members_by_axis[source["canonical_axis_id"]]
+        member_ids = tuple(sorted(row["group_id"] for row in members))
+        source["member_relations"] = members
+        source["declared_member_group_ids"] = member_ids
+        source["member_relations_digest"] = canonical_digest(member_ids)
+        derived.extend(
+            seal_dataflow_relation(
+                {
+                    "group_id": row["group_id"],
+                    "canonical_axis_id": source["canonical_axis_id"],
+                },
+                source,
+            )
+            for row in members
+        )
+    return sources, derived
+
+
+def _built_chain_inputs() -> tuple[dict, list[dict]]:
+    context, groups, relations = _chain_axis_fixture()
+    inputs = build_structural_axis_inputs(
+        trace_context=context,
+        prune_groups=groups,
+        scenario=selector_scenario(),
+        group_manifest=selector_group_manifest(
+            groups,
+            source_relations=[dict(row) for row in relations],
+        ),
+    )
+    return inputs, groups
+
+
+def test_validator_recomputes_inferred_partition_after_complete_reseal() -> None:
+    inputs, groups = _built_chain_inputs()
+    sources, derived = _resealed_wrong_chain_partition(inputs)
+
+    with pytest.raises(ValueError, match="canonical inferred member partition"):
+        validate_dataflow_relations(derived, sources, groups)
+
+
+def test_graph_partition_cannot_be_downgraded_to_declared_members() -> None:
+    inputs, groups = _built_chain_inputs()
+    sources, derived = _resealed_wrong_chain_partition(inputs)
+    for source in sources:
+        source["member_relations_source"] = "adapter_declared_v1"
+
+    with pytest.raises(ValueError, match="cannot replace retained graph inference"):
+        validate_dataflow_relations(derived, sources, groups)
+
+
+def test_inferred_partition_rejects_disconnected_retained_group() -> None:
+    context, groups, relations = _chain_axis_fixture(group_count=5)
+
+    with pytest.raises(ValueError, match="retained group.*materializer axis"):
+        build_structural_axis_inputs(
+            trace_context=context,
+            prune_groups=groups,
+            scenario=selector_scenario(),
+            group_manifest=selector_group_manifest(
+                groups,
+                source_relations=[dict(row) for row in relations],
+            ),
+        )
+
+
+def test_inferred_partition_rejects_equidistant_retained_group() -> None:
+    context, groups, relations = _chain_axis_fixture(
+        group_count=3, right_index=2
+    )
+
+    with pytest.raises(ValueError, match="equidistant"):
+        build_structural_axis_inputs(
+            trace_context=context,
+            prune_groups=groups,
+            scenario=selector_scenario(),
+            group_manifest=selector_group_manifest(
+                groups,
+                source_relations=[dict(row) for row in relations],
+            ),
+        )

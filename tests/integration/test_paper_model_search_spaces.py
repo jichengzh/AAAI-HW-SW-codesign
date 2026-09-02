@@ -3,14 +3,23 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
+import yaml
 
 from framework.reproduction.coptv2x_paper_space_v1 import (
+    build_stage1_scanner_manifest,
     build_paper_space_reproduction,
+    load_paper_scanner_evidence,
 )
+from framework.stage1.structural_axis_contract import scanner_group_manifest
 from framework.stage1.structural_axis_digest import canonical_digest
+from framework.stage1_bridge import load_stage2_search_space
 from framework.stage2.formal_software_space_v1 import build_formal_software_plan
+from framework.stage6.pyramid_search_space_adapter_v1 import (
+    build_pyramid_candidate_plan,
+)
 
 
 _PAPER_ORACLES = [
@@ -47,6 +56,83 @@ _PAPER_ORACLES = [
         ],
     ),
 ]
+
+
+def _production_like_inferred_pyramid_evidence() -> dict:
+    evidence = load_paper_scanner_evidence("pyramid")
+    groups = {row["group_id"]: row for row in evidence["prune_groups"]}
+    inferred_relations = []
+    for source in evidence["dataflow_relations"]:
+        axis_id = source["canonical_axis_id"]
+        member_ids = list(source["declared_member_group_ids"])
+        for index, group_id in enumerate(member_ids):
+            links = [f"{axis_id}.edge.{index}"]
+            if index:
+                links.append(f"{axis_id}.edge.{index - 1}")
+            groups[group_id] = {
+                **groups[group_id],
+                "member_layers": [groups[group_id]["root_layer"], *links],
+            }
+        inferred_relations.append(
+            {
+                key: source[key]
+                for key in (
+                    "canonical_axis_id",
+                    "module_root_selector",
+                    "axis_kind",
+                    "derived_from",
+                )
+                if key in source
+            }
+        )
+    retained_groups = list(groups.values())
+    provenance = scanner_group_manifest(
+        retained_groups,
+        evidence["scan_scenario"],
+        inferred_relations,
+    )
+    return {
+        **evidence,
+        "source_provenance": {
+            **provenance,
+            "purification": evidence["source_provenance"]["purification"],
+        },
+        "prune_groups": retained_groups,
+        "dataflow_relations": inferred_relations,
+    }
+
+
+def test_production_like_43_group_pyramid_inference_reaches_formal_plan(
+    tmp_path: Path,
+) -> None:
+    evidence = _production_like_inferred_pyramid_evidence()
+    assert len(evidence["prune_groups"]) == 43
+    assert all(
+        "member_relations" not in relation
+        for relation in evidence["dataflow_relations"]
+    )
+
+    manifest = build_stage1_scanner_manifest("pyramid", evidence)
+    manifest_path = tmp_path / "inferred-pyramid.yaml"
+    manifest_path.write_text(
+        yaml.safe_dump(manifest, sort_keys=False),
+        encoding="utf-8",
+    )
+    search_space = load_stage2_search_space(manifest_path)
+    formal_plan = build_formal_software_plan(search_space)
+    p6_plan = build_pyramid_candidate_plan(search_space)
+
+    scanner_groups = [
+        member["b1_group_id"]
+        for axis in manifest["scanner_structural_axes"]
+        for member in axis["member_b1_groups"]
+    ]
+    assert len(scanner_groups) == len(set(scanner_groups)) == 43
+    assert set(scanner_groups) == {
+        group["group_id"] for group in evidence["prune_groups"]
+    }
+    assert formal_plan["structure_count"] == p6_plan["structure_count"] == 343
+    assert formal_plan["candidate_count"] == p6_plan["candidate_count"] == 686
 
 
 @pytest.mark.parametrize(

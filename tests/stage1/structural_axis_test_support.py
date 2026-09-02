@@ -270,6 +270,7 @@ def _scanner_owned_sources(
                 "group_id": member_ids[0],
                 "canonical_group_id": canonical_binding["b1_group_id"],
                 "module_root_selector": canonical_group["module_path"],
+                "member_relations_source": "adapter_declared_v1",
                 "member_relations": [
                     {
                         "group_id": binding["b1_group_id"],
@@ -278,6 +279,7 @@ def _scanner_owned_sources(
                     for binding in member_bindings
                 ],
                 "declared_member_group_ids": member_ids,
+                "member_relations_digest": canonical_digest(tuple(member_ids)),
                 "materializer_binding_projections": member_bindings,
             }
         )
