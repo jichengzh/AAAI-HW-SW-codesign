@@ -483,3 +483,42 @@ def test_context_validation_is_stable_after_canonical_sorted_json_round_trip(
     )
 
     assert len(validated.historical_profiles) == 2
+
+
+def test_historical_source_uses_canonical_json_digest_and_ordering(
+    tmp_path: Path,
+) -> None:
+    profiles = historical_profiles()
+    compact = historical_source_bytes()
+    pretty = json.dumps(profiles, indent=2).encode("utf-8")
+    expected = _sha_bytes(compact)
+    profile = load_hardware_execution_profile("rtx4090")
+    evidence = probe_evidence()
+    arguments = {
+        "evidence": evidence,
+        "profile": profile,
+        "repository_root": Path(__file__).resolve().parents[2],
+        "expected_probe_code_sha256": _sha("probe-code"),
+        "expected_support_root_sha256": runtime_identity()["support_root_sha256"],
+        "expected_historical_source_sha256": expected,
+        "trusted_runtime_identity": evidence["runtime_identity"],
+        "trusted_probe_records": {
+            "neutral": evidence["neutral_records"],
+            "pruning": evidence["pruning_records"],
+        },
+    }
+
+    compact_context = build_rtx_capability_context(
+        historical_source_bytes=compact, **arguments
+    )
+    pretty_context = build_rtx_capability_context(
+        historical_source_bytes=pretty, **arguments
+    )
+    assert compact_context.historical_profiles == pretty_context.historical_profiles
+
+    for changed in (list(reversed(profiles)), [{**profiles[0], "features": {}}, profiles[1]]):
+        with pytest.raises(P6CapabilityContextError):
+            build_rtx_capability_context(
+                historical_source_bytes=json.dumps(changed).encode("utf-8"),
+                **arguments,
+            )

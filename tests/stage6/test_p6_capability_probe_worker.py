@@ -73,7 +73,7 @@ def test_probe_family_seals_a_real_compiler_failure_as_observed() -> None:
     assert failed["compiler_ir_sha256"] is None
     assert result.artifact_blobs[1]["compiler_output_kind"] == "error"
     error = json.loads(base64.b64decode(result.artifact_blobs[1]["compiler_output_base64"]))
-    assert error["category"] == "tvm_compiler_rejection"
+    assert error["category"] == "tvm_codegen_compiler_rejection"
     assert "private" not in json.dumps(error)
 
 

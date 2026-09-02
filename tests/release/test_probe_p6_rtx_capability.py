@@ -141,6 +141,11 @@ def test_cli_run_and_main_have_sanitized_aggregate_surface(
     monkeypatch.setattr(cli, "_gpu_indices", lambda value: (0, 1, 2, 3))
     monkeypatch.setattr(cli, "_output_path", lambda value: value)
     monkeypatch.setattr(
+        cli,
+        "historical_capability_source_sha256",
+        lambda root: hashlib.sha256(historical_source_bytes()).hexdigest(),
+    )
+    monkeypatch.setattr(
         cli, "NvidiaSmiGpuProbe", lambda: SimpleNamespace(snapshot=lambda indices: ())
     )
     monkeypatch.setattr(cli, "validate_live_gpu_snapshots", lambda **kwargs: 4)
@@ -212,3 +217,44 @@ def test_cli_run_and_main_have_sanitized_aggregate_surface(
         == 1
     )
     assert capsys.readouterr().err == "capability_probe_failed\n"
+
+
+def test_cli_rejects_historical_authority_before_snapshot_or_compilation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    historical = tmp_path / "historical.json"
+    changed = historical_profiles()
+    changed.reverse()
+    historical.write_text(json.dumps(changed), encoding="utf-8")
+    events: list[str] = []
+    monkeypatch.setattr(cli, "_private_root", lambda value: value)
+    monkeypatch.setattr(cli, "_runtime_values", lambda *args: (None, {}))
+    monkeypatch.setattr(cli, "_gpu_indices", lambda value: (0, 1, 2, 3))
+    monkeypatch.setattr(cli, "_output_path", lambda value: value)
+    monkeypatch.setattr(
+        cli,
+        "historical_capability_source_sha256",
+        lambda root: hashlib.sha256(historical_source_bytes()).hexdigest(),
+    )
+    monkeypatch.setattr(
+        cli,
+        "NvidiaSmiGpuProbe",
+        lambda: SimpleNamespace(snapshot=lambda indices: events.append("snapshot")),
+    )
+    monkeypatch.setattr(
+        cli,
+        "_run_probe_families",
+        lambda: events.append("compile"),
+    )
+    args = argparse.Namespace(
+        private_root=tmp_path,
+        profile=tmp_path / "profile",
+        runner_template=tmp_path / "runner",
+        historical_profiles=historical,
+        gpu_policy=tmp_path / "gpu",
+        output=tmp_path / "output",
+    )
+
+    with pytest.raises(Exception):
+        cli.run(args)
+    assert events == []

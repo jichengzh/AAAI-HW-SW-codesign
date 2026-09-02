@@ -24,6 +24,7 @@ from framework.stage6.p6_capability_context_v1 import (  # noqa: E402
     canonical_probe_code_sha256,
     capability_context_to_mapping,
     historical_capability_source_sha256,
+    validate_historical_capability_source,
 )
 from framework.stage6.p6_capability_observation_v1 import (  # noqa: E402
     rebuild_probe_records,
@@ -284,6 +285,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     indices = _gpu_indices(args.gpu_policy)
     output = _output_path(args.output)
     profile = load_hardware_execution_profile("rtx4090")
+    historical_source = _read_bytes(args.historical_profiles)
+    validate_historical_capability_source(
+        historical_source,
+        expected_sha256=historical_capability_source_sha256(REPOSITORY_ROOT),
+    )
     probe = NvidiaSmiGpuProbe()
     verified_count = validate_live_gpu_snapshots(
         profile=profile,
@@ -294,7 +300,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     neutral, pruning = _run_probe_families()
     context = _build_context(
         profile=profile,
-        historical_source=_read_bytes(args.historical_profiles),
+        historical_source=historical_source,
         runtime=runtime,
         verified_count=verified_count,
         neutral=neutral,

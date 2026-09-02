@@ -15,6 +15,7 @@ from framework.stage6.p6_capability_probe_specs_v1 import (
     validate_probe_partition,
 )
 from framework.stage6.p6_capability_probe_worker_v1 import (
+    COMPILER_REJECTION_CATEGORIES,
     COMPILER_REJECTION_SCHEMA_VERSION,
 )
 
@@ -108,7 +109,7 @@ def _rejection_evidence(output: bytes) -> None:
         not isinstance(payload, Mapping)
         or set(payload) != {"schema_version", "category", "detail_sha256"}
         or payload.get("schema_version") != COMPILER_REJECTION_SCHEMA_VERSION
-        or payload.get("category") != "tvm_compiler_rejection"
+        or payload.get("category") not in COMPILER_REJECTION_CATEGORIES
         or not isinstance(payload.get("detail_sha256"), str)
         or _SHA_PATTERN.fullmatch(payload["detail_sha256"]) is None
     ):

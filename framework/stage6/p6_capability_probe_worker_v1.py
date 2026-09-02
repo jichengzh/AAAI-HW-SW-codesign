@@ -18,22 +18,36 @@ from framework.stage6.p6_capability_probe_specs_v1 import (
 ModelBuilder = Callable[[str, str], bytes]
 Compiler = Callable[[bytes, str], tuple[Mapping[str, Any], bytes]]
 COMPILER_REJECTION_SCHEMA_VERSION = "p6_compiler_rejection_evidence_v1"
+COMPILER_REJECTION_CATEGORIES = frozenset(
+    {
+        "tvm_frontend_compiler_rejection",
+        "tvm_lowering_compiler_rejection",
+        "tvm_codegen_compiler_rejection",
+    }
+)
 
 
 class P6CompilerRejection(Exception):
     """One allowlisted compiler rejection with path-free retained evidence."""
 
-    def __init__(self, detail: str) -> None:
-        if not isinstance(detail, str) or not detail:
+    def __init__(
+        self, detail: str, *, category: str = "tvm_codegen_compiler_rejection"
+    ) -> None:
+        if (
+            not isinstance(detail, str)
+            or not detail
+            or category not in COMPILER_REJECTION_CATEGORIES
+        ):
             raise ValueError("compiler rejection detail invalid")
+        self.category = category
         self.detail_sha256 = hashlib.sha256(detail.encode("utf-8")).hexdigest()
-        super().__init__("tvm_compiler_rejection")
+        super().__init__(category)
 
     def evidence_bytes(self) -> bytes:
         return json.dumps(
             {
                 "schema_version": COMPILER_REJECTION_SCHEMA_VERSION,
-                "category": "tvm_compiler_rejection",
+                "category": self.category,
                 "detail_sha256": self.detail_sha256,
             },
             sort_keys=True,
@@ -149,6 +163,7 @@ def run_probe_family(
 
 __all__ = [
     "COMPILER_REJECTION_SCHEMA_VERSION",
+    "COMPILER_REJECTION_CATEGORIES",
     "P6CompilerRejection",
     "ProbeFamilyResult",
     "run_probe_family",

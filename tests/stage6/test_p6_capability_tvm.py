@@ -158,7 +158,7 @@ def test_tvm_runtime_identity_is_path_free_and_byte_bound(
     assert require_cuda_sm89()[1].kind.name == "cuda"
 
 
-def test_tvm_runtime_fails_closed_without_cuda_or_with_outside_compiler_file(
+def test_tvm_runtime_fails_closed_without_cuda_or_with_invalid_compiler_tree(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     site, _ = _fake_modules(tmp_path, monkeypatch)
@@ -169,7 +169,7 @@ def test_tvm_runtime_fails_closed_without_cuda_or_with_outside_compiler_file(
     _fake_modules(tmp_path / "fresh", monkeypatch)
     outside = tmp_path / "outside.py"
     outside.write_text("# outside\n", encoding="utf-8")
-    sys.modules["tvm.bad"] = SimpleNamespace(__file__=str(outside))
+    (tmp_path / "fresh" / "site" / "tvm" / "invalid.py").symlink_to(outside)
     nvlibs = tmp_path / "nvlibs.json"
     nvlibs.write_text("{}\n", encoding="utf-8")
     with pytest.raises(ValueError):
@@ -187,11 +187,100 @@ def test_tvm_compile_only_translates_allowlisted_tvm_rejections(
     sys.modules["tvm"].compile = lambda module, target: (_ for _ in ()).throw(
         _TVMError("compiler detail")
     )
-    with pytest.raises(P6CompilerRejection):
+    with pytest.raises(P6CompilerRejection) as captured:
         compile_tvm_probe(b"onnx", "int8")
+    assert json.loads(captured.value.evidence_bytes())["category"] == (
+        "tvm_codegen_compiler_rejection"
+    )
 
     sys.modules["tvm"].compile = lambda module, target: (_ for _ in ()).throw(
         OSError("runtime infrastructure")
     )
     with pytest.raises(OSError, match="infrastructure"):
         compile_tvm_probe(b"onnx", "int8")
+
+
+def test_tvm_runtime_manifest_is_import_state_independent_and_tree_complete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site, _ = _fake_modules(tmp_path, monkeypatch)
+    nvlibs = tmp_path / "nvlibs.json"
+    nvlibs.write_text("{}\n", encoding="utf-8")
+    baseline = collect_tvm_runtime_identity(
+        tvm_site=site,
+        nvlibs_file=nvlibs,
+        support_root_sha256="a" * 64,
+    )
+
+    transient = ModuleType("tvm.transient")
+    transient.__file__ = str(site / "tvm" / "__init__.py")
+    monkeypatch.setitem(sys.modules, "tvm.transient", transient)
+    imported = collect_tvm_runtime_identity(
+        tvm_site=site,
+        nvlibs_file=nvlibs,
+        support_root_sha256="a" * 64,
+    )
+    assert imported == baseline
+
+    extra = site / "tvm" / "unimported_compiler.py"
+    extra.write_text("# compiler authority\n", encoding="utf-8")
+    drifted = collect_tvm_runtime_identity(
+        tvm_site=site,
+        nvlibs_file=nvlibs,
+        support_root_sha256="a" * 64,
+    )
+    assert drifted["compiler_fingerprint"] != baseline["compiler_fingerprint"]
+    extra.unlink()
+    assert (
+        collect_tvm_runtime_identity(
+            tvm_site=site,
+            nvlibs_file=nvlibs,
+            support_root_sha256="a" * 64,
+        )
+        == baseline
+    )
+    (site / "tvm" / "libtvm.so").unlink()
+    with pytest.raises((FileNotFoundError, ValueError)):
+        collect_tvm_runtime_identity(
+            tvm_site=site,
+            nvlibs_file=nvlibs,
+            support_root_sha256="a" * 64,
+        )
+
+
+@pytest.mark.parametrize(
+    "detail",
+    (
+        "CUDA out of memory",
+        "CUDA driver initialization failed",
+        "invalid device ordinal",
+        "cannot open shared object file",
+        "ModuleNotFoundError: runtime package missing",
+    ),
+)
+def test_tvmerror_infrastructure_categories_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, detail: str
+) -> None:
+    _fake_modules(tmp_path, monkeypatch)
+    sys.modules["tvm"].compile = lambda module, target: (_ for _ in ()).throw(
+        _TVMError(detail)
+    )
+
+    with pytest.raises(_TVMError, match=detail):
+        compile_tvm_probe(b"onnx", "int8")
+
+
+def test_tvm_compiler_rejection_evidence_binds_exact_stage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_modules(tmp_path, monkeypatch)
+    sys.modules["tvm.relax.frontend.onnx"].from_onnx = (
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            _TVMError("Unsupported ONNX operator")
+        )
+    )
+
+    with pytest.raises(P6CompilerRejection) as captured:
+        compile_tvm_probe(b"onnx", "int8")
+    evidence = json.loads(captured.value.evidence_bytes())
+    assert evidence["category"] == "tvm_frontend_compiler_rejection"

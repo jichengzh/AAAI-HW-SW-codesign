@@ -294,17 +294,22 @@ def _historical_source_bytes(raw: object) -> bytes:
 def _profiles_from_historical_source(
     payload: bytes, *, expected_sha256: str
 ) -> tuple[dict[str, Any], ...]:
-    if not isinstance(payload, bytes) or not payload or _file_bytes_sha(payload) != expected_sha256:
+    if not isinstance(payload, bytes) or not payload or not _is_sha(expected_sha256):
         raise P6CapabilityContextError()
     try:
         raw = json.loads(payload)
     except (UnicodeError, json.JSONDecodeError) as error:
         raise P6CapabilityContextError() from error
+    if _sha(raw) != expected_sha256:
+        raise P6CapabilityContextError()
     return _validated_historical_profiles(raw)
 
 
-def _file_bytes_sha(payload: bytes) -> str:
-    return hashlib.sha256(payload).hexdigest()
+def validate_historical_capability_source(
+    payload: bytes, *, expected_sha256: str
+) -> tuple[dict[str, Any], ...]:
+    """Validate canonical Gold capability content independently of JSON formatting."""
+    return _profiles_from_historical_source(payload, expected_sha256=expected_sha256)
 
 
 def _validate_evidence_header(
@@ -561,5 +566,6 @@ __all__ = [
     "capability_context_to_mapping",
     "compiler_fingerprint",
     "historical_capability_source_sha256",
+    "validate_historical_capability_source",
     "validate_rtx_capability_context",
 ]
