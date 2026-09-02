@@ -160,6 +160,31 @@ def test_tvm_runtime_identity_is_path_free_and_byte_bound(
     assert require_cuda_sm89()[1].kind.name == "cuda"
 
 
+def test_tvm_runtime_identity_supports_top_level_tvm_ffi_libinfo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site, _ = _fake_modules(tmp_path, monkeypatch)
+    monkeypatch.delitem(sys.modules, "tvm._ffi")
+    ffi_root = site / "tvm_ffi"
+    ffi_root.mkdir()
+    (ffi_root / "__init__.py").write_text("# tvm ffi\n", encoding="utf-8")
+    (ffi_root / "libinfo.py").write_text("# library locator\n", encoding="utf-8")
+    tvm_ffi = ModuleType("tvm_ffi")
+    tvm_ffi.libinfo = SimpleNamespace(find_lib_path=lambda: [str(site / "tvm" / "libtvm.so")])
+    monkeypatch.setitem(sys.modules, "tvm_ffi", tvm_ffi)
+    nvlibs = tmp_path / "nvlibs.json"
+    nvlibs.write_text("{}\n", encoding="utf-8")
+
+    identity = collect_tvm_runtime_identity(
+        tvm_site=site,
+        nvlibs_file=nvlibs,
+        support_root_sha256="a" * 64,
+    )
+
+    assert identity["target"] == "cuda -arch=sm_89"
+    assert len(identity["compiler_file_sha256"]) == 4
+
+
 def test_tvm_runtime_fails_closed_without_cuda_or_with_invalid_compiler_tree(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

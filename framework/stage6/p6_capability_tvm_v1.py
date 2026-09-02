@@ -71,7 +71,10 @@ def _package_authority_files(root: Path) -> list[Path]:
 
 def _required_tvm_libraries(root: Path) -> tuple[Path, ...]:
     try:
-        from tvm._ffi import libinfo
+        if (root / "tvm_ffi" / "libinfo.py").is_file():
+            from tvm_ffi import libinfo
+        else:
+            from tvm._ffi import libinfo
 
         libraries = tuple(Path(value).resolve(strict=True) for value in libinfo.find_lib_path())
     except ImportError as error:
