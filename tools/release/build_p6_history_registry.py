@@ -24,6 +24,9 @@ from framework.stage6.p6_history_registry_v1 import (  # noqa: E402
 )
 
 
+MAX_PRIVATE_JSON_SIZE = 32 * 1024 * 1024
+
+
 class _ArgumentParser(argparse.ArgumentParser):
     def error(self, message: str) -> None:
         del message
@@ -55,7 +58,7 @@ def _load_private_json(path: Path) -> Mapping[str, Any]:
         )
     try:
         resolved = path.resolve(strict=True)
-        if not resolved.is_file() or resolved.stat().st_size > 16 * 1024 * 1024:
+        if not resolved.is_file() or resolved.stat().st_size > MAX_PRIVATE_JSON_SIZE:
             raise OSError
         payload = json.loads(resolved.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:

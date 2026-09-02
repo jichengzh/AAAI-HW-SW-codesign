@@ -22,6 +22,7 @@ from framework.stage6.hardware_execution_profile_v1 import (
 from framework.stage6.pyramid_search_space_adapter_v1 import (
     build_pyramid_candidate_plan,
 )
+from tools.release import build_p6_history_registry as registry_cli
 from tools.release import measure_p6_history_batch as measurement_cli
 from tests.release.p6_post_source_adapter_chain_fixture import (
     assert_adapter_leaf_chain,
@@ -475,6 +476,17 @@ def _run_registry_cli(
         capture_output=True,
         check=False,
     )
+
+
+def test_registry_loader_accepts_real_formal_plan_size_above_16_mib(
+    tmp_path: Path,
+) -> None:
+    plan_path = tmp_path / "pyramid-candidate-plan.json"
+    payload = {"formal_plan_payload": "x" * (16 * 1024 * 1024)}
+    _write_json(plan_path, payload)
+
+    assert plan_path.stat().st_size > 16 * 1024 * 1024
+    assert registry_cli._load_private_json(plan_path) == payload
 
 
 def _identity_map(rows: list[Mapping[str, Any]]) -> set[tuple[tuple[int, ...], str]]:
