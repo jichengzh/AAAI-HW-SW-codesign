@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 
@@ -398,7 +399,9 @@ def render_wrapper_template(
     if project_python is None:
         return body
     project_literal = str(project_python)
-    runtime_path, conda_root, jq_executable = _project_runtime_tools(project_python)
+    runtime_path, conda_root, jq_executable, jq_sha256 = _project_runtime_tools(
+        project_python
+    )
     body = _replace_once(
         body,
         f"IMPLEMENTATION_CWD_RELATIVE = {implementation_cwd.as_posix()!r}\n",
@@ -407,6 +410,7 @@ def render_wrapper_template(
             f"PROJECT_PYTHON = {project_literal!r}\n"
             f"PROJECT_CONDA_ROOT = {str(conda_root) if conda_root else None!r}\n"
             f"PROJECT_JQ = {str(jq_executable) if jq_executable else None!r}\n"
+            f"PROJECT_JQ_SHA256 = {jq_sha256!r}\n"
         ),
     )
     body = _replace_once(
@@ -458,7 +462,7 @@ def render_wrapper_template(
 
 def _project_runtime_tools(
     project_python: Path,
-) -> tuple[str, Path | None, Path | None]:
+) -> tuple[str, Path | None, Path | None, str | None]:
     if os.pathsep in str(project_python):
         raise ValueError("project runtime path separator")
     path_parts = [str(project_python.parent)]
@@ -466,6 +470,7 @@ def _project_runtime_tools(
     environments_root = environment_root.parent
     conda_root = None
     jq_executable = None
+    jq_sha256 = None
     if project_python.parent.name == "bin" and environments_root.name == "envs":
         conda_root = environments_root.parent
         base_bin = conda_root / "bin"
@@ -489,9 +494,13 @@ def _project_runtime_tools(
             or not jq_executable.is_relative_to(conda_root)
         ):
             raise ValueError("invalid conda runtime tools")
+        try:
+            jq_sha256 = hashlib.sha256(jq_executable.read_bytes()).hexdigest()
+        except OSError as error:
+            raise ValueError("invalid conda runtime tools") from error
         path_parts.append(str(base_bin))
     path_parts.extend(("/usr/bin", "/bin"))
-    return ":".join(path_parts), conda_root, jq_executable
+    return ":".join(path_parts), conda_root, jq_executable, jq_sha256
 
 
 def _replace_once(body: str, old: str, new: str) -> str:
@@ -533,9 +542,19 @@ def _validate_project_python_runtime():
     _validate_project_conda_tools_runtime()
 
 def _validate_project_conda_tools_runtime():
-    if PROJECT_CONDA_ROOT is None and PROJECT_JQ is None:
+    if (
+        PROJECT_CONDA_ROOT is None
+        and PROJECT_JQ is None
+        and PROJECT_JQ_SHA256 is None
+    ):
         return
-    if not isinstance(PROJECT_CONDA_ROOT, str) or not isinstance(PROJECT_JQ, str):
+    if (
+        not isinstance(PROJECT_CONDA_ROOT, str)
+        or not isinstance(PROJECT_JQ, str)
+        or not isinstance(PROJECT_JQ_SHA256, str)
+        or len(PROJECT_JQ_SHA256) != 64
+        or any(character not in "0123456789abcdef" for character in PROJECT_JQ_SHA256)
+    ):
         raise CompatibilityError
     conda_root = Path(PROJECT_CONDA_ROOT)
     base_bin = conda_root / "bin"
@@ -544,6 +563,7 @@ def _validate_project_conda_tools_runtime():
         canonical_root = conda_root.resolve(strict=True)
         canonical_bin = base_bin.resolve(strict=True)
         canonical_jq = jq_executable.resolve(strict=True)
+        actual_jq_sha256 = hashlib.sha256(jq_executable.read_bytes()).hexdigest()
     except OSError:
         raise CompatibilityError
     if (
@@ -557,6 +577,7 @@ def _validate_project_conda_tools_runtime():
         or not jq_executable.is_file()
         or not os.access(jq_executable, os.X_OK)
         or not jq_executable.is_relative_to(conda_root)
+        or actual_jq_sha256 != PROJECT_JQ_SHA256
     ):
         raise CompatibilityError
 

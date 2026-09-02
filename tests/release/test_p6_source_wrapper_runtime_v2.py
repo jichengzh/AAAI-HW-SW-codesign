@@ -288,6 +288,56 @@ def test_v2_wrapper_rejects_conda_jq_runtime_drift(
     assert not (round_root / "runtime-diagnostic.txt").exists()
 
 
+def test_v2_wrapper_rejects_same_path_jq_byte_rewrite_at_runtime(
+    tmp_path: Path,
+) -> None:
+    history_root = _private_git_root(tmp_path)
+    project_python, jq = _write_conda_project_python_and_jq(tmp_path)
+    _write_runtime_materializer(history_root, project_python, required_jq=jq)
+    wrapper = render_self_contained_source_wrapper(
+        _v2_profile(project_python), history_root=history_root
+    ).executable
+    jq.write_text("#!/bin/sh\nexit 91\n", encoding="utf-8")
+    jq.chmod(0o700)
+    round_root = history_root / "private-runs/0"
+    round_root.mkdir(parents=True)
+    request = round_root / "measurement-request.json"
+    request.write_text(json.dumps(_canonical_request(tmp_path)), encoding="utf-8")
+
+    completed = _run_wrapper(
+        wrapper,
+        request,
+        round_root,
+        _runtime_env(history_root, round_root),
+    )
+
+    assert completed.returncode == 2
+    assert completed.stderr == "history_execution_invalid\n"
+    assert not (round_root / "runtime-diagnostic.txt").exists()
+
+
+def test_v2_wrapper_reconstruction_rejects_same_path_jq_byte_rewrite(
+    tmp_path: Path,
+) -> None:
+    history_root = _private_git_root(tmp_path)
+    project_python, jq = _write_conda_project_python_and_jq(tmp_path)
+    _write_runtime_materializer(history_root, project_python)
+    wrapper = render_self_contained_source_wrapper(
+        _v2_profile(project_python), history_root=history_root
+    ).executable
+    approved_bytes = wrapper.read_bytes()
+    jq.write_text("#!/bin/sh\nexit 92\n", encoding="utf-8")
+    jq.chmod(0o700)
+
+    with pytest.raises(P6SourceWrapperProfileError) as captured:
+        render_self_contained_source_wrapper(
+            _v2_profile(project_python), history_root=history_root
+        )
+
+    assert captured.value.category == "history_execution_invalid"
+    assert wrapper.read_bytes() == approved_bytes
+
+
 @pytest.mark.parametrize("precreate_marker_parent", (False, True))
 def test_v2_wrapper_prepares_training_marker_parent_and_project_python(
     tmp_path: Path,
