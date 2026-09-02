@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from framework.stage6.p6_source_wrapper_profile_v1 import (
+    P6SourceWrapperProfileError,
     render_self_contained_source_wrapper,
 )
 from tests.release.test_p6_source_wrapper_legacy_bridge import (
@@ -33,6 +34,20 @@ def _write_project_python(tmp_path: Path) -> Path:
 def _write_conda_project_python_and_jq(tmp_path: Path) -> tuple[Path, Path]:
     conda_root = tmp_path / "miniconda3"
     executable = conda_root / "envs/project/bin/python3.9"
+    executable.parent.mkdir(parents=True)
+    executable.write_text('#!/bin/sh\nexec /usr/bin/python3 "$@"\n', encoding="utf-8")
+    executable.chmod(0o700)
+    (executable.parent / "python").symlink_to(executable.name)
+    jq = conda_root / "bin/jq"
+    jq.parent.mkdir(parents=True)
+    jq.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    jq.chmod(0o700)
+    return executable, jq
+
+
+def _write_nonstandard_project_python_and_jq(tmp_path: Path) -> tuple[Path, Path]:
+    conda_root = tmp_path / "miniconda3"
+    executable = conda_root / "environments/project/bin/python3.9"
     executable.parent.mkdir(parents=True)
     executable.write_text('#!/bin/sh\nexec /usr/bin/python3 "$@"\n', encoding="utf-8")
     executable.chmod(0o700)
@@ -114,6 +129,8 @@ def _write_runtime_materializer(
         "if required_jq is not None and Path(shutil.which('jq') or '').resolve() != Path(required_jq):\n"
         "    diagnostic.write_text('jq-mismatch', encoding='utf-8')\n"
         "    raise SystemExit(34)\n"
+        "if required_jq is not None:\n"
+        "    subprocess.run(['jq', '--version'], check=True)\n"
         "literal = round_root / 'literal-python.txt'\n"
         "subprocess.run(['python', '-c', \"from pathlib import Path; "
         "Path(__import__('sys').argv[1]).write_text('literal-python-ok')\", "
@@ -157,6 +174,118 @@ def test_v2_wrapper_exposes_conda_base_jq_without_ambient_path(
 
     assert completed.returncode == 0, completed.stderr
     assert (round_root / "runtime-diagnostic.txt").read_text() == "ok"
+
+
+def test_v2_wrapper_does_not_infer_tools_from_nonstandard_layout(
+    tmp_path: Path,
+) -> None:
+    history_root = _private_git_root(tmp_path)
+    project_python, _ = _write_nonstandard_project_python_and_jq(tmp_path)
+    _write_runtime_materializer(history_root, project_python)
+    wrapper = render_self_contained_source_wrapper(
+        _v2_profile(project_python), history_root=history_root
+    ).executable
+    round_root = history_root / "private-runs/0"
+    round_root.mkdir(parents=True)
+    request = round_root / "measurement-request.json"
+    request.write_text(json.dumps(_canonical_request(tmp_path)), encoding="utf-8")
+
+    completed = _run_wrapper(
+        wrapper,
+        request,
+        round_root,
+        _runtime_env(history_root, round_root),
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert (round_root / "runtime-diagnostic.txt").read_text() == "ok"
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("base_bin_symlink", "jq_symlink_wrong_origin", "jq_nonregular", "jq_nonexec"),
+)
+def test_v2_wrapper_rejects_invalid_conda_jq_at_render(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    history_root = _private_git_root(tmp_path)
+    project_python, jq = _write_conda_project_python_and_jq(tmp_path)
+    _write_runtime_materializer(history_root, project_python)
+    if mutation == "base_bin_symlink":
+        base_bin = jq.parent
+        relocated = tmp_path / "relocated-base-bin"
+        base_bin.rename(relocated)
+        base_bin.symlink_to(relocated, target_is_directory=True)
+    elif mutation == "jq_symlink_wrong_origin":
+        jq.unlink()
+        jq.symlink_to("/bin/true")
+    elif mutation == "jq_nonregular":
+        jq.unlink()
+        jq.mkdir()
+    else:
+        jq.chmod(0o600)
+
+    with pytest.raises(P6SourceWrapperProfileError) as captured:
+        render_self_contained_source_wrapper(
+            _v2_profile(project_python), history_root=history_root
+        )
+
+    assert captured.value.category == "history_execution_invalid"
+
+
+def test_v2_wrapper_rejects_path_separator_in_project_python(
+    tmp_path: Path,
+) -> None:
+    conda_root = tmp_path / "mini:conda3"
+    project_python, _ = _write_conda_project_python_and_jq(conda_root)
+    history_root = _private_git_root(tmp_path)
+    _write_runtime_materializer(history_root, project_python)
+
+    with pytest.raises(P6SourceWrapperProfileError) as captured:
+        render_self_contained_source_wrapper(
+            _v2_profile(project_python), history_root=history_root
+        )
+
+    assert captured.value.category == "history_execution_invalid"
+
+
+@pytest.mark.parametrize("mutation", ("base_bin_symlink", "jq_symlink", "jq_nonexec"))
+def test_v2_wrapper_rejects_conda_jq_runtime_drift(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    history_root = _private_git_root(tmp_path)
+    project_python, jq = _write_conda_project_python_and_jq(tmp_path)
+    _write_runtime_materializer(history_root, project_python, required_jq=jq)
+    wrapper = render_self_contained_source_wrapper(
+        _v2_profile(project_python), history_root=history_root
+    ).executable
+    if mutation == "base_bin_symlink":
+        base_bin = jq.parent
+        relocated = tmp_path / "relocated-runtime-base-bin"
+        base_bin.rename(relocated)
+        base_bin.symlink_to(relocated, target_is_directory=True)
+    elif mutation == "jq_symlink":
+        jq.unlink()
+        jq.symlink_to("/bin/true")
+    else:
+        jq.chmod(0o600)
+    round_root = history_root / "private-runs/0"
+    round_root.mkdir(parents=True)
+    request = round_root / "measurement-request.json"
+    request.write_text(json.dumps(_canonical_request(tmp_path)), encoding="utf-8")
+
+    completed = _run_wrapper(
+        wrapper,
+        request,
+        round_root,
+        _runtime_env(history_root, round_root),
+    )
+
+    assert completed.returncode == 2
+    assert completed.stderr == "history_execution_invalid\n"
+    assert not (round_root / "runtime-diagnostic.txt").exists()
 
 
 @pytest.mark.parametrize("precreate_marker_parent", (False, True))

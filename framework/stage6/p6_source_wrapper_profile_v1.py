@@ -333,7 +333,7 @@ def _resolve_history_root(raw: Path) -> Path:
 
 
 def _validated_project_python(raw: object) -> Path:
-    if not isinstance(raw, str) or not raw:
+    if not isinstance(raw, str) or not raw or os.pathsep in raw:
         _invalid()
     path = Path(raw)
     if (
@@ -409,11 +409,14 @@ def _wrapper_bytes(
     *,
     project_python: Path | None,
 ) -> bytes:
-    return render_wrapper_template(
-        implementation=implementation,
-        implementation_cwd=implementation_cwd,
-        project_python=project_python,
-    ).encode("utf-8")
+    try:
+        return render_wrapper_template(
+            implementation=implementation,
+            implementation_cwd=implementation_cwd,
+            project_python=project_python,
+        ).encode("utf-8")
+    except (OSError, ValueError) as error:
+        raise P6SourceWrapperProfileError() from error
 
 
 def _write_wrapper_script(plan: SourceWrapperRenderPlan) -> None:

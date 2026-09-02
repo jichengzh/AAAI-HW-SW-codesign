@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 
@@ -397,13 +398,15 @@ def render_wrapper_template(
     if project_python is None:
         return body
     project_literal = str(project_python)
-    runtime_path = _project_runtime_path(project_python)
+    runtime_path, conda_root, jq_executable = _project_runtime_tools(project_python)
     body = _replace_once(
         body,
         f"IMPLEMENTATION_CWD_RELATIVE = {implementation_cwd.as_posix()!r}\n",
         (
             f"IMPLEMENTATION_CWD_RELATIVE = {implementation_cwd.as_posix()!r}\n"
             f"PROJECT_PYTHON = {project_literal!r}\n"
+            f"PROJECT_CONDA_ROOT = {str(conda_root) if conda_root else None!r}\n"
+            f"PROJECT_JQ = {str(jq_executable) if jq_executable else None!r}\n"
         ),
     )
     body = _replace_once(
@@ -453,14 +456,42 @@ def render_wrapper_template(
     )
 
 
-def _project_runtime_path(project_python: Path) -> str:
+def _project_runtime_tools(
+    project_python: Path,
+) -> tuple[str, Path | None, Path | None]:
+    if os.pathsep in str(project_python):
+        raise ValueError("project runtime path separator")
     path_parts = [str(project_python.parent)]
     environment_root = project_python.parent.parent
     environments_root = environment_root.parent
-    if environments_root.name == "envs":
-        path_parts.append(str(environments_root.parent / "bin"))
+    conda_root = None
+    jq_executable = None
+    if project_python.parent.name == "bin" and environments_root.name == "envs":
+        conda_root = environments_root.parent
+        base_bin = conda_root / "bin"
+        jq_executable = base_bin / "jq"
+        try:
+            canonical_root = conda_root.resolve(strict=True)
+            canonical_bin = base_bin.resolve(strict=True)
+            canonical_jq = jq_executable.resolve(strict=True)
+        except OSError as error:
+            raise ValueError("invalid conda runtime tools") from error
+        if (
+            not environment_root.name
+            or any(os.pathsep in str(path) for path in (conda_root, base_bin, jq_executable))
+            or canonical_root != conda_root
+            or not conda_root.is_dir()
+            or canonical_bin != base_bin
+            or not base_bin.is_dir()
+            or canonical_jq != jq_executable
+            or not jq_executable.is_file()
+            or not os.access(jq_executable, os.X_OK)
+            or not jq_executable.is_relative_to(conda_root)
+        ):
+            raise ValueError("invalid conda runtime tools")
+        path_parts.append(str(base_bin))
     path_parts.extend(("/usr/bin", "/bin"))
-    return ":".join(path_parts)
+    return ":".join(path_parts), conda_root, jq_executable
 
 
 def _replace_once(body: str, old: str, new: str) -> str:
@@ -497,6 +528,35 @@ def _validate_project_python_runtime():
         or not python_launcher.is_file()
         or not os.access(python_launcher, os.X_OK)
         or launcher_resolved != project_python
+    ):
+        raise CompatibilityError
+    _validate_project_conda_tools_runtime()
+
+def _validate_project_conda_tools_runtime():
+    if PROJECT_CONDA_ROOT is None and PROJECT_JQ is None:
+        return
+    if not isinstance(PROJECT_CONDA_ROOT, str) or not isinstance(PROJECT_JQ, str):
+        raise CompatibilityError
+    conda_root = Path(PROJECT_CONDA_ROOT)
+    base_bin = conda_root / "bin"
+    jq_executable = Path(PROJECT_JQ)
+    try:
+        canonical_root = conda_root.resolve(strict=True)
+        canonical_bin = base_bin.resolve(strict=True)
+        canonical_jq = jq_executable.resolve(strict=True)
+    except OSError:
+        raise CompatibilityError
+    if (
+        any(os.pathsep in str(path) for path in (conda_root, base_bin, jq_executable))
+        or canonical_root != conda_root
+        or not conda_root.is_dir()
+        or canonical_bin != base_bin
+        or not base_bin.is_dir()
+        or jq_executable != base_bin / "jq"
+        or canonical_jq != jq_executable
+        or not jq_executable.is_file()
+        or not os.access(jq_executable, os.X_OK)
+        or not jq_executable.is_relative_to(conda_root)
     ):
         raise CompatibilityError
 
