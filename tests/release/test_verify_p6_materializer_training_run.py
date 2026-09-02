@@ -447,7 +447,7 @@ def _write_native_performance_leaves(
     indices = tuple(binding["gpu_policy"]["indices"])
     runner = _PerformanceRunner(
         state_statuses=("success",) * 4,
-        tvm_manifest_profile=profile.hardware_profile,
+        tvm_manifest_profile=profile,
         gpu_indices=indices,
     )
     performance_root = round_root / "performance"

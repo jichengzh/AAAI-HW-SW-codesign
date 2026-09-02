@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -30,6 +31,7 @@ from tests.stage6.test_p6_quantization_round_adapter import (
     _write_round_request,
     _write_task_state,
 )
+from tests.stage6.test_p6_history_normalization import _tree_sha
 from tests.stage6.p6_performance_native_fixture import (
     native_state_row as _native_state_row,
     native_state_rows as _native_state_rows,
@@ -65,7 +67,9 @@ class _PerformanceRunner:
         result_payload_overrides: Mapping[str, Any] | None = None,
         native_confirmed_history: bool = True,
         first_result_path: Path | None = None,
-        tvm_manifest_profile: HardwareExecutionProfile | None = None,
+        tvm_manifest_profile: (
+            HardwareExecutionProfile | ValidatedPostSourceAdapterProfile | None
+        ) = None,
         inject_result_manifest: bool = True,
         inject_result_runtime_evidence: bool = True,
         raise_unexpected: bool = False,
@@ -218,7 +222,9 @@ class _PerformanceRunner:
                         **(
                             {
                                 "observed_runtime_evidence": _observed_runtime(
-                                    self._tvm_manifest_profile
+                                    _manifest_hardware_profile(
+                                        self._tvm_manifest_profile
+                                    )
                                 )
                             }
                             if self._inject_result_runtime_evidence
@@ -258,7 +264,9 @@ def _native_jobs(
     quant_root: Path,
     first_overrides: Mapping[str, Any],
     job_count: int,
-    tvm_manifest_profile: HardwareExecutionProfile | None,
+    tvm_manifest_profile: (
+        HardwareExecutionProfile | ValidatedPostSourceAdapterProfile | None
+    ),
     gpu_indices: Sequence[int],
 ) -> list[dict[str, Any]]:
     return [
@@ -441,6 +449,137 @@ def test_rtx_hardware_profile_binds_tvm_arch_namespace_and_exact_manifests(
     )
     assert "--tvm-arch" not in runner.calls[1]["argv"]
     assert _read_json(task_state)["stage"] == "performance"
+
+
+def test_rtx_manifest_accepts_parent_composite_and_rejects_leaf_only_digest(
+    tmp_path: Path,
+) -> None:
+    profile = _profile(tmp_path, hardware_profile_id="rtx4090")
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    _write_source_and_quant_evidence(round_root, request)
+    source_row = request["rows"][0]
+    row = {
+        **source_row,
+        "source_contract": {
+            **source_row["source_contract"],
+            "external_training_binding": {
+                "pyramid_config_sha256": "1" * 64,
+                "base_checkpoint_sha256": "2" * 64,
+            },
+        },
+    }
+    job = _native_performance_job(
+        row,
+        performance_root=round_root / "performance",
+        tvm_manifest_profile=None,
+    )
+    execute = next(
+        leaf for leaf in profile.leaves if leaf.name == "performance_execute"
+    )
+    implementation = (
+        execute.implementation_cwd / "scripts/stage2_route_b_fp16_auto_runner.py"
+    )
+    job["command"][1] = str(implementation)
+    manifest = _tvm_manifest(
+        profile.hardware_profile,
+        candidate_id=str(row["manifest_job_id"]),
+        source_digest=str(row["source_evidence_sha256"]),
+        q_mode=str(row["q_mode"]),
+        source_contract=job["source_contract"],
+        code_path=implementation,
+    )
+    manifest["code_digest"] = _formal_code_digest(profile, implementation)
+    job["expected_tvm_measurement_manifest"] = manifest
+
+    identity = performance_adapter._measurement_identity(profile, row, job)
+    assert identity.code_digest == manifest["code_digest"]
+    performance_adapter._validate_job_tvm_manifest(profile, row, job)
+
+    job["expected_tvm_measurement_manifest"] = {
+        **manifest,
+        "code_digest": _sha256_file(implementation),
+    }
+    with pytest.raises(P6PerformanceRoundAdapterError):
+        performance_adapter._validate_job_tvm_manifest(profile, row, job)
+
+
+def test_legacy_measurement_identity_keeps_leaf_only_code_digest(
+    tmp_path: Path,
+) -> None:
+    profile = _profile(tmp_path)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    source_row = request["rows"][0]
+    row = {
+        **source_row,
+        "source_contract": {
+            **source_row["source_contract"],
+            "external_training_binding": {
+                "pyramid_config_sha256": "1" * 64,
+                "base_checkpoint_sha256": "2" * 64,
+            },
+        },
+    }
+    implementation = tmp_path / "legacy-measure.py"
+    _write_leaf(implementation)
+    job = {"command": [sys.executable, str(implementation)]}
+
+    identity = performance_adapter._measurement_identity(profile, row, job)
+
+    assert identity.code_digest == _sha256_file(implementation)
+
+
+def test_formal_runtime_rejects_alternate_self_consistent_support_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path, hardware_profile_id="rtx4090")
+    alternate = tmp_path / "alternate-support"
+    alternate.mkdir()
+    alternate.joinpath("capability.py").write_text(
+        "CAPABILITY = True\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("P6_TVM_SUPPORT_ROOT", str(alternate))
+    monkeypatch.setenv("P6_TVM_SUPPORT_ROOT_SHA256", _tree_sha(alternate))
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_quantized_task_state(round_root, request)
+    runner = _PerformanceRunner()
+
+    with pytest.raises(P6PerformanceRoundAdapterError):
+        run_performance_round(profile, task_state, round_root, runner)
+
+    assert runner.calls == []
+
+
+@pytest.mark.parametrize("mutation", ("wrong-path", "wrong-digest"))
+def test_formal_runtime_rejects_support_authority_drift_before_planner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path, hardware_profile_id="rtx4090")
+    if mutation == "wrong-path":
+        alternate = tmp_path / "wrong-support"
+        alternate.mkdir()
+        alternate.joinpath("different.py").write_text(
+            "DIFFERENT = True\n", encoding="utf-8"
+        )
+        monkeypatch.setenv("P6_TVM_SUPPORT_ROOT", str(alternate))
+    else:
+        monkeypatch.setenv("P6_TVM_SUPPORT_ROOT_SHA256", "f" * 64)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_quantized_task_state(round_root, request)
+    runner = _PerformanceRunner()
+
+    with pytest.raises(P6PerformanceRoundAdapterError):
+        run_performance_round(profile, task_state, round_root, runner)
+
+    assert runner.calls == []
 
 
 def test_rtx_tvm_manifest_missing_stops_before_metric_parsing(
@@ -662,11 +801,11 @@ def test_performance_round_forwards_only_allowlisted_formal_tvm_runtime(
 ) -> None:
     _set_runtime_env(monkeypatch, tmp_path)
     monkeypatch.setenv("P6_PRIVATE_AMBIENT_SENTINEL", "must-not-forward")
-    profile = _profile(tmp_path)
+    profile = _profile(tmp_path, hardware_profile_id="rtx4090")
     round_root = tmp_path / "round"
     request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
     task_state = _write_quantized_task_state(round_root, request)
-    runner = _PerformanceRunner()
+    runner = _PerformanceRunner(tvm_manifest_profile=profile.hardware_profile)
 
     run_performance_round(profile, task_state, round_root, runner)
 
@@ -1013,11 +1152,31 @@ def _profile(
     execute_cwd.mkdir(parents=True)
     plan = _write_leaf(plan_cwd / "stage5_build_performance_plan_v2.py")
     execute = _write_leaf(execute_cwd / "stage3_execute_performance_plan_v3.py")
-    profile_fields = (
-        {"hardware_profile": load_hardware_execution_profile(hardware_profile_id)}
-        if hardware_profile_id is not None
-        else {}
-    )
+    profile_fields: dict[str, Any] = {}
+    if hardware_profile_id is not None:
+        dependency_root = private_root / "execution-closure/dependency-overlay"
+        dependency_root.mkdir(parents=True)
+        support_root = private_root / "execution-closure/tvm-support"
+        support_root.mkdir(parents=True, exist_ok=True)
+        support_root.joinpath("capability.py").write_text(
+            "CAPABILITY = True\n", encoding="utf-8"
+        )
+        runtime_contract = (
+            execute_cwd / "framework/stage5/tvm_runtime_contract_v1.py"
+        )
+        runtime_contract.parent.mkdir(parents=True)
+        runtime_contract.write_text("RUNTIME_CONTRACT = True\n", encoding="utf-8")
+        scripts = execute_cwd / "scripts"
+        scripts.mkdir()
+        _write_leaf(scripts / "stage2_route_b_fp16_auto_runner.py")
+        _write_leaf(scripts / "stage2_route_b_int8_auto_decomp.py")
+        profile_fields = {
+            "adapter_python": Path(sys.executable),
+            "adapter_dependency_root": dependency_root,
+            "hardware_profile": load_hardware_execution_profile(hardware_profile_id),
+            "tvm_support_root": support_root,
+            "tvm_support_root_sha256": _tree_sha(support_root),
+        }
     return ValidatedPostSourceAdapterProfile(
         schema_version=(
             "p6_post_source_adapter_profile_v4"
@@ -1033,6 +1192,31 @@ def _profile(
         ),
         **profile_fields,
     )
+
+
+def _formal_code_digest(
+    profile: ValidatedPostSourceAdapterProfile, implementation: Path
+) -> str:
+    execute = next(
+        leaf for leaf in profile.leaves if leaf.name == "performance_execute"
+    )
+    runtime_contract = (
+        execute.implementation_cwd / "framework/stage5/tvm_runtime_contract_v1.py"
+    )
+    payload = {
+        "implementation_sha256": _sha256_file(implementation),
+        "runtime_contract_sha256": _sha256_file(runtime_contract),
+        "support_root_sha256": profile.tvm_support_root_sha256,
+    }
+    return hashlib.sha256(
+        json.dumps(
+            payload,
+            ensure_ascii=True,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def _write_leaf(path: Path) -> Path:
@@ -1074,7 +1258,9 @@ def _native_performance_job(
     gpu_pool: str = "2,5,7",
     performance_root: Path | None = None,
     quant_root: Path | None = None,
-    tvm_manifest_profile: HardwareExecutionProfile | None = None,
+    tvm_manifest_profile: (
+        HardwareExecutionProfile | ValidatedPostSourceAdapterProfile | None
+    ) = None,
 ) -> dict[str, Any]:
     manifest_id = row_id or str(row["manifest_job_id"])
     runner_key = "tvm_int8" if row["q_mode"] == "int8" else "tvm_fp16"
@@ -1082,9 +1268,26 @@ def _native_performance_job(
     artifact_root = performance_root / "artifacts" if performance_root else Path("/native/artifacts")
     output_dir = artifact_root / manifest_id
     result_path = output_dir / "result.json"
+    formal_profile = (
+        tvm_manifest_profile
+        if isinstance(tvm_manifest_profile, ValidatedPostSourceAdapterProfile)
+        else None
+    )
+    formal_implementation = (
+        _formal_leaf_implementation(formal_profile, str(row["q_mode"]))
+        if formal_profile is not None
+        and "external_training_binding" in source_contract
+        else None
+    )
     command = [
         "/native/python",
-        str(Path(__file__).resolve()) if "external_training_binding" in source_contract else "measure.py",
+        (
+            str(formal_implementation)
+            if formal_implementation is not None
+            else str(Path(__file__).resolve())
+            if "external_training_binding" in source_contract
+            else "measure.py"
+        ),
         "--gpu",
         str(assigned_gpu),
         "--out-dir",
@@ -1120,17 +1323,50 @@ def _native_performance_job(
     }
     if tvm_manifest_profile is None:
         return job
+    manifest_profile = _manifest_hardware_profile(tvm_manifest_profile)
+    manifest = _tvm_manifest(
+        manifest_profile,
+        candidate_id=manifest_id,
+        source_digest=str(row["source_evidence_sha256"]),
+        q_mode=str(row["q_mode"]),
+        source_contract=source_contract,
+        code_path=Path(command[1]),
+    )
+    if formal_profile is not None and formal_implementation is not None:
+        manifest = {
+            **manifest,
+            "code_digest": _formal_code_digest(
+                formal_profile, formal_implementation
+            ),
+        }
     return {
         **job,
-        "expected_tvm_measurement_manifest": _tvm_manifest(
-            tvm_manifest_profile,
-            candidate_id=manifest_id,
-            source_digest=str(row["source_evidence_sha256"]),
-            q_mode=str(row["q_mode"]),
-            source_contract=source_contract,
-            code_path=Path(command[1]),
-        ),
+        "expected_tvm_measurement_manifest": manifest,
     }
+
+
+def _manifest_hardware_profile(
+    profile: HardwareExecutionProfile | ValidatedPostSourceAdapterProfile,
+) -> HardwareExecutionProfile:
+    return (
+        profile.hardware_profile
+        if isinstance(profile, ValidatedPostSourceAdapterProfile)
+        else profile
+    )
+
+
+def _formal_leaf_implementation(
+    profile: ValidatedPostSourceAdapterProfile, q_mode: str
+) -> Path:
+    execute = next(
+        leaf for leaf in profile.leaves if leaf.name == "performance_execute"
+    )
+    leaf_name = (
+        "stage2_route_b_int8_auto_decomp.py"
+        if q_mode == "int8"
+        else "stage2_route_b_fp16_auto_runner.py"
+    )
+    return execute.implementation_cwd / "scripts" / leaf_name
 
 
 def _native_source_contract(
@@ -1213,19 +1449,28 @@ def _expected_env(
     task_state: Path,
     round_root: Path,
 ) -> dict[str, str]:
-    return {
+    environment = {
         "CUDA_VISIBLE_DEVICES": ",".join(("2", "5", "7")),
         "P6_HISTORY_RUN_MODE": "bound",
         "P6_HISTORY_PRIVATE_ROOT": str(tmp_path / "private"),
         "P6_HISTORY_TASK_STATE": str(task_state),
         "P6_HISTORY_ROUND_OUTPUT_ROOT": str(round_root),
+        "PATH": f"{profile.project_python.parent}:/usr/bin:/bin",
+        "PYTHONPATH": f"{profile.private_root}:{Path.cwd()}",
+    }
+    if profile.schema_version != "p6_post_source_adapter_profile_v4":
+        return environment
+    return {
+        **environment,
         "P6_TVM_PYTHON": str(tmp_path / "tvm-runtime" / "bin" / "python"),
         "P6_TVM_SITE": str(tmp_path / "tvm-runtime" / "site-packages"),
         "P6_TVM_NVLIBS_FILE": str(tmp_path / "tvm-runtime" / "nvlibs.path"),
-        "P6_TVM_SUPPORT_ROOT": str(tmp_path / "tvm-support"),
-        "P6_TVM_SUPPORT_ROOT_SHA256": "e" * 64,
-        "PATH": f"{profile.project_python.parent}:/usr/bin:/bin",
-        "PYTHONPATH": f"{profile.private_root}:{Path.cwd()}",
+        "P6_TVM_SUPPORT_ROOT": str(
+            tmp_path / "private/execution-closure/tvm-support"
+        ),
+        "P6_TVM_SUPPORT_ROOT_SHA256": _tree_sha(
+            tmp_path / "private/execution-closure/tvm-support"
+        ),
     }
 
 
@@ -1254,10 +1499,13 @@ def _set_runtime_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     tvm_site.mkdir(parents=True)
     nvlibs = tmp_path / "tvm-runtime" / "nvlibs.path"
     nvlibs.write_text("", encoding="utf-8")
-    support_root = tmp_path / "tvm-support"
-    support_root.mkdir()
+    support_root = tmp_path / "private/execution-closure/tvm-support"
+    support_root.mkdir(parents=True, exist_ok=True)
+    support_root.joinpath("capability.py").write_text(
+        "CAPABILITY = True\n", encoding="utf-8"
+    )
     monkeypatch.setenv("P6_TVM_PYTHON", str(tvm_python))
     monkeypatch.setenv("P6_TVM_SITE", str(tvm_site))
     monkeypatch.setenv("P6_TVM_NVLIBS_FILE", str(nvlibs))
     monkeypatch.setenv("P6_TVM_SUPPORT_ROOT", str(support_root))
-    monkeypatch.setenv("P6_TVM_SUPPORT_ROOT_SHA256", "e" * 64)
+    monkeypatch.setenv("P6_TVM_SUPPORT_ROOT_SHA256", _tree_sha(support_root))

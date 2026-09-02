@@ -17,8 +17,10 @@ from framework.stage6.p6_history_feedback_validation_v1 import (
 )
 from framework.stage6.p6_post_source_adapter_profile_v1 import (
     PROFILE_SCHEMA_VERSION_V4,
+    P6PostSourceAdapterProfileError,
     PostSourceLeaf,
     ValidatedPostSourceAdapterProfile,
+    require_post_source_adapter_profile_v4,
 )
 from framework.stage6.p6_round_adapter_runtime_v1 import (
     LeafRunner,
@@ -26,6 +28,11 @@ from framework.stage6.p6_round_adapter_runtime_v1 import (
     RoundContext,
     advance_task_state,
     load_round_context,
+)
+from framework.stage6.p6_tvm_runtime_authority_v1 import (
+    P6TvmRuntimeAuthorityError,
+    TVM_RUNTIME_CONTRACT_RELATIVE_PATH,
+    formal_tvm_code_digest,
 )
 
 
@@ -315,7 +322,9 @@ def _validate_native_plan(
             binding,
             performance_root,
         )
-        identities[str(job["job_id"])] = _measurement_identity(request_row, job)
+        identities[str(job["job_id"])] = _measurement_identity(
+            context.profile, request_row, job
+        )
     if len(identities) != len(jobs):
         raise P6PerformanceRoundAdapterError()
     return jobs, identities
@@ -536,7 +545,7 @@ def _validate_job_tvm_manifest(
 ) -> None:
     if profile.schema_version != PROFILE_SCHEMA_VERSION_V4:
         return
-    identity = _measurement_identity(request_row, job)
+    identity = _measurement_identity(profile, request_row, job)
     if not validate_tvm_measurement_manifest(
         job.get("expected_tvm_measurement_manifest"),
         profile=profile.hardware_profile,
@@ -546,7 +555,9 @@ def _validate_job_tvm_manifest(
 
 
 def _measurement_identity(
-    request_row: Mapping[str, Any], job: Mapping[str, Any]
+    profile: ValidatedPostSourceAdapterProfile,
+    request_row: Mapping[str, Any],
+    job: Mapping[str, Any],
 ) -> _TvmMeasurementIdentity:
     base = {
         "candidate_id": str(request_row["manifest_job_id"]),
@@ -559,12 +570,58 @@ def _measurement_identity(
     command = job.get("command")
     if not isinstance(command, list) or len(command) < 2:
         raise P6PerformanceRoundAdapterError()
+    if profile.schema_version != PROFILE_SCHEMA_VERSION_V4:
+        return _TvmMeasurementIdentity(
+            **base,
+            q_mode=str(request_row["q_mode"]),
+            configuration_digest=str(training["pyramid_config_sha256"]),
+            checkpoint_digest=str(training["base_checkpoint_sha256"]),
+            code_digest=_sha256_file(_plain_input_file(command[1])),
+        )
+    implementation, runtime_contract = _formal_tvm_code_paths(profile, command[1])
+    support_root_sha256 = profile.tvm_support_root_sha256
+    if not isinstance(support_root_sha256, str):
+        raise P6PerformanceRoundAdapterError()
+    try:
+        code_digest = formal_tvm_code_digest(
+            implementation,
+            runtime_contract,
+            support_root_sha256,
+        )
+    except P6TvmRuntimeAuthorityError:
+        raise P6PerformanceRoundAdapterError() from None
     return _TvmMeasurementIdentity(
         **base,
         q_mode=str(request_row["q_mode"]),
         configuration_digest=str(training["pyramid_config_sha256"]),
         checkpoint_digest=str(training["base_checkpoint_sha256"]),
-        code_digest=_sha256_file(_plain_input_file(command[1])),
+        code_digest=code_digest,
+    )
+
+
+def _formal_tvm_code_paths(
+    profile: ValidatedPostSourceAdapterProfile, raw_implementation: object
+) -> tuple[Path, Path]:
+    execute = _single_leaf(profile, "performance_execute")
+    if (
+        not isinstance(raw_implementation, str)
+        or not raw_implementation
+        or any(char in raw_implementation for char in "\x00\r\n")
+    ):
+        raise P6PerformanceRoundAdapterError()
+    implementation = Path(raw_implementation)
+    if not implementation.is_absolute():
+        implementation = execute.implementation_cwd / implementation
+    try:
+        implementation = implementation.resolve(strict=True)
+        execute_root = execute.implementation_cwd.resolve(strict=True)
+    except OSError:
+        raise P6PerformanceRoundAdapterError() from None
+    if not _is_relative_to(implementation, execute_root):
+        raise P6PerformanceRoundAdapterError()
+    runtime_contract = execute_root / TVM_RUNTIME_CONTRACT_RELATIVE_PATH
+    return _plain_input_file(str(implementation)), _plain_input_file(
+        str(runtime_contract)
     )
 
 
@@ -892,16 +949,23 @@ def _leaf_env(context: RoundContext) -> dict[str, str]:
 
 
 def _validated_incoming_env(context: RoundContext) -> dict[str, str]:
-    keys = (
+    history_keys = (
         "P6_HISTORY_RUN_MODE",
         "P6_HISTORY_PRIVATE_ROOT",
         "P6_HISTORY_TASK_STATE",
         "P6_HISTORY_ROUND_OUTPUT_ROOT",
+    )
+    formal_tvm_keys = (
         "P6_TVM_PYTHON",
         "P6_TVM_SITE",
         "P6_TVM_NVLIBS_FILE",
         "P6_TVM_SUPPORT_ROOT",
         "P6_TVM_SUPPORT_ROOT_SHA256",
+    )
+    keys = (
+        (*history_keys, *formal_tvm_keys)
+        if context.profile.schema_version == PROFILE_SCHEMA_VERSION_V4
+        else history_keys
     )
     inherited = {key: os.environ[key] for key in keys if key in os.environ}
     if set(inherited) != set(keys):
@@ -918,6 +982,18 @@ def _validated_incoming_env(context: RoundContext) -> dict[str, str]:
         or round_root != context.round_root
     ):
         raise P6PerformanceRoundAdapterError()
+    if context.profile.schema_version == PROFILE_SCHEMA_VERSION_V4:
+        try:
+            require_post_source_adapter_profile_v4(context.profile)
+        except P6PostSourceAdapterProfileError:
+            raise P6PerformanceRoundAdapterError() from None
+        if (
+            inherited["P6_TVM_SUPPORT_ROOT"]
+            != str(context.profile.tvm_support_root)
+            or inherited["P6_TVM_SUPPORT_ROOT_SHA256"]
+            != context.profile.tvm_support_root_sha256
+        ):
+            raise P6PerformanceRoundAdapterError()
     return inherited
 
 

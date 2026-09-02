@@ -29,6 +29,11 @@ from framework.stage6.p6_python_runtime_v1 import (
     P6PythonRuntimeError,
     validate_adapter_python,
 )
+from framework.stage6.p6_tvm_runtime_authority_v1 import (
+    P6TvmRuntimeAuthorityError,
+    TVM_SUPPORT_CLOSURE_ID,
+    canonical_tvm_support_tree_sha256,
+)
 
 
 PROFILE_SCHEMA_VERSION = "p6_post_source_adapter_profile_v1"
@@ -55,7 +60,11 @@ PROFILE_KEYS = frozenset(
 )
 PROFILE_V2_KEYS = PROFILE_KEYS | {"adapter_python"}
 PROFILE_V3_KEYS = PROFILE_V2_KEYS | {"adapter_dependency_root_relative_path"}
-PROFILE_V4_KEYS = PROFILE_V3_KEYS | {"hardware_profile"}
+PROFILE_V4_KEYS = PROFILE_V3_KEYS | {
+    "hardware_profile",
+    "tvm_support_root_relative_path",
+    "tvm_support_root_sha256",
+}
 IMPLEMENTATION_KEYS = frozenset(
     {"implementation_relative_path", "implementation_cwd_relative_path"}
 )
@@ -95,6 +104,8 @@ class ValidatedPostSourceAdapterProfile:
     hardware_profile: HardwareExecutionProfile = field(
         default_factory=default_hardware_execution_profile
     )
+    tvm_support_root: Path | None = None
+    tvm_support_root_sha256: str | None = None
 
 
 class P6PostSourceAdapterProfileError(ValueError):
@@ -163,6 +174,12 @@ def build_post_source_adapter_profile(
     )
     if hardware_profile is not None and dependency_root is None:
         _invalid()
+    support_root, support_root_sha256 = _tvm_support_authority(
+        root,
+        closure_roots,
+        execution_closure,
+        required=hardware_profile is not None,
+    )
     return ValidatedPostSourceAdapterProfile(
         schema_version=(
             PROFILE_SCHEMA_VERSION_V4
@@ -180,6 +197,8 @@ def build_post_source_adapter_profile(
         adapter_python=validated_adapter_python,
         adapter_dependency_root=dependency_root,
         hardware_profile=selected_hardware_profile,
+        tvm_support_root=support_root,
+        tvm_support_root_sha256=support_root_sha256,
     )
 
 
@@ -236,9 +255,14 @@ def post_source_adapter_profile_to_mapping(
     dependency_payload = _v3_profile_mapping(profile, runtime_payload)
     if profile.schema_version == PROFILE_SCHEMA_VERSION_V3:
         return dependency_payload
+    support_root, support_root_sha256 = _profile_tvm_support_authority(profile)
     return {
         **dependency_payload,
         "hardware_profile": hardware_profile.profile_id,
+        "tvm_support_root_relative_path": support_root.relative_to(
+            profile.private_root
+        ).as_posix(),
+        "tvm_support_root_sha256": support_root_sha256,
     }
 
 
@@ -304,6 +328,22 @@ def load_post_source_adapter_profile(
         if schema_version in {PROFILE_SCHEMA_VERSION_V3, PROFILE_SCHEMA_VERSION_V4}
         else None
     )
+    support_root = (
+        _private_path(
+            root,
+            _relative_path(payload.get("tvm_support_root_relative_path")),
+            want_dir=True,
+        )
+        if schema_version == PROFILE_SCHEMA_VERSION_V4
+        else None
+    )
+    support_root_sha256 = (
+        _validated_tvm_support_digest(
+            support_root, payload.get("tvm_support_root_sha256")
+        )
+        if support_root is not None
+        else None
+    )
     adapters = _load_adapters(payload.get("adapters"), root)
     leaves = _load_leaves(payload.get("leaves"), root)
     return ValidatedPostSourceAdapterProfile(
@@ -315,6 +355,8 @@ def load_post_source_adapter_profile(
         adapter_python,
         dependency_root,
         hardware_profile,
+        support_root,
+        support_root_sha256,
     )
 
 
@@ -352,9 +394,12 @@ def require_post_source_adapter_profile_v4(
         or profile.schema_version != PROFILE_SCHEMA_VERSION_V4
         or profile.adapter_python is None
         or profile.adapter_dependency_root is None
+        or profile.tvm_support_root is None
+        or profile.tvm_support_root_sha256 is None
     ):
         _invalid()
     _hardware_profile(profile.hardware_profile)
+    _profile_tvm_support_authority(profile)
 
 
 def _loaded_hardware_profile(raw: object) -> HardwareExecutionProfile:
@@ -498,6 +543,71 @@ def _normalized_closure_roots(
         item.closure_id: _private_path(root, item.destination_relative_root, want_dir=True)
         for item in execution_closure.roots
     }
+
+
+def _tvm_support_authority(
+    root: Path,
+    closure_roots: Mapping[str, Path],
+    execution_closure: P6ValidatedExecutionClosure,
+    *,
+    required: bool,
+) -> tuple[Path | None, str | None]:
+    if not required:
+        return None, None
+    declarations = tuple(
+        item
+        for item in execution_closure.roots
+        if item.closure_id == TVM_SUPPORT_CLOSURE_ID
+    )
+    if len(declarations) != 1 or any(
+        role.closure_id == TVM_SUPPORT_CLOSURE_ID
+        for role in execution_closure.roles
+    ):
+        _invalid()
+    support_root = closure_roots.get(TVM_SUPPORT_CLOSURE_ID)
+    if not isinstance(support_root, Path):
+        _invalid()
+    declared_digest = declarations[0].sha256
+    if _validated_tvm_support_digest(support_root, declared_digest) != declared_digest:
+        _invalid()
+    try:
+        support_root.relative_to(root)
+    except ValueError:
+        _invalid()
+    return support_root, declared_digest
+
+
+def _profile_tvm_support_authority(
+    profile: ValidatedPostSourceAdapterProfile,
+) -> tuple[Path, str]:
+    support_root = profile.tvm_support_root
+    if not isinstance(support_root, Path):
+        _invalid()
+    try:
+        relative = support_root.relative_to(profile.private_root)
+    except ValueError:
+        _invalid()
+    validated_root = _private_path(profile.private_root, relative, want_dir=True)
+    digest = _validated_tvm_support_digest(
+        validated_root, profile.tvm_support_root_sha256
+    )
+    return validated_root, digest
+
+
+def _validated_tvm_support_digest(root: Path, raw_digest: object) -> str:
+    if (
+        not isinstance(raw_digest, str)
+        or len(raw_digest) != 64
+        or set(raw_digest) - set("0123456789abcdef")
+    ):
+        _invalid()
+    try:
+        observed = canonical_tvm_support_tree_sha256(root)
+    except P6TvmRuntimeAuthorityError:
+        _invalid()
+    if observed != raw_digest:
+        _invalid()
+    return raw_digest
 
 
 def _private_root(raw: Path) -> Path:

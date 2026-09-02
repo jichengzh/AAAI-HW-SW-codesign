@@ -18,6 +18,12 @@ from framework.stage6.p6_history_normalization_v1 import (
 from framework.stage6.hardware_execution_profile_v1 import (
     load_hardware_execution_profile,
 )
+from framework.stage6.p6_history_execution_closure_v1 import (
+    P6ExecutionClosureRole,
+    P6ExecutionClosureRoot,
+    P6ValidatedExecutionClosure,
+)
+import framework.stage6.p6_post_source_adapter_profile_v1 as profile_adapter
 from framework.stage6.p6_post_source_adapter_profile_v1 import (
     PROFILE_SCHEMA_VERSION,
     POST_SOURCE_ADAPTER_STAGES,
@@ -90,6 +96,27 @@ def v4_private_source_map(tmp_path: Path) -> tuple[dict[str, Any], Path]:
 def v5_private_source_map(tmp_path: Path) -> tuple[dict[str, Any], Path]:
     source_map, runner = v4_private_source_map(tmp_path)
     history_root = _history_root(source_map)
+    historical_chain = history_root / "execution-source"
+    _write_leaf(
+        historical_chain / "scripts/stage2_route_b_fp16_auto_runner.py",
+        "#!/usr/bin/env python3\n# formal fp16 leaf\n",
+    )
+    _write_leaf(
+        historical_chain / "scripts/stage2_route_b_int8_auto_decomp.py",
+        "#!/usr/bin/env python3\n# formal int8 leaf\n",
+    )
+    runtime_contract = (
+        historical_chain / "framework/stage5/tvm_runtime_contract_v1.py"
+    )
+    runtime_contract.parent.mkdir(parents=True)
+    runtime_contract.write_text(
+        "# formal TVM runtime contract\n", encoding="utf-8"
+    )
+    next(
+        item
+        for item in source_map["execution_code_closure"]["roots"]
+        if item["closure_id"] == "historical-chain"
+    )["sha256"] = _tree_sha(historical_chain)
     dependency_root = history_root / "adapter-dependency-source"
     dependency_root.mkdir()
     dependency_root.joinpath("lightgbm.py").write_text(
@@ -101,6 +128,19 @@ def v5_private_source_map(tmp_path: Path) -> tuple[dict[str, Any], Path]:
             "source_root": str(dependency_root),
             "destination_relative_root": "execution-closure/dependency-overlay",
             "sha256": _tree_sha(dependency_root),
+        }
+    )
+    support_root = history_root / "tvm-support-source"
+    support_root.mkdir()
+    support_root.joinpath("capability.py").write_text(
+        "CAPABILITY = True\n", encoding="utf-8"
+    )
+    source_map["execution_code_closure"]["roots"].append(
+        {
+            "closure_id": "tvm-support",
+            "source_root": str(support_root),
+            "destination_relative_root": "execution-closure/tvm-support",
+            "sha256": _tree_sha(support_root),
         }
     )
     source_map["schema_version"] = "p6_history_normalization_source_v5"
@@ -241,12 +281,57 @@ def test_v5_normalizer_emits_profile_v4_for_explicit_canonical_rtx(
     )
     assert payload["schema_version"] == "p6_post_source_adapter_profile_v4"
     assert payload["hardware_profile"] == "rtx4090"
+    assert payload["tvm_support_root_relative_path"] == (
+        "execution-closure/tvm-support"
+    )
+    assert payload["tvm_support_root_sha256"] == _tree_sha(
+        private_dir / "execution-closure/tvm-support"
+    )
     assert payload["target"] == {
         "model": "pyramid",
         "hardware": "rtx4090",
         "backend": "tvm_auto",
     }
     assert loaded.hardware_profile is load_hardware_execution_profile("rtx4090")
+    assert loaded.tvm_support_root == (
+        private_dir / "execution-closure/tvm-support"
+    )
+    assert loaded.tvm_support_root_sha256 == payload["tvm_support_root_sha256"]
+
+
+def test_v5_normalizer_rejects_tvm_support_root_assigned_to_execution_role(
+    tmp_path: Path,
+) -> None:
+    private_root = tmp_path.resolve()
+    support_root = private_root / "execution-closure/tvm-support"
+    support_root.mkdir(parents=True)
+    support_root.joinpath("capability.py").write_text(
+        "CAPABILITY = True\n", encoding="utf-8"
+    )
+    closure = P6ValidatedExecutionClosure(
+        "p6_execution_code_closure_v1",
+        (
+            P6ExecutionClosureRoot(
+                "tvm-support",
+                support_root,
+                Path("execution-closure/tvm-support"),
+                _tree_sha(support_root),
+            ),
+        ),
+        (
+            P6ExecutionClosureRole(
+                "performance", "tvm-support", Path("capability.py")
+            ),
+        ),
+    )
+
+    with pytest.raises(P6PostSourceAdapterProfileError):
+        profile_adapter._tvm_support_authority(
+            private_root,
+            {"tvm-support": support_root},
+            closure,
+            required=True,
+        )
 
 
 @pytest.mark.parametrize("mutation", ("unknown", "forged", "legacy-schema"))
@@ -296,6 +381,10 @@ def test_hardware_profile_v4_round_trips_canonical_rtx_identity(
         legacy,
         schema_version="p6_post_source_adapter_profile_v4",
         hardware_profile=rtx4090,
+        tvm_support_root=private_dir / "execution-closure/tvm-support",
+        tvm_support_root_sha256=_tree_sha(
+            private_dir / "execution-closure/tvm-support"
+        ),
     )
 
     payload = post_source_adapter_profile_to_mapping(profile)
