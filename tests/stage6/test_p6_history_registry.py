@@ -9,7 +9,10 @@ from typing import Any, Callable, Mapping
 
 import pytest
 
-from framework.stage1.structural_axis_digest import canonical_digest
+from framework.stage1.structural_axis_digest import (
+    canonical_digest,
+    scanner_structural_axes_digest,
+)
 from framework.stage5.production_search_v1 import validate_source_contract
 from framework.stage6.hardware_execution_profile_v1 import (
     load_hardware_execution_profile,
@@ -80,9 +83,22 @@ def _plan(q_modes: tuple[str, ...], *, duplicate: bool = False) -> dict[str, Any
 
 
 def _canonical_profile_plan(
-    profile_id: str, hardware_name: str
+    profile_id: str,
+    hardware_name: str,
+    *,
+    dense_stages: tuple[str, str, str] | None = None,
 ) -> dict[str, Any]:
     search_space = scanner_owned_pyramid_stage2_space()
+    if dense_stages is not None:
+        for field_name in ("free_axes",):
+            for axis, dense_stage in zip(
+                search_space["axis_schema"][field_name], dense_stages, strict=True
+            ):
+                axis["dense_stage"] = dense_stage
+        search_space["structural_axes"] = copy.deepcopy(search_space["axis_schema"]["free_axes"])
+        search_space["scanner_structural_axes_digest"] = scanner_structural_axes_digest(
+            search_space["structural_axes"]
+        )
     hardware_target = copy.deepcopy(search_space["hardware_target"])
     hardware_target["name"] = hardware_name
     search_space["hardware_target"] = hardware_target
@@ -568,6 +584,40 @@ def test_registry_materializes_canonical_rtx_plan_at_independent_boundary(
     assert json.loads(
         (local_output_root / "source_registry.json").read_text(encoding="utf-8")
     ) == registry
+
+
+def test_registry_materializes_scanner_zero_based_stage_alias_trio(
+    tmp_path: Path,
+) -> None:
+    plan = _canonical_profile_plan(
+        "h800",
+        "NVIDIA H800 80GB HBM3",
+        dense_stages=("stage0", "stage1", "stage2"),
+    )
+    local_output_root = tmp_path / "private-output"
+    local_output_root.mkdir()
+
+    registry = materialize_history_registry(plan, _binding(tmp_path), local_output_root)
+
+    assert plan["axis_schema"]["free_axes"][0]["dense_stage"] == "stage0"
+    assert _registry_identity_map(registry) == _plan_identity_map(plan)
+
+
+def test_registry_rejects_partial_zero_based_stage_aliases(tmp_path: Path) -> None:
+    plan = _formal_plan_for_widths(((64, 128, 256),), base_widths=(64, 128, 256))
+    for axis, dense_stage in zip(
+        plan["axis_schema"]["free_axes"],
+        ("stage0", "stage1", "stage3"),
+        strict=True,
+    ):
+        axis["dense_stage"] = dense_stage
+    local_output_root = tmp_path / "private-output"
+    local_output_root.mkdir()
+
+    with pytest.raises(P6HistoryRegistryError, match="formal axis schema"):
+        materialize_history_registry(plan, _binding(tmp_path), local_output_root)
+
+    assert not (local_output_root / "source_registry.json").exists()
 
 
 @pytest.mark.parametrize(

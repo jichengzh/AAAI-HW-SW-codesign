@@ -55,6 +55,11 @@ EXPECTED_PLAN_FIELDS = {
     "candidate_source_mode": "framework_stage2_search_space",
 }
 STAGES = ("stage1", "stage2", "stage3")
+SCANNER_STAGE_ALIASES = {
+    "stage0": "stage1",
+    "stage1": "stage2",
+    "stage2": "stage3",
+}
 
 
 def validate_p6_candidate_plan(
@@ -200,9 +205,10 @@ def _formal_stage_axes(raw_plan: Mapping[str, Any]) -> tuple[tuple[str, int], ..
     axes = axis_schema.get("free_axes")
     if not isinstance(axes, list):
         _invalid("formal axis schema is invalid")
+    stage_aliases = _formal_stage_aliases(axes)
     by_stage: dict[str, tuple[str, int]] = {}
     for axis in axes:
-        stage, axis_id, base_width = _formal_axis_summary(axis)
+        stage, axis_id, base_width = _formal_axis_summary(axis, stage_aliases)
         if stage in by_stage:
             _invalid("formal axis schema is invalid")
         by_stage[stage] = (axis_id, base_width)
@@ -211,14 +217,24 @@ def _formal_stage_axes(raw_plan: Mapping[str, Any]) -> tuple[tuple[str, int], ..
     return tuple(by_stage[stage] for stage in STAGES)
 
 
-def _formal_axis_summary(axis: object) -> tuple[str, str, int]:
+def _formal_stage_aliases(axes: list[object]) -> Mapping[str, str]:
+    stages = tuple(axis.get("dense_stage") for axis in axes if isinstance(axis, Mapping))
+    if all(isinstance(stage, str) for stage in stages) and set(stages) == set(
+        SCANNER_STAGE_ALIASES
+    ):
+        return SCANNER_STAGE_ALIASES
+    return {stage: stage for stage in STAGES}
+
+
+def _formal_axis_summary(axis: object, stage_aliases: Mapping[str, str]) -> tuple[str, str, int]:
     if not isinstance(axis, Mapping):
         _invalid("formal axis schema is invalid")
-    stage = axis.get("dense_stage")
+    raw_stage = axis.get("dense_stage")
     axis_id = axis.get("axis_id")
     base_width = axis.get("base_width")
     if (
-        stage not in STAGES
+        not isinstance(raw_stage, str)
+        or raw_stage not in stage_aliases
         or not isinstance(axis_id, str)
         or not axis_id.strip()
         or isinstance(base_width, bool)
@@ -226,7 +242,7 @@ def _formal_axis_summary(axis: object) -> tuple[str, str, int]:
         or base_width <= 0
     ):
         _invalid("formal axis schema is invalid")
-    return str(stage), axis_id, base_width
+    return stage_aliases[str(raw_stage)], axis_id, base_width
 
 
 def _candidate_entry(
