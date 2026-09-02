@@ -204,11 +204,12 @@ def test_cli_derives_recipe_from_exact_v5_source_map_without_dependency_echo(
     assert "dependency-overlay" not in text
 
 
-def test_cli_derives_recipe_from_v5_rtx_hardware_profile_without_profile_echo(
-    tmp_path: Path,
+@pytest.mark.parametrize("hardware_profile", ("h800", "rtx4090"))
+def test_cli_derives_recipe_from_v5_registered_hardware_profile_without_profile_echo(
+    tmp_path: Path, hardware_profile: str,
 ) -> None:
     source_map, runner_template = v5_private_source_map(tmp_path)
-    source_map["hardware_profile"] = "rtx4090"
+    source_map["hardware_profile"] = hardware_profile
     source_path = _write_json(
         tmp_path / "private-inputs" / "source-map-v5-rtx.json", source_map
     )
@@ -230,7 +231,44 @@ def test_cli_derives_recipe_from_v5_rtx_hardware_profile_without_profile_echo(
     text = recipe_path.read_text(encoding="utf-8")
     assert json.loads(text)["schema_version"] == RECIPE_V2
     assert "hardware_profile" not in text
-    assert "rtx4090" not in text
+    assert hardware_profile not in text
+
+
+@pytest.mark.parametrize(
+    ("hardware_profile", "case"),
+    (
+        ("unknown-private-profile", "unknown"),
+        ({"profile_id": "rtx4090"}, "non-string"),
+        (" rtx4090 ", "malformed"),
+    ),
+)
+def test_cli_rejects_unregistered_v5_hardware_profile_without_profile_echo(
+    tmp_path: Path, hardware_profile: object, case: str,
+) -> None:
+    source_map, runner_template = v5_private_source_map(tmp_path)
+    source_map["hardware_profile"] = hardware_profile
+    source_path = _write_json(
+        tmp_path / "private-inputs" / f"source-map-v5-profile-{case}.json",
+        source_map,
+    )
+    recipe_path = tmp_path / "private-output" / "recipe.json"
+    recipe_path.parent.mkdir()
+
+    result = _run_cli(
+        "--source-map",
+        str(source_path),
+        "--runner-template",
+        str(runner_template),
+        "--recipe-json",
+        str(recipe_path),
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "history_recipe_derivation_invalid\n"
+    assert "unknown-private-profile" not in result.stderr
+    assert "rtx4090" not in result.stderr
+    assert not recipe_path.exists()
 
 
 @pytest.mark.parametrize("mutation", ("missing", "extra"))

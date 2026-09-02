@@ -24,6 +24,9 @@ from framework.stage6.p6_history_recipe_bridge_v1 import (  # noqa: E402
     P6HistoryRecipeDerivationError,
     derive_dynamic_recipe_from_procedural_source,
 )
+from framework.stage6.hardware_execution_profile_v1 import (  # noqa: E402
+    load_hardware_execution_profile,
+)
 from framework.stage6.p6_history_recipe_normalization_v1 import (  # noqa: E402
     P6HistoryNormalizationError,
     load_source_map_document,
@@ -166,6 +169,13 @@ def _load_source_map(path: Path) -> dict[str, Any]:
         or not isinstance(payload.get("procedural_recipe_source"), Mapping)
     ):
         raise P6HistoryRecipeDerivationError("source map is invalid")
+    if schema_version == SOURCE_MAP_V5 and "hardware_profile" in payload:
+        try:
+            load_hardware_execution_profile(payload["hardware_profile"])
+        except ValueError as error:
+            raise P6HistoryRecipeDerivationError(
+                "source map is invalid"
+            ) from error
     _validate_procedural_recipe_source(payload["procedural_recipe_source"])
     return payload
 
