@@ -28,17 +28,69 @@ _MAPPER_ARGUMENTS = frozenset(
         "--stage1-repo-root",
     }
 )
+_STAGE1_BRIDGE_MODULE = "framework.stage6.p6_stage1_bridge_v1"
 
 
 def _uses_cli_scenario(node: ast.AST) -> bool:
     return any(
-        isinstance(value, ast.Attribute) and value.attr == "scenario"
+        isinstance(value, ast.Attribute)
+        and value.attr == "scenario"
+        and isinstance(value.value, ast.Name)
+        and value.value.id == "args"
         for value in ast.walk(node)
     )
 
 
-def _is_stage1_bridge_call(node: ast.AST) -> bool:
-    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+def _bridge_aliases(tree: ast.Module) -> tuple[str, str] | None:
+    imported: dict[str, str] = {}
+    for node in tree.body:
+        if not isinstance(node, ast.ImportFrom) or node.module != _STAGE1_BRIDGE_MODULE:
+            continue
+        for name in node.names:
+            if name.name in {
+                "build_p6_stage1_partition_manifest",
+                "run_real_stage1_scan",
+            }:
+                if name.name in imported:
+                    return None
+                imported[name.name] = name.asname or name.name
+    if set(imported) != {
+        "build_p6_stage1_partition_manifest",
+        "run_real_stage1_scan",
+    }:
+        return None
+    aliases = tuple(imported.values())
+    if len(set(aliases)) != 2 or _aliases_are_shadowed(tree, frozenset(aliases)):
+        return None
+    return imported["build_p6_stage1_partition_manifest"], imported[
+        "run_real_stage1_scan"
+    ]
+
+
+def _aliases_are_shadowed(tree: ast.Module, aliases: frozenset[str]) -> bool:
+    return any(
+        (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            and node.name in aliases
+        )
+        or (isinstance(node, ast.arg) and node.arg in aliases)
+        or (
+            isinstance(node, ast.Name)
+            and isinstance(node.ctx, (ast.Store, ast.Del))
+            and node.id in aliases
+        )
+        for node in ast.walk(tree)
+    )
+
+
+def _is_stage1_bridge_call(
+    node: ast.AST, *, builder_alias: str, scanner_alias: str
+) -> bool:
+    if (
+        not isinstance(node, ast.Call)
+        or not isinstance(node.func, ast.Name)
+        or node.func.id != builder_alias
+    ):
         return False
     scenario_keywords = tuple(
         keyword
@@ -47,10 +99,8 @@ def _is_stage1_bridge_call(node: ast.AST) -> bool:
     )
     if not scenario_keywords:
         return False
-    if node.func.id == "run_real_stage1_scan":
-        return True
-    return node.func.id == "build_p6_stage1_partition_manifest" and any(
-        isinstance(argument, ast.Name) and argument.id == "run_real_stage1_scan"
+    return any(
+        isinstance(argument, ast.Name) and argument.id == scanner_alias
         for argument in node.args
     )
 
@@ -129,8 +179,17 @@ def _validate_mapper_contract(path: Path) -> None:
         and isinstance(value.value, str)
         and value.value.startswith("--")
     )
-    if arguments != _MAPPER_ARGUMENTS or not any(
-        _is_stage1_bridge_call(node) for node in ast.walk(tree)
+    aliases = _bridge_aliases(tree)
+    if arguments != _MAPPER_ARGUMENTS or aliases is None:
+        raise P6Stage1LauncherRenderError("stage1 launcher input is invalid")
+    builder_alias, scanner_alias = aliases
+    if not any(
+        _is_stage1_bridge_call(
+            node,
+            builder_alias=builder_alias,
+            scanner_alias=scanner_alias,
+        )
+        for node in ast.walk(tree)
     ):
         raise P6Stage1LauncherRenderError("stage1 launcher input is invalid")
 
@@ -191,22 +250,63 @@ arguments = {
 }
 def uses_cli_scenario(node):
     return any(
-        isinstance(value, ast.Attribute) and value.attr == "scenario"
+        isinstance(value, ast.Attribute)
+        and value.attr == "scenario"
+        and isinstance(value.value, ast.Name)
+        and value.value.id == "args"
         for value in ast.walk(node)
     )
 
+imported = {}
+for node in tree.body:
+    if not isinstance(node, ast.ImportFrom) or node.module != (
+        "framework.stage6.p6_stage1_bridge_v1"
+    ):
+        continue
+    for name in node.names:
+        if name.name in {
+            "build_p6_stage1_partition_manifest", "run_real_stage1_scan",
+        }:
+            if name.name in imported:
+                raise SystemExit(71)
+            imported[name.name] = name.asname or name.name
+if set(imported) != {
+    "build_p6_stage1_partition_manifest", "run_real_stage1_scan",
+}:
+    raise SystemExit(71)
+aliases = frozenset(imported.values())
+shadowed = any(
+    (
+        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        and node.name in aliases
+    )
+    or (isinstance(node, ast.arg) and node.arg in aliases)
+    or (
+        isinstance(node, ast.Name)
+        and isinstance(node.ctx, (ast.Store, ast.Del))
+        and node.id in aliases
+    )
+    for node in ast.walk(tree)
+)
+if len(aliases) != 2 or shadowed:
+    raise SystemExit(71)
+builder = imported["build_p6_stage1_partition_manifest"]
+scanner = imported["run_real_stage1_scan"]
+
 def is_stage1_bridge_call(node):
-    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+    if (
+        not isinstance(node, ast.Call)
+        or not isinstance(node.func, ast.Name)
+        or node.func.id != builder
+    ):
         return False
     if not any(
         keyword.arg == "scenario_path" and uses_cli_scenario(keyword.value)
         for keyword in node.keywords
     ):
         return False
-    if node.func.id == "run_real_stage1_scan":
-        return True
-    return node.func.id == "build_p6_stage1_partition_manifest" and any(
-        isinstance(argument, ast.Name) and argument.id == "run_real_stage1_scan"
+    return any(
+        isinstance(argument, ast.Name) and argument.id == scanner
         for argument in node.args
     )
 
