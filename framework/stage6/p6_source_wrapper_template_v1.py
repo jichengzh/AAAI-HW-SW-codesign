@@ -452,6 +452,7 @@ def render_wrapper_template(
         (
             "        if completed.returncode == 0:\n"
             "            _publish_config(legacy_config, canonical_config)\n"
+            "            _publish_canonical_source_evidence(loaded, legacy, argv[6])\n"
             "        else:\n"
             "            _cleanup_failed_outputs(\n"
             "                marker, legacy_config, canonical_config\n"
@@ -521,6 +522,74 @@ def _cleanup_failed_outputs(marker, legacy_config, canonical_config):
     marker.unlink(missing_ok=True)
     if legacy_config == canonical_config:
         canonical_config.unlink(missing_ok=True)
+
+def _selected_source_identity(canonical, legacy, group_id):
+    canonical_rows = tuple(
+        row for row in canonical["rows"] if row.get("group_id") == group_id
+    )
+    legacy_rows = tuple(
+        row for row in legacy["rows"] if row.get("group_id") == group_id
+    )
+    canonical_digests = {
+        row.get("source_evidence_sha256") for row in canonical_rows
+    }
+    legacy_digests = {row.get("source_evidence_sha256") for row in legacy_rows}
+    markers = {
+        row.get("source_contract", {}).get("source_done_marker")
+        for row in canonical_rows
+    }
+    if (
+        not canonical_rows
+        or len(canonical_rows) != len(legacy_rows)
+        or len(canonical_digests) != 1
+        or len(legacy_digests) != 1
+        or len(markers) != 1
+    ):
+        raise CompatibilityError
+    marker = _canonical_output_path(next(iter(markers)))
+    if marker.name != "source.done":
+        raise CompatibilityError
+    return (
+        next(iter(canonical_digests)),
+        next(iter(legacy_digests)),
+        marker.with_name("source_evidence.json"),
+    )
+
+def _publish_canonical_source_evidence(canonical, legacy, group_id):
+    canonical_digest, legacy_digest, path = _selected_source_identity(
+        canonical, legacy, group_id
+    )
+    if path.is_symlink() or not path.is_file():
+        raise CompatibilityError
+    evidence = json.loads(
+        path.read_text(encoding="utf-8"),
+        object_pairs_hook=_unique_mapping,
+        parse_constant=_invalid_constant,
+    )
+    if (
+        not isinstance(evidence, dict)
+        or evidence.get("schema_version")
+        != "stage5_source_materialization_evidence_v1"
+        or evidence.get("group_id") != group_id
+        or evidence.get("source_plan_sha256") != legacy_digest
+        or evidence.get("status") != "ready"
+    ):
+        raise CompatibilityError
+    descriptor, spelling = tempfile.mkstemp(dir=path.parent, prefix=".p6-evidence-")
+    temporary = Path(spelling)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            os.fchmod(handle.fileno(), 0o600)
+            json.dump(
+                {**evidence, "source_plan_sha256": canonical_digest}, handle,
+                ensure_ascii=True, allow_nan=False, sort_keys=True,
+                separators=(",", ":"),
+            )
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 def _validate_project_python_runtime():
     project_python = Path(PROJECT_PYTHON)

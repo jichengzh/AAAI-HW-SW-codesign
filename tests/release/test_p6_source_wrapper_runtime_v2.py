@@ -143,6 +143,13 @@ def _write_runtime_materializer(
         "    else:\n"
         "        target.parent.mkdir(parents=True, exist_ok=True)\n"
         "        target.write_bytes(b'fixture:' + key.encode() + b'\\n')\n"
+        "source_marker = Path(contract['source_done_marker'])\n"
+        "source_marker.with_name('source_evidence.json').write_text(json.dumps({\n"
+        "    'schema_version': 'stage5_source_materialization_evidence_v1',\n"
+        "    'group_id': request['rows'][0]['group_id'],\n"
+        "    'source_plan_sha256': request['rows'][0]['source_evidence_sha256'],\n"
+        "    'status': 'ready',\n"
+        "}, sort_keys=True), encoding='utf-8')\n"
         "diagnostic.write_text('ok', encoding='utf-8')\n",
         encoding="utf-8",
     )

@@ -95,11 +95,18 @@ def _write_profile(path: Path, profile: dict[str, str] | None = None) -> Path:
     return path
 
 
-def _write_relocated_materializer(history_root: Path) -> Path:
+def _write_relocated_materializer(
+    history_root: Path, *, evidence_digest_drift: bool = False
+) -> Path:
     repository = history_root / "private-relocated-history-repo"
     implementation = repository / "bin" / "stage5_materialize_round_sources_v1.original.sh"
     implementation.parent.mkdir(parents=True, exist_ok=True)
     (repository / "history_contract_validator.py").write_text("VALID = 'ok'\n", encoding="utf-8")
+    source_digest_expression = (
+        "'f' * 64"
+        if evidence_digest_drift
+        else "request['rows'][0]['source_evidence_sha256']"
+    )
     implementation.write_text(
         f"#!{sys.executable}\n"
         "import json\n"
@@ -113,7 +120,18 @@ def _write_relocated_materializer(history_root: Path) -> Path:
         "config = Path(contract['checkpoint_dir']) / 'config.yaml'\n"
         "assert Path(contract['config_path']) == config\n"
         "config.parent.mkdir(parents=True, exist_ok=True)\n"
-        "config.write_text('fixture:config_path\\n', encoding='utf-8')\n",
+        "config.write_text('fixture:config_path\\n', encoding='utf-8')\n"
+        "marker = Path(contract['source_done_marker'])\n"
+        "marker.parent.mkdir(parents=True, exist_ok=True)\n"
+        "marker.write_text('done\\n', encoding='utf-8')\n"
+        "evidence = marker.with_name('source_evidence.json')\n"
+        "evidence.write_text(json.dumps({\n"
+        "    'schema_version': 'stage5_source_materialization_evidence_v1',\n"
+        "    'group_id': request['rows'][0]['group_id'],\n"
+        f"    'source_plan_sha256': {source_digest_expression},\n"
+        "    'status': 'ready',\n"
+        "    'fixture_payload': 'preserved',\n"
+        "}, sort_keys=True), encoding='utf-8')\n",
         encoding="utf-8",
     )
     implementation.chmod(0o700)
@@ -133,11 +151,14 @@ def _write_valid_template_with_generated_wrapper(
     tmp_path: Path,
     *,
     legacy_v1: bool = False,
+    evidence_digest_drift: bool = False,
 ) -> tuple[Path, Path, Path, ValidatedRunnerTemplate]:
     template, history_root = _write_valid_template(tmp_path)
     marker = history_root / "documented-stage5-chain" / SOURCE_MARKER
     marker.unlink()
-    _write_relocated_materializer(history_root)
+    _write_relocated_materializer(
+        history_root, evidence_digest_drift=evidence_digest_drift
+    )
     project_python = None if legacy_v1 else _write_project_python(tmp_path)
     payload = _wrapper_profile(project_python)
     profile = _write_profile(
@@ -221,10 +242,13 @@ def test_training_runtime_rejects_project_python_launcher_drift(
     assert captured.value.category == "history_execution_invalid"
 
 
-def test_source_wrapper_execs_relocated_implementation_from_private_cwd_with_exact_env(
-    tmp_path: Path,
+@pytest.mark.parametrize("evidence_digest_drift", (False, True))
+def test_source_wrapper_canonicalizes_only_validated_legacy_evidence(
+    tmp_path: Path, evidence_digest_drift: bool
 ) -> None:
-    _, history_root, _, validated = _write_valid_template_with_generated_wrapper(tmp_path)
+    _, history_root, _, validated = _write_valid_template_with_generated_wrapper(
+        tmp_path, evidence_digest_drift=evidence_digest_drift
+    )
     round_root = history_root / "private-runs" / "0"
     round_root.mkdir(parents=True)
     request = round_root / "measurement-request.json"
@@ -263,6 +287,10 @@ def test_source_wrapper_execs_relocated_implementation_from_private_cwd_with_exa
         check=False,
     )
 
+    if evidence_digest_drift:
+        assert completed.returncode == 2
+        assert completed.stderr.strip() == "history_execution_invalid"
+        return
     assert completed.returncode == 0, completed.stderr
     assert set(env) == set(EXPECTED_HISTORY_ENV_KEYS)
     relocated_repo = history_root / "private-relocated-history-repo"
@@ -270,6 +298,16 @@ def test_source_wrapper_execs_relocated_implementation_from_private_cwd_with_exa
         relocated_repo
     )
     assert (relocated_repo / "sibling-import-ok.txt").read_text(encoding="utf-8") == "ok"
+    canonical = json.loads(request.read_text(encoding="utf-8"))
+    evidence_path = Path(
+        canonical["rows"][0]["source_contract"]["source_done_marker"]
+    ).with_name("source_evidence.json")
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    assert evidence["source_plan_sha256"] == canonical["rows"][0][
+        "source_evidence_sha256"
+    ]
+    assert evidence["fixture_payload"] == "preserved"
+    assert evidence_path.stat().st_mode & 0o777 == 0o600
 
 
 @pytest.mark.parametrize(
