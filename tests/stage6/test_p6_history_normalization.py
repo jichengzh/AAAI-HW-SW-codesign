@@ -158,9 +158,20 @@ from pathlib import Path
 import sys
 
 request = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
-config = Path(request["rows"][0]["source_contract"]["config_path"])
+row = request["rows"][0]
+contract = row["source_contract"]
+config = Path(contract["config_path"])
 config.parent.mkdir(parents=True, exist_ok=True)
 config.write_text("fixture:config_path\\n", encoding="utf-8")
+marker = Path(contract["source_done_marker"])
+marker.parent.mkdir(parents=True, exist_ok=True)
+marker.write_text("done\\n", encoding="utf-8")
+marker.with_name("source_evidence.json").write_text(json.dumps({{
+    "schema_version": "stage5_source_materialization_evidence_v1",
+    "group_id": row["group_id"],
+    "source_plan_sha256": row["source_evidence_sha256"],
+    "status": "ready",
+}}, sort_keys=True), encoding="utf-8")
 Path("normalized-wrapper-executed.txt").write_text("copied", encoding="utf-8")
 PYCODE
 """

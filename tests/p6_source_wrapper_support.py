@@ -31,6 +31,7 @@ def source_bridge_request(
     """Build a minimal hash-consistent request with one nested training binding."""
     contract = {
         **copy.deepcopy(dict(source_contract_fields or {})),
+        "source_evidence_sha256": "c" * 64,
         "external_training_binding": copy.deepcopy(dict(binding)),
     }
     task_sha = "d" * 64

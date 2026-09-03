@@ -77,6 +77,14 @@ def _canonical_sha(payload):
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _is_lower_sha256(value):
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
 def _unique_mapping(pairs):
     result = {}
     for key, value in pairs:
@@ -197,7 +205,11 @@ def _legacy_row(row):
         raise CompatibilityError
     legacy_config, _ = _config_paths(row)
     legacy_contract = {
-        **{key: value for key, value in contract.items() if key != "external_training_binding"},
+        **{
+            key: value
+            for key, value in contract.items()
+            if key not in {"external_training_binding", "source_evidence_sha256"}
+        },
         **_validated_binding(contract.get("external_training_binding")),
         "config_path": str(legacy_config),
     }
@@ -234,6 +246,11 @@ def _validated_request_rows(request):
         or set(row_hashes) != set(row_ids)
         or any(
             row["source_contract_sha256"] != _canonical_sha(row["source_contract"])
+            or row.get("materialization_kind") != CANONICAL_MATERIALIZATION_KIND
+            or not _is_lower_sha256(row.get("source_evidence_sha256"))
+            or not isinstance(row.get("source_contract"), dict)
+            or row["source_contract"].get("source_evidence_sha256")
+            != row["source_evidence_sha256"]
             or row_hashes[row_id] != _canonical_sha(row)
             for row, row_id in zip(rows, row_ids, strict=True)
         )

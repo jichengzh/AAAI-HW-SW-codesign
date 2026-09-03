@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -65,6 +66,23 @@ def _canonical_request(output_root: Path) -> dict[str, Any]:
             output_root / "materialized" / "pyramid-16-32-64"
         ),
     )
+
+
+def _canonical_sha(payload: Any) -> str:
+    encoded = json.dumps(
+        payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _reseal_request(request: dict[str, Any]) -> dict[str, Any]:
+    row = request["rows"][0]
+    body = {
+        **request,
+        "row_sha256": {row["row_id"]: _canonical_sha(row)},
+    }
+    body.pop("measurement_request_sha256", None)
+    return {**body, "measurement_request_sha256": _canonical_sha(body)}
 
 
 def _wrapper_profile(project_python: Path | None = None) -> dict[str, str]:
@@ -308,6 +326,66 @@ def test_source_wrapper_canonicalizes_only_validated_legacy_evidence(
     ]
     assert evidence["fixture_payload"] == "preserved"
     assert evidence_path.stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["stale_source_contract_digest", "non_lowerhex_source_digest", "digest_mismatch"],
+)
+def test_source_wrapper_rejects_invalid_canonical_source_authority_before_child(
+    tmp_path: Path, mutation: str
+) -> None:
+    _, history_root, _, validated = _write_valid_template_with_generated_wrapper(tmp_path)
+    round_root = history_root / "private-runs" / "0"
+    round_root.mkdir(parents=True)
+    payload = _canonical_request(history_root / "private-output")
+    row = payload["rows"][0]
+    contract = row["source_contract"]
+    if mutation == "stale_source_contract_digest":
+        contract["external_training_binding"]["base_checkpoint_sha256"] = "f" * 64
+    elif mutation == "non_lowerhex_source_digest":
+        contract["source_evidence_sha256"] = "A" * 64
+        row["source_evidence_sha256"] = "A" * 64
+        row["source_contract_sha256"] = _canonical_sha(contract)
+    else:
+        contract["source_evidence_sha256"] = "d" * 64
+        row["source_contract_sha256"] = _canonical_sha(contract)
+    payload = _reseal_request(payload)
+    request = round_root / "measurement-request.json"
+    request.write_text(json.dumps(payload), encoding="utf-8")
+    task_state = round_root / "state" / "task-state.json"
+    task_state.parent.mkdir()
+    task_state.write_text("{}", encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            validated.stage_argv["source_materialization"][0],
+            "--request",
+            str(request),
+            "--model",
+            "pyramid",
+            "--group-id",
+            "pyramid|16x32x64",
+            "--gpu",
+            "101",
+        ],
+        cwd=round_root,
+        env={
+            "CUDA_VISIBLE_DEVICES": "101,103,107",
+            "P6_HISTORY_RUN_MODE": "bound",
+            "P6_HISTORY_PRIVATE_ROOT": str(history_root),
+            "P6_HISTORY_TASK_STATE": str(task_state),
+            "P6_HISTORY_ROUND_OUTPUT_ROOT": str(round_root),
+        },
+        shell=False,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    assert completed.stderr.strip() == "history_execution_invalid"
+    assert not (history_root / "private-relocated-history-repo/observed-cwd.txt").exists()
 
 
 @pytest.mark.parametrize(
