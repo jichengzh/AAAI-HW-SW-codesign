@@ -12,6 +12,14 @@ TVM_SUPPORT_CLOSURE_ID = "tvm-support"
 TVM_RUNTIME_CONTRACT_RELATIVE_PATH = Path(
     "framework/stage5/tvm_runtime_contract_v1.py"
 )
+INT8_FORMAL_HELPER_ROOT = Path(
+    "multi_agent/data/stage2_lut_generation_v1/generated/"
+    "original60_quant_20260627/raw/int8_native_route"
+)
+INT8_FORMAL_HELPER_RELATIVE_PATHS = (
+    INT8_FORMAL_HELPER_ROOT / "stage2_h800_native_int8_full_onnx_route.py",
+    INT8_FORMAL_HELPER_ROOT / "stage2_h800_native_int8_capability_probe.py",
+)
 _HEX_DIGEST = frozenset("0123456789abcdef")
 
 
@@ -88,6 +96,64 @@ def formal_tvm_code_digest(
         separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def formal_int8_tvm_code_digest(
+    implementation: Path,
+    runtime_contract: Path,
+    support_root_sha256: str,
+) -> str:
+    """Rebuild the Stage5 RTX INT8 leaf/runtime/support/helper identity."""
+    if (
+        not _regular_single_link_file(runtime_contract)
+        or not _is_sha256(support_root_sha256)
+    ):
+        raise P6TvmRuntimeAuthorityError()
+    code_root = _formal_int8_code_root(implementation)
+    helper_root = code_root / INT8_FORMAL_HELPER_ROOT
+    try:
+        children = tuple(sorted(helper_root.iterdir(), key=lambda path: path.name))
+    except OSError:
+        raise P6TvmRuntimeAuthorityError() from None
+    expected_names = tuple(path.name for path in INT8_FORMAL_HELPER_RELATIVE_PATHS)
+    if tuple(path.name for path in children) != tuple(sorted(expected_names)):
+        raise P6TvmRuntimeAuthorityError()
+    helper_entries: list[dict[str, object]] = []
+    for relative_path in INT8_FORMAL_HELPER_RELATIVE_PATHS:
+        helper_path = code_root / relative_path
+        if not _regular_single_link_file(helper_path):
+            raise P6TvmRuntimeAuthorityError()
+        helper_entries.append(
+            {
+                "path": relative_path.as_posix(),
+                "sha256": _sha256_file(helper_path),
+                "size": helper_path.stat().st_size,
+            }
+        )
+    payload = {
+        "implementation_sha256": _sha256_file(implementation),
+        "runtime_contract_sha256": _sha256_file(runtime_contract),
+        "support_root_sha256": support_root_sha256,
+        "int8_helpers": helper_entries,
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=True,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _formal_int8_code_root(implementation: Path) -> Path:
+    if (
+        not _regular_single_link_file(implementation)
+        or implementation.name != "stage2_route_b_int8_auto_decomp.py"
+        or implementation.parent.name != "scripts"
+    ):
+        raise P6TvmRuntimeAuthorityError()
+    return implementation.parent.parent
 
 
 def _regular_single_link_file(path: object) -> bool:
