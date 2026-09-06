@@ -20,6 +20,9 @@ INT8_FORMAL_HELPER_RELATIVE_PATHS = (
     INT8_FORMAL_HELPER_ROOT / "stage2_h800_native_int8_full_onnx_route.py",
     INT8_FORMAL_HELPER_ROOT / "stage2_h800_native_int8_capability_probe.py",
 )
+FP16_FORMAL_ENERGY_HELPER_RELATIVE_PATH = (
+    INT8_FORMAL_HELPER_ROOT / "stage2_h800_native_int8_capability_probe.py"
+)
 _HEX_DIGEST = frozenset("0123456789abcdef")
 
 
@@ -146,10 +149,57 @@ def formal_int8_tvm_code_digest(
     return hashlib.sha256(encoded).hexdigest()
 
 
+def formal_fp16_tvm_code_digest(
+    implementation: Path,
+    runtime_contract: Path,
+    support_root_sha256: str,
+) -> str:
+    """Rebuild the Stage5 RTX FP16 leaf/runtime/support/energy identity."""
+    if (
+        not _regular_single_link_file(runtime_contract)
+        or not _is_sha256(support_root_sha256)
+    ):
+        raise P6TvmRuntimeAuthorityError()
+    code_root = _formal_fp16_code_root(implementation)
+    helper_path = code_root / FP16_FORMAL_ENERGY_HELPER_RELATIVE_PATH
+    if not _regular_single_link_file(helper_path):
+        raise P6TvmRuntimeAuthorityError()
+    payload = {
+        "implementation_sha256": _sha256_file(implementation),
+        "runtime_contract_sha256": _sha256_file(runtime_contract),
+        "support_root_sha256": support_root_sha256,
+        "fp16_energy_helpers": [
+            {
+                "path": FP16_FORMAL_ENERGY_HELPER_RELATIVE_PATH.as_posix(),
+                "sha256": _sha256_file(helper_path),
+                "size": helper_path.stat().st_size,
+            }
+        ],
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=True,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _formal_int8_code_root(implementation: Path) -> Path:
     if (
         not _regular_single_link_file(implementation)
         or implementation.name != "stage2_route_b_int8_auto_decomp.py"
+        or implementation.parent.name != "scripts"
+    ):
+        raise P6TvmRuntimeAuthorityError()
+    return implementation.parent.parent
+
+
+def _formal_fp16_code_root(implementation: Path) -> Path:
+    if (
+        not _regular_single_link_file(implementation)
+        or implementation.name != "stage2_route_b_fp16_auto_runner.py"
         or implementation.parent.name != "scripts"
     ):
         raise P6TvmRuntimeAuthorityError()

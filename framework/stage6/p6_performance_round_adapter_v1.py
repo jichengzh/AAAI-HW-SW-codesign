@@ -32,6 +32,7 @@ from framework.stage6.p6_round_adapter_runtime_v1 import (
 from framework.stage6.p6_tvm_runtime_authority_v1 import (
     P6TvmRuntimeAuthorityError,
     TVM_RUNTIME_CONTRACT_RELATIVE_PATH,
+    formal_fp16_tvm_code_digest,
     formal_int8_tvm_code_digest,
     formal_tvm_code_digest,
 )
@@ -584,20 +585,28 @@ def _measurement_identity(
     if not isinstance(support_root_sha256, str):
         raise P6PerformanceRoundAdapterError()
     try:
-        code_digest = (
-            formal_int8_tvm_code_digest(
+        if profile.hardware_profile.profile_id == "rtx4090" and request_row[
+            "q_mode"
+        ] == "int8":
+            code_digest = formal_int8_tvm_code_digest(
                 implementation,
                 runtime_contract,
                 support_root_sha256,
             )
-            if profile.hardware_profile.profile_id == "rtx4090"
-            and request_row["q_mode"] == "int8"
-            else formal_tvm_code_digest(
+        elif profile.hardware_profile.profile_id == "rtx4090" and request_row[
+            "q_mode"
+        ] == "fp16":
+            code_digest = formal_fp16_tvm_code_digest(
                 implementation,
                 runtime_contract,
                 support_root_sha256,
             )
-        )
+        else:
+            code_digest = formal_tvm_code_digest(
+                implementation,
+                runtime_contract,
+                support_root_sha256,
+            )
     except P6TvmRuntimeAuthorityError:
         raise P6PerformanceRoundAdapterError() from None
     return _TvmMeasurementIdentity(

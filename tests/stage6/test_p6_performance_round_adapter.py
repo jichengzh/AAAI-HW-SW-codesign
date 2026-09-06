@@ -455,6 +455,7 @@ def test_rtx_manifest_accepts_parent_composite_and_rejects_leaf_only_digest(
     tmp_path: Path,
 ) -> None:
     profile = _profile(tmp_path, hardware_profile_id="rtx4090")
+    helper = _write_fp16_helper_authority(profile)
     round_root = tmp_path / "round"
     request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
     _write_source_and_quant_evidence(round_root, request)
@@ -489,7 +490,9 @@ def test_rtx_manifest_accepts_parent_composite_and_rejects_leaf_only_digest(
         source_contract=job["source_contract"],
         code_path=implementation,
     )
-    manifest["code_digest"] = _formal_code_digest(profile, implementation)
+    manifest["code_digest"] = _formal_fp16_code_digest(
+        profile, implementation, helper
+    )
     job["expected_tvm_measurement_manifest"] = manifest
 
     identity = performance_adapter._measurement_identity(profile, row, job)
@@ -502,6 +505,79 @@ def test_rtx_manifest_accepts_parent_composite_and_rejects_leaf_only_digest(
     }
     with pytest.raises(P6PerformanceRoundAdapterError):
         performance_adapter._validate_job_tvm_manifest(profile, row, job)
+
+
+def test_rtx_fp16_manifest_binds_exact_stage5_energy_helper_authority(
+    tmp_path: Path,
+) -> None:
+    profile = _profile(tmp_path, hardware_profile_id="rtx4090")
+    helper = _write_fp16_helper_authority(profile)
+    request = _write_round_request(
+        tmp_path / "round", ("fp16", "int8", "fp16", "int8")
+    )
+    source_row = request["rows"][0]
+    row = {
+        **source_row,
+        "source_contract": {
+            **source_row["source_contract"],
+            "external_training_binding": {
+                "pyramid_config_sha256": "1" * 64,
+                "base_checkpoint_sha256": "2" * 64,
+            },
+        },
+    }
+    execute = next(
+        leaf for leaf in profile.leaves if leaf.name == "performance_execute"
+    )
+    implementation = (
+        execute.implementation_cwd / "scripts/stage2_route_b_fp16_auto_runner.py"
+    )
+    job = {"command": [sys.executable, str(implementation)]}
+
+    first_identity = performance_adapter._measurement_identity(profile, row, job)
+    assert first_identity.code_digest == _formal_fp16_code_digest(
+        profile, implementation, helper
+    )
+    assert first_identity.code_digest != _formal_code_digest(profile, implementation)
+
+    helper.write_text("HELPER_VERSION = 9\n", encoding="utf-8")
+    second_identity = performance_adapter._measurement_identity(profile, row, job)
+    assert second_identity.code_digest == _formal_fp16_code_digest(
+        profile, implementation, helper
+    )
+    assert second_identity.code_digest != first_identity.code_digest
+
+
+def test_rtx_fp16_manifest_rejects_missing_stage5_energy_helper(
+    tmp_path: Path,
+) -> None:
+    profile = _profile(tmp_path, hardware_profile_id="rtx4090")
+    helper = _write_fp16_helper_authority(profile)
+    helper.unlink()
+    request = _write_round_request(
+        tmp_path / "round", ("fp16", "int8", "fp16", "int8")
+    )
+    source_row = request["rows"][0]
+    row = {
+        **source_row,
+        "source_contract": {
+            **source_row["source_contract"],
+            "external_training_binding": {
+                "pyramid_config_sha256": "1" * 64,
+                "base_checkpoint_sha256": "2" * 64,
+            },
+        },
+    }
+    execute = next(
+        leaf for leaf in profile.leaves if leaf.name == "performance_execute"
+    )
+    implementation = (
+        execute.implementation_cwd / "scripts/stage2_route_b_fp16_auto_runner.py"
+    )
+    job = {"command": [sys.executable, str(implementation)]}
+
+    with pytest.raises(P6PerformanceRoundAdapterError):
+        performance_adapter._measurement_identity(profile, row, job)
 
 
 @pytest.mark.parametrize("helper_index", (0, 1))
@@ -601,6 +677,35 @@ def test_h800_int8_manifest_keeps_generic_formal_digest(tmp_path: Path) -> None:
         leaf for leaf in profile.leaves if leaf.name == "performance_execute"
     )
     implementation = execute.implementation_cwd / "scripts/stage2_route_b_int8_auto_decomp.py"
+    job = {"command": [sys.executable, str(implementation)]}
+
+    identity = performance_adapter._measurement_identity(profile, row, job)
+
+    assert identity.code_digest == _formal_code_digest(profile, implementation)
+
+
+def test_h800_fp16_manifest_keeps_generic_formal_digest(tmp_path: Path) -> None:
+    profile = _profile(tmp_path, hardware_profile_id="h800")
+    request = _write_round_request(
+        tmp_path / "round", ("fp16", "int8", "fp16", "int8")
+    )
+    source_row = request["rows"][0]
+    row = {
+        **source_row,
+        "source_contract": {
+            **source_row["source_contract"],
+            "external_training_binding": {
+                "pyramid_config_sha256": "1" * 64,
+                "base_checkpoint_sha256": "2" * 64,
+            },
+        },
+    }
+    execute = next(
+        leaf for leaf in profile.leaves if leaf.name == "performance_execute"
+    )
+    implementation = (
+        execute.implementation_cwd / "scripts/stage2_route_b_fp16_auto_runner.py"
+    )
     job = {"command": [sys.executable, str(implementation)]}
 
     identity = performance_adapter._measurement_identity(profile, row, job)
@@ -1341,6 +1446,55 @@ def _write_int8_helper_authority(
     for index, path in enumerate(paths, start=1):
         path.write_text(f"HELPER_VERSION = {index}\n", encoding="utf-8")
     return paths
+
+
+def _write_fp16_helper_authority(
+    profile: ValidatedPostSourceAdapterProfile,
+) -> Path:
+    execute = next(
+        leaf for leaf in profile.leaves if leaf.name == "performance_execute"
+    )
+    helper = (
+        execute.implementation_cwd
+        / "multi_agent/data/stage2_lut_generation_v1/generated/original60_quant_20260627/raw/int8_native_route/stage2_h800_native_int8_capability_probe.py"
+    )
+    helper.parent.mkdir(parents=True, exist_ok=True)
+    helper.write_text("HELPER_VERSION = 1\n", encoding="utf-8")
+    return helper
+
+
+def _formal_fp16_code_digest(
+    profile: ValidatedPostSourceAdapterProfile,
+    implementation: Path,
+    helper: Path,
+) -> str:
+    execute = next(
+        leaf for leaf in profile.leaves if leaf.name == "performance_execute"
+    )
+    runtime_contract = (
+        execute.implementation_cwd / "framework/stage5/tvm_runtime_contract_v1.py"
+    )
+    payload = {
+        "implementation_sha256": _sha256_file(implementation),
+        "runtime_contract_sha256": _sha256_file(runtime_contract),
+        "support_root_sha256": profile.tvm_support_root_sha256,
+        "fp16_energy_helpers": [
+            {
+                "path": helper.relative_to(execute.implementation_cwd).as_posix(),
+                "sha256": _sha256_file(helper),
+                "size": helper.stat().st_size,
+            }
+        ],
+    }
+    return hashlib.sha256(
+        json.dumps(
+            payload,
+            ensure_ascii=True,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def _formal_int8_code_digest(
