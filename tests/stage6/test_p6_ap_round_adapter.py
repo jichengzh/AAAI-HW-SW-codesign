@@ -228,6 +228,31 @@ def test_ap_round_plans_once_partitions_ready_rows_and_runs_sanity_before_full(
     assert _read_json(task_state) == {"stage": "ap", "rows": original_rows}
 
 
+def test_ap_round_passes_validated_tvm_support_root_to_planner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: AP planner drops its validated private runner-root authority."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path, with_tvm_support_root=True)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_performance_task_state(round_root, request)
+    _write_performance_outputs(round_root, request)
+    ambient_cwd = tmp_path / "unrelated-ambient-cwd"
+    ambient_cwd.mkdir()
+    monkeypatch.chdir(ambient_cwd)
+    runner = _APRunner()
+
+    run_ap_round(profile, task_state, round_root, runner)
+
+    planner_argv = runner.calls[0]["argv"]
+    runner_root = profile.tvm_support_root
+    assert runner_root == profile.private_root / "execution-closure/tvm-support"
+    assert planner_argv.count("--runner-root") == 1
+    assert planner_argv[planner_argv.index("--runner-root") + 1] == str(runner_root)
+
+
 def _assert_historical_call_contract(
     calls: Sequence[Mapping[str, Any]],
     profile: ValidatedPostSourceAdapterProfile,
@@ -434,14 +459,23 @@ def _profile(
     *,
     plan_name: str = "ap_plan",
     execute_name: str = "ap_execute",
+    with_tvm_support_root: bool = False,
 ) -> ValidatedPostSourceAdapterProfile:
     private_root = tmp_path / "private"
     plan_cwd = private_root / "plan-cwd"
     execute_cwd = private_root / "execute-cwd"
     plan_cwd.mkdir(parents=True)
     execute_cwd.mkdir(parents=True)
+    support_root = None
+    if with_tvm_support_root:
+        support_root = private_root / "execution-closure/tvm-support"
+        support_root.mkdir(parents=True)
     return ValidatedPostSourceAdapterProfile(
-        schema_version="p6_post_source_adapter_profile_v1",
+        schema_version=(
+            "p6_post_source_adapter_profile_v4"
+            if with_tvm_support_root
+            else "p6_post_source_adapter_profile_v1"
+        ),
         private_root=private_root,
         project_python=Path(sys.executable),
         adapters=(),
@@ -449,6 +483,8 @@ def _profile(
             PostSourceLeaf(plan_name, _write_leaf(plan_cwd / "stage5_ap_plan_v2.py"), plan_cwd, "0" * 64),
             PostSourceLeaf(execute_name, _write_leaf(execute_cwd / "stage3_execute_ap_plan_v3.py"), execute_cwd, "1" * 64),
         ),
+        tvm_support_root=support_root,
+        tvm_support_root_sha256="2" * 64 if with_tvm_support_root else None,
     )
 
 

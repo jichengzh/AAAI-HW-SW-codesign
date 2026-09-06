@@ -81,6 +81,12 @@ def _run_planner(
     ap_root: Path,
     runner: LeafRunner,
 ) -> int:
+    runner_root = context.profile.tvm_support_root
+    runner_root_argv = (
+        ("--runner-root", str(runner_root))
+        if runner_root is not None
+        else ()
+    )
     argv = (
         str(context.profile.project_python),
         str(leaf.implementation),
@@ -96,6 +102,7 @@ def _run_planner(
         str(ap_root / "ap_plan.json"),
         "--output-jsonl",
         str(ap_root / "ap_plan.jsonl"),
+        *runner_root_argv,
     )
     result = runner.run(argv, cwd=leaf.implementation_cwd, env=_leaf_env(context, None), shell=False)
     returncode = getattr(result, "returncode", None)
