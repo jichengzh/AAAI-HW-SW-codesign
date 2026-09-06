@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -173,6 +174,54 @@ class BundleRunner(fixtures.FakeRunner):
             receipt.write_bytes(b'{"wrapper":"forbidden"}\n')
 
 
+class ParallelSourceRunner(BundleRunner):
+    def __init__(
+        self,
+        request: Mapping[str, Any],
+        *,
+        fail_group: str | None = None,
+    ) -> None:
+        super().__init__(request)
+        self.fail_group = fail_group
+        self.lock = threading.Lock()
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.active_sources = 0
+        self.max_parallel_sources = 0
+        self.active_by_gpu: dict[str, int] = {}
+        self.max_parallel_by_gpu: dict[str, int] = {}
+        self.source_attempts: list[str] = []
+        self.gpu_attempts: list[str] = []
+
+    def run(self, argv: Sequence[str], **kwargs: Any):
+        if Path(argv[0]).name != "stage5_materialize_round_sources_v1.sh":
+            return super().run(argv, **kwargs)
+        gpu = argv[8]
+        with self.lock:
+            self.active_sources += 1
+            self.max_parallel_sources = max(self.max_parallel_sources, self.active_sources)
+            active_on_gpu = self.active_by_gpu.get(gpu, 0) + 1
+            self.active_by_gpu[gpu] = active_on_gpu
+            self.max_parallel_by_gpu[gpu] = max(
+                self.max_parallel_by_gpu.get(gpu, 0), active_on_gpu
+            )
+            self.source_attempts.append(argv[6])
+            self.gpu_attempts.append(gpu)
+            if len(self.source_attempts) >= 2:
+                self.started.set()
+                self.release.set()
+        self.started.wait(timeout=0.5)
+        self.release.wait(timeout=0.5)
+        try:
+            if argv[6] == self.fail_group:
+                return fixtures.Result(returncode=1)
+            return super().run(argv, **kwargs)
+        finally:
+            with self.lock:
+                self.active_sources -= 1
+                self.active_by_gpu[gpu] -= 1
+
+
 def _runtime(
     tmp_path: Path,
     *,
@@ -338,7 +387,7 @@ def test_first_use_publishes_receipts_after_sorted_source_calls(tmp_path: Path) 
     )
 
     group_ids = tuple(sorted({row["group_id"] for row in request["rows"]}))
-    assert _source_groups(runner) == group_ids
+    assert sorted(_source_groups(runner)) == list(group_ids)
     source_calls = [
         call
         for call in runner.calls
@@ -356,6 +405,54 @@ def test_first_use_publishes_receipts_after_sorted_source_calls(tmp_path: Path) 
         "measure-ap",
         "stage5_finalize_feedback_v2.py",
     )
+
+
+def test_first_use_source_groups_run_concurrently_before_receipts(
+    tmp_path: Path,
+) -> None:
+    request, binding, public_round = _runtime(tmp_path)
+    runner = ParallelSourceRunner(request)
+
+    feedback = run_history_measurement_batch(
+        request, binding, public_round, runner, fixtures.FakeProbe()
+    )
+
+    group_ids = tuple(sorted({row["group_id"] for row in request["rows"]}))
+    paths = plan_source_reuse_paths(public_round.parent)
+    assert sorted(runner.source_attempts) == list(group_ids)
+    assert runner.max_parallel_sources >= 2
+    assert all(receipt_path_for_group(paths, group_id).is_file() for group_id in group_ids)
+    assert len(feedback["rows"]) == 4
+
+
+def test_parallel_source_failure_waits_for_workers_and_stops_downstream(
+    tmp_path: Path,
+) -> None:
+    request, binding, public_round = _runtime(tmp_path)
+    group_ids = tuple(sorted({row["group_id"] for row in request["rows"]}))
+    runner = ParallelSourceRunner(request, fail_group=group_ids[1])
+
+    with pytest.raises(P6HistoryMeasurementError) as exc_info:
+        run_history_measurement_batch(request, binding, public_round, runner, fixtures.FakeProbe())
+
+    assert str(exc_info.value) == "history_execution_invalid"
+    assert sorted(runner.source_attempts) == list(group_ids)
+    assert runner.active_sources == 0
+    assert runner.max_parallel_sources >= 2
+    paths = plan_source_reuse_paths(public_round.parent)
+    assert not any(receipt_path_for_group(paths, group_id).exists() for group_id in group_ids)
+    assert _downstream(runner) == ()
+
+
+def test_parallel_sources_serialize_groups_assigned_to_same_gpu(tmp_path: Path) -> None:
+    request, binding, public_round = _runtime(tmp_path)
+    runner = ParallelSourceRunner(request)
+
+    run_history_measurement_batch(request, binding, public_round, runner, fixtures.FakeProbe())
+
+    assert runner.max_parallel_sources >= 2
+    assert len(set(runner.gpu_attempts)) < len(runner.gpu_attempts)
+    assert max(runner.max_parallel_by_gpu.values()) == 1
 
 
 @pytest.mark.parametrize(
@@ -393,7 +490,7 @@ def test_same_round_fp16_int8_share_one_source_call_but_keep_all_rows(
     )
 
     group_ids = tuple(sorted({row["group_id"] for row in request["rows"]}))
-    assert _source_groups(runner) == group_ids
+    assert sorted(_source_groups(runner)) == list(group_ids)
     assert len(_source_groups(runner)) == 3
     assert len(feedback["rows"]) == 4
 

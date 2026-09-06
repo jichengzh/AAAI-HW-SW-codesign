@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections.abc import Mapping, Sequence
 import hashlib
 import json
@@ -284,27 +285,28 @@ def _run_first_use_sources(request: Mapping[str, Any], group_ids: Sequence[str],
     if len(group_ids) != len(invocations):
         raise P6SourceReuseEvidenceError(
             public_category="history_execution_invalid", private_category="p6_source_reuse_mismatch")
-    for group_id, invocation in zip(group_ids, invocations, strict=True):
-        decisions = classify_selected_group_sources(
-            request,
-            run_context=run_context,
-            local_output_root=paths["local_output_root"],
-            interface=interface,
-            private_root=private_root,
-        )
-        decision_by_group = {item.group_id: item for item in decisions}
-        if decision_by_group.get(group_id) is None or (
-            decision_by_group[group_id].state != "UNSEEN"
-        ):
-            raise P6SourceReuseEvidenceError(
-                public_category="history_execution_invalid",
-                private_category="p6_source_reuse_mismatch")
-        run_source_invocations(
-            (invocation,),
+    if not group_ids:
+        return
+    _require_unseen_sources(
+        request,
+        group_ids,
+        run_context=run_context,
+        interface=interface,
+        private_root=private_root,
+        paths=paths,
+    )
+    try:
+        _run_source_invocations_by_gpu(
+            invocations,
             runner=runner,
             cwd=paths["round_root"],
             env=environment,
         )
+    except P6HistorySourceMaterializationError:
+        raise P6SourceReuseEvidenceError(
+            public_category="history_execution_invalid",
+            private_category="p6_source_reuse_mismatch") from None
+    for group_id in group_ids:
         validate_and_publish_group_receipt(
             request,
             group_id=group_id,
@@ -313,6 +315,83 @@ def _run_first_use_sources(request: Mapping[str, Any], group_ids: Sequence[str],
             interface=interface,
             private_root=private_root,
         )
+
+def _require_unseen_sources(
+    request: Mapping[str, Any],
+    group_ids: Sequence[str],
+    *,
+    run_context: P6FreshRunContext,
+    interface: Mapping[str, Any],
+    private_root: Path,
+    paths: Mapping[str, Path],
+) -> None:
+    decisions = classify_selected_group_sources(
+        request,
+        run_context=run_context,
+        local_output_root=paths["local_output_root"],
+        interface=interface,
+        private_root=private_root,
+    )
+    decision_by_group = {item.group_id: item for item in decisions}
+    for group_id in group_ids:
+        if decision_by_group.get(group_id) is None or (
+            decision_by_group[group_id].state != "UNSEEN"
+        ):
+            raise P6SourceReuseEvidenceError(
+                public_category="history_execution_invalid",
+                private_category="p6_source_reuse_mismatch")
+
+
+def _run_source_invocations_by_gpu(
+    invocations: Sequence[Sequence[str]],
+    *,
+    runner: Runner,
+    cwd: Path,
+    env: Mapping[str, str],
+) -> None:
+    grouped: dict[str, list[Sequence[str]]] = {}
+    try:
+        for invocation in invocations:
+            gpu = _source_invocation_gpu(invocation)
+            grouped.setdefault(gpu, []).append(invocation)
+    except (IndexError, TypeError, ValueError):
+        raise P6HistorySourceMaterializationError() from None
+    if not grouped:
+        raise P6HistorySourceMaterializationError()
+
+    def run_group(queue: Sequence[Sequence[str]]) -> None:
+        for invocation in queue:
+            run_source_invocations(
+                (invocation,),
+                runner=runner,
+                cwd=cwd,
+                env=env,
+            )
+
+    failed = False
+    with ThreadPoolExecutor(max_workers=len(grouped)) as executor:
+        futures = [executor.submit(run_group, tuple(queue)) for queue in grouped.values()]
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception:
+                failed = True
+    if failed:
+        raise P6HistorySourceMaterializationError()
+
+
+def _source_invocation_gpu(invocation: Sequence[str]) -> str:
+    if (
+        not isinstance(invocation, Sequence)
+        or isinstance(invocation, (str, bytes))
+        or len(invocation) != 9
+        or invocation[7] != "--gpu"
+        or not isinstance(invocation[8], str)
+        or not invocation[8].isdigit()
+        or str(int(invocation[8])) != invocation[8]
+    ):
+        raise ValueError
+    return invocation[8]
 
 def _validated_interface(
     binding: Mapping[str, Any],
