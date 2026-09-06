@@ -12,6 +12,9 @@ from typing import Any
 
 import pytest
 
+from framework.stage6.hardware_execution_profile_v1 import (
+    load_hardware_execution_profile,
+)
 from framework.stage6.p6_ap_round_adapter_v1 import (
     P6APRoundAdapterError,
     run_ap_round,
@@ -20,6 +23,7 @@ from framework.stage6.p6_post_source_adapter_profile_v1 import (
     PostSourceLeaf,
     ValidatedPostSourceAdapterProfile,
 )
+from tests.stage6.test_p6_history_normalization import _tree_sha
 from tests.stage6.test_p6_performance_round_adapter import (
     _expected_env,
     _native_performance_job,
@@ -253,6 +257,98 @@ def test_ap_round_passes_validated_tvm_support_root_to_planner(
     assert planner_argv[planner_argv.index("--runner-root") + 1] == str(runner_root)
 
 
+def test_ap_round_forwards_only_allowlisted_formal_tvm_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: AP sanity loses the validated formal TVM runtime environment."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("P6_PRIVATE_AMBIENT_SENTINEL", "must-not-forward")
+    profile = _profile(tmp_path, with_tvm_support_root=True)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_performance_task_state(round_root, request)
+    _write_performance_outputs(round_root, request)
+    runner = _APRunner()
+
+    run_ap_round(profile, task_state, round_root, runner)
+
+    for call in runner.calls:
+        assert call["env"] == _expected_call_env(
+            profile, tmp_path, task_state, round_root, call
+        )
+        assert "P6_PRIVATE_AMBIENT_SENTINEL" not in call["env"]
+        assert {
+            "P6_TVM_PYTHON",
+            "P6_TVM_SITE",
+            "P6_TVM_NVLIBS_FILE",
+            "P6_TVM_SUPPORT_ROOT",
+            "P6_TVM_SUPPORT_ROOT_SHA256",
+        }.issubset(call["env"])
+
+
+@pytest.mark.parametrize("mutation", ("wrong-path", "wrong-digest"))
+def test_ap_round_rejects_formal_tvm_support_authority_drift_before_planner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    """Break caught: AP accepts TVM support authority outside its v4 profile."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path, with_tvm_support_root=True)
+    if mutation == "wrong-path":
+        alternate = tmp_path / "alternate-tvm-support"
+        alternate.mkdir()
+        alternate.joinpath("capability.py").write_text(
+            "ALTERNATE = True\n", encoding="utf-8"
+        )
+        monkeypatch.setenv("P6_TVM_SUPPORT_ROOT", str(alternate))
+        monkeypatch.setenv("P6_TVM_SUPPORT_ROOT_SHA256", _tree_sha(alternate))
+    else:
+        monkeypatch.setenv("P6_TVM_SUPPORT_ROOT_SHA256", "f" * 64)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_performance_task_state(round_root, request)
+    _write_performance_outputs(round_root, request)
+    runner = _APRunner()
+
+    with pytest.raises(P6APRoundAdapterError):
+        run_ap_round(profile, task_state, round_root, runner)
+
+    assert runner.calls == []
+
+
+@pytest.mark.parametrize(
+    "missing_key",
+    (
+        "P6_TVM_PYTHON",
+        "P6_TVM_SITE",
+        "P6_TVM_NVLIBS_FILE",
+        "P6_TVM_SUPPORT_ROOT",
+        "P6_TVM_SUPPORT_ROOT_SHA256",
+    ),
+)
+def test_ap_round_requires_complete_formal_tvm_runtime_for_v4_profile(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    missing_key: str,
+) -> None:
+    """Break caught: AP silently drops or tolerates a partial formal TVM runtime."""
+    _set_runtime_env(monkeypatch, tmp_path)
+    profile = _profile(tmp_path, with_tvm_support_root=True)
+    monkeypatch.delenv(missing_key)
+    round_root = tmp_path / "round"
+    request = _write_round_request(round_root, ("fp16", "int8", "fp16", "int8"))
+    task_state = _write_performance_task_state(round_root, request)
+    _write_performance_outputs(round_root, request)
+    runner = _APRunner()
+
+    with pytest.raises(P6APRoundAdapterError):
+        run_ap_round(profile, task_state, round_root, runner)
+
+    assert runner.calls == []
+
+
 def _assert_historical_call_contract(
     calls: Sequence[Mapping[str, Any]],
     profile: ValidatedPostSourceAdapterProfile,
@@ -467,9 +563,22 @@ def _profile(
     plan_cwd.mkdir(parents=True)
     execute_cwd.mkdir(parents=True)
     support_root = None
+    profile_fields: dict[str, Any] = {}
     if with_tvm_support_root:
+        dependency_root = private_root / "execution-closure/dependency-overlay"
+        dependency_root.mkdir(parents=True)
         support_root = private_root / "execution-closure/tvm-support"
-        support_root.mkdir(parents=True)
+        support_root.mkdir(parents=True, exist_ok=True)
+        support_root.joinpath("capability.py").write_text(
+            "CAPABILITY = True\n", encoding="utf-8"
+        )
+        profile_fields = {
+            "adapter_python": Path(sys.executable),
+            "adapter_dependency_root": dependency_root,
+            "hardware_profile": load_hardware_execution_profile("rtx4090"),
+            "tvm_support_root": support_root,
+            "tvm_support_root_sha256": _tree_sha(support_root),
+        }
     return ValidatedPostSourceAdapterProfile(
         schema_version=(
             "p6_post_source_adapter_profile_v4"
@@ -483,8 +592,7 @@ def _profile(
             PostSourceLeaf(plan_name, _write_leaf(plan_cwd / "stage5_ap_plan_v2.py"), plan_cwd, "0" * 64),
             PostSourceLeaf(execute_name, _write_leaf(execute_cwd / "stage3_execute_ap_plan_v3.py"), execute_cwd, "1" * 64),
         ),
-        tvm_support_root=support_root,
-        tvm_support_root_sha256="2" * 64 if with_tvm_support_root else None,
+        **profile_fields,
     )
 
 
@@ -823,3 +931,21 @@ def _set_runtime_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("P6_HISTORY_PRIVATE_ROOT", str(tmp_path / "private"))
     monkeypatch.setenv("P6_HISTORY_TASK_STATE", str(tmp_path / "round/state/task-state.json"))
     monkeypatch.setenv("P6_HISTORY_ROUND_OUTPUT_ROOT", str(tmp_path / "round"))
+    tvm_python = tmp_path / "tvm-runtime/bin/python"
+    tvm_python.parent.mkdir(parents=True)
+    tvm_python.write_text("#!/bin/sh\n", encoding="utf-8")
+    tvm_python.chmod(0o700)
+    tvm_site = tmp_path / "tvm-runtime/site-packages"
+    tvm_site.mkdir(parents=True)
+    nvlibs = tmp_path / "tvm-runtime/nvlibs.path"
+    nvlibs.write_text("", encoding="utf-8")
+    support_root = tmp_path / "private/execution-closure/tvm-support"
+    support_root.mkdir(parents=True, exist_ok=True)
+    support_root.joinpath("capability.py").write_text(
+        "CAPABILITY = True\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("P6_TVM_PYTHON", str(tvm_python))
+    monkeypatch.setenv("P6_TVM_SITE", str(tvm_site))
+    monkeypatch.setenv("P6_TVM_NVLIBS_FILE", str(nvlibs))
+    monkeypatch.setenv("P6_TVM_SUPPORT_ROOT", str(support_root))
+    monkeypatch.setenv("P6_TVM_SUPPORT_ROOT_SHA256", _tree_sha(support_root))

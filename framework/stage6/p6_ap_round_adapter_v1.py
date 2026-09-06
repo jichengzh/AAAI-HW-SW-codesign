@@ -11,8 +11,11 @@ from pathlib import Path
 from typing import Any
 
 from framework.stage6.p6_post_source_adapter_profile_v1 import (
+    PROFILE_SCHEMA_VERSION_V4,
+    P6PostSourceAdapterProfileError,
     PostSourceLeaf,
     ValidatedPostSourceAdapterProfile,
+    require_post_source_adapter_profile_v4,
 )
 from framework.stage6.p6_round_adapter_runtime_v1 import (
     LeafRunner,
@@ -426,16 +429,40 @@ def _leaf_env(context: RoundContext, gpu: str | None) -> dict[str, str]:
 
 
 def _validated_incoming_env(context: RoundContext) -> dict[str, str]:
-    keys = (
+    history_keys = (
         "P6_HISTORY_RUN_MODE",
         "P6_HISTORY_PRIVATE_ROOT",
         "P6_HISTORY_TASK_STATE",
         "P6_HISTORY_ROUND_OUTPUT_ROOT",
     )
+    formal_tvm_keys = (
+        "P6_TVM_PYTHON",
+        "P6_TVM_SITE",
+        "P6_TVM_NVLIBS_FILE",
+        "P6_TVM_SUPPORT_ROOT",
+        "P6_TVM_SUPPORT_ROOT_SHA256",
+    )
+    keys = (
+        (*history_keys, *formal_tvm_keys)
+        if context.profile.schema_version == PROFILE_SCHEMA_VERSION_V4
+        else history_keys
+    )
     inherited = {key: os.environ[key] for key in keys if key in os.environ}
     if set(inherited) != set(keys):
         raise P6APRoundAdapterError()
     _validate_incoming_paths(context, inherited)
+    if context.profile.schema_version == PROFILE_SCHEMA_VERSION_V4:
+        try:
+            require_post_source_adapter_profile_v4(context.profile)
+        except P6PostSourceAdapterProfileError:
+            raise P6APRoundAdapterError() from None
+        if (
+            inherited["P6_TVM_SUPPORT_ROOT"]
+            != str(context.profile.tvm_support_root)
+            or inherited["P6_TVM_SUPPORT_ROOT_SHA256"]
+            != context.profile.tvm_support_root_sha256
+        ):
+            raise P6APRoundAdapterError()
     return inherited
 
 
