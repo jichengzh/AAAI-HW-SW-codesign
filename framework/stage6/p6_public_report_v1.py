@@ -197,8 +197,6 @@ def _validated_hardware_fields(
     gpu_count = report.get("gpu_count")
     if isinstance(gpu_count, bool) or not isinstance(gpu_count, int) or gpu_count <= 0:
         raise P6PublicReportError("GPU count is invalid")
-    if profile.required_gpu_count is not None and gpu_count != profile.required_gpu_count:
-        raise P6PublicReportError("GPU count does not match the hardware profile")
     backend = _identifier(report.get("execution_backend"), "execution backend")
     try:
         validate_profile_backend(profile, backend)

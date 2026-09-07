@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 
 def canonical_gpu_indices(raw_indices: object) -> tuple[int, ...]:
@@ -31,3 +31,18 @@ def parse_gpu_indices_csv(raw_value: object) -> tuple[int, ...]:
     if any(not part.isdigit() or str(int(part)) != part for part in parts):
         raise ValueError("canonical GPU indices required")
     return canonical_gpu_indices(tuple(int(part) for part in parts))
+
+
+def parse_runtime_gpu_pool(environment: Mapping[str, object]) -> int:
+    """Read a positive GPU count exclusively from the explicit GPU_POOL key."""
+    if not isinstance(environment, Mapping) or "GPU_POOL" not in environment:
+        raise ValueError("canonical GPU_POOL required")
+    raw_value = environment["GPU_POOL"]
+    if (
+        not isinstance(raw_value, str)
+        or not raw_value.isdigit()
+        or str(int(raw_value)) != raw_value
+        or int(raw_value) <= 0
+    ):
+        raise ValueError("canonical GPU_POOL required")
+    return int(raw_value)

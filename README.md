@@ -115,44 +115,38 @@ python tools/release/normalize_p6_history_root.py \
   --private-dir <abs-normalized-private-dir> \
   --runner-template <abs-pre-normalization-private-runner-template.yaml>
 
-python tools/release/provision_p6_full_chain_local_config.py \
+GPU_POOL=7 python tools/release/run_p6_h800_search.py \
+  --contract configs/execution/p6_rtx4090_search.example.yaml \
+  --code-revision "$(git rev-parse --short=12 HEAD)" \
   --legacy-local-config <abs-rtx-local-config-or-locator.yaml> \
   --runner-template <abs-normalized-private-dir>/runner-template.yaml \
   --local-output-root <abs-fresh-output-root> \
-  --binding-output <abs-private-binding.json> \
-  --config-output <abs-local-config.yaml> \
+  --binding-output <abs-fresh-output-root>/binding.json \
+  --config-output <abs-fresh-output-root>/local-config.yaml \
   --source-wrapper-profile <abs-source-wrapper-profile.yaml> \
   --external-training-binding <abs-external-training-binding.yaml> \
   --post-source-adapter-profile <abs-post-source-adapter-profile.yaml>
-
-python tools/release/preflight_p6_materializer_training_bridge.py \
-  --contract configs/execution/p6_rtx4090_search.example.yaml \
-  --local-config <abs-local-config.yaml> \
-  --binding <abs-private-binding.json> \
-  --runner-template <abs-normalized-private-dir>/runner-template.yaml \
-  --source-wrapper-profile <abs-source-wrapper-profile.yaml> \
-  --external-training-binding <abs-external-training-binding.yaml> \
-  --post-source-adapter-profile <abs-post-source-adapter-profile.yaml>
-
-GPU_POOL=<ordered-gpu-indices> python tools/release/run_p6_h800_search.py \
-  --contract configs/execution/p6_rtx4090_search.example.yaml \
-  --local-config <abs-local-config.yaml> \
-  --code-revision "$(git rev-parse HEAD)"
 
 python tools/release/verify_p6_materializer_training_run.py \
   --contract configs/execution/p6_rtx4090_search.example.yaml \
-  --local-config <abs-local-config.yaml> \
-  --binding <abs-private-binding.json>
+  --local-config <abs-fresh-output-root>/local-config.yaml \
+  --binding <abs-fresh-output-root>/binding.json
 ```
 
 The `--legacy-local-config` flag name is also historical; for an RTX4090 run it
 points at the approved RTX local config or locator that is converted into the
 fresh binding/config pair. `derive` and `normalize` consume the pre-normalized
-private runner template; `provision` and `preflight` must then use the
-normalized authority at `<abs-normalized-private-dir>/runner-template.yaml`.
+private runner template. In fresh-run mode, the historical controller entry
+late-binds `GPU_POOL`, provisions the fresh binding/config pair, runs static
+preflight, and then starts the four-round controller. The normalized authority
+at `<abs-normalized-private-dir>/runner-template.yaml` is not edited.
 
-GPU admission and candidate execution are driven by the private ordered GPU
-pool (`GPU_POOL` as operational shorthand). The controller derives the leaf
+`GPU_POOL` is a strict positive GPU count and the only selector in fresh-run
+mode. `GPU_POOL=1` requests one available GPU, `GPU_POOL=3` requests three, and
+`GPU_POOL=7` requests seven. The caller does not name physical GPU indices and
+no persistent UUID is configured in advance. Live admission automatically
+selects a stable idle subset that matches the hardware profile, then records
+the selected indices and UUIDs only in that fresh run's private binding. The controller derives the leaf
 binding from the admitted ordered policy instead of assuming every native leaf
 receives the same pool. Some leaves consume the full pool, including native
 performance planning/execution through `gpu_pool`; source materialization,
@@ -161,6 +155,10 @@ contract requires it. Within a round, candidate/source work may run
 concurrently across distinct GPUs, while work assigned to the same GPU is
 serialized. The four search rounds still execute in order because each later
 round consumes the previous round's verified feedback.
+
+The legacy `--local-config` mode remains available. When `GPU_POOL` is supplied
+with an existing local config, its count must match that run's existing
+binding; use fresh-run mode for automatic device selection.
 
 RTX4090 measurements are hardware-specific evidence. They can validate the
 end-to-end mechanism on sm89 hardware, but they must not be relabeled as H800

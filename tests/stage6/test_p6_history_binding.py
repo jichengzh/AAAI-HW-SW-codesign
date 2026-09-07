@@ -598,16 +598,19 @@ def test_binding_accepts_two_gpu_policy_and_double_probes_exact_order(
     }
 
 
-def test_binding_hardware_profile_rtx_admits_exact_four_ordered_cards(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    "policy_indices",
+    [(29,), (29, 17, 31), (29, 17, 31, 23)],
+)
+def test_binding_hardware_profile_rtx_admits_runtime_ordered_pool(
+    tmp_path: Path, policy_indices: tuple[int, ...]
 ) -> None:
-    """Catches RTX discovery falling back to H800 or reordering its policy."""
-    policy_indices = (29, 17, 31, 23)
+    """Catches RTX discovery falling back to H800 or reordering its runtime pool."""
     history_root = _history_root(tmp_path)
     manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["environment"]["values"]["CUDA_VISIBLE_DEVICES"]["value"] = (
-        "29,17,31,23"
+    manifest["environment"]["values"]["CUDA_VISIBLE_DEVICES"]["value"] = ",".join(
+        str(index) for index in policy_indices
     )
     _write_json(manifest_path, manifest)
     records = _gpu_records(
@@ -630,49 +633,13 @@ def test_binding_hardware_profile_rtx_admits_exact_four_ordered_cards(
         "backend": "tvm_auto",
     }
     assert binding["gpu_policy"] == {
-        "indices": [29, 17, 31, 23],
+        "indices": list(policy_indices),
         "uuid_by_index": {
-            "29": "GPU-fixture-29",
-            "17": "GPU-fixture-17",
-            "31": "GPU-fixture-31",
-            "23": "GPU-fixture-23",
+            str(index): f"GPU-fixture-{index}" for index in policy_indices
         },
         "hardware_profile": "rtx4090",
     }
     assert public_binding_projection(binding)["hardware_profile"] == "rtx4090"
-
-
-@pytest.mark.parametrize("policy_indices", [(17, 19, 23), (11, 13, 17, 19, 23)])
-def test_binding_hardware_profile_rtx_rejects_wrong_cardinality_before_probe(
-    tmp_path: Path,
-    policy_indices: tuple[int, ...],
-) -> None:
-    """Catches an RTX binding probing a policy other than exactly four cards."""
-    history_root = _history_root(tmp_path)
-    manifest_path = history_root / "private-runner" / "p6-history-runner-interface.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["environment"]["values"]["CUDA_VISIBLE_DEVICES"]["value"] = ",".join(
-        str(index) for index in policy_indices
-    )
-    _write_json(manifest_path, manifest)
-    records = _gpu_records(
-        indices=policy_indices,
-        model_name="NVIDIA RTX 4090",
-    )
-    probe = _probe(records)
-
-    with _expect_category("gpu_admission") as captured:
-        discover_history_binding(
-            history_root,
-            probe,
-            load_hardware_execution_profile("rtx4090"),
-        )
-
-    assert probe.calls == []
-    assert not any(
-        token in str(captured.value)
-        for token in ("17", "19", "23", "NVIDIA", "RTX 4090")
-    )
 
 
 @pytest.mark.parametrize(

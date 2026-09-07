@@ -253,6 +253,31 @@ def test_hardware_specific_report_accepts_canonical_rtx4090_provenance() -> None
     assert provenance.tvm_arch == "sm89"
 
 
+@pytest.mark.parametrize("gpu_count", [1, 3, 7])
+def test_hardware_specific_report_accepts_any_positive_gpu_count(
+    gpu_count: int,
+) -> None:
+    report_contract = _report_contract()
+    payload = _report_provenance("rtx4090")
+    payload["gpu_count"] = gpu_count
+
+    provenance = report_contract.validate_hardware_specific_report_provenance(payload)
+
+    assert provenance.gpu_count == gpu_count
+
+
+@pytest.mark.parametrize("gpu_count", [True, 0, -1])
+def test_hardware_specific_report_rejects_nonpositive_or_boolean_gpu_count(
+    gpu_count: object,
+) -> None:
+    report_contract = _report_contract()
+    payload = _report_provenance("rtx4090")
+    payload["gpu_count"] = gpu_count
+
+    with pytest.raises(report_contract.P6PublicReportError, match="GPU count"):
+        report_contract.validate_hardware_specific_report_provenance(payload)
+
+
 def test_hardware_specific_report_rejects_combined_h800_and_rtx4090_latency_energy() -> None:
     report_contract = _report_contract()
     payload = _report_provenance("rtx4090")

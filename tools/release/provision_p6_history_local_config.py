@@ -59,7 +59,16 @@ class NvidiaSmiGpuProbe:
     """Read supplied private GPU admission fields through one direct command."""
 
     def snapshot(self, indices: tuple[int, ...]) -> tuple[GpuRecord, ...]:
-        argv = _gpu_query_argv(indices)
+        records = self._query(_gpu_query_argv(indices))
+        by_index = {record.index: record for record in records}
+        return tuple(by_index[index] for index in indices if index in by_index)
+
+    def snapshot_all(self) -> tuple[GpuRecord, ...]:
+        """Return one immutable live snapshot for every visible NVIDIA GPU."""
+        return self._query(_all_gpu_query_argv())
+
+    @staticmethod
+    def _query(argv: tuple[str, ...]) -> tuple[GpuRecord, ...]:
         completed = subprocess.run(
             argv,
             shell=False,
@@ -70,9 +79,15 @@ class NvidiaSmiGpuProbe:
         )
         if completed.returncode != 0:
             raise RuntimeError("GPU query failed")
-        records = _parse_gpu_records(completed.stdout)
-        by_index = {record.index: record for record in records}
-        return tuple(by_index[index] for index in indices if index in by_index)
+        return _parse_gpu_records(completed.stdout)
+
+
+def _all_gpu_query_argv() -> tuple[str, ...]:
+    return (
+        "nvidia-smi",
+        "--query-gpu=index,uuid,name,memory.used,memory.total",
+        "--format=csv,noheader,nounits",
+    )
 
 
 def _gpu_query_argv(indices: tuple[int, ...]) -> tuple[str, ...]:

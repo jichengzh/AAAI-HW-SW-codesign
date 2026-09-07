@@ -240,11 +240,14 @@ def test_source_invocations_preserve_validated_gpu_policy_existing_order(
     assert [argv[8] for argv in invocations] == ["107", "103", "101"]
 
 
-def test_source_invocations_hardware_profile_rtx_preserves_four_card_order(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    "policy_indices",
+    [(109,), (109, 103, 107), (109, 103, 107, 101)],
+)
+def test_source_invocations_hardware_profile_rtx_preserves_runtime_pool_order(
+    tmp_path: Path, policy_indices: tuple[int, ...]
 ) -> None:
-    """Catches RTX source assignment sorting or ignoring the four-card profile."""
-    policy_indices = (109, 103, 107, 101)
+    """Catches RTX source assignment sorting or ignoring runtime cardinality."""
 
     invocations = build_source_invocations(
         tmp_path / "request.json",
@@ -262,18 +265,19 @@ def test_source_invocations_hardware_profile_rtx_preserves_four_card_order(
         profile=load_hardware_execution_profile("rtx4090"),
     )
 
-    assert [argv[8] for argv in invocations] == ["109", "103", "107", "101"]
+    assert [argv[8] for argv in invocations] == [
+        str(policy_indices[index % len(policy_indices)]) for index in range(4)
+    ]
 
 
 @pytest.mark.parametrize(
     ("policy_profile", "expected_profile", "indices"),
-    [
-        ("h800", "rtx4090", (101, 103, 107, 109)),
-        ("rtx4090", "h800", (101, 103, 107, 109)),
-        ("rtx4090", "rtx4090", (101, 103, 107)),
-    ],
-)
-def test_source_invocations_hardware_profile_mismatch_or_count_fails_closed(
+        [
+            ("h800", "rtx4090", (101, 103, 107, 109)),
+            ("rtx4090", "h800", (101, 103, 107, 109)),
+        ],
+    )
+def test_source_invocations_hardware_profile_mismatch_fails_closed(
     tmp_path: Path,
     policy_profile: str,
     expected_profile: str,

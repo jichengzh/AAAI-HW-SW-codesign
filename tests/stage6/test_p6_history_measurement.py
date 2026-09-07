@@ -851,11 +851,14 @@ def test_measurement_executes_exact_two_gpu_policy_with_double_admission(
     assert len(feedback["rows"]) == 4
 
 
-def test_runtime_hardware_profile_rtx_admits_four_cards_in_existing_order(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    "policy_indices",
+    [(109,), (109, 103, 107), (109, 103, 107, 101)],
+)
+def test_runtime_hardware_profile_rtx_admits_runtime_pool_in_existing_order(
+    tmp_path: Path, policy_indices: tuple[int, ...]
 ) -> None:
     """Catches RTX runtime admission reordering cards or launching as H800."""
-    policy_indices = (109, 103, 107, 101)
     private_root = tmp_path / "private"
     private_root.mkdir()
     round_root = private_root / "controller-round"
@@ -888,7 +891,9 @@ def test_runtime_hardware_profile_rtx_admits_four_cards_in_existing_order(
         if Path(call.argv[0]).name == "stage5_materialize_round_sources_v1.sh"
     ]
     assert probe.calls == [policy_indices, policy_indices]
-    assert [call.argv[8] for call in source_calls] == ["109", "103", "107", "101"]
+    assert [call.argv[8] for call in source_calls] == [
+        str(policy_indices[index % len(policy_indices)]) for index in range(4)
+    ]
     assert all(
         set(call.env)
         == {
@@ -1018,38 +1023,6 @@ def test_runtime_explicit_rtx_rejects_legacy_policy_before_probe_or_process(
 
     assert captured.value.category == "history_execution_invalid"
     assert str(captured.value) == "history_execution_invalid"
-    assert probe.calls == []
-    assert runner.calls == []
-
-
-def test_runtime_hardware_profile_rtx_rejects_wrong_count_before_probe_or_process(
-    tmp_path: Path,
-) -> None:
-    """Catches runtime accepting a persisted non-four-card RTX policy."""
-    private_root = tmp_path / "private"
-    private_root.mkdir()
-    round_root = private_root / "controller-round"
-    round_root.mkdir()
-    policy_indices = (101, 103, 107)
-    request = _request(hardware_profile="rtx4090")
-    runner = FakeRunner(request)
-    probe = FakeProbe()
-
-    with pytest.raises(P6HistoryMeasurementError) as captured:
-        run_history_measurement_batch(
-            request,
-            _binding(
-                private_root,
-                gpu_indices=policy_indices,
-                hardware_profile="rtx4090",
-            ),
-            round_root,
-            runner,
-            probe,
-            profile=load_hardware_execution_profile("rtx4090"),
-        )
-
-    assert captured.value.category == "history_execution_invalid"
     assert probe.calls == []
     assert runner.calls == []
 

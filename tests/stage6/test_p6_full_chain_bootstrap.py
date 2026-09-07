@@ -568,6 +568,106 @@ def test_materialize_full_chain_binding_renders_dynamic_config(
     }
 
 
+def test_materialize_selects_runtime_gpu_count_and_late_binds_without_mutating_template(
+    tmp_path: Path,
+) -> None:
+    legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
+    template_payload = _template_payload(template)
+    template_payload["execution_interface"]["environment"]["values"][
+        "CUDA_VISIBLE_DEVICES"
+    ] = {"kind": "runtime", "value": "GPU_POOL"}
+    _write_yaml(template, template_payload)
+    original_template_bytes = template.read_bytes()
+    class RuntimeCountProbe:
+        def __init__(self) -> None:
+            self.all_calls = 0
+            self.calls: list[tuple[int, ...]] = []
+
+        def snapshot_all(self) -> tuple[GpuRecord, ...]:
+            self.all_calls += 1
+            records = (
+                GpuRecord(19, "GPU-runtime-19", "NVIDIA H800 80GB HBM3", 0.0),
+                GpuRecord(7, "GPU-busy-7", "NVIDIA H800 80GB HBM3", 0.5),
+                GpuRecord(3, "GPU-wrong-3", "NVIDIA GeForce RTX 4090", 0.0),
+            )
+            return records if self.all_calls == 1 else tuple(reversed(records))
+
+        def snapshot(self, indices: tuple[int, ...]) -> tuple[GpuRecord, ...]:
+            self.calls.append(indices)
+            return tuple(
+                GpuRecord(
+                    index=index,
+                    uuid=f"GPU-runtime-{index}",
+                    model_name="NVIDIA H800 80GB HBM3",
+                    occupancy=0.0,
+                )
+                for index in indices
+            )
+
+    probe = RuntimeCountProbe()
+    binding = materialize_full_chain_binding(
+        legacy_config,
+        template,
+        output_root,
+        output_root / "binding.json",
+        output_root / "local.yaml",
+        probe,
+        runtime_gpu_count=1,
+    )
+
+    assert probe.all_calls == 2
+    assert probe.calls == [(19,), (19,)]
+    assert binding["gpu_policy"] == {
+        "indices": [19],
+        "uuid_by_index": {"19": "GPU-runtime-19"},
+        "hardware_profile": "h800",
+    }
+    assert (
+        binding["execution_interface"]["environment"]["values"]
+        ["CUDA_VISIBLE_DEVICES"]
+        == {"kind": "literal", "value": "19"}
+    )
+    assert template.read_bytes() == original_template_bytes
+
+
+def test_materialize_rejects_runtime_gpu_count_when_too_few_stable_idle_devices(
+    tmp_path: Path,
+) -> None:
+    legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
+
+    class InsufficientProbe:
+        def __init__(self) -> None:
+            self.all_calls = 0
+
+        def snapshot_all(self) -> tuple[GpuRecord, ...]:
+            self.all_calls += 1
+            uuid = "GPU-drift-first" if self.all_calls == 1 else "GPU-drift-second"
+            return (
+                GpuRecord(7, "GPU-stable-7", "NVIDIA H800 80GB HBM3", 0.0),
+                GpuRecord(9, uuid, "NVIDIA H800 80GB HBM3", 0.0),
+            )
+
+        def snapshot(self, indices: tuple[int, ...]) -> tuple[GpuRecord, ...]:
+            pytest.fail(f"selected snapshot must not run: {indices}")
+
+    probe = InsufficientProbe()
+    with pytest.raises(FullChainBootstrapError) as captured:
+        materialize_full_chain_binding(
+            legacy_config,
+            template,
+            output_root,
+            output_root / "binding.json",
+            output_root / "local.yaml",
+            probe,
+            runtime_gpu_count=2,
+        )
+
+    assert captured.value.category == "gpu_admission"
+    assert probe.all_calls == 2
+    assert not (output_root / "binding.json").exists()
+    assert not (output_root / "local.yaml").exists()
+
+
 def test_materialize_accepts_matching_normalized_recipe_before_pair_write(
     tmp_path: Path,
 ) -> None:

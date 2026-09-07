@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+import os
 from pathlib import Path
 import sys
 
@@ -19,6 +20,7 @@ from framework.stage6.p6_full_chain_bootstrap_v1 import (  # noqa: E402
     FullChainBootstrapError,
     materialize_full_chain_binding,
 )
+from framework.stage6.p6_gpu_policy_v1 import parse_runtime_gpu_pool  # noqa: E402
 from tools.release.provision_p6_history_local_config import (  # noqa: E402
     NvidiaSmiGpuProbe,
 )
@@ -58,6 +60,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return int(error.code)
 
     try:
+        runtime_gpu_count = (
+            parse_runtime_gpu_pool(os.environ) if "GPU_POOL" in os.environ else None
+        )
+    except ValueError:
+        sys.stderr.write("gpu_admission\n")
+        return 1
+
+    try:
         materialize_full_chain_binding(
             args.legacy_local_config,
             args.runner_template,
@@ -68,6 +78,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             source_wrapper_profile=args.source_wrapper_profile,
             external_training_binding=args.external_training_binding,
             post_source_adapter_profile=args.post_source_adapter_profile,
+            runtime_gpu_count=runtime_gpu_count,
         )
     except FullChainBootstrapError as error:
         sys.stderr.write(f"{error.category}\n")

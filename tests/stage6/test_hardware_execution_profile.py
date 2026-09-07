@@ -67,7 +67,7 @@ def test_default_profile_preserves_h800_and_profile_values() -> None:
     assert rtx4090.tvm_arch == "sm89"
     assert rtx4090.tvm_cache_namespace == "rtx4090-sm89"
     assert rtx4090.backend_scope == frozenset({"tvm_auto"})
-    assert rtx4090.required_gpu_count == 4
+    assert rtx4090.required_gpu_count is None
     assert rtx4090.maximum_occupancy == 0.05
 
 
@@ -101,12 +101,13 @@ def test_profile_backend_rejects_backend_outside_the_selected_scope() -> None:
 
 
 @pytest.mark.parametrize("indices", [(0,), (0, 1, 2), (0, 1, 2, 3, 4)])
-def test_rtx4090_requires_exactly_four_gpu_indices(indices: tuple[int, ...]) -> None:
-    """Catches RTX policies admitting a non-four-card allocation."""
+def test_rtx4090_accepts_any_nonempty_canonical_gpu_pool(
+    indices: tuple[int, ...],
+) -> None:
+    """Keeps RTX hardware identity independent from runtime pool cardinality."""
     profile = load_hardware_execution_profile("rtx4090")
 
-    with pytest.raises(ValueError, match="exactly 4"):
-        validate_profile_gpu_policy(profile, indices)
+    assert validate_profile_gpu_policy(profile, indices) == indices
 
 
 def test_h800_accepts_existing_two_card_fixture() -> None:

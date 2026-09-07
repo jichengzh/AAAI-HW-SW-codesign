@@ -107,12 +107,15 @@ def _runtime_declarations(
         key: _runtime_value(values, key, FORMAL_TVM_ENVIRONMENT_SPEC[key][0])
         for key in FORMAL_TVM_ENV_KEYS
     }
-    indices = parse_gpu_indices_csv(
+    declared_indices = parse_gpu_indices_csv(
         _runtime_value(values, "CUDA_VISIBLE_DEVICES", "literal")
     )
-    indices = validate_profile_gpu_policy(profile.hardware_profile, indices)
-    if expected_gpu_indices is not None and indices != expected_gpu_indices:
-        raise ValueError
+    validate_profile_gpu_policy(profile.hardware_profile, declared_indices)
+    indices = (
+        declared_indices
+        if expected_gpu_indices is None
+        else validate_profile_gpu_policy(profile.hardware_profile, expected_gpu_indices)
+    )
     return declared, indices
 
 

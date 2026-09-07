@@ -56,7 +56,7 @@ _PROFILES = MappingProxyType({
         backend_scope=frozenset({"tvm_auto"}),
         tvm_arch="sm89",
         tvm_cache_namespace="rtx4090-sm89",
-        required_gpu_count=4,
+        required_gpu_count=None,
         maximum_occupancy=0.05,
     ),
 })

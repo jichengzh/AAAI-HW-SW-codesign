@@ -181,6 +181,28 @@ def test_handoff_records_committed_readme_closeout_state() -> None:
     assert "| 公开文档与新手入口 | 已更新，待提交 |" not in handoff
 
 
+def test_public_readmes_document_runtime_gpu_pool_fresh_run() -> None:
+    """The maintained entry point documents single- and multi-GPU late binding."""
+    if _is_anonymous_reviewer_archive():
+        pytest.skip("the anonymous reviewer ZIP deliberately excludes public release documentation")
+    for readme_name in ("README.md", "README.zh-CN.md"):
+        readme = (REPOSITORY_ROOT / readme_name).read_text(encoding="utf-8")
+        assert "GPU_POOL=1" in readme
+        assert "GPU_POOL=3" in readme
+        assert "GPU_POOL=7" in readme
+        assert "GPU_POOL=1,2,3" not in readme
+        assert "git rev-parse --short=12 HEAD" in readme
+        assert "git rev-parse HEAD" not in readme
+        assert "--legacy-local-config" in readme
+        assert "--runner-template" in readme
+        assert "--local-output-root" in readme
+        assert "--binding-output" in readme
+        assert "--config-output" in readme
+    audit = HANDOFF.read_text(encoding="utf-8")
+    assert "`GPU_POOL` 是运维侧正整数 GPU 数量" in audit
+    assert "`GPU_POOL` 是运维侧有序 GPU pool" not in audit
+
+
 def test_p4_contract_is_discoverable_and_has_complete_coverage_summary() -> None:
     coverage = json.loads(
         (REPOSITORY_ROOT / "artifacts/external/coverage.json").read_text(

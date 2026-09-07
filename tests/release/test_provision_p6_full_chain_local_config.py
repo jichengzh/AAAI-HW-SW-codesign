@@ -717,6 +717,38 @@ def test_gpu_probe_returns_records_in_supplied_private_policy_order(
     assert [record.index for record in records] == [23, 19, 17]
 
 
+def test_gpu_probe_can_enumerate_all_devices_without_an_id_filter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_argv: tuple[str, ...] | None = None
+
+    def fake_run(argv: tuple[str, ...], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        nonlocal observed_argv
+        observed_argv = argv
+        assert kwargs.get("shell") is False
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            "7, GPU-runtime-7, NVIDIA H800 80GB HBM3, 0, 100\n"
+            "2, GPU-runtime-2, NVIDIA H800 80GB HBM3, 50, 100\n",
+            "",
+        )
+
+    monkeypatch.setattr(provision_cli.subprocess, "run", fake_run)
+
+    records = provision_cli.NvidiaSmiGpuProbe().snapshot_all()
+
+    assert observed_argv == (
+        "nvidia-smi",
+        "--query-gpu=index,uuid,name,memory.used,memory.total",
+        "--format=csv,noheader,nounits",
+    )
+    assert [(record.index, record.occupancy) for record in records] == [
+        (7, 0.0),
+        (2, 0.5),
+    ]
+
+
 @pytest.mark.parametrize(
     "indices",
     [
@@ -743,12 +775,24 @@ def test_gpu_query_argv_rejects_malformed_policy(
         provision_cli.NvidiaSmiGpuProbe().snapshot(indices)
 
 
-def _run_cli(tmp_path: Path, *args: str, rows: tuple[str, ...] | None = None) -> subprocess.CompletedProcess[str]:
+def _run_cli(
+    tmp_path: Path,
+    *args: str,
+    rows: tuple[str, ...] | None = None,
+    environment: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     fake_bin = _fake_nvidia_smi(tmp_path, rows)
+    inherited_environment = {
+        key: value for key, value in os.environ.items() if key != "GPU_POOL"
+    }
     return subprocess.run(
         [sys.executable, str(PROVISIONER), *args],
         cwd=REPOSITORY_ROOT,
-        env={**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}"},
+        env={
+            **inherited_environment,
+            "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+            **(environment or {}),
+        },
         text=True,
         capture_output=True,
         check=False,
@@ -774,6 +818,48 @@ def test_cli_writes_only_ignored_private_pair(tmp_path: Path) -> None:
         == "23,19,17"
     )
     assert _load_local_config_without_echoing_private_values(tmp_path).stage1_scan_step is not None
+
+
+def test_cli_gpu_pool_late_binds_requested_gpu_and_ignores_ambient_cuda(
+    tmp_path: Path,
+) -> None:
+    args = _valid_args(tmp_path)
+    template = Path(args[3])
+    original_template_bytes = template.read_bytes()
+
+    result = _run_cli(
+        tmp_path,
+        *args,
+        rows=("7, GPU-runtime-7, NVIDIA H800 80GB HBM3, 0, 100",),
+        environment={"GPU_POOL": "1", "CUDA_VISIBLE_DEVICES": "23,19,17"},
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == "p6_full_chain_config_written\n"
+    assert result.stderr == ""
+    binding = json.loads(_private_pair_paths(tmp_path)[0].read_text(encoding="utf-8"))
+    assert binding["gpu_policy"]["indices"] == [7]
+    assert binding["gpu_policy"]["uuid_by_index"] == {"7": "GPU-runtime-7"}
+    assert (
+        binding["execution_interface"]["environment"]["values"]
+        ["CUDA_VISIBLE_DEVICES"]["value"]
+        == "7"
+    )
+    assert template.read_bytes() == original_template_bytes
+
+
+def test_cli_rejects_invalid_gpu_pool_before_writing_pair(tmp_path: Path) -> None:
+    result = _run_cli(
+        tmp_path,
+        *_valid_args(tmp_path),
+        environment={"GPU_POOL": "0", "CUDA_VISIBLE_DEVICES": "23,19,17"},
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr == "gpu_admission\n"
+    assert not _private_pair_paths(tmp_path)[0].exists()
+    assert not _private_pair_paths(tmp_path)[1].exists()
 
 
 def test_cli_enforces_matching_normalized_recipe_before_writing_pair(

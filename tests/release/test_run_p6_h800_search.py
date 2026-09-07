@@ -739,6 +739,28 @@ def _fixture_runtime_authority(**kwargs: Any) -> SimpleNamespace:
     )
 
 
+def test_run_command_disables_python_bytecode_writes_for_every_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    observed: dict[str, object] = {}
+
+    def run(argv: tuple[str, ...], **kwargs: object) -> SimpleNamespace:
+        observed.update(kwargs)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setenv("P6_TEST_PARENT_ENV", "preserved")
+    monkeypatch.setenv("PYTHONDONTWRITEBYTECODE", "0")
+    monkeypatch.setattr(search_cli.subprocess, "run", run)
+
+    returncode = search_cli._run_command(("python", "worker.py"), tmp_path)
+
+    assert returncode == 0
+    child_environment = observed["env"]
+    assert isinstance(child_environment, dict)
+    assert child_environment["P6_TEST_PARENT_ENV"] == "preserved"
+    assert child_environment["PYTHONDONTWRITEBYTECODE"] == "1"
+
+
 def test_cli_runs_v2_loop_without_public_summary_and_keeps_outputs_local(tmp_path: Path) -> None:
     paths = _cli_fixture(tmp_path)
 
@@ -808,6 +830,308 @@ def test_cli_runs_v3_rtx_hardware_profile_through_existing_executable(
         "rtx4090"
     }
     assert len({row["row_id"] for request in requests for row in request["rows"]}) == 16
+
+
+def test_cli_passes_existing_binding_indices_when_runtime_gpu_count_matches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    paths = _history_cli_fixture(tmp_path, hardware_profile="rtx4090")
+    _install_measured_rtx_context(tmp_path, paths)
+    observed: list[tuple[int, ...] | None] = []
+
+    def observed_authority(**kwargs: Any) -> SimpleNamespace:
+        observed.append(kwargs.get("expected_gpu_indices"))
+        return _fixture_runtime_authority(**kwargs)
+
+    monkeypatch.setattr(
+        execution,
+        "historical_capability_source_sha256",
+        lambda root: hashlib.sha256(historical_source_bytes()).hexdigest(),
+    )
+    monkeypatch.setattr(
+        execution,
+        "probe_normalized_capability_authority",
+        observed_authority,
+    )
+    monkeypatch.setenv("PATH", paths["env"]["PATH"])
+    monkeypatch.setenv("GPU_POOL", str(len(RTX_GPU_INDICES)))
+
+    result = search_cli.main(
+        [
+            "--contract",
+            str(paths["contract"]),
+            "--local-config",
+            str(paths["local"]),
+            "--code-revision",
+            "test-revision",
+        ]
+    )
+
+    assert result == 0
+    assert capsys.readouterr().out == "completed\n"
+    assert observed == [RTX_GPU_INDICES]
+
+
+def test_cli_rejects_runtime_gpu_count_that_disagrees_with_existing_binding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    paths = _history_cli_fixture(tmp_path, hardware_profile="rtx4090")
+    monkeypatch.setenv("GPU_POOL", "1")
+
+    result = search_cli.main(
+        [
+            "--contract",
+            str(paths["contract"]),
+            "--local-config",
+            str(paths["local"]),
+            "--code-revision",
+            "test-revision",
+        ]
+    )
+
+    assert result == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "contract_error\n"
+    assert not paths["output_root"].exists()
+
+
+def test_fresh_cli_requires_gpu_pool_before_bootstrap_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    output_root = tmp_path / "fresh-output"
+    monkeypatch.delenv("GPU_POOL", raising=False)
+
+    result = search_cli.main(
+        [
+            "--contract",
+            str(tmp_path / "contract.yaml"),
+            "--code-revision",
+            "test-revision",
+            "--legacy-local-config",
+            str(tmp_path / "locator.yaml"),
+            "--runner-template",
+            str(tmp_path / "runner.yaml"),
+            "--local-output-root",
+            str(output_root),
+            "--binding-output",
+            str(output_root / "binding.json"),
+            "--config-output",
+            str(output_root / "local.yaml"),
+            "--source-wrapper-profile",
+            str(tmp_path / "source.yaml"),
+            "--external-training-binding",
+            str(tmp_path / "training.yaml"),
+            "--post-source-adapter-profile",
+            str(tmp_path / "post-source.yaml"),
+        ]
+    )
+
+    assert result == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "contract_error\n"
+    assert not output_root.exists()
+
+
+def test_fresh_cli_late_binds_preflights_and_runs_one_gpu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    output_root = tmp_path / "fresh-output"
+    binding = output_root / "binding.json"
+    local_config = output_root / "local.yaml"
+    contract_path = tmp_path / "contract.yaml"
+    locator = tmp_path / "locator.yaml"
+    runner = tmp_path / "runner.yaml"
+    source = tmp_path / "source.yaml"
+    training = tmp_path / "training.yaml"
+    post_source = tmp_path / "post-source.yaml"
+    calls: list[tuple[str, object]] = []
+    contract = SimpleNamespace(hardware_profile=SimpleNamespace(profile_id="rtx4090"))
+    local = SimpleNamespace(hardware_profile=contract.hardware_profile)
+    completed = SimpleNamespace(status="completed")
+
+    def materialize(*args: object, **kwargs: object) -> dict[str, object]:
+        calls.append(("bootstrap", kwargs["runtime_gpu_count"]))
+        return {"gpu_policy": {"indices": [19]}}
+
+    def preflight(**kwargs: object) -> object:
+        calls.append(("preflight", kwargs["local_config_path"]))
+        return object()
+
+    def run(*args: object, **kwargs: object) -> object:
+        calls.append(("controller", kwargs["runtime_gpu_indices"]))
+        return completed
+
+    monkeypatch.setenv("GPU_POOL", "1")
+    monkeypatch.setattr(search_cli, "materialize_full_chain_binding", materialize)
+    monkeypatch.setattr(search_cli, "NvidiaSmiGpuProbe", lambda: object())
+    monkeypatch.setattr(
+        search_cli, "preflight_materializer_training_bridge", preflight
+    )
+    monkeypatch.setattr(search_cli, "load_public_contract", lambda path: contract)
+    monkeypatch.setattr(search_cli, "load_local_config", lambda path, value: local)
+    monkeypatch.setattr(search_cli, "run_p6_coptv2x_search", run)
+
+    result = search_cli.main(
+        [
+            "--contract",
+            str(contract_path),
+            "--code-revision",
+            "test-revision",
+            "--legacy-local-config",
+            str(locator),
+            "--runner-template",
+            str(runner),
+            "--local-output-root",
+            str(output_root),
+            "--binding-output",
+            str(binding),
+            "--config-output",
+            str(local_config),
+            "--source-wrapper-profile",
+            str(source),
+            "--external-training-binding",
+            str(training),
+            "--post-source-adapter-profile",
+            str(post_source),
+        ]
+    )
+
+    assert result == 0
+    assert capsys.readouterr().out == "completed\n"
+    assert calls == [
+        ("bootstrap", 1),
+        ("preflight", local_config),
+        ("controller", (19,)),
+    ]
+
+
+def test_fresh_cli_passes_three_auto_selected_gpu_indices_to_controller(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    output_root = tmp_path / "fresh-output"
+    local_config = output_root / "local.yaml"
+    calls: list[tuple[str, object]] = []
+    contract = SimpleNamespace(hardware_profile=SimpleNamespace(profile_id="rtx4090"))
+    local = SimpleNamespace(hardware_profile=contract.hardware_profile)
+
+    def materialize(*args: object, **kwargs: object) -> dict[str, object]:
+        calls.append(("bootstrap", kwargs["runtime_gpu_count"]))
+        return {"gpu_policy": {"indices": [11, 4, 9]}}
+
+    def run(*args: object, **kwargs: object) -> object:
+        calls.append(("controller", kwargs["runtime_gpu_indices"]))
+        return SimpleNamespace(status="completed")
+
+    monkeypatch.setenv("GPU_POOL", "3")
+    monkeypatch.setattr(search_cli, "materialize_full_chain_binding", materialize)
+    monkeypatch.setattr(search_cli, "NvidiaSmiGpuProbe", lambda: object())
+    monkeypatch.setattr(
+        search_cli, "preflight_materializer_training_bridge", lambda **kwargs: object()
+    )
+    monkeypatch.setattr(search_cli, "load_public_contract", lambda path: contract)
+    monkeypatch.setattr(search_cli, "load_local_config", lambda path, value: local)
+    monkeypatch.setattr(search_cli, "run_p6_coptv2x_search", run)
+
+    result = search_cli.main(
+        [
+            "--contract", str(tmp_path / "contract.yaml"),
+            "--code-revision", "test-revision",
+            "--legacy-local-config", str(tmp_path / "locator.yaml"),
+            "--runner-template", str(tmp_path / "runner.yaml"),
+            "--local-output-root", str(output_root),
+            "--binding-output", str(output_root / "binding.json"),
+            "--config-output", str(local_config),
+            "--source-wrapper-profile", str(tmp_path / "source.yaml"),
+            "--external-training-binding", str(tmp_path / "training.yaml"),
+            "--post-source-adapter-profile", str(tmp_path / "post-source.yaml"),
+        ]
+    )
+
+    assert result == 0
+    assert capsys.readouterr().out == "completed\n"
+    assert calls == [("bootstrap", 3), ("controller", (11, 4, 9))]
+
+
+def test_fresh_cli_reports_insufficient_stable_gpus_as_gpu_admission(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    output_root = tmp_path / "fresh-output"
+    contract = SimpleNamespace(hardware_profile=SimpleNamespace(profile_id="rtx4090"))
+
+    def reject_admission(*args: object, **kwargs: object) -> dict[str, object]:
+        raise search_cli.FullChainBootstrapError(
+            "gpu_admission", "insufficient stable idle GPUs"
+        )
+
+    monkeypatch.setenv("GPU_POOL", "3")
+    monkeypatch.setattr(search_cli, "load_public_contract", lambda path: contract)
+    monkeypatch.setattr(search_cli, "materialize_full_chain_binding", reject_admission)
+    monkeypatch.setattr(search_cli, "NvidiaSmiGpuProbe", lambda: object())
+
+    result = search_cli.main(
+        [
+            "--contract", str(tmp_path / "contract.yaml"),
+            "--code-revision", "test-revision",
+            "--legacy-local-config", str(tmp_path / "locator.yaml"),
+            "--runner-template", str(tmp_path / "runner.yaml"),
+            "--local-output-root", str(output_root),
+            "--binding-output", str(output_root / "binding.json"),
+            "--config-output", str(output_root / "local.yaml"),
+            "--source-wrapper-profile", str(tmp_path / "source.yaml"),
+            "--external-training-binding", str(tmp_path / "training.yaml"),
+            "--post-source-adapter-profile", str(tmp_path / "post-source.yaml"),
+        ]
+    )
+
+    assert result == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "gpu_admission\n"
+    assert not output_root.exists()
+
+
+@pytest.mark.parametrize("raw_count", ["1,2", "0", "01", "-1", " 1"])
+def test_fresh_cli_rejects_noncanonical_gpu_count_before_bootstrap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    raw_count: str,
+) -> None:
+    output_root = tmp_path / "fresh-output"
+    monkeypatch.setenv("GPU_POOL", raw_count)
+
+    result = search_cli.main(
+        [
+            "--contract",
+            str(tmp_path / "contract.yaml"),
+            "--code-revision",
+            "test-revision",
+            "--legacy-local-config",
+            str(tmp_path / "locator.yaml"),
+            "--runner-template",
+            str(tmp_path / "runner.yaml"),
+            "--local-output-root",
+            str(output_root),
+            "--binding-output",
+            str(output_root / "binding.json"),
+            "--config-output",
+            str(output_root / "local.yaml"),
+            "--source-wrapper-profile",
+            str(tmp_path / "source.yaml"),
+            "--external-training-binding",
+            str(tmp_path / "training.yaml"),
+            "--post-source-adapter-profile",
+            str(tmp_path / "post-source.yaml"),
+        ]
+    )
+
+    assert result == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "contract_error\n"
+    assert not output_root.exists()
 
 
 def test_cli_rejects_hardware_profile_mismatch_before_adapter_launch(

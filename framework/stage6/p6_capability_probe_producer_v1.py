@@ -89,7 +89,12 @@ def build_probe_evidence(
     try:
         hardware = repository_root.joinpath(*profile.hardware_capability_path.parts)
         environment = repository_root.joinpath(*profile.environment_contract_path.parts)
-        if profile.profile_id != "rtx4090" or verified_gpu_count != profile.required_gpu_count:
+        if (
+            profile.profile_id != "rtx4090"
+            or isinstance(verified_gpu_count, bool)
+            or not isinstance(verified_gpu_count, int)
+            or verified_gpu_count <= 0
+        ):
             raise ValueError
         return {
             "schema_version": "p6_rtx_compiler_capability_evidence_v1",

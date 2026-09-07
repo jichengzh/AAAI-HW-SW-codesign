@@ -23,6 +23,7 @@ from framework.stage6.coptv2x_h800_search_v2 import (
 from framework.stage6.hardware_execution_profile_v1 import (
     HardwareExecutionProfile,
     load_hardware_execution_profile,
+    validate_profile_gpu_records,
 )
 from framework.stage6.p6_external_training_binding_v1 import (
     P6ExternalTrainingBindingError,
@@ -37,6 +38,7 @@ from framework.stage6.p6_full_chain_bootstrap_outputs_v1 import (
 )
 from framework.stage6.p6_history_binding_v1 import (
     GpuProbe,
+    GpuRecord,
     LOCAL_INPUT_NAMES,
     P6HistoryBindingError,
     build_history_binding,
@@ -46,6 +48,7 @@ from framework.stage6.p6_history_binding_v1 import (
     validate_ready_source_contract_template,
     write_private_binding_pair,
 )
+from framework.stage6.p6_gpu_policy_v1 import canonical_gpu_indices
 from framework.stage6.p6_history_execution_closure_v1 import (
     P6ExecutionClosureError,
     validate_post_source_wrapper_runner_binding,
@@ -443,6 +446,7 @@ def materialize_full_chain_binding(
     *,
     source_wrapper_profile: Path | None = None, external_training_binding: Path | None = None,
     post_source_adapter_profile: Path | None = None,
+    runtime_gpu_count: int | None = None,
 ) -> dict[str, Any]:
     """Validate private inputs and atomically materialize one binding/config pair."""
     output_root, binding_path, config_path = resolve_private_outputs(
@@ -466,6 +470,12 @@ def materialize_full_chain_binding(
         runner_template=runner_template,
         hardware_profile=hardware_profile,
     )
+    runtime_gpu_indices = _select_runtime_gpu_indices(
+        gpu_probe,
+        runtime_gpu_count,
+        hardware_profile,
+    )
+    interface = _late_bind_runtime_gpu_indices(interface, runtime_gpu_indices)
     binding = _build_private_binding(
         root=root,
         locator=locator,
@@ -493,6 +503,96 @@ def materialize_full_chain_binding(
         hardware_profile=hardware_profile,
     )
     return binding
+
+
+def _select_runtime_gpu_indices(
+    gpu_probe: GpuProbe,
+    runtime_gpu_count: int | None,
+    hardware_profile: HardwareExecutionProfile,
+) -> tuple[int, ...] | None:
+    if runtime_gpu_count is None:
+        return None
+    if (
+        isinstance(runtime_gpu_count, bool)
+        or not isinstance(runtime_gpu_count, int)
+        or runtime_gpu_count <= 0
+    ):
+        raise FullChainBootstrapError("gpu_admission", "runtime GPU count is invalid")
+    first = _admissible_gpu_records(_probe_all_gpus(gpu_probe), hardware_profile)
+    second = _admissible_gpu_records(_probe_all_gpus(gpu_probe), hardware_profile)
+    stable_indices = tuple(
+        index
+        for index in sorted(set(first).intersection(second))
+        if first[index].uuid.strip() == second[index].uuid.strip()
+    )
+    if len(stable_indices) < runtime_gpu_count:
+        raise FullChainBootstrapError(
+            "gpu_admission", "too few stable idle GPUs satisfy the hardware profile"
+        )
+    return stable_indices[:runtime_gpu_count]
+
+
+def _probe_all_gpus(gpu_probe: GpuProbe) -> tuple[GpuRecord, ...]:
+    try:
+        snapshot_all = getattr(gpu_probe, "snapshot_all")
+        records = snapshot_all()
+    except Exception as error:
+        raise FullChainBootstrapError("gpu_admission", "GPU enumeration failed") from error
+    if not isinstance(records, tuple) or any(
+        not isinstance(record, GpuRecord) for record in records
+    ):
+        raise FullChainBootstrapError("gpu_admission", "GPU enumeration is invalid")
+    try:
+        canonical_gpu_indices(tuple(record.index for record in records))
+    except ValueError as error:
+        raise FullChainBootstrapError("gpu_admission", "GPU enumeration is invalid") from error
+    uuids = tuple(
+        record.uuid.strip() if isinstance(record.uuid, str) else "" for record in records
+    )
+    if any(not uuid for uuid in uuids) or len(set(uuids)) != len(uuids):
+        raise FullChainBootstrapError("gpu_admission", "GPU enumeration is invalid")
+    return records
+
+
+def _admissible_gpu_records(
+    records: tuple[GpuRecord, ...],
+    hardware_profile: HardwareExecutionProfile,
+) -> dict[int, GpuRecord]:
+    admitted: dict[int, GpuRecord] = {}
+    for record in records:
+        try:
+            validate_profile_gpu_records(
+                hardware_profile,
+                (record,),
+                (record.index,),
+            )
+        except ValueError:
+            continue
+        admitted[record.index] = record
+    return admitted
+
+
+def _late_bind_runtime_gpu_indices(
+    interface: Mapping[str, Any],
+    runtime_gpu_indices: tuple[int, ...] | None,
+) -> dict[str, Any]:
+    rendered = copy.deepcopy(dict(interface))
+    if runtime_gpu_indices is None:
+        return rendered
+    try:
+        indices = canonical_gpu_indices(runtime_gpu_indices)
+        values = rendered["environment"]["values"]
+        if not isinstance(values, dict):
+            raise TypeError
+        values["CUDA_VISIBLE_DEVICES"] = {
+            "kind": "literal",
+            "value": ",".join(map(str, indices)),
+        }
+    except (KeyError, TypeError, ValueError) as error:
+        raise FullChainBootstrapError(
+            "gpu_admission", "runtime GPU policy is invalid"
+        ) from error
+    return rendered
 
 
 def _load_legacy_local_locator(path: Path) -> _LegacyLocator:

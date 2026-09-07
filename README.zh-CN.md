@@ -99,48 +99,44 @@ python tools/release/normalize_p6_history_root.py \
   --private-dir <abs-normalized-private-dir> \
   --runner-template <abs-pre-normalization-private-runner-template.yaml>
 
-python tools/release/provision_p6_full_chain_local_config.py \
+GPU_POOL=7 python tools/release/run_p6_h800_search.py \
+  --contract configs/execution/p6_rtx4090_search.example.yaml \
+  --code-revision "$(git rev-parse --short=12 HEAD)" \
   --legacy-local-config <abs-rtx-local-config-or-locator.yaml> \
   --runner-template <abs-normalized-private-dir>/runner-template.yaml \
   --local-output-root <abs-fresh-output-root> \
-  --binding-output <abs-private-binding.json> \
-  --config-output <abs-local-config.yaml> \
+  --binding-output <abs-fresh-output-root>/binding.json \
+  --config-output <abs-fresh-output-root>/local-config.yaml \
   --source-wrapper-profile <abs-source-wrapper-profile.yaml> \
   --external-training-binding <abs-external-training-binding.yaml> \
   --post-source-adapter-profile <abs-post-source-adapter-profile.yaml>
-
-python tools/release/preflight_p6_materializer_training_bridge.py \
-  --contract configs/execution/p6_rtx4090_search.example.yaml \
-  --local-config <abs-local-config.yaml> \
-  --binding <abs-private-binding.json> \
-  --runner-template <abs-normalized-private-dir>/runner-template.yaml \
-  --source-wrapper-profile <abs-source-wrapper-profile.yaml> \
-  --external-training-binding <abs-external-training-binding.yaml> \
-  --post-source-adapter-profile <abs-post-source-adapter-profile.yaml>
-
-GPU_POOL=<ordered-gpu-indices> python tools/release/run_p6_h800_search.py \
-  --contract configs/execution/p6_rtx4090_search.example.yaml \
-  --local-config <abs-local-config.yaml> \
-  --code-revision "$(git rev-parse HEAD)"
 
 python tools/release/verify_p6_materializer_training_run.py \
   --contract configs/execution/p6_rtx4090_search.example.yaml \
-  --local-config <abs-local-config.yaml> \
-  --binding <abs-private-binding.json>
+  --local-config <abs-fresh-output-root>/local-config.yaml \
+  --binding <abs-fresh-output-root>/binding.json
 ```
 
 `--legacy-local-config` 这个 flag 名也是历史名称；在 RTX4090 运行中，它指向已批准的
 RTX local config 或 locator，并由 provision 转换成 fresh binding/config pair。`derive`
-和 `normalize` 使用 pre-normalization 私有 runner template；`provision` 和 `preflight`
-随后必须使用 normalized authority：
+和 `normalize` 使用 pre-normalization 私有 runner template。fresh-run 模式下，历史名称的
+controller 入口会完成 `GPU_POOL` 晚绑定、生成 fresh binding/config、执行静态 preflight，
+再启动四轮 controller；它不会修改 normalized authority：
 `<abs-normalized-private-dir>/runner-template.yaml`。
 
-GPU admission 与候选执行由私有有序 GPU pool 驱动（`GPU_POOL` 是运维简称）。controller
+`GPU_POOL` 是严格的正整数 GPU 数量，也是 fresh-run 模式下唯一的 GPU 选择入口。
+`GPU_POOL=1` 表示申请一张可用卡，`GPU_POOL=3` 表示申请三张，`GPU_POOL=7` 表示申请
+七张；调用方不指定物理 GPU 索引，也不提前持久化绑定 UUID。live admission 会从符合
+hardware profile 且稳定空闲的设备中自动选择所需数量，只在本次 fresh private binding
+中记录实际索引和实时 UUID。controller
 会从已准入的有序策略派生各 leaf binding，而不是假设所有 native leaf 都接收同一个
 pool。部分 leaf 会接收完整 pool，例如 native performance planning/execution 通过
 `gpu_pool` 接入；source materialization、quantization 与 AP shard 则在 adapter contract
 要求的位置接收单卡分配。同一轮内，候选/source 工作可以在不同 GPU 间并行；分配到同一
 GPU 的工作会串行执行。四轮搜索本身仍按顺序执行，因为后一轮必须消费前一轮已验证的反馈。
+
+旧的 `--local-config` 模式继续兼容。若同时设置 `GPU_POOL`，其数量必须与已有 binding
+一致；自动选择设备时应使用 fresh-run 模式。
 
 RTX4090 测量是 hardware-specific 证据。它可以验证 sm89 硬件上的端到端机制，但不能
 重标记为 H800 结果，也不能通过数值调整声称复现 H800 论文表格。

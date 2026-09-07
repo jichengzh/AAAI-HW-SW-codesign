@@ -301,6 +301,8 @@ def run_p6_coptv2x_search(
     local: LocalP6CoptV2XConfig,
     code_revision: str,
     command_runner: CommandRunner,
+    *,
+    runtime_gpu_indices: tuple[int, ...] | None = None,
 ) -> P6CoptV2XRunState:
     """Run the fixed four-round local Pyramid/TVM search state machine."""
     if contract.hardware_profile.profile_id != local.hardware_profile.profile_id:
@@ -313,7 +315,9 @@ def run_p6_coptv2x_search(
         _require_controller_destinations_absent(local)
     _run_framework_stage1_scan(local, command_runner)
     frozen_gold, gold_graphs, capability_profiles, profile = _load_search_inputs(
-        local, contract
+        local,
+        contract,
+        runtime_gpu_indices=runtime_gpu_indices,
     )
     task = _build_search_task(contract, profile)
     try:

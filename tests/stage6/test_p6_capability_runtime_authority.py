@@ -113,11 +113,30 @@ def test_runtime_inputs_are_locked_to_normalized_profile_and_runner(
     assert inputs.support_root.is_relative_to(normalized)
     assert len(inputs.gpu_indices) == 4
 
-    with pytest.raises(P6CapabilityRuntimeAuthorityError):
-        _normalized_runtime_inputs(
-            private_root=normalized,
-            expected_gpu_indices=tuple(reversed(inputs.gpu_indices)),
-        )
+    runtime_indices = (7,)
+    rebound = _normalized_runtime_inputs(
+        private_root=normalized,
+        expected_gpu_indices=runtime_indices,
+    )
+    assert rebound.gpu_indices == runtime_indices
+
+
+@pytest.mark.parametrize("runtime_indices", [(7,), (3, 1), (6, 2, 5)])
+def test_runtime_gpu_indices_override_historical_runner_literal(
+    tmp_path: Path,
+    runtime_indices: tuple[int, ...],
+) -> None:
+    normalized, _ = _write_rtx_context_source(tmp_path)
+
+    inputs = _normalized_runtime_inputs(
+        private_root=normalized,
+        expected_gpu_indices=runtime_indices,
+    )
+
+    assert inputs.gpu_indices == runtime_indices
+    assert _helper_environment(inputs)["CUDA_VISIBLE_DEVICES"] == ",".join(
+        map(str, runtime_indices)
+    )
 
 
 def test_runtime_inputs_keep_adapter_and_formal_tvm_python_roles_distinct(

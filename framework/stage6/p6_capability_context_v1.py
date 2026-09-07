@@ -327,7 +327,9 @@ def _validate_evidence_header(
         or evidence.get("hardware_target") != profile.target_hardware_id
         or evidence.get("dispatch_key") != "tvm_auto"
         or evidence.get("tvm_arch") != profile.tvm_arch
-        or evidence.get("verified_gpu_count") != profile.required_gpu_count
+        or isinstance(evidence.get("verified_gpu_count"), bool)
+        or not isinstance(evidence.get("verified_gpu_count"), int)
+        or evidence["verified_gpu_count"] <= 0
         or evidence.get("hardware_capability_sha256") != hardware_sha
         or evidence.get("environment_contract_sha256") != environment_sha
         or evidence.get("probe_code_sha256") != expected_probe_code_sha256

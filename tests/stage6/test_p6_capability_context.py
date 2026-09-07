@@ -136,7 +136,7 @@ def runtime_identity() -> dict[str, Any]:
     return {**identity, "compiler_fingerprint": compiler_fingerprint(identity)}
 
 
-def probe_evidence() -> dict[str, Any]:
+def probe_evidence(*, verified_gpu_count: object = 4) -> dict[str, Any]:
     root = Path(__file__).resolve().parents[2]
     profile = load_hardware_execution_profile("rtx4090")
     neutral_records = _records(NEUTRAL_PROBE_IDS)
@@ -162,7 +162,7 @@ def probe_evidence() -> dict[str, Any]:
         "hardware_target": "rtx4090",
         "dispatch_key": "tvm_auto",
         "tvm_arch": "sm89",
-        "verified_gpu_count": 4,
+        "verified_gpu_count": verified_gpu_count,
         "hardware_capability_sha256": _file_sha(
             root.joinpath(*profile.hardware_capability_path.parts)
         ),
@@ -254,6 +254,55 @@ def test_rtx_context_preserves_historical_profiles_and_rebuilds_measured_feature
         "ap50",
         "ap70",
     } & set(json.dumps(context))
+
+
+@pytest.mark.parametrize("verified_gpu_count", [1, 3, 7])
+def test_rtx_context_accepts_any_positive_verified_gpu_count(
+    tmp_path: Path, verified_gpu_count: int
+) -> None:
+    profile = load_hardware_execution_profile("rtx4090")
+    evidence = probe_evidence(verified_gpu_count=verified_gpu_count)
+
+    context = build_rtx_capability_context(
+        historical_source_bytes=historical_source_bytes(),
+        evidence=evidence,
+        profile=profile,
+        repository_root=Path(__file__).resolve().parents[2],
+        expected_probe_code_sha256=_sha("probe-code"),
+        expected_support_root_sha256=runtime_identity()["support_root_sha256"],
+        expected_historical_source_sha256=_sha_bytes(historical_source_bytes()),
+        trusted_runtime_identity=evidence["runtime_identity"],
+        trusted_probe_records={
+            "neutral": evidence["neutral_records"],
+            "pruning": evidence["pruning_records"],
+        },
+    )
+
+    assert context.evidence["verified_gpu_count"] == verified_gpu_count
+
+
+@pytest.mark.parametrize("verified_gpu_count", [True, 0, -1])
+def test_rtx_context_rejects_nonpositive_or_boolean_gpu_count(
+    tmp_path: Path, verified_gpu_count: object
+) -> None:
+    profile = load_hardware_execution_profile("rtx4090")
+    evidence = probe_evidence(verified_gpu_count=verified_gpu_count)
+
+    with pytest.raises(P6CapabilityContextError):
+        build_rtx_capability_context(
+            historical_source_bytes=historical_source_bytes(),
+            evidence=evidence,
+            profile=profile,
+            repository_root=Path(__file__).resolve().parents[2],
+            expected_probe_code_sha256=_sha("probe-code"),
+            expected_support_root_sha256=runtime_identity()["support_root_sha256"],
+            expected_historical_source_sha256=_sha_bytes(historical_source_bytes()),
+            trusted_runtime_identity=evidence["runtime_identity"],
+            trusted_probe_records={
+                "neutral": evidence["neutral_records"],
+                "pruning": evidence["pruning_records"],
+            },
+        )
 
 
 @pytest.mark.parametrize(
