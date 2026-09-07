@@ -263,6 +263,7 @@ def test_ap_round_forwards_only_allowlisted_formal_tvm_runtime(
 ) -> None:
     """Break caught: AP sanity loses the validated formal TVM runtime environment."""
     _set_runtime_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("PYTHONDONTWRITEBYTECODE", "0")
     monkeypatch.setenv("P6_PRIVATE_AMBIENT_SENTINEL", "must-not-forward")
     profile = _profile(tmp_path, with_tvm_support_root=True)
     round_root = tmp_path / "round"
@@ -365,6 +366,7 @@ def _assert_historical_call_contract(
         "5",
         "7",
     ]
+    assert all(call["env"]["PYTHONDONTWRITEBYTECODE"] == "1" for call in calls)
     assert calls[0]["argv"] == _expected_argv(profile, round_root)[0]
     assert [call["argv"] for call in ordered_stage_calls] == _expected_argv(profile, round_root)[1:]
     for call in calls:
@@ -897,6 +899,7 @@ def _expected_call_env(
     call: Mapping[str, Any],
 ) -> dict[str, str]:
     env = _expected_env(profile, tmp_path, task_state, round_root)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     if call["stage"] != "planner":
         env["CUDA_VISIBLE_DEVICES"] = call["argv"][call["argv"].index("--gpu") + 1]
     return env

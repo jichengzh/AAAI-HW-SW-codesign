@@ -422,6 +422,7 @@ def _leaf_env(context: RoundContext, gpu: str | None) -> dict[str, str]:
     inherited = _validated_incoming_env(context)
     return {
         "CUDA_VISIBLE_DEVICES": gpu if gpu is not None else ",".join(context.gpu_indices),
+        "PYTHONDONTWRITEBYTECODE": "1",
         **inherited,
         "PATH": os.pathsep.join((str(context.profile.project_python.parent), "/usr/bin", "/bin")),
         "PYTHONPATH": os.pathsep.join((str(context.profile.private_root), str(Path.cwd()))),
