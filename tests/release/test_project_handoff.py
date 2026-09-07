@@ -172,6 +172,15 @@ def test_public_readmes_link_the_handoff_ledger() -> None:
         assert "docs/AAAI27_RELEASE_AUDIT.md" in readme
 
 
+def test_handoff_records_committed_readme_closeout_state() -> None:
+    """The release ledger must not describe the committed README closeout as pending."""
+    if _is_anonymous_reviewer_archive():
+        pytest.skip("the anonymous reviewer ZIP deliberately excludes the public handoff ledger")
+    handoff = HANDOFF.read_text(encoding="utf-8")
+    assert "| 公开文档与新手入口 | 已完成（本地） |" in handoff
+    assert "| 公开文档与新手入口 | 已更新，待提交 |" not in handoff
+
+
 def test_p4_contract_is_discoverable_and_has_complete_coverage_summary() -> None:
     coverage = json.loads(
         (REPOSITORY_ROOT / "artifacts/external/coverage.json").read_text(

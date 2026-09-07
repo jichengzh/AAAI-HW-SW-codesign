@@ -137,7 +137,7 @@ scripts/stage2_update_evidence.py
 | 范围 | 当前状态 | 可验证证据 | 仍缺少的内容 |
 | --- | --- | --- | --- |
 | 公开 CPU 冒烟闭环 | 已完成，并经当前分支重验 | `requirements.txt` 固定 CPU 依赖；`scripts/reproduce/smoke_clean_clone.sh` 创建全新 clone/venv 后运行 smoke；进入本轮收口前的已提交基线 clean-clone 通过 28 项检查，本轮收口候选提交后 clean-clone smoke 亦通过 28 项检查。 | 真实公开远端在推送后仍需由 CI 再验证。 |
-| 公开文档与新手入口 | 已更新，待提交 | `README.md`、`README.zh-CN.md`、`REPRODUCIBILITY.md` 说明浅克隆、固定依赖和 smoke；README 双语新增外部私有 RTX4090 全链路顺序、历史 H800 入口名解释、normalized runner-template 边界、GPU pool 语义与硬件-specific 结果限制。 | 提交后需再次执行 clean-clone smoke；私有资产、路径、日志、指标和候选身份仍不得写入公开文档。 |
+| 公开文档与新手入口 | 已完成（本地） | `README.md`、`README.zh-CN.md`、`REPRODUCIBILITY.md` 说明浅克隆、固定依赖和 smoke；README 双语新增外部私有 RTX4090 全链路顺序、历史 H800 入口名解释、normalized runner-template 边界、GPU pool 语义与硬件-specific 结果限制；本地收口提交后的 clean-clone smoke 已通过。 | 推送后仍需由远端 CI 重验；私有资产、路径、日志、指标和候选身份仍不得写入公开文档。 |
 | 匿名审稿 ZIP | P1 本地验收完成 | allowlist、逐字节安全扫描、archive verifier 和解包后的新 venv 已验收；P1 ZIP 为 100 个成员。 | 每次候选 HEAD 改变都必须重建并记录新哈希。 |
 | 论文证据 | 受限 | 小型 Stage4 审计为 `verified`；demo 明确为非论文证据。P6.1 只记录 Git 忽略边界内的本地结构性闭环完成事实。规范定义见 [REPRODUCIBILITY.md](../REPRODUCIBILITY.md) 与 [ARTIFACTS.md](../ARTIFACTS.md)。 | Stage6/Stage7 论文证据、公开 P6 结果包及真实硬件/AP/能耗制品仍为 `external` 或 `unavailable`。 |
 | 完整项目源代码 | P3、P4、P5 已完成（本地）；P6.1 静态 343×2 历史路径已完成（本地）；P6.2 动态框架候选空间离线接入与验证已完成（本地）；P6.3 历史执行适配器已实现并通过离线验证；P6 硬件 profile 参数化、RTX4090 公共 contract 与私有链路 smoke/probe 正在收口 | 当前树含公开的接口、验证、选择、聚合、外部输入登记、环境契约、P6.1 本地执行边界文档、P6.2 动态离线契约、P6.3 历史执行适配器，以及 normalizer→provision→Stage1 manifest→动态 Stage2 plan→registry-v2 的门禁。RTX4090 迁移复用共享 controller/verifier；公开测试已覆盖 RTX4090 contract、post-source adapter profile、source/quant/AP/performance 调度边界。 | 真实 RTX4090 四卡四轮执行仍待 GPU admission 满足；P7 安全/合规/供应链审查和 P8 发布候选验证尚未开始。 |
