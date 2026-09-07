@@ -161,6 +161,10 @@ def _copy_runtime(private_root: Path) -> None:
         private_root / "configs" / "environment",
     )
     (private_root / "tools/release").mkdir(parents=True)
+    (private_root / "tools/release/measure.py").write_text(
+        "# synthetic native measurement implementation authority\n",
+        encoding="utf-8",
+    )
 
 
 def _copy_adapter(private_root: Path, stage: str) -> PostSourceAdapter:

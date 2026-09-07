@@ -3,9 +3,11 @@
 This repository is a scoped reproducibility artifact for the submission. It
 provides a deterministic CPU-only smoke workflow, a small verified cost-model
 selection audit, and public interfaces for candidate selection, evidence
-validation, result aggregation, and release inspection. It does not bundle or
-execute external hardware measurements, AP evaluation, model checkpoints, ONNX
-files, compiled engines, TVM, or TensorRT.
+validation, result aggregation, release inspection, and an external private
+hardware-run interface. It does not bundle datasets, model checkpoints, ONNX
+files, compiled engines, TVM caches, raw logs, private measurement outputs, or
+private source trees. The public CPU workflows below do not execute hardware
+measurements, AP evaluation, TVM, or TensorRT.
 
 For evidence boundaries, see [REPRODUCIBILITY.md](REPRODUCIBILITY.md) and
 [ARTIFACTS.md](ARTIFACTS.md). The reviewer-facing anonymous entry point is
@@ -83,6 +85,87 @@ hardware-backed representative results and formal online-ablation aggregate are
 not in the package. Treat that non-zero result as an auditable availability
 check, not a successful paper run.
 
+## External private RTX4090 full run
+
+The repository also contains the checked public controller/verifier interfaces
+for an external, hardware-specific RTX4090 run. This path is not part of the
+CPU clean-clone smoke. It requires user-provided private assets and local
+runtime state: licensed datasets, checkpoints/model sources, any required ONNX
+or calibration inputs, a working CUDA/TVM sm89 toolchain, private source-map and
+runner-template files, and ignored local output roots. Those materials are not
+published with this repository.
+
+Use the public RTX4090 contract as the profile authority:
+`configs/execution/p6_rtx4090_search.example.yaml`. The retained executable
+name `tools/release/run_p6_h800_search.py` is historical; with the v3 RTX4090
+contract it loads the selected `rtx4090` hardware profile and runs the shared
+controller path rather than an H800-only path.
+
+A complete external run uses the existing private chain in this order:
+
+```bash
+python tools/release/derive_p6_history_recipe.py \
+  --source-map <abs-private-source-map.yaml> \
+  --runner-template <abs-pre-normalization-private-runner-template.yaml> \
+  --recipe-json <abs-output-recipe.json>
+
+python tools/release/normalize_p6_history_root.py \
+  --source-map <abs-private-source-map.yaml> \
+  --history-root <abs-private-history-root> \
+  --private-dir <abs-normalized-private-dir> \
+  --runner-template <abs-pre-normalization-private-runner-template.yaml>
+
+python tools/release/provision_p6_full_chain_local_config.py \
+  --legacy-local-config <abs-rtx-local-config-or-locator.yaml> \
+  --runner-template <abs-normalized-private-dir>/runner-template.yaml \
+  --local-output-root <abs-fresh-output-root> \
+  --binding-output <abs-private-binding.json> \
+  --config-output <abs-local-config.yaml> \
+  --source-wrapper-profile <abs-source-wrapper-profile.yaml> \
+  --external-training-binding <abs-external-training-binding.yaml> \
+  --post-source-adapter-profile <abs-post-source-adapter-profile.yaml>
+
+python tools/release/preflight_p6_materializer_training_bridge.py \
+  --contract configs/execution/p6_rtx4090_search.example.yaml \
+  --local-config <abs-local-config.yaml> \
+  --binding <abs-private-binding.json> \
+  --runner-template <abs-normalized-private-dir>/runner-template.yaml \
+  --source-wrapper-profile <abs-source-wrapper-profile.yaml> \
+  --external-training-binding <abs-external-training-binding.yaml> \
+  --post-source-adapter-profile <abs-post-source-adapter-profile.yaml>
+
+GPU_POOL=<ordered-gpu-indices> python tools/release/run_p6_h800_search.py \
+  --contract configs/execution/p6_rtx4090_search.example.yaml \
+  --local-config <abs-local-config.yaml> \
+  --code-revision "$(git rev-parse HEAD)"
+
+python tools/release/verify_p6_materializer_training_run.py \
+  --contract configs/execution/p6_rtx4090_search.example.yaml \
+  --local-config <abs-local-config.yaml> \
+  --binding <abs-private-binding.json>
+```
+
+The `--legacy-local-config` flag name is also historical; for an RTX4090 run it
+points at the approved RTX local config or locator that is converted into the
+fresh binding/config pair. `derive` and `normalize` consume the pre-normalized
+private runner template; `provision` and `preflight` must then use the
+normalized authority at `<abs-normalized-private-dir>/runner-template.yaml`.
+
+GPU admission and candidate execution are driven by the private ordered GPU
+pool (`GPU_POOL` as operational shorthand). The controller derives the leaf
+binding from the admitted ordered policy instead of assuming every native leaf
+receives the same pool. Some leaves consume the full pool, including native
+performance planning/execution through `gpu_pool`; source materialization,
+quantization, and AP shards receive single-card assignments where the adapter
+contract requires it. Within a round, candidate/source work may run
+concurrently across distinct GPUs, while work assigned to the same GPU is
+serialized. The four search rounds still execute in order because each later
+round consumes the previous round's verified feedback.
+
+RTX4090 measurements are hardware-specific evidence. They can validate the
+end-to-end mechanism on sm89 hardware, but they must not be relabeled as H800
+results or numerically adjusted to claim reproduction of H800 paper tables.
+
 ## What is included
 
 ```text
@@ -91,6 +174,7 @@ artifacts/verified/            Small, sanitized cost-model audit and SHA-256 man
 framework/                     Scanning, selection, validation, and aggregation modules
 framework/reproduction/        Public CPU-only paper search-space reproduction gate
 scripts/reproduce/             CPU-only smoke and verified-boundary entry points
+tools/release/                 Public release, private-configuration, and verifier CLIs
 tests/                         Unit, integration, and release checks
 ```
 
@@ -143,19 +227,16 @@ machine-readable dependency groups rather than the recommended release install.
 This repository is not the complete training and hardware-search implementation
 used for every result in the paper. The released code is intended to let
 reviewers inspect data contracts, grouped cost-model selection, deterministic
-candidate-request construction, evidence boundaries, and result aggregation.
-The included lightweight deterministic selection policy exercises the public
-candidate and feedback interfaces; it is not a replacement for, or an
-equivalence claim about, the complete evolutionary candidate generator
-described in the paper.
+candidate-request construction, evidence boundaries, result aggregation, and
+the public side of the private hardware-run contract. The included lightweight
+deterministic selection policy exercises the public candidate and feedback
+interfaces; it is not a replacement for, or an equivalence claim about, the
+complete evolutionary candidate generator described in the paper.
 
-The current artifact also omits the full model materialization and training
-stack, hardware scheduling and measurement executors, paper-specific online
-ablation pipelines, and their complete trajectory and terminal-evidence
-manifests. Consequently, the smoke workflow validates interfaces and
-provenance handling but does not reproduce the paper's hardware tables or full
-online-ablation results. We plan to release the complete implementation and the
-corresponding experiment manifests upon publication.
+The CPU smoke workflow validates interfaces and provenance handling but does
+not reproduce the paper's hardware tables or full online-ablation results. Any
+full hardware run requires external private assets and separately verified
+provenance.
 
 ## License and citation
 

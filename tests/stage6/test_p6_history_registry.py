@@ -109,7 +109,11 @@ def _canonical_profile_plan(
     }
     provenance["digest"] = canonical_digest(unsigned)
     search_space["formal_q_mode_provenance"] = provenance
-    search_space["hardware_candidates"][0]["hardware"] = hardware_name
+    search_space["hardware_candidates"][0] = {
+        **search_space["hardware_candidates"][0],
+        "hardware": hardware_name,
+        "backend_scope": f"measured_{profile_id}_tvm",
+    }
     return build_pyramid_candidate_plan(
         search_space,
         profile=load_hardware_execution_profile(profile_id),

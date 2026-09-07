@@ -337,8 +337,11 @@ def test_p6_h800_execution_manifest_records_local_closure_without_public_results
     ):
         assert prohibited_public_detail not in text
 
-    assert "状态日期：2026-08-19" in handoff
-    assert "P6.3 历史执行适配器离线验证后的公开交接状态" in handoff
+    assert "状态日期：2026-09-07" in handoff
+    assert "P6 硬件 profile 参数化与 RTX4090 迁移收口中的公开交接状态" in handoff
+    assert "P6 RTX4090 迁移收口进展（2026-09-07）" in handoff
+    assert "真实 RTX4090 四卡四轮 controller/verifier 仍等待 GPU admission 满足后运行" in handoff
+    assert "不能重标记为 H800 论文数值" in handoff
     assert "P6.2 动态框架候选空间离线接入完成" in handoff
     assert "P6.3 历史执行适配器已实现并通过离线验证" in handoff
     assert "真实 H800 框架来源四轮执行仍待本地运行" in handoff

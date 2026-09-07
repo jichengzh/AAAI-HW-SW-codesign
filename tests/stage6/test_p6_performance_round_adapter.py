@@ -22,6 +22,7 @@ from framework.stage6.p6_performance_round_adapter_v1 import (
     run_performance_round,
 )
 from framework.stage6.p6_post_source_adapter_profile_v1 import (
+    PROFILE_SCHEMA_VERSION_V4,
     PostSourceLeaf,
     ValidatedPostSourceAdapterProfile,
 )
@@ -1583,7 +1584,8 @@ def _native_performance_job(
     result_path = output_dir / "result.json"
     formal_profile = (
         tvm_manifest_profile
-        if isinstance(tvm_manifest_profile, ValidatedPostSourceAdapterProfile)
+        if getattr(tvm_manifest_profile, "schema_version", None)
+        == PROFILE_SCHEMA_VERSION_V4
         else None
     )
     formal_implementation = (
@@ -1646,11 +1648,31 @@ def _native_performance_job(
         code_path=Path(command[1]),
     )
     if formal_profile is not None and formal_implementation is not None:
+        execute = next(
+            leaf
+            for leaf in formal_profile.leaves
+            if leaf.name == "performance_execute"
+        )
+        runtime_contract = (
+            execute.implementation_cwd
+            / "framework/stage5/tvm_runtime_contract_v1.py"
+        )
+        code_digest = (
+            performance_adapter.formal_int8_tvm_code_digest(
+                formal_implementation,
+                runtime_contract,
+                formal_profile.tvm_support_root_sha256,
+            )
+            if row["q_mode"] == "int8"
+            else performance_adapter.formal_fp16_tvm_code_digest(
+                formal_implementation,
+                runtime_contract,
+                formal_profile.tvm_support_root_sha256,
+            )
+        )
         manifest = {
             **manifest,
-            "code_digest": _formal_code_digest(
-                formal_profile, formal_implementation
-            ),
+            "code_digest": code_digest,
         }
     return {
         **job,
@@ -1663,7 +1685,7 @@ def _manifest_hardware_profile(
 ) -> HardwareExecutionProfile:
     return (
         profile.hardware_profile
-        if isinstance(profile, ValidatedPostSourceAdapterProfile)
+        if getattr(profile, "schema_version", None) == PROFILE_SCHEMA_VERSION_V4
         else profile
     )
 

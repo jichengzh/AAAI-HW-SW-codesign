@@ -103,6 +103,41 @@ def _report_contract() -> Any:
 def _prepare_rtx4090_bootstrap_inputs(tmp_path: Path) -> tuple[dict[str, Path], _RtxGpuProbe]:
     source_map, source_runner = v5_private_source_map(tmp_path)
     source_map["hardware_profile"] = "rtx4090"
+    support = next(
+        root
+        for root in source_map["execution_code_closure"]["roots"]
+        if root["closure_id"] == "tvm-support"
+    )
+    runtime_site = tmp_path / "approved-runtime/site-packages"
+    runtime_site.mkdir(parents=True)
+    runtime_nvlibs = tmp_path / "approved-runtime/nvlibs.path"
+    runtime_nvlibs.write_text("/runtime/lib\n", encoding="utf-8")
+    source_runner_payload = _read_yaml(source_runner)
+    source_runner_payload["execution_interface"]["environment"]["values"].update(
+        {
+            "P6_TVM_PYTHON": {
+                "kind": "external_executable",
+                "value": "/usr/bin/python3.10",
+            },
+            "P6_TVM_SITE": {
+                "kind": "external_directory",
+                "value": str(runtime_site),
+            },
+            "P6_TVM_NVLIBS_FILE": {
+                "kind": "external_file",
+                "value": str(runtime_nvlibs),
+            },
+            "P6_TVM_SUPPORT_ROOT": {
+                "kind": "private_path",
+                "value": support["source_root"],
+            },
+            "P6_TVM_SUPPORT_ROOT_SHA256": {
+                "kind": "literal",
+                "value": support["sha256"],
+            },
+        }
+    )
+    _write_yaml(source_runner, source_runner_payload)
     normalized = normalize_history_inputs(
         source_map,
         Path(str(source_map["history_root"])),

@@ -1,8 +1,9 @@
 # GEAR 协同设计复现包
 
 本仓库提供 CPU-only smoke 工作流、小型已验证 Stage4 制品，以及用于审计投稿的
-Stage1–7 选择与分析契约。仓库不打包、也不执行外部硬件测量、AP 评估、模型
-checkpoint、ONNX 文件、编译 engine、TVM 或 TensorRT。
+Stage1–7 选择、分析、发布检查和外部私有硬件运行契约。仓库不打包数据集、模型
+checkpoint、ONNX 文件、编译 engine、TVM cache、raw logs、私有测量输出或私有源码树。
+下方公开 CPU 工作流不会执行硬件测量、AP 评估、TVM 或 TensorRT。
 
 证据边界请参阅 [REPRODUCIBILITY.md](REPRODUCIBILITY.md) 和
 [ARTIFACTS.md](ARTIFACTS.md)。审稿匿名包的入口为 `README.anonymous.md`；它并非
@@ -71,6 +72,79 @@ python scripts/reproduce/reproduce_all.py --mode verified --output-root ./repro-
 必需的 Stage6 证据和 Stage7 正式 aggregate 而报告 `unavailable`。该非零结果是
 可审计的可用性检查，不能视作成功复现论文。
 
+## 外部私有 RTX4090 全链路运行
+
+仓库还包含经过检查的公开 controller/verifier 接口，可用于外部、hardware-specific 的
+RTX4090 运行。该路径不是 CPU clean-clone smoke 的一部分。它需要用户自行提供并负责
+授权的私有资产与本地运行时：数据集、checkpoint/模型源码、必要的 ONNX 或 calibration
+输入、可用的 CUDA/TVM sm89 工具链、私有 source-map 与 runner-template 文件，以及 Git
+忽略的本地输出目录。这些材料不会随仓库发布。
+
+RTX4090 运行使用公开 contract `configs/execution/p6_rtx4090_search.example.yaml` 作为
+profile authority。保留的入口名 `tools/release/run_p6_h800_search.py` 是历史名称；当
+它接收 v3 RTX4090 contract 时，会加载选定的 `rtx4090` hardware profile 并运行共享
+controller 路径，而不是 H800-only 路径。
+
+完整外部运行按以下顺序使用现有私有链路：
+
+```bash
+python tools/release/derive_p6_history_recipe.py \
+  --source-map <abs-private-source-map.yaml> \
+  --runner-template <abs-pre-normalization-private-runner-template.yaml> \
+  --recipe-json <abs-output-recipe.json>
+
+python tools/release/normalize_p6_history_root.py \
+  --source-map <abs-private-source-map.yaml> \
+  --history-root <abs-private-history-root> \
+  --private-dir <abs-normalized-private-dir> \
+  --runner-template <abs-pre-normalization-private-runner-template.yaml>
+
+python tools/release/provision_p6_full_chain_local_config.py \
+  --legacy-local-config <abs-rtx-local-config-or-locator.yaml> \
+  --runner-template <abs-normalized-private-dir>/runner-template.yaml \
+  --local-output-root <abs-fresh-output-root> \
+  --binding-output <abs-private-binding.json> \
+  --config-output <abs-local-config.yaml> \
+  --source-wrapper-profile <abs-source-wrapper-profile.yaml> \
+  --external-training-binding <abs-external-training-binding.yaml> \
+  --post-source-adapter-profile <abs-post-source-adapter-profile.yaml>
+
+python tools/release/preflight_p6_materializer_training_bridge.py \
+  --contract configs/execution/p6_rtx4090_search.example.yaml \
+  --local-config <abs-local-config.yaml> \
+  --binding <abs-private-binding.json> \
+  --runner-template <abs-normalized-private-dir>/runner-template.yaml \
+  --source-wrapper-profile <abs-source-wrapper-profile.yaml> \
+  --external-training-binding <abs-external-training-binding.yaml> \
+  --post-source-adapter-profile <abs-post-source-adapter-profile.yaml>
+
+GPU_POOL=<ordered-gpu-indices> python tools/release/run_p6_h800_search.py \
+  --contract configs/execution/p6_rtx4090_search.example.yaml \
+  --local-config <abs-local-config.yaml> \
+  --code-revision "$(git rev-parse HEAD)"
+
+python tools/release/verify_p6_materializer_training_run.py \
+  --contract configs/execution/p6_rtx4090_search.example.yaml \
+  --local-config <abs-local-config.yaml> \
+  --binding <abs-private-binding.json>
+```
+
+`--legacy-local-config` 这个 flag 名也是历史名称；在 RTX4090 运行中，它指向已批准的
+RTX local config 或 locator，并由 provision 转换成 fresh binding/config pair。`derive`
+和 `normalize` 使用 pre-normalization 私有 runner template；`provision` 和 `preflight`
+随后必须使用 normalized authority：
+`<abs-normalized-private-dir>/runner-template.yaml`。
+
+GPU admission 与候选执行由私有有序 GPU pool 驱动（`GPU_POOL` 是运维简称）。controller
+会从已准入的有序策略派生各 leaf binding，而不是假设所有 native leaf 都接收同一个
+pool。部分 leaf 会接收完整 pool，例如 native performance planning/execution 通过
+`gpu_pool` 接入；source materialization、quantization 与 AP shard 则在 adapter contract
+要求的位置接收单卡分配。同一轮内，候选/source 工作可以在不同 GPU 间并行；分配到同一
+GPU 的工作会串行执行。四轮搜索本身仍按顺序执行，因为后一轮必须消费前一轮已验证的反馈。
+
+RTX4090 测量是 hardware-specific 证据。它可以验证 sm89 硬件上的端到端机制，但不能
+重标记为 H800 结果，也不能通过数值调整声称复现 H800 论文表格。
+
 ## 包含内容
 
 ```text
@@ -83,6 +157,7 @@ framework/stage6/              外部证据 paper-table adapter
 framework/stage7/              仅选择的 online-ablation 契约与统计
 framework/reproduction/        公开 CPU-only 论文搜索空间复现 gate
 scripts/reproduce/             CPU-only smoke 与 verified-boundary 入口
+tools/release/                 公开发布、私有配置与 verifier CLI
 tests/                         单元、集成和发布检查
 ```
 
@@ -117,8 +192,9 @@ provenance 必须与该匿名/公开包保持分离。
 pytest tests/release/test_identity_scan.py -q
 ```
 
-使用 `python scripts/reproduce/reproduce_all.py --help` 查看支持的复现参数。完整测试套件
-可能需要额外 Python 依赖；上述 smoke 快速开始只依赖已声明的 `repro` 和 `dev` extras。
+使用 `python scripts/reproduce/reproduce_all.py --help` 查看公开 CPU 复现入口的参数。
+完整测试套件可能需要额外 Python 依赖；上述 smoke 快速开始使用固定的
+`requirements.txt`，然后以 `pip install --no-deps -e .` 安装当前检出目录。
 
 ## 许可证与引用
 

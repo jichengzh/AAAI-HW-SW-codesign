@@ -101,7 +101,8 @@ def _run_two_gpu_chain(tmp_path: Path) -> tuple[Path, Path]:
 def _assert_source_and_quantization(round_root: Path) -> None:
     stages = _read_jsonl(round_root / "executed-stages.log")
     sources = [row for row in stages if row["stage"] == "stage5_materialize_round_sources_v1.sh"]
-    assert [_option(row["argv"], "--gpu") for row in sources] == [
+    sources_by_group = sorted(sources, key=lambda row: _option(row["argv"], "--group-id"))
+    assert [_option(row["argv"], "--gpu") for row in sources_by_group] == [
         str(TWO_GPU_INDICES[index % len(TWO_GPU_INDICES)]) for index in range(4)
     ]
     quant = _read_jsonl(round_root / "quant-leaf.log")

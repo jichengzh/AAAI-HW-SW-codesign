@@ -32,6 +32,9 @@ from framework.stage6.p6_post_source_adapter_profile_v1 import (
     load_post_source_adapter_profile,
     post_source_adapter_profile_to_mapping,
 )
+from framework.stage6.p6_tvm_runtime_authority_v1 import (
+    INT8_FORMAL_HELPER_RELATIVE_PATHS,
+)
 from tests.stage6.test_p6_history_normalization import (
     _as_v2_procedural,
     _history_root,
@@ -112,6 +115,11 @@ def v5_private_source_map(tmp_path: Path) -> tuple[dict[str, Any], Path]:
     runtime_contract.write_text(
         "# formal TVM runtime contract\n", encoding="utf-8"
     )
+    for helper_path in INT8_FORMAL_HELPER_RELATIVE_PATHS:
+        _write_leaf(
+            historical_chain / helper_path,
+            f"#!/usr/bin/env python3\n# {helper_path.name}\n",
+        )
     next(
         item
         for item in source_map["execution_code_closure"]["roots"]

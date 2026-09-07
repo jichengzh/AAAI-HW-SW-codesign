@@ -931,9 +931,13 @@ def test_cli_runs_full_framework_lifecycle_through_provisioned_history_binding(
             for record in stage_records
             if record["stage"] == "stage5_materialize_round_sources_v1.sh"
         ]
+        source_records_by_group = sorted(
+            source_records,
+            key=lambda record: record["argv"][record["argv"].index("--group-id") + 1],
+        )
         expected_request_path = str(history_root / "measurement-request.json")
         policy_indices = binding["gpu_policy"]["indices"]
-        assert [record["argv"] for record in source_records] == [
+        assert [record["argv"] for record in source_records_by_group] == [
             [
                 "--request",
                 expected_request_path,

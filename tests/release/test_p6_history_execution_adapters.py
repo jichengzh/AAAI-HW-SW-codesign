@@ -80,7 +80,11 @@ def _scanner_owned_rtx_plan() -> dict[str, Any]:
     }
     provenance["digest"] = canonical_digest(unsigned)
     search_space["formal_q_mode_provenance"] = provenance
-    search_space["hardware_candidates"][0]["hardware"] = "NVIDIA RTX 4090"
+    search_space["hardware_candidates"][0] = {
+        **search_space["hardware_candidates"][0],
+        "hardware": "NVIDIA RTX 4090",
+        "backend_scope": "measured_rtx4090_tvm",
+    }
     return build_pyramid_candidate_plan(
         search_space,
         profile=load_hardware_execution_profile("rtx4090"),
@@ -1187,8 +1191,12 @@ def test_measurement_cli_keeps_history_artifacts_separate_from_external_feedback
         for record in stage_records
         if record["stage"] == "stage5_materialize_round_sources_v1.sh"
     ]
+    source_records_by_group = sorted(
+        source_records,
+        key=lambda record: record["argv"][record["argv"].index("--group-id") + 1],
+    )
     policy_indices = binding["gpu_policy"]["indices"]
-    assert [record["argv"] for record in source_records] == [
+    assert [record["argv"] for record in source_records_by_group] == [
         [
             "--request",
             str(history_round / "measurement-request.json"),
