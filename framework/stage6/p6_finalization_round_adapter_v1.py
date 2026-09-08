@@ -29,6 +29,7 @@ SUCCESS_STATUS = "measured_success_gold"
 FAILURE_STATUSES = frozenset({"feasibility_failure", "numerical_feasibility_failure"})
 METRIC_KEYS = ("latency_ms", "energy_j", "ap30", "ap50", "ap70")
 PUBLIC_FAILURE_REASON = re.compile(r"^[a-z0-9_-]+$")
+LEGACY_SURROGATE_PROVENANCE = "coldstart_width_conditioned_surrogate_v1"
 Writer = Callable[[Path, Mapping[str, Any]], None]
 
 
@@ -220,10 +221,7 @@ def _write_legacy_views(
 ) -> _LegacyViews:
     if _read_mapping(canonical_request_path) != context.request:
         raise P6FinalizationRoundAdapterError()
-    legacy_rows = [
-        {**dict(row), "schema_version": "stage5_feedback_row_v2"}
-        for row in context.request["rows"]
-    ]
+    legacy_rows = [_legacy_request_row(row) for row in context.request["rows"]]
     row_sha256 = {str(row["row_id"]): _canonical_sha(row) for row in legacy_rows}
     request_body = {
         **{
@@ -250,6 +248,20 @@ def _write_legacy_views(
     _atomic_write_json(request_path, legacy_request)
     _atomic_write_json(manifest_path, legacy_manifest)
     return _LegacyViews(request_path, manifest_path, row_sha256)
+
+
+def _legacy_request_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    graph_features = row.get("graph_features")
+    if not isinstance(graph_features, Mapping):
+        raise P6FinalizationRoundAdapterError()
+    return {
+        **dict(row),
+        "schema_version": "stage5_feedback_row_v2",
+        "graph_features": {
+            **dict(graph_features),
+            "graph_feature_provenance": LEGACY_SURROGATE_PROVENANCE,
+        },
+    }
 
 
 def _project_completion(

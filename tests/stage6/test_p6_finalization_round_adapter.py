@@ -129,7 +129,7 @@ class _FinalizationRunner:
 
 
 class _LegacyRequestRunner(_FinalizationRunner):
-    """Model the native finalizer's stage5_feedback_row_v2 identity contract."""
+    """Model the historical finalizer and promotion request contracts."""
 
     def run(
         self,
@@ -139,10 +139,10 @@ class _LegacyRequestRunner(_FinalizationRunner):
         env: Mapping[str, str],
         shell: bool,
     ) -> _Result:
+        request = _read_json(
+            Path(argv[argv.index("--measurement-request-json") + 1])
+        )
         if "--manifest-json" in argv:
-            request = _read_json(
-                Path(argv[argv.index("--measurement-request-json") + 1])
-            )
             manifest = _read_json(Path(argv[argv.index("--manifest-json") + 1]))
             if (
                 any(
@@ -155,6 +155,14 @@ class _LegacyRequestRunner(_FinalizationRunner):
                 result = _Result()
                 result.returncode = 1
                 return result
+        elif any(
+            row.get("graph_features", {}).get("graph_feature_provenance")
+            != "coldstart_width_conditioned_surrogate_v1"
+            for row in request["rows"]
+        ):
+            result = _Result()
+            result.returncode = 1
+            return result
         return super().run(argv, cwd=cwd, env=env, shell=shell)
 
 
@@ -202,12 +210,16 @@ def test_finalization_uses_private_legacy_request_view_without_canonical_drift(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Catch the native schema overwrite rejecting canonical candidate rows."""
+    """Supply the schema and provenance required only by historical leaves."""
     fixture = _fixture(tmp_path, monkeypatch)
     canonical_request = fixture["round_root"] / "measurement-request.json"
     canonical_manifest = fixture["round_root"] / "performance/performance_manifest.json"
     request_bytes = canonical_request.read_bytes()
     manifest_bytes = canonical_manifest.read_bytes()
+    assert all(
+        "graph_feature_provenance" not in row["graph_features"]
+        for row in fixture["request"]["rows"]
+    )
     runner = _LegacyRequestRunner(statuses=("measured_success_gold",) * 4)
 
     run_finalization_round(*fixture["args"], runner)
