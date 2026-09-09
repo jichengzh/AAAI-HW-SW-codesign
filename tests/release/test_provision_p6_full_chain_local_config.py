@@ -749,6 +749,48 @@ def test_gpu_probe_can_enumerate_all_devices_without_an_id_filter(
     ]
 
 
+def test_legacy_renderer_preserves_virtual_environment_python_entrypoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Legacy child commands must also keep the active virtual environment."""
+    python_target = _write_executable(tmp_path / "runtime/python3.10")
+    python_alias = tmp_path / "venv/bin/python"
+    python_alias.parent.mkdir(parents=True)
+    python_alias.symlink_to(python_target)
+    assert python_alias != python_alias.resolve()
+    monkeypatch.setattr(provision_cli.sys, "executable", str(python_alias))
+    private_root = tmp_path / "private-history"
+    inputs = {
+        name: _write_json(private_root / "inputs" / f"{name}.json", {})
+        for name in LOCAL_INPUT_NAMES
+    }
+    registry = _write_json(private_root / "registry/source-registry.json", {})
+    performance = _write_executable(private_root / "toolchain/performance.py")
+    stage2_search_space = _write_json(private_root / "stage2.json", {})
+    monkeypatch.setattr(
+        provision_cli,
+        "_discover_stage2_search_space",
+        lambda _binding: stage2_search_space,
+    )
+    binding = {
+        "private_root": str(private_root),
+        "local_input_paths": {name: str(path) for name, path in inputs.items()},
+        "component_paths": {"performance_plan": str(performance)},
+        "source_registry_path": str(registry),
+    }
+
+    config = provision_cli._render_local_config(
+        binding,
+        load_public_contract(PUBLIC_CONTRACT),
+        tmp_path / "output",
+        tmp_path / "binding.json",
+    )
+
+    assert config["source_registry_step"]["argv"][0] == str(python_alias)
+    assert config["measurement_step"]["argv"][0] == str(python_alias)
+
+
 @pytest.mark.parametrize(
     "indices",
     [

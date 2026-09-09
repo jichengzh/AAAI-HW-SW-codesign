@@ -218,7 +218,7 @@ def _legacy_locator(
     expected_recipe_path: Path | None = None,
     recipe_v2: bool = False,
 ) -> dict[str, Any]:
-    python_executable = str(Path(sys.executable).resolve(strict=True))
+    python_executable = str(Path(sys.executable).absolute())
     locator = {
         "schema_version": LEGACY_SCHEMA_VERSION,
         "target": "h800",

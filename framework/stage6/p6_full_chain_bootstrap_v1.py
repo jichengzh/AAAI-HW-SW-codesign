@@ -952,7 +952,7 @@ def _render_full_chain_local_config(
     hardware_profile: HardwareExecutionProfile,
 ) -> dict[str, Any]:
     stage1_scan_step = _render_stage1_scan_step(root, stage1_scan)
-    python_executable = str(Path(sys.executable).resolve(strict=True))
+    python_executable = str(Path(sys.executable).absolute())
     return {
         "schema_version": locator.local_schema_version,
         "target": hardware_profile.target_hardware_id,

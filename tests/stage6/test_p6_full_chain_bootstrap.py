@@ -568,6 +568,33 @@ def test_materialize_full_chain_binding_renders_dynamic_config(
     }
 
 
+def test_materialize_preserves_virtual_environment_python_entrypoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Generated child commands must keep the active virtual environment."""
+    python_target = _write_executable(tmp_path / "runtime/python3.10")
+    python_alias = tmp_path / "venv/bin/python"
+    python_alias.parent.mkdir(parents=True)
+    python_alias.symlink_to(python_target)
+    assert python_alias != python_alias.resolve()
+    monkeypatch.setattr(bootstrap.sys, "executable", str(python_alias))
+    legacy_config, template, output_root = _write_valid_private_inputs(tmp_path)
+
+    materialize_full_chain_binding(
+        legacy_config,
+        template,
+        output_root,
+        output_root / "binding.json",
+        output_root / "local.yaml",
+        _gpu_probe(),
+    )
+
+    config = yaml.safe_load((output_root / "local.yaml").read_text(encoding="utf-8"))
+    assert config["source_registry_step"]["argv"][0] == str(python_alias)
+    assert config["measurement_step"]["argv"][0] == str(python_alias)
+
+
 def test_materialize_selects_runtime_gpu_count_and_late_binds_without_mutating_template(
     tmp_path: Path,
 ) -> None:

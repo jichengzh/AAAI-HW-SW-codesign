@@ -814,6 +814,8 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 
 **P6 RTX4090 三卡全链路验证收口（2026-09-09）**：当前工作分支为 `feat/runtime-gpu-pool`，A61 本地外部运行记录的执行代码身份为 `644a304b8b45`，本轮收口前公开 HEAD 为 `84dc6b9`。真实 RTX4090 三卡四轮 controller/verifier 已完成（本地）：完成 4 轮、16 条 selected rows，hardware profile 为 `rtx4090`，TVM 目标架构为 `sm89`，比较口径为 hardware-specific；收口 verifier 已重新接受该完成产物。该验证说明现有 Stage1、Stage2、GPU admission、TVM sm89、controller 和 verifier 合同可在 4090 服务器上复用完成完整机制验证；它不形成公开结果包，不公开候选标识、执行位置、设备身份、私有资产、checkpoint、指标、结果或日志，也不能重标记为 H800 论文数值。本轮文档与发布面定向回归为 240 passed；仓库级门禁为 2878 passed、1 skipped、全局覆盖率 86.30%，Ruff、compileall 和 diff-check 均通过。本记录不授权合并 main、tag、Release 或仓库可见性变更；下一步是推送功能分支后的远端 clean-clone 与 CI 验收。
 
+**P8 功能分支远端验收修复（2026-09-09）**：`feat/runtime-gpu-pool` 已推送到公开远端；远端新 clone、隔离环境安装、CPU smoke 与 28 项 clean-clone 检查在提交 `ab94bfb` 上通过。首轮远端 CI 的 `public-smoke` 成功，Python 3.10/3.11 quality 均在全仓 coverage 步骤失败。独立 Python 3.10 venv 复现定位到 full-chain 配置将 venv 的 Python 入口解引用为系统 Python，导致 registry child process 无法导入已安装依赖；本轮只将 normalizer、bootstrap 与 legacy diagnostic renderer 生成的 child Python 路径改为绝对但不解引用，并用三个 venv-style symlink 回归测试约束。原失败 Stage6 测试与 219 项受影响回归均已通过；新候选仍须由远端 CI 重验。本记录不授权 PR、合并 main、tag、Release 或仓库可见性变更。
+
 P3-139 上一批完成后覆盖为 1,436/1,551（P4=12）。
 
 P3-138 上一批完成后覆盖为 1,424/1,551（P4=12）。
@@ -826,11 +828,11 @@ P3-135 上一批完成后覆盖为 1,388/1,551（P4=4、P6=8、P7=0）。
 
 P3-134 上一批完成后覆盖为 1,376/1,551（P4=9、P6=3、P7=0）。
 
-## 未执行的外部动作与后续授权
+## 已执行的分支同步与后续授权
 
-本审计未推送、创建 PR、合并、发布制品、上传数据、访问外部硬件或修改第三方资源。任何下列行动须在新的明确授权后执行：
+本审计已按维护者授权推送独立功能分支 `feat/runtime-gpu-pool`，但未创建 PR、合并、打 tag、发布制品、上传数据或修改仓库可见性。任何下列行动须在新的明确授权后执行：
 
-- 推送提交、创建/合并 PR、打 tag 或发布；
+- 创建/合并 PR、向 `main` 或 `release` 推送、打 tag 或发布；
 - 运行真实 GPU、设备、TVM/TensorRT、AP、延迟或能耗实验；
 - 接入外部数据、模型、检查点或硬件日志；
 - 为后续新发现的 declared dependency 漏洞调整约束并进行兼容性/安全回归，或将 scoped pip-audit 纳入持续 CI 门禁。

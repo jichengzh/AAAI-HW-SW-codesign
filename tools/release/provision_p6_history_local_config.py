@@ -297,7 +297,7 @@ def _render_local_config(
         raw_components.get("performance_plan"), root, "toolchain"
     )
     stage2_search_space = _discover_stage2_search_space(binding)
-    python_executable = str(Path(sys.executable).resolve(strict=True))
+    python_executable = str(Path(sys.executable).absolute())
     binding_path = str(binding_output.absolute())
     return {
         "schema_version": "p6_h800_coptv2x_local_v2",

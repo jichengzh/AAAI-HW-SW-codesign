@@ -10,6 +10,7 @@ from typing import Any, Callable, Mapping
 import pytest
 import yaml
 
+import framework.stage6.p6_history_normalization_staging_v1 as normalization_staging
 from framework.stage6.p6_history_normalization_v1 import (
     P6HistoryNormalizationError,
     normalize_history_inputs,
@@ -421,6 +422,33 @@ def test_normalizer_copies_four_json_inputs_and_writes_one_registry(
         "model-init": str(paths["registry"]),
         "toolchain": str(private_dir / "toolchain"),
     }
+
+
+def test_normalizer_preserves_virtual_environment_python_entrypoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The normalized legacy locator must keep the active virtual environment."""
+    python_target = tmp_path / "runtime/python3.10"
+    python_target.parent.mkdir(parents=True)
+    python_target.write_text("synthetic executable\n", encoding="utf-8")
+    python_target.chmod(0o700)
+    python_alias = tmp_path / "venv/bin/python"
+    python_alias.parent.mkdir(parents=True)
+    python_alias.symlink_to(python_target)
+    assert python_alias != python_alias.resolve()
+    monkeypatch.setattr(normalization_staging.sys, "executable", str(python_alias))
+    source_map = valid_private_source_map(tmp_path)
+
+    paths = normalize_history_inputs(
+        source_map,
+        _history_root(source_map),
+        tmp_path / "private-normalized",
+    )
+
+    legacy = yaml.safe_load(paths["legacy"].read_text(encoding="utf-8"))
+    assert legacy["source_registry_step"]["argv"][0] == str(python_alias)
+    assert legacy["measurement_step"]["argv"][0] == str(python_alias)
 
 
 def _outside_root(source_map: dict[str, Any], tmp_path: Path) -> dict[str, Any]:
