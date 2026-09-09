@@ -84,6 +84,13 @@ def test_anonymous_allowlist_uses_file_recursive_patterns() -> None:
     assert not any(entry.endswith("/**") for entry in entries)
 
 
+def test_checked_in_source_tree_is_anonymous_archive_safe() -> None:
+    members = archive_builder.collect_members(REPOSITORY_ROOT)
+
+    assert members
+    assert "README.md" in {member.archive_path for member in members}
+
+
 def _run_builder(root: Path, output_dir: Path) -> SimpleNamespace:
     try:
         build_archive(root, output_dir)

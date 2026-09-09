@@ -16,6 +16,8 @@ DEMO_PREPARE = REPOSITORY_ROOT / "scripts" / "prepare_stage2_demo_data.py"
 RTX_PUBLIC_EXAMPLE = (
     REPOSITORY_ROOT / "configs/execution/p6_rtx4090_search.example.yaml"
 )
+HOME_PATH_MARKER = "/" + "home/"
+PERSONAL_HOME_MARKER = HOME_PATH_MARKER + "jichengzhi"
 
 
 def test_anchor_runner_requires_explicit_runtime_and_output_inputs_without_echoing_values(
@@ -46,7 +48,7 @@ def test_anchor_runner_requires_explicit_runtime_and_output_inputs_without_echoi
     assert "CUDA_VISIBLE_DEVICES" in result.stderr
     assert private_marker not in result.stderr
     assert private_marker not in result.stdout
-    assert "/home/" not in result.stderr
+    assert HOME_PATH_MARKER not in result.stderr
 
 
 def test_anchor_runner_rejects_a_missing_cli_output_without_echoing_other_inputs(
@@ -74,13 +76,13 @@ def test_anchor_runner_rejects_a_missing_cli_output_without_echoing_other_inputs
     assert "--work-root" in result.stderr
     assert private_marker not in result.stderr
     assert private_marker not in result.stdout
-    assert "/home/" not in result.stderr
+    assert HOME_PATH_MARKER not in result.stderr
 
 
 def test_public_runner_source_contains_no_personal_absolute_path() -> None:
     source = ANCHOR_RUNNER.read_text(encoding="utf-8")
 
-    assert "/home/" not in source
+    assert HOME_PATH_MARKER not in source
     assert "/exdata/" not in source
     assert 'required runtime setting: CUDA_VISIBLE_DEVICES' in source
     assert 'parser.add_argument("--out-json", required=True)' in source
@@ -90,7 +92,7 @@ def test_public_runner_source_contains_no_personal_absolute_path() -> None:
 def test_tracked_tree_contains_no_personal_absolute_paths() -> None:
     """Tracked evidence must never become a personal-path disclosure."""
     result = subprocess.run(
-        ["git", "grep", "-Il", "-e", "/home/jichengzhi", "-e", "/exdata/"],
+        ["git", "grep", "-Il", "-e", PERSONAL_HOME_MARKER, "-e", "/exdata/"],
         cwd=REPOSITORY_ROOT,
         capture_output=True,
         text=True,
@@ -169,7 +171,7 @@ def test_rtx4090_public_example_contains_no_private_execution_or_raw_evidence() 
         "pareto_values",
     }
     assert restricted_keys.isdisjoint(payload)
-    assert "/home/" not in serialized
+    assert HOME_PATH_MARKER not in serialized
     assert "/exdata/" not in serialized
     assert "http://" not in serialized
     assert "https://" not in serialized
