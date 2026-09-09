@@ -510,6 +510,8 @@ def test_ci_enforces_release_source_quality_and_global_coverage() -> None:
         r"--cov-report=term-missing --cov-report=xml --cov-fail-under=80",
         workflow,
     )
+    assert "--junitxml=global-coverage-junit.xml" in workflow
+    assert "::error title=global coverage pytest failure::" in workflow
 
 
 def test_gitignore_protects_local_environment_secret_files() -> None:

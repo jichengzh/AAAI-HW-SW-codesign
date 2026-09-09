@@ -49,9 +49,57 @@ jobs:
       - name: Compile release source and tools
         run: python -m compileall -q framework scripts tools
       - name: Enforce global repository coverage gate
-        run: >-
-          pytest -q --cov=framework --cov=scripts/reproduce
-          --cov-report=term-missing --cov-report=xml --cov-fail-under=80
+        run: |
+          set -o pipefail
+          set +e
+          pytest -q --cov=framework --cov=scripts/reproduce --cov-report=term-missing --cov-report=xml --cov-fail-under=80 \
+            --junitxml=global-coverage-junit.xml 2>&1 | tee global-coverage.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            python - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          summaries = []
+          report = Path("global-coverage-junit.xml")
+          if report.is_file():
+              try:
+                  root = ET.parse(report).getroot()
+              except ET.ParseError:
+                  root = None
+              if root is not None:
+                  for case in root.iter("testcase"):
+                      problem = case.find("failure")
+                      if problem is None:
+                          problem = case.find("error")
+                      if problem is None:
+                          continue
+                      identity = ".".join(
+                          part
+                          for part in (case.get("classname"), case.get("name"))
+                          if part
+                      )
+                      detail = problem.get("message") or problem.text or "failed"
+                      lines = [line.strip() for line in detail.splitlines() if line.strip()]
+                      summaries.append(f"{identity}: {lines[-1] if lines else 'failed'}")
+          if summaries:
+              summary = " | ".join(summaries[:8])
+          else:
+              lines = Path("global-coverage.log").read_text(
+                  encoding="utf-8", errors="replace"
+              ).splitlines()
+              summary = " | ".join(lines[-20:])
+          escaped = (
+              summary[:4000]
+              .replace("%", "%25")
+              .replace("\r", "%0D")
+              .replace("\n", "%0A")
+          )
+          print("::error title=global coverage pytest failure::" + escaped)
+          PY
+          fi
+          exit "$status"
       - name: Check public demo and verified artifact manifests
         run: pytest -q tests/integration/test_reproduce_all.py
       - name: Validate reviewer ZIP and enforce release-tool coverage
