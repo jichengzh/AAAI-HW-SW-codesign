@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-import shutil
+import shlex
 import sys
 from types import SimpleNamespace
 from typing import Any
@@ -289,7 +289,10 @@ def test_probe_cli_accepts_formal_tvm_python_distinct_from_adapter_python(
 ) -> None:
     formal_python_path = tmp_path / "formal-tvm-runtime/bin/python"
     formal_python_path.parent.mkdir(parents=True)
-    shutil.copyfile(Path(sys.executable).resolve(strict=True), formal_python_path)
+    formal_python_path.write_text(
+        f"#!/bin/sh\nexec {shlex.quote(sys.executable)} \"$@\"\n",
+        encoding="utf-8",
+    )
     formal_python_path.chmod(0o700)
     formal_tvm_python = str(formal_python_path)
     normalized, _ = _write_rtx_context_source(tmp_path, tvm_python=formal_tvm_python)
