@@ -812,7 +812,7 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 
 **A61 RTX4090 三卡四轮结构验证完成（2026-09-09）**：使用 `GPU_POOL=3` 的 wholly-fresh 私有执行中，controller 完成 4/4 轮，产生 16 条 selected 与 16 条 measured；独立 verifier 通过。该结果只证明 RTX4090/sm89 上的共享完整链路可以运行，不能重标记为 H800 论文数值，也不把私有路径、设备索引、候选身份、原始指标、日志或结果包写入公开仓库。
 
-**P6 RTX4090 三卡全链路验证收口（2026-09-09）**：当前工作分支为 `feat/runtime-gpu-pool`，A61 本地外部运行记录的执行代码身份为 `644a304b8b45`，本轮收口前公开 HEAD 为 `84dc6b9`。真实 RTX4090 三卡四轮 controller/verifier 已完成（本地）：完成 4 轮、16 条 selected rows，hardware profile 为 `rtx4090`，TVM 目标架构为 `sm89`，比较口径为 hardware-specific；收口 verifier 已重新接受该完成产物。该验证说明现有 Stage1、Stage2、GPU admission、TVM sm89、controller 和 verifier 合同可在 4090 服务器上复用完成完整机制验证；它不形成公开结果包，不公开候选标识、执行位置、设备身份、私有资产、checkpoint、指标、结果或日志，也不能重标记为 H800 论文数值。本记录不授权合并 main、tag、Release 或仓库可见性变更；下一步是完成 P7/P8、推送功能分支后的远端 clean-clone 与 CI 验收。
+**P6 RTX4090 三卡全链路验证收口（2026-09-09）**：当前工作分支为 `feat/runtime-gpu-pool`，A61 本地外部运行记录的执行代码身份为 `644a304b8b45`，本轮收口前公开 HEAD 为 `84dc6b9`。真实 RTX4090 三卡四轮 controller/verifier 已完成（本地）：完成 4 轮、16 条 selected rows，hardware profile 为 `rtx4090`，TVM 目标架构为 `sm89`，比较口径为 hardware-specific；收口 verifier 已重新接受该完成产物。该验证说明现有 Stage1、Stage2、GPU admission、TVM sm89、controller 和 verifier 合同可在 4090 服务器上复用完成完整机制验证；它不形成公开结果包，不公开候选标识、执行位置、设备身份、私有资产、checkpoint、指标、结果或日志，也不能重标记为 H800 论文数值。本轮文档与发布面定向回归为 240 passed；仓库级门禁为 2878 passed、1 skipped、全局覆盖率 86.30%，Ruff、compileall 和 diff-check 均通过。本记录不授权合并 main、tag、Release 或仓库可见性变更；下一步是推送功能分支后的远端 clean-clone 与 CI 验收。
 
 P3-139 上一批完成后覆盖为 1,436/1,551（P4=12）。
 

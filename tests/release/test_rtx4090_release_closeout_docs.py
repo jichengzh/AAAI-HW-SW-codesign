@@ -137,5 +137,6 @@ def test_handoff_records_a61_as_sanitized_structural_completion() -> None:
     assert "真实 RTX4090 四卡四轮执行仍待 GPU admission 满足" not in current_state
 
     _assert_p6_public_disclosure_safe({"A61 handoff entry": a61_entry})
-    assert not re.search(r"(?:GPU|显卡)(?:\s+(?:index|编号|索引))?\s*[:=#]?\s*\d", a61_entry)
-
+    assert not re.search(
+        r"(?:GPU|显卡)(?:\s+(?:index|编号|索引))?\s*[:=#]?\s*\d", a61_entry
+    )
