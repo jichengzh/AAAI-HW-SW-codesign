@@ -125,9 +125,9 @@ GPU_POOL=7 python tools/release/run_p6_h800_search.py \
   --local-output-root <abs-fresh-output-root> \
   --binding-output <abs-fresh-output-root>/binding.json \
   --config-output <abs-fresh-output-root>/local-config.yaml \
-  --source-wrapper-profile <abs-source-wrapper-profile.yaml> \
-  --external-training-binding <abs-external-training-binding.yaml> \
-  --post-source-adapter-profile <abs-post-source-adapter-profile.yaml>
+  --source-wrapper-profile <abs-normalized-private-dir>/source-wrapper-profile.yaml \
+  --external-training-binding <abs-normalized-private-dir>/external-training-binding.yaml \
+  --post-source-adapter-profile <abs-normalized-private-dir>/post-source-adapter-profile.yaml
 
 python tools/release/verify_p6_materializer_training_run.py \
   --contract configs/execution/p6_rtx4090_search.example.yaml \

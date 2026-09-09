@@ -79,6 +79,12 @@ def test_bilingual_readmes_assign_every_rtx4090_material_to_its_owner(
         assert f"`{example_path}`" in readme
     for filename in NORMALIZED_PRIVATE_OUTPUTS:
         assert f"<abs-normalized-private-dir>/{filename}" in readme
+    for flag, filename in (
+        ("--source-wrapper-profile", "source-wrapper-profile.yaml"),
+        ("--external-training-binding", "external-training-binding.yaml"),
+        ("--post-source-adapter-profile", "post-source-adapter-profile.yaml"),
+    ):
+        assert f"{flag} <abs-normalized-private-dir>/{filename}" in readme
 
 
 def test_every_public_example_referenced_by_the_readmes_exists_and_is_tracked() -> None:
