@@ -103,10 +103,10 @@ def _read_mapping(path: Path, *, root: Path) -> dict[str, Any]:
 
 
 def _identity(row: Mapping[str, Any]) -> str:
-    row_id = row.get("row_id")
-    if not isinstance(row_id, str) or not row_id:
+    identity = row.get("manifest_job_id") or row.get("row_id")
+    if not isinstance(identity, str) or not identity:
         raise ValueError
-    return str(row.get("manifest_job_id") or row_id)
+    return identity
 
 
 def _successful_feedback(rows: object) -> bool:
@@ -229,7 +229,10 @@ def _load_output_context(
     runtime_gpu_indices: tuple[int, ...] | None = None,
 ) -> tuple[list[Any], Any]:
     frozen_gold, _, _, capability_profile = _load_search_inputs(
-        local, contract, runtime_gpu_indices=runtime_gpu_indices
+        local,
+        contract,
+        runtime_gpu_indices=runtime_gpu_indices,
+        replay_recorded_runtime_identity=True,
     )
     task_contract = validate_search_task(
         _build_search_task(contract, capability_profile)

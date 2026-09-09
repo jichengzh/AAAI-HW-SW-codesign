@@ -20,6 +20,7 @@ from framework.stage6.p6_public_report_v1 import (
     P6HardwareSpecificReportProvenance,
     validate_hardware_specific_report_provenance,
 )
+from framework.stage6.p6_capability_context_v1 import compiler_fingerprint
 from framework.stage6.p6_post_source_adapter_profile_v1 import (
     PROFILE_SCHEMA_VERSION,
     PROFILE_SCHEMA_VERSION_V2,
@@ -633,6 +634,15 @@ def test_completion_report_publishes_only_profile_provenance_and_counts() -> Non
     )
 
 
+def test_gold_identity_accepts_manifest_job_id_without_synthetic_row_id() -> None:
+    assert verification._identity(
+        {
+            "manifest_job_id": "pyramid|16x16x16|q=fp16|profile=h800",
+            "group_id": "pyramid|16x16x16",
+        }
+    ) == "pyramid|16x16x16|q=fp16|profile=h800"
+
+
 def test_v3_rtx_verification_context_forwards_contract_to_search_inputs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -763,6 +773,44 @@ def test_completion_accepts_four_round_current_run_with_shared_receipts(
     assert report.gold176_remeasured_rows == 0
     assert len({row["row_id"] for row in selected_rows}) == 16
     assert len(list(receipt_root.glob("*.json"))) < 16
+
+
+def test_completed_rtx_verification_replays_recorded_runtime_after_system_python_upgrade(
+    completed_rtx_run: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def upgraded_runtime_authority(**kwargs: Any) -> SimpleNamespace:
+        raw = _read_json(kwargs["capability_context_path"])
+        evidence = raw["measurement_evidence"]
+        runtime = {
+            **evidence["runtime_identity"],
+            "python_executable_sha256": hashlib.sha256(
+                b"upgraded-system-python"
+            ).hexdigest(),
+        }
+        runtime["compiler_fingerprint"] = compiler_fingerprint(
+            {
+                key: value
+                for key, value in runtime.items()
+                if key != "compiler_fingerprint"
+            }
+        )
+        return SimpleNamespace(
+            runtime_identity=runtime,
+            probe_records={
+                "neutral": evidence["neutral_records"],
+                "pruning": evidence["pruning_records"],
+            },
+        )
+
+    monkeypatch.setattr(
+        execution,
+        "probe_normalized_capability_authority",
+        upgraded_runtime_authority,
+    )
+
+    report = verify_materializer_training_run(**_verify_kwargs(completed_rtx_run))
+
+    assert report.status == "completed"
 
 
 def test_completed_fake_rtx_hardware_profile_tree_reports_public_profile_id(

@@ -481,6 +481,7 @@ def _load_search_inputs(
     contract: PublicP6CoptV2XContract | None = None,
     *,
     runtime_gpu_indices: tuple[int, ...] | None = None,
+    replay_recorded_runtime_identity: bool = False,
 ) -> tuple[
     list[dict[str, Any]],
     list[dict[str, Any]],
@@ -508,6 +509,7 @@ def _load_search_inputs(
         local=local,
         contract=contract,
         runtime_gpu_indices=runtime_gpu_indices,
+        replay_recorded_runtime_identity=replay_recorded_runtime_identity,
     )
     coldstart_profile_ids = {
         str(row.get("capability_profile_id") or "") for row in frozen_gold
@@ -531,6 +533,7 @@ def _load_capability_profiles(
     local: LocalP6CoptV2XConfig,
     contract: PublicP6CoptV2XContract | None,
     runtime_gpu_indices: tuple[int, ...] | None = None,
+    replay_recorded_runtime_identity: bool = False,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     hardware_profile = (
         contract.hardware_profile
@@ -545,6 +548,7 @@ def _load_capability_profiles(
             local=local,
             profile=hardware_profile,
             runtime_gpu_indices=runtime_gpu_indices,
+            replay_recorded_runtime_identity=replay_recorded_runtime_identity,
         )
         historical = [copy.deepcopy(item) for item in measured.historical_profiles]
         active = copy.deepcopy(measured.active_profile)
@@ -562,6 +566,7 @@ def _validated_rtx_context(
     local: LocalP6CoptV2XConfig,
     profile: HardwareExecutionProfile,
     runtime_gpu_indices: tuple[int, ...] | None = None,
+    replay_recorded_runtime_identity: bool = False,
 ) -> Any:
     repository_root = Path(__file__).resolve().parents[2]
     capability_path = local.local_input_paths["capability_profiles"]
@@ -585,6 +590,14 @@ def _validated_rtx_context(
             capability_context_path=resolved,
             expected_gpu_indices=runtime_gpu_indices,
         )
+        trusted_runtime_identity = authority.runtime_identity
+        if replay_recorded_runtime_identity:
+            if not isinstance(raw, Mapping):
+                raise ValueError
+            evidence = raw.get("measurement_evidence")
+            if not isinstance(evidence, Mapping):
+                raise ValueError
+            trusted_runtime_identity = evidence.get("runtime_identity")
         return validate_rtx_capability_context(
             raw,
             profile=profile,
@@ -594,7 +607,7 @@ def _validated_rtx_context(
             expected_historical_source_sha256=historical_capability_source_sha256(
                 repository_root
             ),
-            trusted_runtime_identity=authority.runtime_identity,
+            trusted_runtime_identity=trusted_runtime_identity,
             trusted_probe_records=authority.probe_records,
         )
     except (
