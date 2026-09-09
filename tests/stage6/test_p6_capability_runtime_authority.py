@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import shutil
 from types import SimpleNamespace
 
 import pytest
@@ -16,6 +15,7 @@ from framework.stage6.p6_capability_runtime_authority_v1 import (
     _validated_context_path,
     probe_normalized_capability_authority,
 )
+from tests.python_runtime_fixture import write_current_python_launcher
 from tests.stage6.test_p6_capability_context import probe_evidence
 from tests.stage6.test_p6_rtx_capability_search_context import (
     _write_rtx_context_source,
@@ -143,9 +143,7 @@ def test_runtime_inputs_keep_adapter_and_formal_tvm_python_roles_distinct(
     tmp_path: Path,
 ) -> None:
     tvm_python = tmp_path / "tvm-runtime/bin/python3.10"
-    tvm_python.parent.mkdir(parents=True)
-    shutil.copyfile("/usr/bin/python3.10", tvm_python)
-    tvm_python.chmod(0o700)
+    write_current_python_launcher(tvm_python)
     normalized, _ = _write_rtx_context_source(
         tmp_path, tvm_python=str(tvm_python)
     )

@@ -26,6 +26,7 @@ from framework.stage6.p6_post_source_wrapper_template_v1 import (
 from framework.stage6.p6_source_wrapper_profile_v1 import (
     expected_wrapper_bytes_from_profile,
 )
+from tests.python_runtime_fixture import write_current_python_launcher
 from tests.stage6.test_p6_history_normalization import _history_root, _tree_sha
 from tests.stage6.test_p6_post_source_adapter_profile import (
     v3_private_source_map,
@@ -124,12 +125,15 @@ def test_rtx_v4_normalization_generates_exact_formal_overlay_wrappers(
     runtime_site.mkdir(parents=True)
     nvlibs = tmp_path / "approved-runtime/nvlibs.path"
     nvlibs.write_text("/runtime/lib\n", encoding="utf-8")
+    formal_python = write_current_python_launcher(
+        tmp_path / "formal-tvm-runtime/bin/python"
+    )
     runner_payload = yaml.safe_load(runner.read_text(encoding="utf-8"))
     runner_payload["execution_interface"]["environment"]["values"].update(
         {
             "P6_TVM_PYTHON": {
                 "kind": "external_executable",
-                "value": "/usr/bin/python3.10",
+                "value": str(formal_python),
             },
             "P6_TVM_SITE": {
                 "kind": "external_directory",
@@ -171,7 +175,7 @@ def test_rtx_v4_normalization_generates_exact_formal_overlay_wrappers(
         "P6_HISTORY_PRIVATE_ROOT": str(destination),
         "P6_HISTORY_TASK_STATE": "task-state.json",
         "P6_HISTORY_ROUND_OUTPUT_ROOT": "round-root",
-        "P6_TVM_PYTHON": "/usr/bin/python3.10",
+        "P6_TVM_PYTHON": str(formal_python),
         "P6_TVM_SITE": str(runtime_site),
         "P6_TVM_NVLIBS_FILE": str(nvlibs),
         "P6_TVM_SUPPORT_ROOT": str(profile.tvm_support_root),

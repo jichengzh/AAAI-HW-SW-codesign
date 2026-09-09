@@ -29,6 +29,7 @@ from framework.stage6.p6_source_reuse_evidence_v1 import (
     RUN_CONTEXT_RELATIVE_PATH,
     RUN_METADATA_RELATIVE_ROOT,
 )
+from tests.python_runtime_fixture import write_current_python_launcher
 from tools.release import preflight_p6_materializer_training_bridge as preflight_module
 from tools.release.preflight_p6_materializer_training_bridge import (
     P6MaterializerPreflightReport,
@@ -148,7 +149,9 @@ def _build_rtx_preflight_inputs(
     source_map["hardware_profile"] = "rtx4090"
     if with_formal_runtime:
         runtime_root = root / "approved-runtime"
-        runtime_python = _write_executable(runtime_root / "bin" / "python")
+        runtime_python = write_current_python_launcher(
+            runtime_root / "bin" / "python"
+        )
         runtime_site = runtime_root / "site"
         runtime_site.mkdir(parents=True)
         runtime_nvlibs = runtime_root / "nvlibs.json"

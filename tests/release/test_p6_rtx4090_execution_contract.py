@@ -21,6 +21,7 @@ from framework.stage6.p6_full_chain_bootstrap_v1 import (
 )
 from framework.stage6.p6_history_binding_v1 import GpuRecord
 from framework.stage6.p6_history_normalization_v1 import normalize_history_inputs
+from tests.python_runtime_fixture import write_current_python_launcher
 from tests.stage6.test_coptv2x_h800_search import _write_yaml
 from tests.stage6.test_p6_post_source_adapter_profile import v5_private_source_map
 from tools.release.preflight_p6_materializer_training_bridge import (
@@ -112,12 +113,15 @@ def _prepare_rtx4090_bootstrap_inputs(tmp_path: Path) -> tuple[dict[str, Path], 
     runtime_site.mkdir(parents=True)
     runtime_nvlibs = tmp_path / "approved-runtime/nvlibs.path"
     runtime_nvlibs.write_text("/runtime/lib\n", encoding="utf-8")
+    formal_python = write_current_python_launcher(
+        tmp_path / "formal-tvm-runtime/bin/python"
+    )
     source_runner_payload = _read_yaml(source_runner)
     source_runner_payload["execution_interface"]["environment"]["values"].update(
         {
             "P6_TVM_PYTHON": {
                 "kind": "external_executable",
-                "value": "/usr/bin/python3.10",
+                "value": str(formal_python),
             },
             "P6_TVM_SITE": {
                 "kind": "external_directory",

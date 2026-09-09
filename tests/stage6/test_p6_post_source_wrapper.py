@@ -6,7 +6,6 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 from types import ModuleType
 from typing import Any
@@ -38,6 +37,7 @@ from framework.stage6.p6_post_source_wrapper_template_v1 import (
 from framework.stage6.p6_tvm_runtime_authority_v1 import (
     canonical_tvm_support_tree_sha256,
 )
+from tests.python_runtime_fixture import write_current_python_launcher
 
 
 WRAPPER_RELATIVE_PATHS = {
@@ -91,7 +91,9 @@ def _profile_fixture(
     private_root.mkdir()
     subprocess.run(["git", "init", "-q", str(private_root)], check=True)
     cwd = private_root / "execution-closure" / "history"
-    project_python = Path("/usr/bin/python3.10")
+    project_python = write_current_python_launcher(
+        tmp_path / "project-runtime/bin/python"
+    )
     adapters = tuple(
         PostSourceAdapter(
             stage,
@@ -132,14 +134,9 @@ def _dual_runtime_profile_fixture(
     subprocess.run(["git", "init", "-q", str(private_root)], check=True)
     cwd = private_root / "execution-closure" / "history"
     adapter_python = tmp_path / "adapter-env/bin/python3.10"
-    adapter_python.parent.mkdir(parents=True)
-    shutil.copyfile("/usr/bin/python3.10", adapter_python)
-    adapter_python.chmod(0o700)
+    write_current_python_launcher(adapter_python)
     project_python = tmp_path / "project-env/bin/python3.9"
-    _write_executable(
-        project_python,
-        "#!/bin/sh\nexec /usr/bin/python3.10 \"$@\"\n",
-    )
+    write_current_python_launcher(project_python)
     adapters = tuple(
         PostSourceAdapter(
             stage,

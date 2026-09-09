@@ -38,6 +38,7 @@ from tests.release.test_run_p6_performance_round_adapter import (
 from tests.release.test_run_p6_performance_round_adapter import (
     _plan_leaf_body as _performance_plan_body,
 )
+from tests.python_runtime_fixture import write_current_python_launcher
 from tests.stage6 import test_p6_history_measurement as history_fixtures
 from tests.stage6.test_p6_source_reuse_measurement import _create_context
 
@@ -56,11 +57,10 @@ def install_adapter_chain(private_root: Path) -> Mapping[str, Path]:
     adapters = tuple(_copy_adapter(private_root, stage) for stage in POST_SOURCE_ADAPTER_STAGES)
     leaves = tuple(_write_leaf(private_root, name) for name in POST_SOURCE_LEAF_NAMES)
     project_python = private_root / "historical-env/bin/python3.9"
-    project_python.parent.mkdir(parents=True)
-    project_python.write_text(
-        "#!/bin/sh\nexec /usr/bin/python3.10 \"$@\"\n", encoding="utf-8"
+    write_current_python_launcher(project_python)
+    adapter_python = write_current_python_launcher(
+        private_root.parent / f".{private_root.name}-adapter-runtime/bin/python"
     )
-    project_python.chmod(0o700)
     dependency_root = private_root / "execution-closure/dependency-overlay"
     dependency_root.mkdir(parents=True)
     profile = ValidatedPostSourceAdapterProfile(
@@ -69,7 +69,7 @@ def install_adapter_chain(private_root: Path) -> Mapping[str, Path]:
         project_python,
         adapters,
         leaves,
-        adapter_python=Path(sys.executable).resolve(strict=True),
+        adapter_python=adapter_python,
         adapter_dependency_root=dependency_root,
     )
     profile_path = private_root / "post-source-adapter-profile.yaml"

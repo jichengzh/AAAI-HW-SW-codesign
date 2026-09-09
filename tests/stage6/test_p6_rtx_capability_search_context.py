@@ -3,8 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-import shlex
-import sys
 from types import SimpleNamespace
 from typing import Any
 
@@ -47,6 +45,7 @@ from tests.stage6.test_p6_capability_context import (
 )
 from tests.stage6.test_p6_history_normalization import _history_root
 from tests.stage6.test_p6_post_source_adapter_profile import v5_private_source_map
+from tests.python_runtime_fixture import write_current_python_launcher
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -77,9 +76,13 @@ def _historical_source_authority(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _write_rtx_context_source(
-    tmp_path: Path, *, tvm_python: str = "/usr/bin/python3.10"
+    tmp_path: Path, *, tvm_python: str | None = None
 ) -> tuple[Path, list[dict[str, Any]]]:
     source_map, runner = v5_private_source_map(tmp_path)
+    if tvm_python is None:
+        tvm_python = str(
+            write_current_python_launcher(tmp_path / "formal-tvm-runtime/bin/python")
+        )
     source_map["hardware_profile"] = "rtx4090"
     support = next(
         item
@@ -270,6 +273,8 @@ def test_probe_cli_requires_exact_normalized_five_key_runtime(
             "P6_TVM_SUPPORT_ROOT_SHA256",
         )
     }
+    profile = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
+    assert runtime["P6_TVM_PYTHON"] != profile["adapter_python"]
     for key, value in runtime.items():
         monkeypatch.setenv(key, value)
     monkeypatch.setattr(probe_cli.sys, "executable", runtime["P6_TVM_PYTHON"])
@@ -288,12 +293,7 @@ def test_probe_cli_accepts_formal_tvm_python_distinct_from_adapter_python(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     formal_python_path = tmp_path / "formal-tvm-runtime/bin/python"
-    formal_python_path.parent.mkdir(parents=True)
-    formal_python_path.write_text(
-        f"#!/bin/sh\nexec {shlex.quote(sys.executable)} \"$@\"\n",
-        encoding="utf-8",
-    )
-    formal_python_path.chmod(0o700)
+    write_current_python_launcher(formal_python_path)
     formal_tvm_python = str(formal_python_path)
     normalized, _ = _write_rtx_context_source(tmp_path, tvm_python=formal_tvm_python)
     runner_path = normalized / "runner-template.yaml"

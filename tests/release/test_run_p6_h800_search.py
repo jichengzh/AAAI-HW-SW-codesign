@@ -21,6 +21,7 @@ from framework.stage6.p6_history_recipe_profiles_v1 import (
     RECIPE_V2,
     get_recipe_profile,
 )
+from tests.python_runtime_fixture import write_current_python_launcher
 from tests.release.test_p6_history_execution_adapters import (
     RTX_GPU_INDICES,
     _synthetic_history_binding,
@@ -467,6 +468,9 @@ def _history_cli_fixture(
         runtime_site.mkdir(parents=True)
         nvlibs = post_source_workspace / "approved-runtime/nvlibs.path"
         nvlibs.write_text("/runtime/lib\n", encoding="utf-8")
+        formal_python = write_current_python_launcher(
+            post_source_workspace / "formal-tvm-runtime/bin/python"
+        )
         support = next(
             item
             for item in source_map["execution_code_closure"]["roots"]
@@ -477,7 +481,7 @@ def _history_cli_fixture(
             {
                 "P6_TVM_PYTHON": {
                     "kind": "external_executable",
-                    "value": "/usr/bin/python3.10",
+                    "value": str(formal_python),
                 },
                 "P6_TVM_SITE": {
                     "kind": "external_directory",

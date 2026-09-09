@@ -41,6 +41,7 @@ from tests.stage6.test_p6_history_normalization import (
     _tree_sha,
     valid_private_source_map,
 )
+from tests.python_runtime_fixture import write_current_python_launcher
 
 
 LEAF_RELATIVE_PATHS = {
@@ -92,7 +93,9 @@ def v3_private_source_map(tmp_path: Path) -> tuple[dict[str, Any], Path]:
 def v4_private_source_map(tmp_path: Path) -> tuple[dict[str, Any], Path]:
     source_map, runner = v3_private_source_map(tmp_path)
     source_map["schema_version"] = "p6_history_normalization_source_v4"
-    source_map["adapter_python"] = "/usr/bin/python3.10"
+    source_map["adapter_python"] = str(
+        write_current_python_launcher(tmp_path / "adapter-runtime/bin/python")
+    )
     return source_map, runner
 
 
@@ -232,14 +235,14 @@ def test_v4_normalizer_writes_two_runtime_profile_without_changing_source_wrappe
         paths["source_wrapper_profile"].read_text(encoding="utf-8")
     )
     assert post_source["schema_version"] == "p6_post_source_adapter_profile_v2"
-    assert post_source["adapter_python"] == "/usr/bin/python3.10"
+    assert post_source["adapter_python"] == source_map["adapter_python"]
     assert post_source["project_python"] == source_wrapper["project_python"]
     assert Path(post_source["project_python"]).name == "python3.9"
 
     loaded = load_post_source_adapter_profile(
         paths["post_source_adapter_profile"], private_root=private_dir
     )
-    assert loaded.adapter_python == Path("/usr/bin/python3.10")
+    assert loaded.adapter_python == Path(source_map["adapter_python"])
     assert loaded.project_python == Path(post_source["project_python"])
 
 
