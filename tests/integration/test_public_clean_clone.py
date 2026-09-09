@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -31,6 +32,23 @@ def test_public_readme_exposes_anonymous_safe_clean_clone_workflow() -> None:
     assert "--filter=blob:none" in readme
     assert "smoke_clean_clone.sh" in readme
     assert "does not download datasets, checkpoints" in readme
+
+
+def test_public_readmes_clone_the_current_full_chain_candidate() -> None:
+    if _is_anonymous_reviewer_archive():
+        pytest.skip("the mapped anonymous README intentionally omits public-clone instructions")
+
+    expected_ref = "feat/runtime-gpu-pool"
+    stable_ref = "release/aaai27-reproducibility"
+    for readme_name in ("README.md", "README.zh-CN.md"):
+        readme = (REPOSITORY_ROOT / readme_name).read_text(encoding="utf-8")
+        assert f"--branch {expected_ref}" in readme
+        assert f"--ref {expected_ref}" in readme
+        assert stable_ref in readme
+    english_readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
+    chinese_readme = (REPOSITORY_ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
+    assert re.search(r"current full-chain candidate\s+branch", english_readme)
+    assert "当前完整链路候选分支" in chinese_readme
 
 
 def test_cpu_smoke_requirements_pin_the_runtime_and_test_surface() -> None:

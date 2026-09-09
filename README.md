@@ -20,12 +20,14 @@ are recorded in [docs/AAAI27_RELEASE_AUDIT.md](docs/AAAI27_RELEASE_AUDIT.md).
 Use Python 3.10--3.13. During anonymous review, obtain the HTTPS clone URL from
 the repository page and set it locally; keeping the URL outside this source
 tree preserves the review boundary. A shallow, partial clone avoids downloading
-unrelated history:
+unrelated history. `feat/runtime-gpu-pool` is the current full-chain candidate
+branch; the stable anonymous CPU-only release branch remains
+`release/aaai27-reproducibility`:
 
 ```bash
 export GEAR_REPOSITORY_URL='<HTTPS clone URL from the repository page>'
 git clone --depth 1 --filter=blob:none --single-branch \
-  --branch release/aaai27-reproducibility "$GEAR_REPOSITORY_URL" gear-codesign
+  --branch feat/runtime-gpu-pool "$GEAR_REPOSITORY_URL" gear-codesign
 cd gear-codesign
 ```
 
@@ -66,7 +68,7 @@ path work together, run this from any existing checkout:
 ```bash
 bash scripts/reproduce/smoke_clean_clone.sh \
   --repo-url "$GEAR_REPOSITORY_URL" \
-  --ref release/aaai27-reproducibility
+  --ref feat/runtime-gpu-pool
 ```
 
 This command does not download datasets, checkpoints, ONNX files, compiled

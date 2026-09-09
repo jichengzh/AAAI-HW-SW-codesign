@@ -14,12 +14,14 @@ checkpoint、ONNX 文件、编译 engine、TVM cache、raw logs、私有测量�
 ## 快速开始：干净克隆与 CPU-only smoke
 
 请使用 Python 3.10--3.13。匿名审稿期间，请从仓库页面取得 HTTPS 克隆 URL 并仅在本机
-设置；不把 URL 写入源码可保持匿名边界。浅克隆和 partial clone 不会下载无关历史：
+设置；不把 URL 写入源码可保持匿名边界。浅克隆和 partial clone 不会下载无关历史。
+`feat/runtime-gpu-pool` 是当前完整链路候选分支；稳定匿名审稿 CPU-only release 分支仍为
+`release/aaai27-reproducibility`：
 
 ```bash
 export GEAR_REPOSITORY_URL='<从仓库页面取得的 HTTPS 克隆 URL>'
 git clone --depth 1 --filter=blob:none --single-branch \
-  --branch release/aaai27-reproducibility "$GEAR_REPOSITORY_URL" gear-codesign
+  --branch feat/runtime-gpu-pool "$GEAR_REPOSITORY_URL" gear-codesign
 cd gear-codesign
 ```
 
@@ -56,7 +58,7 @@ TVM/TensorRT，也不会访问数据集、checkpoint、GPU、SSH 或私有路径
 ```bash
 bash scripts/reproduce/smoke_clean_clone.sh \
   --repo-url "$GEAR_REPOSITORY_URL" \
-  --ref release/aaai27-reproducibility
+  --ref feat/runtime-gpu-pool
 ```
 
 该脚本不会下载数据集、checkpoint、ONNX、编译 engine、TVM/TensorRT 制品或硬件测量；
