@@ -122,9 +122,12 @@ claim until such a reviewed artifact bundle is released.
 ## Known limitations
 
 The checked-in verified artifact set remains the small Stage4 subset. P6.1 has
-completed a separate, Git-ignored local execution closure, but it contributes
-no checked-in result bundle, formal execution manifest, or public numerical
-claim. Stage6 representative selection and the Stage7 formal aggregate remain
+completed a separate, Git-ignored local execution closure, and an
+RTX4090 three-card four-round local mechanism validation has completed with
+16 selected rows accepted by the closeout verifier. Neither local closure
+contributes a checked-in result bundle, formal execution manifest, or public
+numerical claim.
+Stage6 representative selection and the Stage7 formal aggregate remain
 unavailable, so this archive cannot reproduce a hardware/AP/energy paper table
 or an ablation aggregate. The smoke workflow demonstrates interfaces, not
 numerical conclusions. It does not validate any device, backend, compiler,

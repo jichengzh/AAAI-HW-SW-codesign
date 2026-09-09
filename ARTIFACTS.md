@@ -25,10 +25,11 @@ listed until a formal aggregate confirms all 12 trajectories and 192 selected
 events. The verified mode therefore has an expected non-zero outcome today; it
 does not turn Stage4 bytes into a verified Stage6 or Stage7 result.
 
-P6.1 has completed a separate Git-ignored local execution closure. That fact
-does not add a checked-in artifact, a public result summary, or a verified
-Stage6/Stage7 entry: all inputs and outputs of that run remain external under
-the rules above.
+P6.1 has completed a separate Git-ignored local execution closure. An RTX4090
+three-card mechanism-validation bundle has also completed locally and remains
+Git-ignored. These facts do not add a checked-in artifact, a public result
+summary, or a verified Stage6/Stage7 entry: all inputs and outputs of those
+runs remain external under the rules above.
 
 ## How to inspect an artifact
 
@@ -44,10 +45,11 @@ requirements in [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
 
 The package contains no full dataset, trained model, private model source,
 checkpoint, ONNX file, compiled engine, device cache, TVM/TensorRT build output,
-latency/energy trace, AP evaluation output, P6.1 execution result bundle, or
-final Stage6/Stage7 paper aggregate. It also does not contain the local model
-materialization and training assets, hardware measurement inputs, complete
-online-ablation outputs, formal trajectories, or terminal-evidence manifests.
+latency/energy trace, AP evaluation output, P6.1 execution result bundle,
+RTX4090 three-card mechanism-validation bundle, or final Stage6/Stage7 paper
+aggregate. It also does not contain the local model materialization and training
+assets, hardware measurement inputs, complete online-ablation outputs, formal
+trajectories, or terminal-evidence manifests.
 Those absences are intentional release boundaries, not implicit permissions to
 reconstruct or infer missing numbers. Public paper evidence requires a
 separately reviewed artifact bundle.

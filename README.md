@@ -95,6 +95,30 @@ or calibration inputs, a working CUDA/TVM sm89 toolchain, private source-map and
 runner-template files, and ignored local output roots. Those materials are not
 published with this repository.
 
+Material ownership is explicit; generated files are not additional inputs:
+
+- **User-provided private inputs:** a private history root, private source-map,
+  pre-normalization runner-template, RTX local config or locator, licensed
+  datasets, model sources/checkpoints, any required ONNX or calibration inputs,
+  a CUDA/TVM sm89 toolchain, and a fresh output root. Keep every path outside the
+  repository or Git-ignored. The source-map and runner-template describe
+  licensed historical code and therefore have no tracked public executable
+  example.
+- **Repository-provided public references:**
+  `configs/execution/p6_rtx4090_search.example.yaml` is the four-round public
+  search contract. `configs/execution/p6_external_training_binding.example.yaml`
+  is a null-only schema example; copy it to an ignored location, replace every
+  required null with operator-approved values, and let validation compute or
+  check the stable-file SHA-256 fields. The checked-in null-only file is
+  intentionally not executable.
+- **`normalize`-generated private outputs:**
+  `<abs-normalized-private-dir>/runner-template.yaml`,
+  `<abs-normalized-private-dir>/source-wrapper-profile.yaml`,
+  `<abs-normalized-private-dir>/external-training-binding.yaml`, and
+  `<abs-normalized-private-dir>/post-source-adapter-profile.yaml`. Do not author
+  these normalized authorities independently; pass the generated files to the
+  controller exactly as shown below.
+
 Use the public RTX4090 contract as the profile authority:
 `configs/execution/p6_rtx4090_search.example.yaml`. The retained executable
 name `tools/release/run_p6_h800_search.py` is historical; with the v3 RTX4090
@@ -163,6 +187,10 @@ binding; use fresh-run mode for automatic device selection.
 RTX4090 measurements are hardware-specific evidence. They can validate the
 end-to-end mechanism on sm89 hardware, but they must not be relabeled as H800
 results or numerically adjusted to claim reproduction of H800 paper tables.
+The maintained implementation has completed one private RTX4090 mechanism
+validation with `GPU_POOL=3`, four rounds, 16 selected/measured rows, and an
+independent verifier pass. This structural fact does not publish the private
+result bundle or expand the repository's paper-evidence claim.
 
 ## What is included
 

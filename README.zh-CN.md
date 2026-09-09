@@ -80,6 +80,24 @@ RTX4090 运行。该路径不是 CPU clean-clone smoke 的一部分。它需要�
 输入、可用的 CUDA/TVM sm89 工具链、私有 source-map 与 runner-template 文件，以及 Git
 忽略的本地输出目录。这些材料不会随仓库发布。
 
+材料所有权分为以下三类；自动生成的文件不是额外输入：
+
+- **用户提供的私有输入：**私有 history root、私有 source-map、
+  pre-normalization runner-template、RTX local config 或 locator、授权的数据集、模型源码/checkpoint、必要的
+  ONNX 或 calibration 输入、CUDA/TVM sm89 工具链，以及 fresh output root。所有路径必须
+  位于仓库外或保持 Git ignored。source-map 与 runner-template 描述受许可约束的历史代码，
+  因此仓库不会提供可执行的公开示例。
+- **仓库提供的公开参考：**`configs/execution/p6_rtx4090_search.example.yaml` 是四轮搜索的
+  公开 contract；`configs/execution/p6_external_training_binding.example.yaml` 是
+  仅空值 schema 示例。应将后者复制到 ignored 位置，使用运维方确认的值替换所有必填空值，再由
+  validator 计算或核验稳定文件的 SHA-256。仓库中的空值示例按设计不可直接执行。
+- **`normalize` 自动生成的私有输出：**
+  `<abs-normalized-private-dir>/runner-template.yaml`、
+  `<abs-normalized-private-dir>/source-wrapper-profile.yaml`、
+  `<abs-normalized-private-dir>/external-training-binding.yaml` 和
+  `<abs-normalized-private-dir>/post-source-adapter-profile.yaml`。不要分别手写这些 normalized
+  authority；应按下方命令把同一次 normalize 生成的文件交给 controller。
+
 RTX4090 运行使用公开 contract `configs/execution/p6_rtx4090_search.example.yaml` 作为
 profile authority。保留的入口名 `tools/release/run_p6_h800_search.py` 是历史名称；当
 它接收 v3 RTX4090 contract 时，会加载选定的 `rtx4090` hardware profile 并运行共享
@@ -140,6 +158,9 @@ GPU 的工作会串行执行。四轮搜索本身仍按顺序执行，因为后�
 
 RTX4090 测量是 hardware-specific 证据。它可以验证 sm89 硬件上的端到端机制，但不能
 重标记为 H800 结果，也不能通过数值调整声称复现 H800 论文表格。
+当前维护实现已使用 `GPU_POOL=3` 完成一次私有 RTX4090 机制验证：四轮、16 条
+selected/measured rows，并由独立 verifier 通过。该结构性事实不公开私有结果包，也不扩大
+仓库的论文证据声明。
 
 ## 包含内容
 

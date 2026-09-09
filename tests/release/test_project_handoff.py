@@ -342,6 +342,7 @@ def test_p6_h800_execution_manifest_records_local_closure_without_public_results
     assert manifest.is_file()
     text = manifest.read_text(encoding="utf-8")
     handoff = HANDOFF.read_text(encoding="utf-8")
+    current_status = handoff.split("### 到完整开源的执行计划", maxsplit=1)[0]
     reproducibility = (REPOSITORY_ROOT / "REPRODUCIBILITY.md").read_text(
         encoding="utf-8"
     )
@@ -356,6 +357,9 @@ def test_p6_h800_execution_manifest_records_local_closure_without_public_results
     assert "不预设为 343 或 686" in text
     assert "单个候选不是 mixed-precision" in text
     assert "真实 H800 框架来源四轮执行仍待本地运行" in text
+    assert "RTX4090 三卡四轮 controller/verifier 已完成（本地）" in text
+    assert "4 轮、16 条 selected rows" in text
+    assert "不形成公开结果包" in text
     assert "P6.3 历史执行适配器已实现并通过离线验证" in p6_plan_line
     assert "/home/" not in text
     for prohibited_public_detail in (
@@ -368,10 +372,13 @@ def test_p6_h800_execution_manifest_records_local_closure_without_public_results
     ):
         assert prohibited_public_detail not in text
 
-    assert "状态日期：2026-09-07" in handoff
-    assert "P6 硬件 profile 参数化与 RTX4090 迁移收口中的公开交接状态" in handoff
-    assert "P6 RTX4090 迁移收口进展（2026-09-07）" in handoff
-    assert "真实 RTX4090 四卡四轮 controller/verifier 仍等待 GPU admission 满足后运行" in handoff
+    assert "状态日期：2026-09-09" in handoff
+    assert "P6 硬件 profile 参数化与 RTX4090 三卡全链路机制验证后的公开交接状态" in handoff
+    assert "P6 RTX4090 三卡全链路验证收口（2026-09-09）" in handoff
+    assert "真实 RTX4090 三卡四轮 controller/verifier 已完成（本地）" in handoff
+    assert "4 轮、16 条 selected rows" in handoff
+    assert "收口 verifier 已重新接受该完成产物" in handoff
+    assert "真实 RTX4090 四卡四轮 controller/verifier 仍等待 GPU admission 满足后运行" not in current_status
     assert "不能重标记为 H800 论文数值" in handoff
     assert "P6.2 动态框架候选空间离线接入完成" in handoff
     assert "P6.3 历史执行适配器已实现并通过离线验证" in handoff
@@ -381,11 +388,15 @@ def test_p6_h800_execution_manifest_records_local_closure_without_public_results
     assert "/home/" not in handoff
     assert "P6.1 has" in reproducibility
     assert "completed a separate, Git-ignored local execution closure" in reproducibility
-    assert "no checked-in result bundle" in reproducibility
+    assert "RTX4090 three-card" in reproducibility
+    assert "four-round local mechanism validation" in reproducibility
+    assert "Neither local closure" in reproducibility
+    assert "checked-in result bundle" in reproducibility
     assert "Stage6 representative selection and the Stage7 formal aggregate remain" in reproducibility
     assert "P6.1 execution result bundle" in artifacts
-    assert "does not add a checked-in artifact" in artifacts
-    assert "a verified\nStage6/Stage7 entry" in artifacts
+    assert "RTX4090 three-card mechanism-validation bundle" in artifacts
+    assert "do not add a checked-in artifact" in artifacts
+    assert "verified Stage6/Stage7 entry" in artifacts
     for prohibited_claim in (
         "P6 已完成（本地）",
         "P6 整体已关闭",
@@ -448,6 +459,8 @@ def test_p6_public_disclosure_guard_allows_policy_prohibitions() -> None:
                 "不得公开命令、路径、候选标识、原始结果或日志。"
                 "P6.3 历史执行适配器已实现并通过离线验证；"
                 "真实 H800 框架来源四轮执行仍待本地运行。"
+                "RTX4090 三卡四轮 controller/verifier 已完成（本地），"
+                "但不形成公开结果包。"
             )
         }
     )
@@ -512,3 +525,4 @@ def test_p6_framework_search_space_gate_is_documented() -> None:
     assert "P6.2 动态框架候选空间的离线接入与验证已完成" in manifest
     assert "P6.3 历史执行适配器已实现并通过离线验证" in manifest
     assert "真实 H800 框架来源四轮执行仍待本地运行" in manifest
+    assert "RTX4090 三卡四轮 controller/verifier 已完成（本地）" in manifest
