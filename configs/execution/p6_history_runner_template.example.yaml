@@ -1,0 +1,140 @@
+# TEMPLATE ONLY: complete pre-normalization runner shape.
+# Executable paths are relative to the exact private history Git root. GPU device
+# identities are intentionally absent; GPU_POOL is admitted and late-bound at run time.
+schema_version: p6_history_runner_template_v1
+stage1_scan:
+  name: build_stage1_partition
+  argv:
+    - "<STAGE1_SCAN_EXECUTABLE>"
+    - "{stage1_partition_manifest}"
+    - "{local_output_root}"
+execution_interface:
+  schema_version: p6_history_runner_interface_v1
+  controller:
+    argv:
+      - documented-stage5-chain/stage5_task_round_controller_v3.sh
+  execution_chain:
+    - stage: source_materialization
+      argv:
+        - documented-stage5-chain/stage5_materialize_round_sources_v1.sh
+        - "{measurement_request}"
+        - "{round_output_root}"
+      required_placeholders: ["{measurement_request}", "{round_output_root}"]
+    - stage: quantization
+      argv:
+        - "<QUANTIZATION_EXECUTABLE>"
+        - "{task_state}"
+        - "{round_output_root}"
+      required_placeholders: ["{task_state}", "{round_output_root}"]
+    - stage: performance
+      argv:
+        - documented-stage5-chain/stage5_build_performance_plan_v2.py
+        - "{task_state}"
+        - "{round_output_root}"
+      required_placeholders: ["{task_state}", "{round_output_root}"]
+    - stage: ap
+      argv:
+        - "<AP_EXECUTABLE>"
+        - "{task_state}"
+        - "{round_output_root}"
+      required_placeholders: ["{task_state}", "{round_output_root}"]
+    - stage: finalization
+      argv:
+        - documented-stage5-chain/stage5_finalize_feedback_v2.py
+        - "{measurement_request}"
+        - "{task_state}"
+        - "{actual_feedback}"
+        - "{actual_receipt}"
+        - "{finalization_barrier}"
+        - "{round_output_root}"
+      required_placeholders:
+        - "{measurement_request}"
+        - "{task_state}"
+        - "{actual_feedback}"
+        - "{actual_receipt}"
+        - "{finalization_barrier}"
+        - "{round_output_root}"
+  environment:
+    values:
+      CUDA_VISIBLE_DEVICES:
+        kind: literal
+        value: "<RUNTIME_LATE_BOUND>"
+      P6_HISTORY_RUN_MODE:
+        kind: literal
+        value: bound
+      P6_HISTORY_PRIVATE_ROOT:
+        kind: private_path
+        value: .
+      P6_HISTORY_TASK_STATE:
+        kind: placeholder
+        value: "{task_state}"
+      P6_HISTORY_ROUND_OUTPUT_ROOT:
+        kind: placeholder
+        value: "{round_output_root}"
+      P6_TVM_PYTHON:
+        kind: external_executable
+        value: "${P6_TVM_PYTHON}"
+      P6_TVM_SITE:
+        kind: external_directory
+        value: "${P6_TVM_SITE}"
+      P6_TVM_NVLIBS_FILE:
+        kind: external_file
+        value: "${P6_TVM_NVLIBS_FILE}"
+      P6_TVM_SUPPORT_ROOT:
+        kind: private_path
+        value: "${P6_TVM_SUPPORT_ROOT}"
+      P6_TVM_SUPPORT_ROOT_SHA256:
+        kind: literal
+        value: "<SHA256>"
+    activation_argv:
+      - "<ACTIVATION_EXECUTABLE>"
+      - "<ACTIVATION_MODE>"
+  output_layout:
+    round_root_template: "private-runs/{round_id}"
+    task_state:
+      path_template: "private-runs/{round_id}/state/task-state.json"
+      format: json
+      rows_key: rows
+      row_id_key: row_id
+      row_hash_key: row_sha256
+      source_evidence_key: source_evidence_sha256
+      stage_key: stage
+      status_key: terminal_status
+      row_count: 4
+      allowed_terminal_statuses:
+        - measured_success_gold
+        - feasibility_failure
+        - numerical_feasibility_failure
+      stage_order:
+        - source_materialization
+        - quantization
+        - performance
+        - ap
+        - finalization
+  actual_feedback:
+    result:
+      path_template: "private-runs/{round_id}/actual-feedback.json"
+      format: json
+      rows_key: rows
+      row_count: 4
+      row_id_key: row_id
+      row_hash_key: row_sha256
+      source_evidence_key: source_evidence_sha256
+      status_key: terminal_status
+      allowed_terminal_statuses:
+        - measured_success_gold
+        - feasibility_failure
+        - numerical_feasibility_failure
+      metric_keys: [latency_ms, energy_j, ap30, ap50, ap70]
+    receipt:
+      path_template: "private-runs/{round_id}/receipt.json"
+      format: json
+      request_sha256_key: measurement_request_sha256
+      row_hashes_key: row_sha256
+      source_evidence_key: source_evidence_sha256
+    finalization_barrier:
+      path_template: "private-runs/{round_id}/barrier.json"
+      format: json
+      request_sha256_key: measurement_request_sha256
+      row_hashes_key: row_sha256
+      source_evidence_key: source_evidence_sha256

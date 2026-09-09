@@ -149,14 +149,9 @@ def _prepare_rtx4090_bootstrap_inputs(tmp_path: Path) -> tuple[dict[str, Path], 
         runner_template_path=source_runner,
     )
     legacy = _read_yaml(normalized["legacy"])
-    legacy.update(
-        {
-            "schema_version": "p6_coptv2x_local_v3",
-            "target": "rtx4090",
-            "hardware_profile": "rtx4090",
-        }
-    )
-    _write_yaml(normalized["legacy"], legacy)
+    assert legacy["schema_version"] == "p6_coptv2x_local_v3"
+    assert legacy["target"] == "rtx4090"
+    assert legacy["hardware_profile"] == "rtx4090"
     runner = _read_yaml(normalized["runner_template"])
     runner["execution_interface"]["environment"]["values"][
         "CUDA_VISIBLE_DEVICES"

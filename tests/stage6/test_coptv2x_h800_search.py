@@ -283,6 +283,34 @@ def _gold176(
     return rows, graphs
 
 
+def test_static_search_input_validation_accepts_complete_h800_payloads(
+    tmp_path: Path,
+) -> None:
+    rows, graphs = _gold176(include_non_target_backend=True)
+    _write_profile_search_inputs(
+        tmp_path,
+        rows=rows,
+        graphs=graphs,
+        profiles=[_profile(), _non_target_profile()],
+    )
+    contract = load_public_contract(
+        _write_yaml(tmp_path / "public.yaml", _public_v3_contract("h800"))
+    )
+    source_map = {
+        "input_sources": {
+            name: str(tmp_path / f"{name}.json")
+            for name in (
+                "gold176_rows",
+                "gold176_graph_features",
+                "capability_profiles",
+                "closure",
+            )
+        }
+    }
+
+    execution.validate_static_search_input_payloads(source_map, contract)
+
+
 def test_initial_coldstart_keeps_true_failures_as_evidence_outside_value_fit() -> None:
     """The reviewed Gold176 ledger has 174 value rows and two real failures."""
     rows, graphs = _gold176(include_non_target_backend=True)

@@ -162,6 +162,10 @@ def test_rtx_v4_normalization_generates_exact_formal_overlay_wrappers(
         destination,
         runner_template_path=runner,
     )
+    locator = yaml.safe_load(paths["legacy"].read_text(encoding="utf-8"))
+    assert locator["schema_version"] == "p6_coptv2x_local_v3"
+    assert locator["target"] == "rtx4090"
+    assert locator["hardware_profile"] == "rtx4090"
     profile = load_post_source_adapter_profile(
         paths["post_source_adapter_profile"], private_root=destination
     )
@@ -198,6 +202,26 @@ def test_rtx_v4_normalization_generates_exact_formal_overlay_wrappers(
         assert f"ADAPTER_PYTHON = Path({str(profile.adapter_python)!r})" in text
         assert "ADAPTER_DEPENDENCY_ROOT = PRIVATE_ROOT / " in text
         assert f"EXPECTED_ENV_KEYS = {tuple(runtime)!r}" in text
+
+
+def test_explicit_h800_v5_authority_generates_profiled_local_locator(
+    tmp_path: Path,
+) -> None:
+    source_map, runner = v5_private_source_map(tmp_path)
+    source_map["hardware_profile"] = "h800"
+    destination = tmp_path / "normalized-h800"
+
+    paths = normalize_history_inputs(
+        source_map,
+        _history_root(source_map),
+        destination,
+        runner_template_path=runner,
+    )
+
+    locator = yaml.safe_load(paths["legacy"].read_text(encoding="utf-8"))
+    assert locator["schema_version"] == "p6_coptv2x_local_v3"
+    assert locator["target"] == "h800"
+    assert locator["hardware_profile"] == "h800"
 
 
 def test_v3_publish_failure_leaves_no_destination_or_staging_tree(

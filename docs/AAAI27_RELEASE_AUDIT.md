@@ -132,17 +132,19 @@ scripts/stage2_update_evidence.py
 
 ### 当前状态
 
-**状态日期：2026-09-09；此处记录 P6 硬件 profile 参数化与 RTX4090 三卡全链路机制验证后的公开交接状态。** 当前工作分支为 `feat/runtime-gpu-pool`，进入本轮收口前的已提交基线为 `84dc6b9`；本轮交接状态更新候选由 Git 历史记录，不在本文件中自引用其最终提交 SHA。P1 最终候选 `c65b5fc7eb9d20e2d34928f7c948aea90f822754` 及其 tree `e9adfe9888a21ae0b5f819858e1cea001acbcecb` 仍只作为 P1 冻结证据；后续 P2--P6.3 离线状态由本台账追加记录约束。实时远端差异、工作树状态和新候选提交必须以 `git status --short --branch` 与当次验证输出为准，不能复用旧冻结数字。本轮迁移目标是复用既有 Stage1、Stage2、GPU admission、TVM sm89、controller 和 verifier 合同，在 RTX4090 上验证完整机制；它不把 RTX4090 数值重标记为 H800 论文结果。
+**状态日期：2026-09-09；此处记录 P6 硬件 profile 参数化、RTX4090 三卡全链路机制验证与功能分支远端验收后的公开交接状态。** 当前工作分支为 `feat/runtime-gpu-pool`；进入本轮最小发布面更新前，公开远端候选为 `73a293eb217b52af39d71d1e1a06bcc0e231481a`。该提交的 [CI run 34350972607](https://github.com/jichengzh/AAAI-HW-SW-codesign/actions/runs/34350972607) 中 `public-smoke`、`quality (3.10)` 与 `quality (3.11)` 均成功。P1 最终候选 `c65b5fc7eb9d20e2d34928f7c948aea90f822754` 及其 tree `e9adfe9888a21ae0b5f819858e1cea001acbcecb` 仍只作为 P1 冻结证据；后续状态由本台账追加记录约束。实时远端差异、工作树状态和新候选提交必须以 `git status --short --branch` 与当次验证输出为准，不能复用旧冻结数字。当前最小更新只补齐 H800/RTX4090 脱敏格式模板和单命令入口；它不改变外部资产/证据边界，也不把任一 hardware profile 的数值重标记为另一 profile。
+
+历史测试和交接引用中的“P6 硬件 profile 参数化与 RTX4090 三卡全链路机制验证后的公开交接状态”继续指向本节；上方新增的 Run 29 与单命令入口状态是其追加更新。
 
 | 范围 | 当前状态 | 可验证证据 | 仍缺少的内容 |
 | --- | --- | --- | --- |
-| 公开 CPU 冒烟闭环 | 已完成，并经当前分支重验 | `requirements.txt` 固定 CPU 依赖；`scripts/reproduce/smoke_clean_clone.sh` 创建全新 clone/venv 后运行 smoke；进入本轮收口前的已提交基线 clean-clone 通过 28 项检查，本轮收口候选提交后 clean-clone smoke 亦通过 28 项检查。 | 真实公开远端在推送后仍需由 CI 再验证。 |
-| 公开文档与新手入口 | 已完成（本地） | `README.md`、`README.zh-CN.md`、`REPRODUCIBILITY.md` 说明浅克隆、固定依赖和 smoke；README 双语新增外部私有 RTX4090 全链路顺序、历史 H800 入口名解释、normalized runner-template 边界、GPU pool 语义与硬件-specific 结果限制；本地收口提交后的 clean-clone smoke 已通过。 | 推送后仍需由远端 CI 重验；私有资产、路径、日志、指标和候选身份仍不得写入公开文档。 |
+| 公开 CPU 冒烟闭环 | 已完成，并经当前分支和远端重验 | `requirements.txt` 固定 CPU 依赖；`scripts/reproduce/smoke_clean_clone.sh` 创建全新 clone/venv 后运行 smoke；远端候选 `73a293e` 的 Run 29 三项 CI job 全部成功。 | 本轮新候选形成后仍需重新执行本地门和远端 CI，旧结果不能外推。 |
+| 公开文档与新手入口 | 已完成（本地） | `README.md`、`README.zh-CN.md`、`REPRODUCIBILITY.md` 与 `ARTIFACTS.md` 继续说明 CPU smoke 和证据边界；本轮新增 H800/RTX4090 同构 contract、完整脱敏输入格式和 `run_p6_full_chain.py --manifest` 推荐入口，并把 locator 明确归为 normalize 生成。 | 本轮仓库级门和新远端验收尚待完成并记录；私有资产、路径、日志、指标和候选身份仍不得写入公开文档。 |
 | 匿名审稿 ZIP | P1 本地验收完成 | allowlist、逐字节安全扫描、archive verifier 和解包后的新 venv 已验收；P1 ZIP 为 100 个成员。 | 每次候选 HEAD 改变都必须重建并记录新哈希。 |
 | 论文证据 | 受限 | 小型 Stage4 审计为 `verified`；demo 明确为非论文证据。P6.1 和 RTX4090 三卡验证只记录 Git 忽略边界内的本地结构性闭环完成事实。规范定义见 [REPRODUCIBILITY.md](../REPRODUCIBILITY.md) 与 [ARTIFACTS.md](../ARTIFACTS.md)。 | Stage6/Stage7 论文证据、公开 P6 结果包及真实硬件/AP/能耗制品仍为 `external` 或 `unavailable`。 |
-| 完整项目源代码 | P3、P4、P5 已完成（本地）；P6.1 静态 343×2 历史路径已完成（本地）；P6.2 动态框架候选空间离线接入与验证已完成（本地）；P6.3 历史执行适配器已实现并通过离线验证；真实 RTX4090 三卡四轮 controller/verifier 已完成（本地） | 当前树含公开的接口、验证、选择、聚合、外部输入登记、环境契约、P6.1 本地执行边界文档、P6.2 动态离线契约、P6.3 历史执行适配器，以及 normalizer→provision→Stage1 manifest→动态 Stage2 plan→registry-v2 的门禁。RTX4090 迁移复用共享 controller/verifier；公开测试已覆盖 RTX4090 contract、post-source adapter profile、source/quant/AP/performance 调度边界。A61 本地验证完成 4 轮、16 条 selected rows，独立 verifier 通过，收口 verifier 已重新接受该完成产物。 | P7 安全/合规/供应链审查和 P8 发布候选验证尚未开始；远端分支推送后仍需 clean-clone/CI 重验。 |
+| 完整项目源代码 | P3、P4、P5 已完成（本地）；P6 实现和 RTX4090 三卡四轮 controller/verifier 已完成；P8 功能分支候选已远端验收 | 当前树含公开接口、验证、选择、聚合、外部输入登记、环境契约及 normalizer→provision→Stage1 manifest→动态 Stage2 plan→registry-v2 门禁。A61 本地验证完成 4 轮、16 条 selected rows，独立 verifier 通过；远端候选 `73a293e` 的 clean-clone 与 Run 29 已通过。 | 本轮单命令入口/模板候选仍待本地门和新的远端验收；外部论文证据仍不入库。 |
 | 私有源迁移清单 | P2a + P2b 盘点完成，P3 本地关闭 | [P2 脱敏汇总](release-manifests/P2_PRIVATE_SOURCE_SUMMARY.json)、v1.1.0 inventory 工具、[P3 全量关闭复核](release-manifests/P3_FULL_CLOSURE_REVALIDATION.md) 与 accepted-only manifest 覆盖 1,551/1,551。 | P7 仍需复核计划公开树和历史中的凭据、许可、隐私与来源边界。 |
-| 公开发布 | 未开始 | P1 本地发布候选、P3 本地关闭、P4/P5 本地收口、P6.1 静态历史收口、P6.2 动态离线接入验证、P6.3 历史执行适配器离线验证，以及 RTX4090 三卡机制验证均有台账记录；尚未执行合并、tag、Release 或仓库可见性变更。 | 需要完成 P7、P8、远端 clean-clone/CI 验收，并在最后取得合并、tag、Release 或可见性变更授权。 |
+| 公开发布 | 功能分支候选已验收；正式发布未开始 | `feat/runtime-gpu-pool` 的候选 `73a293e` 已通过远端 clean-clone 与 Run 29；尚未执行合并、tag、Release 或仓库可见性变更。 | 本轮最小更新须完成本地门和新的远端验收；正式发布前仍需完成适用的 P7 复核并取得合并、tag、Release 或可见性变更授权。 |
 
 历史的 `338 passed`、覆盖率和 ZIP SHA-256 记录仍是其对应审计提交的证据，不能自动外推到当前 HEAD。当前 HEAD 的每一次新验收结果必须通过本台账追加记录。
 
@@ -158,7 +160,7 @@ scripts/stage2_update_evidence.py
 | P5 | 已完成（本地） | 固化可复现环境：[P5 环境契约](release-manifests/P5_ENVIRONMENT_CONTRACT.md) 连接 CPU、RTX 4090 与 H800 三份公开 hardware capability YAML 和三份环境契约；离线验证器覆盖合成正负例。结论仅限本地离线环境契约：不探测本机 GPU，不运行 CUDA 编译、训练、评测、基准测试或任何外部资产，也不进行网络下载。 | 三个配置文件互不混淆且不含 SSH 信息；验证器只消费用户显式提供的本地探测输入，并验证每个环境的依赖约束和相应合成离线测试。 |
 | P6 | P6.1 静态 343×2 历史路径已完成（本地）；P6.2 动态框架候选空间离线接入与验证已完成（本地）；P6.3 历史执行适配器已实现并通过离线验证；历史执行根归一桥接实现完成；真实 RTX4090 三卡四轮 controller/verifier 已完成（本地） | P6.1 的静态 343×2 是已完成的本地历史路径。P6.2 从 Stage2 动态派生候选池，不预设为 343 或 686；单个候选不是 mixed-precision。P6.3 历史执行适配器已实现并通过离线验证。归一桥接的公开离线门禁覆盖 normalizer→provision→真实 Stage1 manifest→动态 Stage2 plan→registry-v2。RTX4090 迁移使用 `configs/execution/p6_rtx4090_search.example.yaml` 和历史名称 controller 入口，不新增 RTX-specific verifier；A61 本地验证完成 4 轮、16 条 selected rows，收口 verifier 已重新接受该完成产物。 | RTX4090 机制验证不得重标记为 H800 论文数值。Git 忽略的本地执行材料不进入公开面或匿名归档；不公开候选标识、执行位置、命令、结果、检查点或日志。 |
 | P7 | 待开始 | 完成开源前安全、合规、文档和供应链审查。 | 全树/待发布历史凭据扫描为零；第三方许可和数据使用权明确；README、架构/设计说明、数据卡、复现指南、贡献/引用信息与真实入口一致；依赖漏洞处置或记录完成。 |
-| P8 | 待开始 | 形成发布候选并进行外部发布。 | 新目录 HTTPS clone、CPU smoke、全量测试、CI、匿名包（如仍在匿名期）和 4090/H800 最小验证均通过；获得明确授权后才推送、PR/合并、打 tag、设置可见性和发布版本。 |
+| P8 | 功能分支候选 `73a293e` 已远端验收；本轮最小更新进行中 | 形成发布候选并进行外部发布。 | 旧候选的新目录 clone、CPU smoke 与 CI 已通过；本轮变更必须重新验收。获得明确授权后才推送、PR/合并、打 tag、设置可见性和发布版本。 |
 
 #### P1：发布候选冻结
 
@@ -815,6 +817,12 @@ P3-40 经第三次逐项裁决后为 5 项 P4、7 项 P6；P3-41 为 3 项 P4、
 **P6 RTX4090 三卡全链路验证收口（2026-09-09）**：当前工作分支为 `feat/runtime-gpu-pool`，A61 本地外部运行记录的执行代码身份为 `644a304b8b45`，本轮收口前公开 HEAD 为 `84dc6b9`。真实 RTX4090 三卡四轮 controller/verifier 已完成（本地）：完成 4 轮、16 条 selected rows，hardware profile 为 `rtx4090`，TVM 目标架构为 `sm89`，比较口径为 hardware-specific；收口 verifier 已重新接受该完成产物。该验证说明现有 Stage1、Stage2、GPU admission、TVM sm89、controller 和 verifier 合同可在 4090 服务器上复用完成完整机制验证；它不形成公开结果包，不公开候选标识、执行位置、设备身份、私有资产、checkpoint、指标、结果或日志，也不能重标记为 H800 论文数值。本轮文档与发布面定向回归为 240 passed；仓库级门禁为 2878 passed、1 skipped、全局覆盖率 86.30%，Ruff、compileall 和 diff-check 均通过。本记录不授权合并 main、tag、Release 或仓库可见性变更；下一步是推送功能分支后的远端 clean-clone 与 CI 验收。
 
 **P8 功能分支远端验收修复（2026-09-09）**：`feat/runtime-gpu-pool` 已推送到公开远端；远端新 clone、隔离环境安装、CPU smoke 与 28 项 clean-clone 检查在提交 `ab94bfb` 上通过。首轮远端 CI 的 `public-smoke` 成功，Python 3.10/3.11 quality 均在全仓 coverage 步骤失败。独立 Python 3.10 venv 复现定位到 full-chain 配置将 venv 的 Python 入口解引用为系统 Python，导致 registry child process 无法导入已安装依赖；本轮只将 normalizer、bootstrap 与 legacy diagnostic renderer 生成的 child Python 路径改为绝对但不解引用，并用三个 venv-style symlink 回归测试约束。第二轮远端 CI 的 `public-smoke` 仍成功，quality 继续暴露一项测试夹具错误：formal TVM Python 依赖 ambient interpreter，可能与 adapter Python 偶然相同。该测试随后创建了与 adapter Python 路径独立的 formal runtime 副本；第三轮远端 CI 暴露 hosted-toolcache Python 二进制离开其共享库目录后不可启动。最终夹具改用独立路径的单链接 Python launcher，仍由 production validator 实际执行版本探测，且不改变 production contract。Python 3.10 下 CI 原命令在当前工作树为 `2881 passed, 1 skipped`、全局覆盖率 `85.81%`；Stage6 全量回归为 `1474 passed, 1 skipped`。新候选仍须由远端 CI 重验。本记录不授权 PR、合并 main、tag、Release 或仓库可见性变更。
+
+**P8 功能分支远端验收完成（2026-09-09）**：提交 `73a293eb217b52af39d71d1e1a06bcc0e231481a` 已由新 clone 的 CPU smoke/29 项 clean-clone 检查接受；公开 [CI run 34350972607](https://github.com/jichengzh/AAAI-HW-SW-codesign/actions/runs/34350972607) 的 `public-smoke`、`quality (3.10)` 与 `quality (3.11)` 全部成功。该记录更正上条“新候选仍须远端重验”的当前状态，但不授权 PR、合并 main、tag、Release 或仓库可见性变更。
+
+**P8 H800/RTX4090 单命令最小发布面更新启动（2026-09-09）**：本轮在不引入私有资产或结果的前提下，新增两类 hardware profile 的脱敏 full-chain manifest、v5 source-map、完整 pre-normalization runner-template 与 normalize-generated locator 格式参考；H800 public contract 与 RTX4090 对齐为 v3。README 的推荐入口改为 `GPU_POOL=N python tools/release/run_p6_full_chain.py --manifest ...`，先支持只读 `--check-inputs`，完整启动后自动依次执行 derive、normalize、fresh provision、四轮 controller 与 verifier，不要求中途人工编辑。locator、normalized runner、wrapper profiles 和 normalized training binding 仍必须由同一次 normalize 生成；H800/RTX4090 硬件证据不可跨 profile。当前定向本地门为：模板/orchestrator 57 passed，文档/identity 82 passed，H800/RTX contract/controller 兼容组 172 passed，Ruff、diff-check 与模板敏感信息扫描通过；仓库级完整门仍待根任务执行并追加，不得复用 Run 29 代替本轮验证。未提交、未推送，也未授权 PR、合并 main、tag、Release 或可见性变更。
+
+**P8 H800/RTX4090 单命令最小发布候选完成（2026-09-10）**：本轮候选现已补齐 H800/RTX4090 full-chain manifest、v5 source-map、pre-normalization runner、两类 generated locator，以及 Gold176 rows、graph features、closure、H800 capability profiles 与 RTX4090 measured capability context 的脱敏格式参考。`--check-inputs` 在 GPU admission 前以只读方式验证完整 normalization authority，并解析四份 subordinate JSON、验证 176 行和匹配身份、closure、profile/context 自洽性及 Gold cold-start fit；私有 manifest/输入/输出必须位于仓库外或 Git-ignored 位置，且 symlink 旁路已由回归拒绝。全仓门为 **2950 passed、1 skipped、86.30% coverage**；相关 H800/RTX/orchestrator 定向复审为 193 passed；Ruff、compileall、`pip check`、wheel/sdist build、diff-check、身份/秘密扫描均通过，三个独立复审均未留下 CRITICAL/HIGH。依赖审计另记录两个非阻塞边界：官方 CPU index 的 `torch 2.9.0+cpu` 无法由 PyPI advisory resolver 匹配；`setuptools 80.10.2` 的 2026 年 macOS Unicode-normalization sdist advisory 为 medium，修复版 83.0.0，本轮按“不扩大非阻塞安全整改”原则只记录，不冻结 Linux 发布候选。该状态仍只是本地候选；全新 clone 验收需在候选提交后执行并追加，未授权推送、PR、合并 main、tag、Release 或可见性变更。
 
 P3-139 上一批完成后覆盖为 1,436/1,551（P4=12）。
 

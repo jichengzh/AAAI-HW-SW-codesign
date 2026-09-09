@@ -76,8 +76,13 @@ def _historical_source_authority(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _write_rtx_context_source(
-    tmp_path: Path, *, tvm_python: str | None = None
-) -> tuple[Path, list[dict[str, Any]]]:
+    tmp_path: Path,
+    *,
+    tvm_python: str | None = None,
+    include_source_map: bool = False,
+) -> tuple[Path, list[dict[str, Any]]] | tuple[
+    Path, list[dict[str, Any]], dict[str, Any]
+]:
     source_map, runner = v5_private_source_map(tmp_path)
     if tvm_python is None:
         tvm_python = str(
@@ -163,6 +168,8 @@ def _write_rtx_context_source(
         normalized,
         runner_template_path=runner,
     )
+    if include_source_map:
+        return normalized, profiles, source_map
     return normalized, profiles
 
 
@@ -186,6 +193,19 @@ def _loaded_pair(tmp_path: Path):
     )
     local = load_local_config(_write_yaml(tmp_path / "local.yaml", local_payload), contract)
     return contract, local, profiles
+
+
+def test_static_search_input_validation_accepts_self_consistent_rtx_context(
+    tmp_path: Path,
+) -> None:
+    _, _, source_map = _write_rtx_context_source(
+        tmp_path, include_source_map=True
+    )
+    contract = load_public_contract(
+        _write_yaml(tmp_path / "public-static.yaml", _public_v3_contract("rtx4090"))
+    )
+
+    execution.validate_static_search_input_payloads(source_map, contract)
 
 
 def test_rtx_loader_preserves_gold_profiles_and_adds_one_measured_active_context(
@@ -295,7 +315,9 @@ def test_probe_cli_accepts_formal_tvm_python_distinct_from_adapter_python(
     formal_python_path = tmp_path / "formal-tvm-runtime/bin/python"
     write_current_python_launcher(formal_python_path)
     formal_tvm_python = str(formal_python_path)
-    normalized, _ = _write_rtx_context_source(tmp_path, tvm_python=formal_tvm_python)
+    normalized, _ = _write_rtx_context_source(
+        tmp_path, tvm_python=formal_tvm_python
+    )
     runner_path = normalized / "runner-template.yaml"
     profile_path = normalized / "post-source-adapter-profile.yaml"
     runner = yaml.safe_load(runner_path.read_text(encoding="utf-8"))

@@ -60,6 +60,7 @@ from framework.stage6.p6_source_reuse_evidence_v1 import (
     P6SourceReuseEvidenceError,
     create_fresh_run_context,
 )
+from framework.stage6.p6_tvm_runtime_authority_v1 import TVM_SUPPORT_CLOSURE_ID
 
 
 PUBLIC_SCHEMA_VERSION = "p6_h800_coptv2x_search_contract_v2"
@@ -525,6 +526,102 @@ def _load_search_inputs(
     ):
         raise P6CoptV2XContractError("coldstart capability context is incomplete")
     return frozen_gold, gold_graphs, capability_profiles, profile
+
+
+def validate_static_search_input_payloads(
+    source_map: Mapping[str, Any], contract: PublicP6CoptV2XContract
+) -> None:
+    """Validate private search payload content without probing GPUs or writing files."""
+    try:
+        raw_paths = source_map.get("input_sources")
+        if not isinstance(raw_paths, Mapping) or set(raw_paths) != LOCAL_INPUT_NAMES:
+            raise ValueError
+        paths: dict[str, Path] = {}
+        for name, value in raw_paths.items():
+            if not isinstance(value, str):
+                raise ValueError
+            paths[str(name)] = Path(value)
+        gold_rows = _require_mapping_rows(
+            _read_local_input_json(paths["gold176_rows"]), "gold176 rows"
+        )
+        gold_graphs = _normalize_gold_graph_features(
+            _require_mapping_rows(
+                _read_local_input_json(paths["gold176_graph_features"]),
+                "gold176 graph features",
+            )
+        )
+        closure = _read_local_input_json(paths["closure"])
+        _validate_closure(closure)
+        frozen_gold = freeze_initial_coldstart(gold_rows)
+        _attach_graph_features(frozen_gold, gold_graphs)
+        raw_profiles = _read_local_input_json(paths["capability_profiles"])
+        if contract.hardware_profile.profile_id == "rtx4090":
+            if not isinstance(raw_profiles, Mapping):
+                raise ValueError
+            evidence = raw_profiles.get("measurement_evidence")
+            if not isinstance(evidence, Mapping):
+                raise ValueError
+            support_digest = _declared_tvm_support_digest(source_map)
+            context = validate_rtx_capability_context(
+                raw_profiles,
+                profile=contract.hardware_profile,
+                repository_root=Path(__file__).resolve().parents[2],
+                expected_probe_code_sha256=canonical_probe_code_sha256(
+                    Path(__file__).resolve().parents[2]
+                ),
+                expected_support_root_sha256=support_digest,
+                expected_historical_source_sha256=historical_capability_source_sha256(
+                    Path(__file__).resolve().parents[2]
+                ),
+                trusted_runtime_identity=evidence.get("runtime_identity"),
+                trusted_probe_records={
+                    "neutral": evidence.get("neutral_records"),
+                    "pruning": evidence.get("pruning_records"),
+                },
+            )
+            coldstart_profiles = list(context.historical_profiles)
+        else:
+            coldstart_profiles = [
+                validate_capability_profile(profile)
+                for profile in _require_mapping_rows(
+                    raw_profiles, "capability profiles"
+                )
+            ]
+            _select_profile(coldstart_profiles, contract)
+        coldstart_profile_ids = {
+            str(row.get("capability_profile_id") or "") for row in frozen_gold
+        }
+        if (
+            len(coldstart_profile_ids) != FIXED_COLDSTART_PROFILE_COUNT
+            or len(coldstart_profiles) != FIXED_COLDSTART_PROFILE_COUNT
+            or {str(item["capability_profile_id"]) for item in coldstart_profiles}
+            != coldstart_profile_ids
+        ):
+            raise ValueError
+        fit_initial_coldstart_bundle(
+            frozen_gold, gold_graphs, coldstart_profiles, seed=contract.seed
+        )
+    except (OSError, P6CoptV2XExecutionError, P6CapabilityContextError, ValueError) as error:
+        raise P6CoptV2XContractError("private search inputs are invalid") from error
+
+
+def _declared_tvm_support_digest(source_map: Mapping[str, Any]) -> str:
+    closure = source_map.get("execution_code_closure")
+    roots = closure.get("roots") if isinstance(closure, Mapping) else None
+    matches = (
+        [
+            item
+            for item in roots
+            if isinstance(item, Mapping)
+            and item.get("closure_id") == TVM_SUPPORT_CLOSURE_ID
+        ]
+        if isinstance(roots, list)
+        else []
+    )
+    digest = matches[0].get("sha256") if len(matches) == 1 else None
+    if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+        raise ValueError
+    return digest
 
 
 def _load_capability_profiles(

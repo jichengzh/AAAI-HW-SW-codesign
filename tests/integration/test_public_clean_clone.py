@@ -59,6 +59,10 @@ def test_cpu_smoke_requirements_pin_the_runtime_and_test_surface() -> None:
     assert "numpy==" in requirements
     assert "PyYAML==" in requirements
     assert "pytest==" in requirements
+    # The documented release identity gate imports ``build``.  A newcomer who
+    # followed the pinned quick start must not need a second, undocumented
+    # dependency-install step before that gate can run.
+    assert re.search(r"(?m)^build==[^\s]+$", requirements)
     assert "scikit-learn==" in requirements
     assert "lightgbm==" in requirements
 

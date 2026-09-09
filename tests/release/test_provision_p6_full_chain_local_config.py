@@ -449,14 +449,9 @@ def _rtx_v5_materialization_inputs(
         runner_template_path=runner,
     )
     legacy = yaml.safe_load(normalized["legacy"].read_text(encoding="utf-8"))
-    legacy.update(
-        {
-            "schema_version": "p6_coptv2x_local_v3",
-            "target": "rtx4090",
-            "hardware_profile": "rtx4090",
-        }
-    )
-    _write_yaml(normalized["legacy"], legacy)
+    assert legacy["schema_version"] == "p6_coptv2x_local_v3"
+    assert legacy["target"] == "rtx4090"
+    assert legacy["hardware_profile"] == "rtx4090"
     runner_payload = yaml.safe_load(
         normalized["runner_template"].read_text(encoding="utf-8")
     )

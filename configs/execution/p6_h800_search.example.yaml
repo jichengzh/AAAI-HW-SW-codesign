@@ -1,5 +1,6 @@
-schema_version: p6_h800_coptv2x_search_contract_v2
+schema_version: p6_coptv2x_search_contract_v3
 search_id: p6-pyramid-h800-tvm
+hardware_profile: h800
 target: h800
 target_model: pyramid
 execution_backend: tvm_auto

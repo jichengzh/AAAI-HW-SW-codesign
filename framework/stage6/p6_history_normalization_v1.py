@@ -634,3 +634,17 @@ def normalize_history_inputs(
     finally:
         if staged is not None:
             shutil.rmtree(staged, ignore_errors=True)
+
+
+def validate_history_inputs(
+    source_map: Mapping[str, Any],
+    history_root: Path,
+    *,
+    runner_template_path: Path | None = None,
+) -> None:
+    """Validate pre-normalization authorities without creating any outputs."""
+    _validate_private_source_map(
+        source_map,
+        history_root,
+        runner_template_path=runner_template_path,
+    )

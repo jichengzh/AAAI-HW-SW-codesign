@@ -1,0 +1,10 @@
+[
+  {
+    "group_id": "<GROUP_ID_MATCHING_GOLD_ROW>",
+    "model": "pyramid",
+    "width": [16, 32, 64],
+    "conv_count": 0.0,
+    "conv_macs": 0.0,
+    "group_conv_count": 0.0
+  }
+]

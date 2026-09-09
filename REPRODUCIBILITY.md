@@ -52,6 +52,50 @@ counts are a search-space contract check, not measured accuracy, latency,
 energy, compiler, training, checkpoint, dataset, GPU, SSH, TVM, or TensorRT
 evidence.
 
+## External H800 / RTX4090 full-chain contract
+
+The preferred external-hardware entry point is the manifest-driven orchestrator:
+
+```bash
+python tools/release/run_p6_full_chain.py \
+  --manifest <abs-private-full-chain-manifest.yaml> \
+  --check-inputs
+GPU_POOL=N python tools/release/run_p6_full_chain.py \
+  --manifest <abs-private-full-chain-manifest.yaml>
+```
+
+The static check is read-only, parses and validates all four subordinate JSON
+payloads, and does not require `GPU_POOL`. It proves content consistency but
+does not replace live GPU/runtime admission. A full invocation
+requires a positive GPU count and, after it starts, runs derive, normalize,
+fresh provision, four sequential feedback-dependent search rounds, and the
+independent verifier without intermediate operator edits. Redacted H800 and
+RTX4090 manifests and input-shape examples live under `configs/execution/`.
+They document schemas but do not supply licensed bytes or measured evidence.
+The JSON references cover Gold rows, matching graph features, the closure audit,
+the two-profile H800 authority, and the measured RTX4090 capability-context
+shape. They are deliberately non-executable: cardinalities, content hashes,
+embedded probe bytes, and measured values must come from the approved source or
+probe workflow.
+In particular, locator, normalized runner, wrapper profiles, and normalized
+training binding are outputs of the same normalize operation and must not be
+hand-authored or mixed across runs.
+
+After a successful verifier pass, the controller state is
+`<fresh_output_root>/state.json`; released per-candidate metrics are in the four
+`round-XX/feedback.json` files. Native evidence and receipts remain under the
+paths declared by the normalized runner's `execution_interface.actual_feedback`
+contract. The verifier completion JSON is a structural/provenance report, not a
+best-candidate metric summary. The current external-training contract does not
+bind a dataset snapshot digest, so a completed private run is mechanism evidence
+unless a separately reviewed dataset/result bundle supplies that missing
+identity.
+
+The hardware profile is an evidence invariant. An H800/sm90 observation is not
+RTX4090/sm89 evidence, and an RTX4090/sm89 observation is not H800/sm90
+evidence. Selection seeds and a shared controller do not authorize relabeling,
+merging, or numerically adjusting results across profiles.
+
 ## Evidence matrix
 
 The manuscript's exact table/figure labels are not part of this archive. The
@@ -118,6 +162,11 @@ them to an analysis, retain an immutable input copy or digest, a non-path
 provenance label, execution configuration, seed, and independent-validation
 record. External hardware results are outside this package's reproducibility
 claim until such a reviewed artifact bundle is released.
+
+The public full-chain templates improve the bring-your-own-assets handoff but
+do not change that evidence status. `--check-inputs` can establish that the
+declared local files and profile agree; it cannot create missing private assets
+or confer permission to redistribute them.
 
 ## Known limitations
 

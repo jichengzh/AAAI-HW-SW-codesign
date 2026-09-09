@@ -87,64 +87,117 @@ hardware-backed representative results and formal online-ablation aggregate are
 not in the package. Treat that non-zero result as an auditable availability
 check, not a successful paper run.
 
-## External private RTX4090 full run
+## External private H800 / RTX4090 full-chain run
 
-The repository also contains the checked public controller/verifier interfaces
-for an external, hardware-specific RTX4090 run. This path is not part of the
-CPU clean-clone smoke. It requires user-provided private assets and local
-runtime state: licensed datasets, checkpoints/model sources, any required ONNX
-or calibration inputs, a working CUDA/TVM sm89 toolchain, private source-map and
-runner-template files, and ignored local output roots. Those materials are not
-published with this repository.
+H800 and RTX4090 use the same Stage1, Stage2, GPU-admission, controller, and
+verifier path. Only the hardware profile, CUDA/TVM architecture, and external
+assets differ. This is not the CPU smoke path, and the repository does not
+download or fabricate datasets, checkpoints, model sources, ONNX/calibration
+inputs, TVM caches, or hardware measurements.
 
-Material ownership is explicit; generated files are not additional inputs:
+Material ownership is explicit:
 
-- **User-provided private inputs:** a private history root, private source-map,
-  pre-normalization runner-template, RTX local config or locator, licensed
-  datasets, model sources/checkpoints, any required ONNX or calibration inputs,
-  a CUDA/TVM sm89 toolchain, and a fresh output root. Keep every path outside the
-  repository or Git-ignored. The source-map and runner-template describe
-  licensed historical code and therefore have no tracked public executable
-  example.
-- **Repository-provided public references:**
-  `configs/execution/p6_rtx4090_search.example.yaml` is the four-round public
-  search contract. `configs/execution/p6_external_training_binding.example.yaml`
-  is a null-only schema example; copy it to an ignored location, replace every
-  required null with operator-approved values, and let validation compute or
-  check the stable-file SHA-256 fields. The checked-in null-only file is
-  intentionally not executable.
+- **User-provided private inputs:** the private history root (the exact Git
+  top-level), a
+  completed v5 private source-map, a pre-normalization runner-template,
+  licensed datasets, model sources/checkpoints, any required ONNX or calibration inputs,
+  a profile-compatible CUDA/TVM toolchain (a CUDA/TVM sm89 toolchain
+  for RTX4090), a not-yet-created normalized directory, and a fresh output root. The file formerly
+  described as an RTX local config or locator is no longer a user input.
+- **Repository-provided public references:** the four-round contracts are
+  `configs/execution/p6_h800_search.example.yaml` and
+  `configs/execution/p6_rtx4090_search.example.yaml`; the single-command
+  manifests are `configs/execution/p6_h800_full_chain.example.yaml` and
+  `configs/execution/p6_rtx4090_full_chain.example.yaml`. Complete schema shapes
+  are shown by `configs/execution/p6_history_source_map.example.yaml`,
+  `configs/execution/p6_history_runner_template.example.yaml`, and the
+  null-only schema example
+  `configs/execution/p6_external_training_binding.example.yaml`. The four
+  source JSON payloads have separate format references:
+  `p6_gold176_rows.example.json`, `p6_gold176_graph_features.example.json`,
+  `p6_closure.example.json`, and either
+  `p6_h800_capability_profiles.example.json` or
+  `p6_rtx4090_capability_context.example.json`, all in `configs/execution/`.
+  All examples are redacted. A manifest with `template_only: true` is
+  intentionally rejected.
 - **`normalize`-generated private outputs:**
+  `<abs-normalized-private-dir>/legacy.local.yaml`,
   `<abs-normalized-private-dir>/runner-template.yaml`,
   `<abs-normalized-private-dir>/source-wrapper-profile.yaml`,
-  `<abs-normalized-private-dir>/external-training-binding.yaml`, and
-  `<abs-normalized-private-dir>/post-source-adapter-profile.yaml`. Do not author
-  these normalized authorities independently; pass the generated files to the
-  controller exactly as shown below.
+  `<abs-normalized-private-dir>/external-training-binding.yaml`,
+  `<abs-normalized-private-dir>/post-source-adapter-profile.yaml`, and the
+  derived recipe. Do not hand-author or mix these authorities. The files
+  `configs/execution/p6_h800_local_locator.example.yaml` and
+  `configs/execution/p6_rtx4090_local_locator.example.yaml` document only the
+  generated shape; they cannot replace normalize output. An explicit
+  `hardware_profile: h800` uses the parallel v3 locator; legacy H800 authority
+  that omits the profile remains compatible with v2.
 
-Use the public RTX4090 contract as the profile authority:
-`configs/execution/p6_rtx4090_search.example.yaml`. The retained executable
-name `tools/release/run_p6_h800_search.py` is historical; with the v3 RTX4090
-contract it loads the selected `rtx4090` hardware profile and runs the shared
-controller path rather than an H800-only path.
-
-A complete external run uses the existing private chain in this order:
+Copy the chosen full-chain manifest outside the repository or to a Git-ignored
+location, set `template_only: false`, replace every path with an absolute path,
+and ensure the manifest, source-map, and contract select the same profile. The
+static check parses the four subordinate JSON payloads, verifies their
+cardinalities, identities, closure, profiles, and self-consistent digests. It
+does not probe a GPU and creates neither normalized nor run outputs:
 
 ```bash
-python tools/release/derive_p6_history_recipe.py \
-  --source-map <abs-private-source-map.yaml> \
-  --runner-template <abs-pre-normalization-private-runner-template.yaml> \
-  --recipe-json <abs-output-recipe.json>
+python tools/release/run_p6_full_chain.py \
+  --manifest <abs-private-full-chain-manifest.yaml> \
+  --check-inputs
+```
 
-python tools/release/normalize_p6_history_root.py \
-  --source-map <abs-private-source-map.yaml> \
-  --history-root <abs-private-history-root> \
-  --private-dir <abs-normalized-private-dir> \
-  --runner-template <abs-pre-normalization-private-runner-template.yaml>
+After that check passes, use the same recommended entry point for either
+profile. `N` is only the requested GPU count:
 
+```bash
+# H800: manifest copied from p6_h800_full_chain.example.yaml
+GPU_POOL=N python tools/release/run_p6_full_chain.py \
+  --manifest <abs-private-h800-full-chain-manifest.yaml>
+
+# RTX4090: manifest copied from p6_rtx4090_full_chain.example.yaml
+GPU_POOL=N python tools/release/run_p6_full_chain.py \
+  --manifest <abs-private-rtx4090-full-chain-manifest.yaml>
+```
+
+Once launched, the command runs derive, normalize, fresh provision, the four
+controller rounds, and independent verification in order. No intermediate file
+editing, device selection, or copying is required. A failed stage stops the
+sequence with a stage-specific error and is never promoted to completion.
+
+The JSON examples are **format references, not runnable data**. The Gold input
+must contain exactly 176 real rows and one matching graph-feature row per
+`group_id`; its two H800 capability profiles must retain their exact historical
+digests. The RTX4090 capability context must be generated from the measured
+probe/rebuild workflow and its embedded bytes and digests, not assembled by
+editing the example. Dataset, checkpoint, config, model source, ONNX, and
+calibration files keep their native upstream formats; the v5 source-map binds
+their paths and the supported checkpoint/config SHA-256 identities.
+
+On success, `<fresh_output_root>/state.json` is the controller completion state;
+`binding.json` and `local-config.yaml` bind the admitted run; and
+`round-00/feedback.json` through `round-03/feedback.json` contain the 16 released
+rows and their `latency_ms`, `energy_j`, `ap30`, `ap50`, and `ap70` values. The
+normalized runner's `execution_interface.actual_feedback` paths retain the
+corresponding private native evidence and receipts. Treat metrics as final only
+after the independent verifier has printed its `completed` report. That report
+proves four rounds and 16 distinct measurements but deliberately does not pick
+a “best” row or publish private metric values. Dataset identity is currently a
+path-bound external input rather than a snapshot digest, so this supports
+full-chain mechanism validation, not an exact paper-number claim.
+
+### Historical four-step interface (debug only)
+
+The single-command entry point internally invokes `derive_p6_history_recipe.py`,
+`normalize_p6_history_root.py`, the historically named
+`run_p6_h800_search.py`, and `verify_p6_materializer_training_run.py`. Run them
+separately only to diagnose a stage failure. The third-step shape is retained
+below for old-log diagnosis:
+
+```bash
 GPU_POOL=7 python tools/release/run_p6_h800_search.py \
   --contract configs/execution/p6_rtx4090_search.example.yaml \
   --code-revision "$(git rev-parse --short=12 HEAD)" \
-  --legacy-local-config <abs-rtx-local-config-or-locator.yaml> \
+  --legacy-local-config <abs-normalized-private-dir>/legacy.local.yaml \
   --runner-template <abs-normalized-private-dir>/runner-template.yaml \
   --local-output-root <abs-fresh-output-root> \
   --binding-output <abs-fresh-output-root>/binding.json \
@@ -152,20 +205,11 @@ GPU_POOL=7 python tools/release/run_p6_h800_search.py \
   --source-wrapper-profile <abs-normalized-private-dir>/source-wrapper-profile.yaml \
   --external-training-binding <abs-normalized-private-dir>/external-training-binding.yaml \
   --post-source-adapter-profile <abs-normalized-private-dir>/post-source-adapter-profile.yaml
-
-python tools/release/verify_p6_materializer_training_run.py \
-  --contract configs/execution/p6_rtx4090_search.example.yaml \
-  --local-config <abs-fresh-output-root>/local-config.yaml \
-  --binding <abs-fresh-output-root>/binding.json
 ```
 
-The `--legacy-local-config` flag name is also historical; for an RTX4090 run it
-points at the approved RTX local config or locator that is converted into the
-fresh binding/config pair. `derive` and `normalize` consume the pre-normalized
-private runner template. In fresh-run mode, the historical controller entry
-late-binds `GPU_POOL`, provisions the fresh binding/config pair, runs static
-preflight, and then starts the four-round controller. The normalized authority
-at `<abs-normalized-private-dir>/runner-template.yaml` is not edited.
+`--legacy-local-config` and `run_p6_h800_search.py` are historical names. The
+manifest-selected v3 public contract is the profile authority, and the locator
+always comes from the current normalize operation.
 
 `GPU_POOL` is a strict positive GPU count and the only selector in fresh-run
 mode. `GPU_POOL=1` requests one available GPU, `GPU_POOL=3` requests three, and
@@ -186,9 +230,9 @@ The legacy `--local-config` mode remains available. When `GPU_POOL` is supplied
 with an existing local config, its count must match that run's existing
 binding; use fresh-run mode for automatic device selection.
 
-RTX4090 measurements are hardware-specific evidence. They can validate the
-end-to-end mechanism on sm89 hardware, but they must not be relabeled as H800
-results or numerically adjusted to claim reproduction of H800 paper tables.
+H800 and RTX4090 measurements are hardware-specific evidence. They must never
+be relabeled, merged, or numerically adjusted across profiles. RTX4090 can
+validate the sm89 end-to-end mechanism but cannot stand in for H800 paper data.
 The maintained implementation has completed one private RTX4090 mechanism
 validation with `GPU_POOL=3`, four rounds, 16 selected/measured rows, and an
 independent verifier pass. This structural fact does not publish the private

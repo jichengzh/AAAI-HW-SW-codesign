@@ -1,0 +1,117 @@
+{
+  "schema_version": "p6_rtx_capability_context_v1",
+  "historical_source_base64": "<BASE64_OF_EXACT_H800_CAPABILITY_PROFILE_LIST>",
+  "historical_profiles": [
+    {
+      "schema_version": "stage2_capability_profile_v3",
+      "capability_profile_id": "h800-tvm-auto",
+      "hardware_target": "h800",
+      "compiler_fingerprint": "<SHA256>",
+      "dispatch_key": "tvm_auto",
+      "features": {
+        "<EXACT_FEATURE_NAME_SET>": 0.0
+      },
+      "capability_digest": "<RECOMPUTED_CAPABILITY_SHA256>"
+    },
+    {
+      "schema_version": "stage2_capability_profile_v3",
+      "capability_profile_id": "h800-trt-engine",
+      "hardware_target": "h800",
+      "compiler_fingerprint": "<SHA256>",
+      "dispatch_key": "trt_engine",
+      "features": {
+        "<EXACT_FEATURE_NAME_SET>": 0.0
+      },
+      "capability_digest": "<RECOMPUTED_CAPABILITY_SHA256>"
+    }
+  ],
+  "active_profile": {
+    "schema_version": "stage2_capability_profile_v3",
+    "capability_profile_id": "rtx4090-tvm-auto-probe-v1",
+    "hardware_target": "rtx4090",
+    "compiler_fingerprint": "<SHA256>",
+    "dispatch_key": "tvm_auto",
+    "features": {
+      "<EXACT_FEATURE_NAME_SET>": 0.0
+    },
+    "capability_digest": "<RECOMPUTED_CAPABILITY_SHA256>"
+  },
+  "measurement_evidence": {
+    "schema_version": "p6_rtx_compiler_capability_evidence_v1",
+    "hardware_profile": "rtx4090",
+    "hardware_target": "rtx4090",
+    "dispatch_key": "tvm_auto",
+    "tvm_arch": "sm89",
+    "verified_gpu_count": 1,
+    "hardware_capability_sha256": "<SHA256>",
+    "environment_contract_sha256": "<SHA256>",
+    "runtime_identity": {
+      "schema_version": "p6_tvm_compiler_runtime_identity_v1",
+      "tvm_version": "<TVM_VERSION>",
+      "python_version": "<PYTHON_VERSION>",
+      "python_executable_sha256": "<SHA256>",
+      "target": "cuda -arch=sm_89",
+      "tvm_arch": "sm89",
+      "cuda_compute_version": "8.9",
+      "support_root_sha256": "<SHA256>",
+      "tvm_site_sha256": "<SHA256>",
+      "nvlibs_file_sha256": "<SHA256>",
+      "compiler_file_sha256": ["<SHA256>"],
+      "compiler_fingerprint": "<RECOMPUTED_COMPILER_SHA256>"
+    },
+    "probe_code_sha256": "<SHA256>",
+    "neutral_probe_manifest_sha256": "<SHA256>",
+    "pruning_probe_manifest_sha256": "<SHA256>",
+    "neutral_records": [
+      {
+        "schema_version": "p6_compiler_capability_probe_record_v1",
+        "probe_id": "<P1_TO_P6>",
+        "q_mode": "<FP16_OR_INT8>",
+        "onnx_sha256": "<SHA256>",
+        "build_success": true,
+        "observation_status": "observed_build_success",
+        "compiler_ir_sha256": "<SHA256>",
+        "int8_propagated_ops": 0,
+        "precision_eligible_ops": 0,
+        "qdq_folded_pairs": 0,
+        "qdq_pairs": 0,
+        "reformat_ops": 0,
+        "total_ops": 0,
+        "fused_ops": 0,
+        "fusible_ops": 0
+      }
+    ],
+    "pruning_records": [
+      {
+        "schema_version": "p6_compiler_capability_probe_record_v1",
+        "probe_id": "<PRUNING_PROBE_ID>",
+        "q_mode": "<FP16_OR_INT8>",
+        "onnx_sha256": "<SHA256>",
+        "build_success": true,
+        "observation_status": "observed_build_success",
+        "compiler_ir_sha256": "<SHA256>",
+        "int8_propagated_ops": 0,
+        "precision_eligible_ops": 0,
+        "qdq_folded_pairs": 0,
+        "qdq_pairs": 0,
+        "reformat_ops": 0,
+        "total_ops": 0,
+        "fused_ops": 0,
+        "fusible_ops": 0
+      }
+    ],
+    "artifact_blobs": [
+      {
+        "schema_version": "p6_compiler_capability_artifact_v1",
+        "family": "<NEUTRAL_OR_PRUNING>",
+        "probe_id": "<PROBE_ID>",
+        "q_mode": "<FP16_OR_INT8>",
+        "onnx_base64": "<BASE64>",
+        "compiler_output_kind": "<COMPILER_IR_OR_ERROR>",
+        "compiler_output_base64": "<BASE64>",
+        "compiler_output_sha256": "<SHA256>"
+      }
+    ]
+  },
+  "context_digest": "<RECOMPUTED_CONTEXT_SHA256>"
+}

@@ -74,55 +74,99 @@ python scripts/reproduce/reproduce_all.py --mode verified --output-root ./repro-
 必需的 Stage6 证据和 Stage7 正式 aggregate 而报告 `unavailable`。该非零结果是
 可审计的可用性检查，不能视作成功复现论文。
 
-## 外部私有 RTX4090 全链路运行
+## 外部私有 H800 / RTX4090 全链路运行
 
-仓库还包含经过检查的公开 controller/verifier 接口，可用于外部、hardware-specific 的
-RTX4090 运行。该路径不是 CPU clean-clone smoke 的一部分。它需要用户自行提供并负责
-授权的私有资产与本地运行时：数据集、checkpoint/模型源码、必要的 ONNX 或 calibration
-输入、可用的 CUDA/TVM sm89 工具链、私有 source-map 与 runner-template 文件，以及 Git
-忽略的本地输出目录。这些材料不会随仓库发布。
+H800 与 RTX4090 共用同一条 Stage1、Stage2、GPU admission、controller 和 verifier
+链路，只有 hardware profile、CUDA/TVM 架构及其外部资产不同。该路径不是 CPU smoke；
+仓库也不会下载或伪造数据集、checkpoint、模型源码、ONNX/calibration、TVM cache 或
+硬件测量。
 
-材料所有权分为以下三类；自动生成的文件不是额外输入：
+材料所有权分为三类：
 
-- **用户提供的私有输入：**私有 history root、私有 source-map、
-  pre-normalization runner-template、RTX local config 或 locator、授权的数据集、模型源码/checkpoint、必要的
-  ONNX 或 calibration 输入、CUDA/TVM sm89 工具链，以及 fresh output root。所有路径必须
-  位于仓库外或保持 Git ignored。source-map 与 runner-template 描述受许可约束的历史代码，
-  因此仓库不会提供可执行的公开示例。
-- **仓库提供的公开参考：**`configs/execution/p6_rtx4090_search.example.yaml` 是四轮搜索的
-  公开 contract；`configs/execution/p6_external_training_binding.example.yaml` 是
-  仅空值 schema 示例。应将后者复制到 ignored 位置，使用运维方确认的值替换所有必填空值，再由
-  validator 计算或核验稳定文件的 SHA-256。仓库中的空值示例按设计不可直接执行。
+- **用户提供的私有输入：**私有 history root（必须是精确的 Git top-level）、填好的 v5 私有 source-map、
+  pre-normalization runner-template、授权的数据集、模型源码/checkpoint、必要的 ONNX 或 calibration 输入、
+  与目标 profile 匹配的 CUDA/TVM 工具链（RTX4090 需要 CUDA/TVM sm89 工具链），
+  以及两个尚不存在的 normalized 目录与 fresh output root。过去文档称为 RTX local config 或 locator 的文件不再是
+  用户输入。
+- **仓库提供的公开参考：**H800/RTX4090 的四轮 contract 分别是
+  `configs/execution/p6_h800_search.example.yaml` 与
+  `configs/execution/p6_rtx4090_search.example.yaml`；单命令 manifest 模板分别是
+  `configs/execution/p6_h800_full_chain.example.yaml` 与
+  `configs/execution/p6_rtx4090_full_chain.example.yaml`。完整格式还可参考
+  `configs/execution/p6_history_source_map.example.yaml`、
+  `configs/execution/p6_history_runner_template.example.yaml` 和仅空值 schema 示例
+  `configs/execution/p6_external_training_binding.example.yaml`。四份 source JSON 的格式分别
+  由 `p6_gold176_rows.example.json`、`p6_gold176_graph_features.example.json`、
+  `p6_closure.example.json`，以及二选一的
+  `p6_h800_capability_profiles.example.json` / `p6_rtx4090_capability_context.example.json`
+  给出，均位于 `configs/execution/`。这些模板均已脱敏；`template_only: true` 的 manifest
+  按设计不可执行。
 - **`normalize` 自动生成的私有输出：**
+  `<abs-normalized-private-dir>/legacy.local.yaml`、
   `<abs-normalized-private-dir>/runner-template.yaml`、
   `<abs-normalized-private-dir>/source-wrapper-profile.yaml`、
-  `<abs-normalized-private-dir>/external-training-binding.yaml` 和
-  `<abs-normalized-private-dir>/post-source-adapter-profile.yaml`。不要分别手写这些 normalized
-  authority；应按下方命令把同一次 normalize 生成的文件交给 controller。
+  `<abs-normalized-private-dir>/external-training-binding.yaml`、
+  `<abs-normalized-private-dir>/post-source-adapter-profile.yaml` 及派生 recipe。不要手写或
+  混用这些 authority。`configs/execution/p6_h800_local_locator.example.yaml` 与
+  `configs/execution/p6_rtx4090_local_locator.example.yaml` 只用于审阅生成格式，不能代替
+  `normalize` 的输出。显式 `hardware_profile: h800` 使用同构 v3 locator；省略 profile 的
+  历史 H800 authority 仍兼容 v2。
 
-RTX4090 运行使用公开 contract `configs/execution/p6_rtx4090_search.example.yaml` 作为
-profile authority。保留的入口名 `tools/release/run_p6_h800_search.py` 是历史名称；当
-它接收 v3 RTX4090 contract 时，会加载选定的 `rtx4090` hardware profile 并运行共享
-controller 路径，而不是 H800-only 路径。
-
-完整外部运行按以下顺序使用现有私有链路：
+先把所选 full-chain manifest 复制到仓库外或 Git-ignored 位置，将 `template_only` 改成
+`false`，把全部路径替换成绝对路径，并确保其中的 `hardware_profile`、source-map 与
+contract 一致。静态检查会解析四份 subordinate JSON，验证其数量、身份、closure、profile
+及自洽摘要；它不探测 GPU，也不创建 normalized 或运行输出：
 
 ```bash
-python tools/release/derive_p6_history_recipe.py \
-  --source-map <abs-private-source-map.yaml> \
-  --runner-template <abs-pre-normalization-private-runner-template.yaml> \
-  --recipe-json <abs-output-recipe.json>
+python tools/release/run_p6_full_chain.py \
+  --manifest <abs-private-full-chain-manifest.yaml> \
+  --check-inputs
+```
 
-python tools/release/normalize_p6_history_root.py \
-  --source-map <abs-private-source-map.yaml> \
-  --history-root <abs-private-history-root> \
-  --private-dir <abs-normalized-private-dir> \
-  --runner-template <abs-pre-normalization-private-runner-template.yaml>
+检查通过后，H800 和 RTX4090 都从同一个推荐入口启动；`N` 只表示所需 GPU 数量：
 
+```bash
+# H800：manifest 基于 p6_h800_full_chain.example.yaml
+GPU_POOL=N python tools/release/run_p6_full_chain.py \
+  --manifest <abs-private-h800-full-chain-manifest.yaml>
+
+# RTX4090：manifest 基于 p6_rtx4090_full_chain.example.yaml
+GPU_POOL=N python tools/release/run_p6_full_chain.py \
+  --manifest <abs-private-rtx4090-full-chain-manifest.yaml>
+```
+
+命令启动后会依次完成 derive、normalize、fresh provision、四轮 controller 与独立
+verify；成功前不需要中途人工编辑、选卡或复制文件。任一步失败都会保留明确的阶段化
+错误并停止，不会把部分结果升级为完成结果。
+
+这些 JSON 是**格式参考，不是可执行数据**。真实 Gold 输入必须有 176 行，并为每个
+`group_id` 提供一条匹配的 graph feature；两份 H800 capability profile 必须保留历史
+authority 的精确摘要。RTX4090 capability context 必须由实测 probe/rebuild 流程连同内嵌
+原始字节和摘要自动产生，不能照模板手填。数据集、checkpoint、配置、模型源码、ONNX
+及 calibration 保持上游原生格式；v5 source-map 绑定它们的路径以及当前支持的
+checkpoint/config SHA-256 身份。
+
+成功后，`<fresh_output_root>/state.json` 是 controller 完成状态，`binding.json` 与
+`local-config.yaml` 绑定本次准入环境，`round-00/feedback.json` 至
+`round-03/feedback.json` 保存 16 条 released rows 及其 `latency_ms`、`energy_j`、
+`ap30`、`ap50`、`ap70`。normalized runner 中
+`execution_interface.actual_feedback` 指定的路径保留对应的私有原生证据和 receipts。
+只有独立 verifier 输出 `completed` 报告后，才可把这些指标视为本次完成结果；verifier
+证明四轮和 16 条互异测量，但不会代替研究者选“最佳”行，也不会公开私有数值。当前
+dataset 仍是路径绑定的外部输入而不是 snapshot digest，因此这里证明的是全链路机制，
+不是论文精确数值复现。
+
+### 仅用于 debug 的历史四步接口
+
+单命令入口内部仍调用 `derive_p6_history_recipe.py`、`normalize_p6_history_root.py`、历史
+名称 `run_p6_h800_search.py` 和 `verify_p6_materializer_training_run.py`。只有定位阶段性失败
+时才应分别运行它们；常规复现不要手工串接。第三步的完整参数形状如下，以便诊断旧日志：
+
+```bash
 GPU_POOL=7 python tools/release/run_p6_h800_search.py \
   --contract configs/execution/p6_rtx4090_search.example.yaml \
   --code-revision "$(git rev-parse --short=12 HEAD)" \
-  --legacy-local-config <abs-rtx-local-config-or-locator.yaml> \
+  --legacy-local-config <abs-normalized-private-dir>/legacy.local.yaml \
   --runner-template <abs-normalized-private-dir>/runner-template.yaml \
   --local-output-root <abs-fresh-output-root> \
   --binding-output <abs-fresh-output-root>/binding.json \
@@ -130,19 +174,10 @@ GPU_POOL=7 python tools/release/run_p6_h800_search.py \
   --source-wrapper-profile <abs-normalized-private-dir>/source-wrapper-profile.yaml \
   --external-training-binding <abs-normalized-private-dir>/external-training-binding.yaml \
   --post-source-adapter-profile <abs-normalized-private-dir>/post-source-adapter-profile.yaml
-
-python tools/release/verify_p6_materializer_training_run.py \
-  --contract configs/execution/p6_rtx4090_search.example.yaml \
-  --local-config <abs-fresh-output-root>/local-config.yaml \
-  --binding <abs-fresh-output-root>/binding.json
 ```
 
-`--legacy-local-config` 这个 flag 名也是历史名称；在 RTX4090 运行中，它指向已批准的
-RTX local config 或 locator，并由 provision 转换成 fresh binding/config pair。`derive`
-和 `normalize` 使用 pre-normalization 私有 runner template。fresh-run 模式下，历史名称的
-controller 入口会完成 `GPU_POOL` 晚绑定、生成 fresh binding/config、执行静态 preflight，
-再启动四轮 controller；它不会修改 normalized authority：
-`<abs-normalized-private-dir>/runner-template.yaml`。
+`--legacy-local-config` 和 `run_p6_h800_search.py` 都只是历史名称；profile authority 来自
+manifest 选定的 v3 public contract，而 locator 始终来自本次 normalize。
 
 `GPU_POOL` 是严格的正整数 GPU 数量，也是 fresh-run 模式下唯一的 GPU 选择入口。
 `GPU_POOL=1` 表示申请一张可用卡，`GPU_POOL=3` 表示申请三张，`GPU_POOL=7` 表示申请
@@ -158,8 +193,8 @@ GPU 的工作会串行执行。四轮搜索本身仍按顺序执行，因为后�
 旧的 `--local-config` 模式继续兼容。若同时设置 `GPU_POOL`，其数量必须与已有 binding
 一致；自动选择设备时应使用 fresh-run 模式。
 
-RTX4090 测量是 hardware-specific 证据。它可以验证 sm89 硬件上的端到端机制，但不能
-重标记为 H800 结果，也不能通过数值调整声称复现 H800 论文表格。
+H800 与 RTX4090 测量都是 hardware-specific 证据，不能跨 profile 重标记、合并或通过
+数值调整互相替代。RTX4090 可以验证 sm89 端到端机制，但不能冒充 H800 论文结果。
 当前维护实现已使用 `GPU_POOL=3` 完成一次私有 RTX4090 机制验证：四轮、16 条
 selected/measured rows，并由独立 verifier 通过。该结构性事实不公开私有结果包，也不扩大
 仓库的论文证据声明。

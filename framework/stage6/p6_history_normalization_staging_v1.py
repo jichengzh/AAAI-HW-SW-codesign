@@ -50,6 +50,7 @@ INPUT_NAMES = (
 )
 REGISTRY_SCHEMA_VERSION = "stage5_candidate_source_registry_v1"
 LEGACY_SCHEMA_VERSION = "p6_h800_coptv2x_local_v2"
+PROFILED_LOCAL_SCHEMA_VERSION = "p6_coptv2x_local_v3"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -217,11 +218,19 @@ def _legacy_locator(
     *,
     expected_recipe_path: Path | None = None,
     recipe_v2: bool = False,
+    hardware_profile: object | None = None,
 ) -> dict[str, Any]:
     python_executable = str(Path(sys.executable).absolute())
+    profiled = hardware_profile is not None
+    profile_id = getattr(hardware_profile, "profile_id", "h800")
+    target = getattr(hardware_profile, "target_hardware_id", "h800")
     locator = {
-        "schema_version": LEGACY_SCHEMA_VERSION,
-        "target": "h800",
+        "schema_version": (
+            PROFILED_LOCAL_SCHEMA_VERSION
+            if profiled
+            else LEGACY_SCHEMA_VERSION
+        ),
+        "target": target,
         "asset_paths": {
             "training-data": str(private_root / "inputs"),
             "model-init": str(paths["registry"]),
@@ -235,6 +244,7 @@ def _legacy_locator(
         "source_registry_step": _source_registry_step(python_executable),
         "measurement_step": _measurement_step(python_executable),
         "local_output_root": str(private_root / "runs"),
+        **({"hardware_profile": profile_id} if profiled else {}),
     }
     if expected_recipe_path is not None:
         locator["history_recipe_derivation_path"] = str(expected_recipe_path)
@@ -427,6 +437,7 @@ def publish_normalized_history(
             destination,
             expected_recipe_path=public_paths.get("derivation_recipe"),
             recipe_v2=recipe_v2_source,
+            hardware_profile=canonical.get("hardware_profile"),
         ),
     )
     final_paths = {**staged_paths, "legacy": legacy_path}

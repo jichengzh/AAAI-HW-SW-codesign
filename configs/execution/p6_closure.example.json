@@ -1,0 +1,18 @@
+{
+  "schema_version": "stage4_p1_p3_closure_audit_v1",
+  "stage4_closed": true,
+  "stage5_search_ready": true,
+  "canonical_value_heads": {
+    "latency_ms": "extra_trees_log",
+    "energy_j": "extra_trees_log",
+    "ap70": "lgbm_huber_residual"
+  },
+  "uncertainty_policy": "lgbm_quantile_plus_group_conformal",
+  "selected_acquisition_policy": "predicted_frontier_diversity",
+  "training_source_rows": {
+    "initial_coldstart": 176
+  },
+  "frozen_holdout": {
+    "groups": []
+  }
+}

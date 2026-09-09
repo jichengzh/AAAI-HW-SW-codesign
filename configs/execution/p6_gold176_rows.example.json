@@ -1,0 +1,19 @@
+[
+  {
+    "manifest_job_id": "<GROUP_ID>|q=<Q_MODE>|profile=<CAPABILITY_PROFILE_ID>",
+    "row_id": "<GROUP_ID>|q=<Q_MODE>|profile=<CAPABILITY_PROFILE_ID>",
+    "group_id": "<GROUP_ID>",
+    "model": "pyramid",
+    "width": [16, 32, 64],
+    "dispatch_key": "<DISPATCH_KEY>",
+    "capability_profile_id": "<CAPABILITY_PROFILE_ID>",
+    "q_mode": "<FP16_OR_INT8>",
+    "latency_ms": 0.0,
+    "energy_j": 0.0,
+    "ap30": 0.0,
+    "ap50": 0.0,
+    "ap70": 0.0,
+    "terminal_status": "measured_success_gold",
+    "training_source": "initial_coldstart"
+  }
+]

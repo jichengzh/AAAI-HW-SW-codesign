@@ -1,0 +1,24 @@
+# REFERENCE ONLY: normalize generates legacy.local.yaml; do not hand-author it.
+# Placeholder paths show the generated shape without exposing any local identity.
+schema_version: p6_coptv2x_local_v3
+hardware_profile: rtx4090
+target: rtx4090
+asset_paths:
+  training-data: "${P6_NORMALIZED_TRAINING_DATA}"
+  model-init: "${P6_NORMALIZED_MODEL_INIT}"
+  toolchain: "${P6_NORMALIZED_TOOLCHAIN}"
+local_input_paths:
+  gold176_rows: "${P6_NORMALIZED_GOLD176_ROWS}"
+  gold176_graph_features: "${P6_NORMALIZED_GOLD176_GRAPH_FEATURES}"
+  capability_profiles: "${P6_NORMALIZED_CAPABILITY_PROFILES}"
+  closure: "${P6_NORMALIZED_CLOSURE}"
+candidate_source_mode: framework_stage2_search_space
+stage2_search_space_path: "${P6_NORMALIZED_STAGE1_PARTITION_MANIFEST}"
+source_registry_step:
+  name: build_source_registry
+  argv: ["<NORMALIZE_GENERATED>"]
+measurement_step:
+  name: measure_batch
+  argv: ["<NORMALIZE_GENERATED>"]
+local_output_root: "${P6_NORMALIZED_RUNS_ROOT}"
+history_recipe_derivation_path: "${P6_NORMALIZED_RECIPE_JSON}"

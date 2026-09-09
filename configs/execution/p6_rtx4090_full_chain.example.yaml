@@ -1,0 +1,11 @@
+# TEMPLATE ONLY: copy to a private, Git-ignored location and replace placeholders.
+# The orchestrator rejects this tracked template until every path is operator-bound.
+schema_version: p6_full_chain_run_manifest_v1
+template_only: true
+hardware_profile: rtx4090
+contract: configs/execution/p6_rtx4090_search.example.yaml
+source_map: "${P6_SOURCE_MAP}"
+history_root: "${P6_HISTORY_ROOT}"
+pre_normalization_runner_template: "${P6_RUNNER_TEMPLATE}"
+normalized_private_dir: "${P6_NORMALIZED_PRIVATE_DIR}"
+fresh_output_root: "${P6_FRESH_OUTPUT_ROOT}"

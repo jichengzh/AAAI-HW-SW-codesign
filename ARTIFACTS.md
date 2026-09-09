@@ -31,6 +31,27 @@ Git-ignored. These facts do not add a checked-in artifact, a public result
 summary, or a verified Stage6/Stage7 entry: all inputs and outputs of those
 runs remain external under the rules above.
 
+## Public full-chain templates
+
+`configs/execution/` contains redacted, non-executable format references for
+the H800 and RTX4090 four-round contracts, full-chain manifests, v5 history
+source-map, pre-normalization runner-template, external-training binding,
+normalize-generated locator shapes, Gold/graph/closure JSON shapes, the H800
+capability-profile list shape, and the measured RTX4090 capability-context
+shape. These files contain no real host path, device index/UUID, credential,
+checkpoint identity, or private result. The one-row Gold example uses zero
+metric placeholders only to expose required field names; it is not evidence.
+
+Only the contract and a private copy of the full-chain manifest are direct run
+inputs. The source-map and pre-normalization runner-template must be completed
+against the operator's licensed private history root. The locator examples are
+for schema inspection only: the actual `legacy.local.yaml`, normalized runner,
+source-wrapper profile, external-training binding, post-source adapter profile,
+and derived recipe must all be produced by one normalize operation. A tracked
+example is never itself an artifact or evidence record. In particular, the
+real Gold input has 176 rows, and the RTX4090 context is produced by measured
+probe/rebuild tooling rather than by filling the JSON reference manually.
+
 ## How to inspect an artifact
 
 Read the manifest before consuming a file. For a **verified** entry, compare the
