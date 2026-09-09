@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import shutil
 import sys
 from types import SimpleNamespace
 from typing import Any
@@ -286,7 +287,11 @@ def test_probe_cli_requires_exact_normalized_five_key_runtime(
 def test_probe_cli_accepts_formal_tvm_python_distinct_from_adapter_python(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    formal_tvm_python = str(Path(sys.executable).resolve())
+    formal_python_path = tmp_path / "formal-tvm-runtime/bin/python"
+    formal_python_path.parent.mkdir(parents=True)
+    shutil.copyfile(Path(sys.executable).resolve(strict=True), formal_python_path)
+    formal_python_path.chmod(0o700)
+    formal_tvm_python = str(formal_python_path)
     normalized, _ = _write_rtx_context_source(tmp_path, tvm_python=formal_tvm_python)
     runner_path = normalized / "runner-template.yaml"
     profile_path = normalized / "post-source-adapter-profile.yaml"
