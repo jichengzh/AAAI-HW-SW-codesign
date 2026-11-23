@@ -1,0 +1,23 @@
+{
+  "ap30_ref": 0.9109858655135962,
+  "ap50_ref": 0.8220486712640361,
+  "ap70_ref": 0.6331612589797273,
+  "ap_reference_report_path": "/exdata/jichengzhi/results/fcooper_workpackage_a_v2_20260723/gates/original/original_ap_gate_report.json",
+  "ap_reference_report_sha256": "f9258c71e216879aa18c2e6c3ddc6f76126521357d13f71bdc9c2657296ea390",
+  "backend": "trt",
+  "checkpoint_path": "/exdata/jichengzhi/heal_research/checkpoints/fcooper_opv2v_baseline/net_epoch_bestval_at23.pth",
+  "checkpoint_sha256": "9ba4786726c71b226ee9ee9561ea82bfe92a21909ddad7653896dd34fb06d0c0",
+  "config_path": "/exdata/jichengzhi/heal_research/checkpoints/fcooper_opv2v_baseline/config.yaml",
+  "config_sha256": "8ac5183db729072a4efd50f7eb8b10003263396c6cd7e15d92d520f41cadc1c7",
+  "dataset": "OPV2V-test",
+  "dataset_samples": 2170,
+  "hardware_id": "h800",
+  "optimized_scope": "post_scatter_backbone_shrinker",
+  "partition_sha256": "5ab65f100fc15338972547b1562d7b9c5c2d3f4a3625ee3409491a76be255364",
+  "pilot_online_labels_allowed": false,
+  "probe_metrics_allowed_as_labels": false,
+  "recovery_contract_path": "/exdata/jichengzhi/results/fcooper_workpackage_a_v2_20260723/contracts/recovery_training_contract.json",
+  "recovery_contract_sha256": "4e854d6fa1f0d538301fdf0640e47cf01db09aa0614093d889de05a4dfeae109",
+  "schema_version": "fcooper_stage6_frozen_contract_v2",
+  "target_model": "fcooper"
+}

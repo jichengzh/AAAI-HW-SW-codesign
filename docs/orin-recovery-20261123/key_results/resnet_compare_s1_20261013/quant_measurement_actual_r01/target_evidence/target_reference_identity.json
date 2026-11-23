@@ -1,0 +1,540 @@
+{
+  "ap_evidence_sha256": "f0fa5665e0a79eff981dd4813196b24d0341aab8864f9534866ec2136b232702",
+  "host_equivalence": false,
+  "identity_after": {
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/ap_audit.py": "12c7df2c1a9db19ccbb29cffdd1628aa043fd750ccb9a086830c08c597ff587b",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/ap_evidence.json": "f0fa5665e0a79eff981dd4813196b24d0341aab8864f9534866ec2136b232702",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/calibrated_w8a8_explicit_random.onnx": "2f687e405ee0766cf2fbaba4b4846859597ecbff12ae8966c0fa196d548692c3",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/calibrated_w8a8_explicit_random_a1.onnx": "fb55b940b9a19decc14c046b083b393c0ff891a9cdc381b29ca9689d9f945146",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/control_a1_outputs.npz": "8adcfcf3b036635b645165ec39cc1d706c4b41ee8920f0bf719ca839bf82fe7a",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/control_a2_outputs.npz": "460362fa691db5ecc419d4f892f4a74169c57a45897d57e1b4ef2741ae0d3fe1",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/first_validation_full_inputs_a1.npz": "65be431a107e3f77a4765f45c315d809bea597e6e33dd279b75099c0d5e6c3f1",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/first_validation_full_inputs_a2.npz": "712552243c0016110cea97823b0eb61793283f741734562e20654b5e16975d21",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/generate.py": "11ec4f5d26e21424636493f54c3e2a05d6c6fe2fb68bdc2c64a3b0d9542e8bd4",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/hardware_adapted_mixed_uint8.onnx": "dbc18dd125d57e0c03e958064a31c683551428330b17585d5a25d66f302647df",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/hardware_adapted_mixed_uint8_a1.onnx": "7f4ab2c5699f91b1872ec94fc756a81873e14fb2f8742179d9d8bf3a81bb96d4",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/integer_a1_outputs.npz": "0adcaefab3ba8fee0905f356f415cf6289243ad8f6536d5f75c3d3732d37b89e",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/integer_a2_outputs.npz": "8b75385cde802932a07920d5439461a4727e9f74cbae67bdb24735593e917195",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/manifest.json": "257dd5d793bd00026302614415aa8c13bf91c98c502da3fa66ae66041780b4c5",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/qualification.py": "32fee8e62901143dcd08878aa3061d5512456eefac1f3e118a076946d1ddea68",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/runner.py": "a3fa100ae4e8710d4e43e24b10676fc11f2da934b4007220dfa0d2214464d842",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/sort_export.py": "70b1f9676c1f7a6e2f8f3a93da3820ecd9af9fffd262d1fc376c950fa542bee8"
+  },
+  "identity_before": {
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/ap_audit.py": "12c7df2c1a9db19ccbb29cffdd1628aa043fd750ccb9a086830c08c597ff587b",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/ap_evidence.json": "f0fa5665e0a79eff981dd4813196b24d0341aab8864f9534866ec2136b232702",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/calibrated_w8a8_explicit_random.onnx": "2f687e405ee0766cf2fbaba4b4846859597ecbff12ae8966c0fa196d548692c3",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/calibrated_w8a8_explicit_random_a1.onnx": "fb55b940b9a19decc14c046b083b393c0ff891a9cdc381b29ca9689d9f945146",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/control_a1_outputs.npz": "8adcfcf3b036635b645165ec39cc1d706c4b41ee8920f0bf719ca839bf82fe7a",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/control_a2_outputs.npz": "460362fa691db5ecc419d4f892f4a74169c57a45897d57e1b4ef2741ae0d3fe1",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/first_validation_full_inputs_a1.npz": "65be431a107e3f77a4765f45c315d809bea597e6e33dd279b75099c0d5e6c3f1",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/first_validation_full_inputs_a2.npz": "712552243c0016110cea97823b0eb61793283f741734562e20654b5e16975d21",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/generate.py": "11ec4f5d26e21424636493f54c3e2a05d6c6fe2fb68bdc2c64a3b0d9542e8bd4",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/hardware_adapted_mixed_uint8.onnx": "dbc18dd125d57e0c03e958064a31c683551428330b17585d5a25d66f302647df",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/hardware_adapted_mixed_uint8_a1.onnx": "7f4ab2c5699f91b1872ec94fc756a81873e14fb2f8742179d9d8bf3a81bb96d4",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/integer_a1_outputs.npz": "0adcaefab3ba8fee0905f356f415cf6289243ad8f6536d5f75c3d3732d37b89e",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/integer_a2_outputs.npz": "8b75385cde802932a07920d5439461a4727e9f74cbae67bdb24735593e917195",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/manifest.json": "257dd5d793bd00026302614415aa8c13bf91c98c502da3fa66ae66041780b4c5",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/qualification.py": "32fee8e62901143dcd08878aa3061d5512456eefac1f3e118a076946d1ddea68",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/runner.py": "a3fa100ae4e8710d4e43e24b10676fc11f2da934b4007220dfa0d2214464d842",
+    "/home/jichengzhi/resnet_compare_s1_20261013/quant_reference_actual_r01/sort_export.py": "70b1f9676c1f7a6e2f8f3a93da3820ecd9af9fffd262d1fc376c950fa542bee8"
+  },
+  "kind": "independent_target_probe_fixed_input_replay",
+  "points": {
+    "control_a1": {
+      "graph_sha256": "fb55b940b9a19decc14c046b083b393c0ff891a9cdc381b29ca9689d9f945146",
+      "host_reference_sha256": "8adcfcf3b036635b645165ec39cc1d706c4b41ee8920f0bf719ca839bf82fe7a",
+      "input_sha256": "65be431a107e3f77a4765f45c315d809bea597e6e33dd279b75099c0d5e6c3f1",
+      "outputs": {
+        "arrays": {
+          "cls_preds": {
+            "dtype": "float32",
+            "sha256": "1cec0ba7b1636d5e271ee78ba1e58c3a7b6c7657a3b1e5129b97ad157f68fa91",
+            "shape": [
+              1,
+              2,
+              128,
+              256
+            ]
+          },
+          "dir_preds": {
+            "dtype": "float32",
+            "sha256": "93800e8031e3c98687fc3b793429d9cadb4fbb7b041ef4d59a66d724eabcf31d",
+            "shape": [
+              1,
+              4,
+              128,
+              256
+            ]
+          },
+          "final_freqEMA_0": {
+            "dtype": "float32",
+            "sha256": "c6f4422b6ed38a46f7f9128874c53009ab2a2359857d701af57f81a60b583a32",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "final_freqEMA_1": {
+            "dtype": "float32",
+            "sha256": "0de6e6ec1b252151fedb495d51ac9afa60fac27015264d5318dd9e299b2b26e2",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "final_freqEMA_2": {
+            "dtype": "float32",
+            "sha256": "1c2d8110e9d24d3549a577b1cac0aaf809336fec766322e2e9ecb4616c3d4e0f",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "reg_preds": {
+            "dtype": "float32",
+            "sha256": "73328fd8f272bbd18ec865ce66be6d74c1ca7522f5f9cbbfa96cb2882ea0049e",
+            "shape": [
+              1,
+              14,
+              128,
+              256
+            ]
+          }
+        },
+        "sha256": "4e64680135d90cba1206072e7d4ccf99b1a222b28f0f806b74f29ff0550847c8"
+      },
+      "profile_file": "profile_control_a1_2026-10-27_05-27-27_882.json",
+      "profile_sha256": "11916679ffceaf12c386f46f5ffa2e82ed97807afeea980590bed430e3c011db",
+      "reference_sha256": "4e64680135d90cba1206072e7d4ccf99b1a222b28f0f806b74f29ff0550847c8",
+      "request_count": 1,
+      "runtime_after": {
+        "actual_files": {
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py": "22cd1535fa14d74ef6f457cca149ffdc80875f460be313b8f895273f78bc402e",
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py": "de6adfd9864ecb210dd535fc1d3655b768463f10950fd18e0c8ce827ce64c086",
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+        },
+        "target_options": {
+          "graph_optimization": "ORT_DISABLE_ALL",
+          "inter_op_threads": 1,
+          "intra_op_threads": 4,
+          "numpy_version": "1.26.4",
+          "provider": "CPUExecutionProvider",
+          "python_major_minor": "3.12",
+          "version": "1.27.0"
+        },
+        "versions": {
+          "numpy": "1.26.4",
+          "numpy_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py",
+          "onnxruntime": "1.27.0",
+          "ort_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py",
+          "python": "3.12.10",
+          "runtime_binary": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so",
+          "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+        }
+      },
+      "runtime_before": {
+        "actual_files": {
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py": "22cd1535fa14d74ef6f457cca149ffdc80875f460be313b8f895273f78bc402e",
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py": "de6adfd9864ecb210dd535fc1d3655b768463f10950fd18e0c8ce827ce64c086",
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+        },
+        "target_options": {
+          "graph_optimization": "ORT_DISABLE_ALL",
+          "inter_op_threads": 1,
+          "intra_op_threads": 4,
+          "numpy_version": "1.26.4",
+          "provider": "CPUExecutionProvider",
+          "python_major_minor": "3.12",
+          "version": "1.27.0"
+        },
+        "versions": {
+          "numpy": "1.26.4",
+          "numpy_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py",
+          "onnxruntime": "1.27.0",
+          "ort_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py",
+          "python": "3.12.10",
+          "runtime_binary": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so",
+          "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+        }
+      },
+      "started_epoch": 1793078848.407639
+    },
+    "control_a2": {
+      "graph_sha256": "2f687e405ee0766cf2fbaba4b4846859597ecbff12ae8966c0fa196d548692c3",
+      "host_reference_sha256": "460362fa691db5ecc419d4f892f4a74169c57a45897d57e1b4ef2741ae0d3fe1",
+      "input_sha256": "712552243c0016110cea97823b0eb61793283f741734562e20654b5e16975d21",
+      "outputs": {
+        "arrays": {
+          "cls_preds": {
+            "dtype": "float32",
+            "sha256": "8e1b3da1f355fda7bb9cbcf84555ce9104d328d97a0bf66715bef99199cf7a3a",
+            "shape": [
+              1,
+              2,
+              128,
+              256
+            ]
+          },
+          "dir_preds": {
+            "dtype": "float32",
+            "sha256": "b3888c04ce56aa9c69c0e10046641d8cd591063b61d51f04d50b5f6343f256f4",
+            "shape": [
+              1,
+              4,
+              128,
+              256
+            ]
+          },
+          "final_freqEMA_0": {
+            "dtype": "float32",
+            "sha256": "ddf2fd1381778bc5329fec12c459f1dabdd092cbd96e948e95339803226cced7",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "final_freqEMA_1": {
+            "dtype": "float32",
+            "sha256": "68d937c450294d7397e4a72fb8f26e57fe785bd2f452d73d08ad602bf1d4e968",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "final_freqEMA_2": {
+            "dtype": "float32",
+            "sha256": "88d597787fe902c7b8692b86274ec8969c6ce39f3de3916929ca9782076e7983",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "reg_preds": {
+            "dtype": "float32",
+            "sha256": "0f9047ec4cab3e9ba35ace5608ad85ee281849e6c3b9ab3f2839628ce85bbdaa",
+            "shape": [
+              1,
+              14,
+              128,
+              256
+            ]
+          }
+        },
+        "sha256": "2ab842decc54d0cd4778cb0efea352dd340b01d1a7aa2be1b972cee6fd5682a9"
+      },
+      "profile_file": "profile_control_a2_2026-10-27_05-27-35_237.json",
+      "profile_sha256": "22cab04373bbf28e99093e1548dfd354459fbb7478171e15cf88b13380a4d838",
+      "reference_sha256": "2ab842decc54d0cd4778cb0efea352dd340b01d1a7aa2be1b972cee6fd5682a9",
+      "request_count": 1,
+      "runtime_after": {
+        "actual_files": {
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py": "22cd1535fa14d74ef6f457cca149ffdc80875f460be313b8f895273f78bc402e",
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py": "de6adfd9864ecb210dd535fc1d3655b768463f10950fd18e0c8ce827ce64c086",
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+        },
+        "target_options": {
+          "graph_optimization": "ORT_DISABLE_ALL",
+          "inter_op_threads": 1,
+          "intra_op_threads": 4,
+          "numpy_version": "1.26.4",
+          "provider": "CPUExecutionProvider",
+          "python_major_minor": "3.12",
+          "version": "1.27.0"
+        },
+        "versions": {
+          "numpy": "1.26.4",
+          "numpy_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py",
+          "onnxruntime": "1.27.0",
+          "ort_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py",
+          "python": "3.12.10",
+          "runtime_binary": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so",
+          "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+        }
+      },
+      "runtime_before": {
+        "actual_files": {
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py": "22cd1535fa14d74ef6f457cca149ffdc80875f460be313b8f895273f78bc402e",
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py": "de6adfd9864ecb210dd535fc1d3655b768463f10950fd18e0c8ce827ce64c086",
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+        },
+        "target_options": {
+          "graph_optimization": "ORT_DISABLE_ALL",
+          "inter_op_threads": 1,
+          "intra_op_threads": 4,
+          "numpy_version": "1.26.4",
+          "provider": "CPUExecutionProvider",
+          "python_major_minor": "3.12",
+          "version": "1.27.0"
+        },
+        "versions": {
+          "numpy": "1.26.4",
+          "numpy_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py",
+          "onnxruntime": "1.27.0",
+          "ort_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py",
+          "python": "3.12.10",
+          "runtime_binary": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so",
+          "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+        }
+      },
+      "started_epoch": 1793078855.8026736
+    },
+    "integer_a1": {
+      "graph_sha256": "7f4ab2c5699f91b1872ec94fc756a81873e14fb2f8742179d9d8bf3a81bb96d4",
+      "host_reference_sha256": "0adcaefab3ba8fee0905f356f415cf6289243ad8f6536d5f75c3d3732d37b89e",
+      "input_sha256": "65be431a107e3f77a4765f45c315d809bea597e6e33dd279b75099c0d5e6c3f1",
+      "outputs": {
+        "arrays": {
+          "cls_preds": {
+            "dtype": "float32",
+            "sha256": "060ef911f2e52d42db8d037702a0ab1c66ebb5748c35c7157a96437b2fb73b79",
+            "shape": [
+              1,
+              2,
+              128,
+              256
+            ]
+          },
+          "dir_preds": {
+            "dtype": "float32",
+            "sha256": "0e8c2041cf0136636fe499931c9368994c384f028db3a33002f1fb77e22a05a4",
+            "shape": [
+              1,
+              4,
+              128,
+              256
+            ]
+          },
+          "final_freqEMA_0": {
+            "dtype": "float32",
+            "sha256": "c6f4422b6ed38a46f7f9128874c53009ab2a2359857d701af57f81a60b583a32",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "final_freqEMA_1": {
+            "dtype": "float32",
+            "sha256": "0de6e6ec1b252151fedb495d51ac9afa60fac27015264d5318dd9e299b2b26e2",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "final_freqEMA_2": {
+            "dtype": "float32",
+            "sha256": "1c2d8110e9d24d3549a577b1cac0aaf809336fec766322e2e9ecb4616c3d4e0f",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "reg_preds": {
+            "dtype": "float32",
+            "sha256": "e1feb136f321e7c7dbf19b4e0228ee7adfb649cc13ed5efe3ce70aa82c7f55f6",
+            "shape": [
+              1,
+              14,
+              128,
+              256
+            ]
+          }
+        },
+        "sha256": "f5291c27718fc25ab65f09eda424236154c44e43d3134875c2a1162ab6de8a96"
+      },
+      "profile_file": "profile_integer_a1_2026-10-27_05-27-44_607.json",
+      "profile_sha256": "1f1afde5e280c13c229ed515a1a3f24d69b49c90fd5b066eb14284bfa094e084",
+      "reference_sha256": "f5291c27718fc25ab65f09eda424236154c44e43d3134875c2a1162ab6de8a96",
+      "request_count": 1,
+      "runtime_after": {
+        "actual_files": {
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py": "22cd1535fa14d74ef6f457cca149ffdc80875f460be313b8f895273f78bc402e",
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py": "de6adfd9864ecb210dd535fc1d3655b768463f10950fd18e0c8ce827ce64c086",
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+        },
+        "target_options": {
+          "graph_optimization": "ORT_DISABLE_ALL",
+          "inter_op_threads": 1,
+          "intra_op_threads": 4,
+          "numpy_version": "1.26.4",
+          "provider": "CPUExecutionProvider",
+          "python_major_minor": "3.12",
+          "version": "1.27.0"
+        },
+        "versions": {
+          "numpy": "1.26.4",
+          "numpy_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py",
+          "onnxruntime": "1.27.0",
+          "ort_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py",
+          "python": "3.12.10",
+          "runtime_binary": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so",
+          "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+        }
+      },
+      "runtime_before": {
+        "actual_files": {
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py": "22cd1535fa14d74ef6f457cca149ffdc80875f460be313b8f895273f78bc402e",
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py": "de6adfd9864ecb210dd535fc1d3655b768463f10950fd18e0c8ce827ce64c086",
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+        },
+        "target_options": {
+          "graph_optimization": "ORT_DISABLE_ALL",
+          "inter_op_threads": 1,
+          "intra_op_threads": 4,
+          "numpy_version": "1.26.4",
+          "provider": "CPUExecutionProvider",
+          "python_major_minor": "3.12",
+          "version": "1.27.0"
+        },
+        "versions": {
+          "numpy": "1.26.4",
+          "numpy_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py",
+          "onnxruntime": "1.27.0",
+          "ort_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py",
+          "python": "3.12.10",
+          "runtime_binary": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so",
+          "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+        }
+      },
+      "started_epoch": 1793078865.2108917
+    },
+    "integer_a2": {
+      "graph_sha256": "dbc18dd125d57e0c03e958064a31c683551428330b17585d5a25d66f302647df",
+      "host_reference_sha256": "8b75385cde802932a07920d5439461a4727e9f74cbae67bdb24735593e917195",
+      "input_sha256": "712552243c0016110cea97823b0eb61793283f741734562e20654b5e16975d21",
+      "outputs": {
+        "arrays": {
+          "cls_preds": {
+            "dtype": "float32",
+            "sha256": "55e763c2e73fed7724bf1f89db22487c801c8288187a06dde20ac3cd92572cef",
+            "shape": [
+              1,
+              2,
+              128,
+              256
+            ]
+          },
+          "dir_preds": {
+            "dtype": "float32",
+            "sha256": "a35853f506ab2ca8a14ceef36a3f929054bdbf31a2cb23a9509bf6fd93777a55",
+            "shape": [
+              1,
+              4,
+              128,
+              256
+            ]
+          },
+          "final_freqEMA_0": {
+            "dtype": "float32",
+            "sha256": "4b92db9659ba0f701e7da431df232b0164fdc81f5af92008902882af408605ae",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "final_freqEMA_1": {
+            "dtype": "float32",
+            "sha256": "0d3f22477c2a83c20532d5961bd9bf491ccc2bae5db437e04dda2a4b26416b1a",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "final_freqEMA_2": {
+            "dtype": "float32",
+            "sha256": "c04acc407bc5030ac928d69cdacaeb49619bde02ba7332104420e126927f01c4",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "reg_preds": {
+            "dtype": "float32",
+            "sha256": "694f5b21217b810a403182c6d58cf2c84c5f44f6a5f85c71e91586f9e42efb95",
+            "shape": [
+              1,
+              14,
+              128,
+              256
+            ]
+          }
+        },
+        "sha256": "87b6f10ce4b005815440c1e3c3799d3af77e45abfc83654a8b9b5d8cbcfda33c"
+      },
+      "profile_file": "profile_integer_a2_2026-10-27_05-27-52_122.json",
+      "profile_sha256": "c4036d9c11636dd374f3868f3f1d0bced0a4b83992d5f59c2b54e28aeb3c368d",
+      "reference_sha256": "87b6f10ce4b005815440c1e3c3799d3af77e45abfc83654a8b9b5d8cbcfda33c",
+      "request_count": 1,
+      "runtime_after": {
+        "actual_files": {
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py": "22cd1535fa14d74ef6f457cca149ffdc80875f460be313b8f895273f78bc402e",
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py": "de6adfd9864ecb210dd535fc1d3655b768463f10950fd18e0c8ce827ce64c086",
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+        },
+        "target_options": {
+          "graph_optimization": "ORT_DISABLE_ALL",
+          "inter_op_threads": 1,
+          "intra_op_threads": 4,
+          "numpy_version": "1.26.4",
+          "provider": "CPUExecutionProvider",
+          "python_major_minor": "3.12",
+          "version": "1.27.0"
+        },
+        "versions": {
+          "numpy": "1.26.4",
+          "numpy_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py",
+          "onnxruntime": "1.27.0",
+          "ort_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py",
+          "python": "3.12.10",
+          "runtime_binary": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so",
+          "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+        }
+      },
+      "runtime_before": {
+        "actual_files": {
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py": "22cd1535fa14d74ef6f457cca149ffdc80875f460be313b8f895273f78bc402e",
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py": "de6adfd9864ecb210dd535fc1d3655b768463f10950fd18e0c8ce827ce64c086",
+          "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+        },
+        "target_options": {
+          "graph_optimization": "ORT_DISABLE_ALL",
+          "inter_op_threads": 1,
+          "intra_op_threads": 4,
+          "numpy_version": "1.26.4",
+          "provider": "CPUExecutionProvider",
+          "python_major_minor": "3.12",
+          "version": "1.27.0"
+        },
+        "versions": {
+          "numpy": "1.26.4",
+          "numpy_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py",
+          "onnxruntime": "1.27.0",
+          "ort_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py",
+          "python": "3.12.10",
+          "runtime_binary": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so",
+          "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+        }
+      },
+      "started_epoch": 1793078872.7815182
+    }
+  },
+  "probe_results": {
+    "file": "probe_results.json",
+    "sha256": "260676444dd871bb5f49534c179323501b1fb3296ee5409f54dbdcde1cd58451"
+  },
+  "request_count": 4,
+  "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c",
+  "source_manifest_sha256": "257dd5d793bd00026302614415aa8c13bf91c98c502da3fa66ae66041780b4c5",
+  "state": "saved fixed initial EMA independently for every point; no state carry",
+  "status": "complete",
+  "target_options": {
+    "graph_optimization": "ORT_DISABLE_ALL",
+    "inter_op_threads": 1,
+    "intra_op_threads": 4,
+    "numpy_version": "1.26.4",
+    "provider": "CPUExecutionProvider",
+    "python_major_minor": "3.12",
+    "version": "1.27.0"
+  },
+  "time": 1793078882.2431083
+}

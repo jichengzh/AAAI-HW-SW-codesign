@@ -1,0 +1,693 @@
+{
+  "ap_audit_sha256": "12c7df2c1a9db19ccbb29cffdd1628aa043fd750ccb9a086830c08c597ff587b",
+  "boundary": {
+    "backend": "ONNX Runtime CPU; no TensorRT or GPU",
+    "energy": "VIN_SYS_5V0 designated rail integral; includes reader start/stop boundary overhead; not whole-board or GPU energy",
+    "forward": "synchronous CPU session.run including output allocation",
+    "geometry": "full saved dynamic voxel count, actual FP64 transforms; geometry and codebook remain float",
+    "independent_samples": 2,
+    "random": "fixed explicit native uniform arrays replayed; no argmax substitution",
+    "service": "CPU input array copies through CPU output copies; excludes NPZ loading, preprocessing, uniform generation, postprocessing and communication",
+    "state": "each request independently replays its saved initial EMA; final EMA verified, no cross-request state carry"
+  },
+  "host_reference_options": {
+    "graph_optimization": "ORT_DISABLE_ALL",
+    "inter_op_threads": 1,
+    "intra_op_threads": 4,
+    "provider": "CPUExecutionProvider",
+    "version": "1.19.2"
+  },
+  "points": [
+    {
+      "graph": "calibrated_w8a8_explicit_random_a1.onnx",
+      "graph_sha256": "fb55b940b9a19decc14c046b083b393c0ff891a9cdc381b29ca9689d9f945146",
+      "input_spec": {
+        "arrays": {
+          "gumbel_uniform_0": {
+            "dtype": "float32",
+            "sha256": "11e59004c0fd8ecbce4ceb89d7ffa2105cb59e91c105e1363199a7a1a877e407",
+            "shape": [
+              32768,
+              2,
+              256
+            ]
+          },
+          "gumbel_uniform_1": {
+            "dtype": "float32",
+            "sha256": "93349cc9eb31d34a5003e3cff22c187e3f82e5a7fd9bbe5ace64efc8337cf6b1",
+            "shape": [
+              32768,
+              2,
+              256
+            ]
+          },
+          "gumbel_uniform_2": {
+            "dtype": "float32",
+            "sha256": "fd8d6a698843ddb5236bc9da9b7c11c17cafeb1a82a68bbddc5b6a266170c8bf",
+            "shape": [
+              32768,
+              2,
+              256
+            ]
+          },
+          "initial_freqEMA_0": {
+            "dtype": "float32",
+            "sha256": "5b95bab98a7f0b22f0a54ed3a27cfafd76e5af97574fa9620db611bb0d9d949a",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "initial_freqEMA_1": {
+            "dtype": "float32",
+            "sha256": "6fb9066059a9ee9a273aca7491227fcf3759c6ab2a33ed250d35aa4db3c048f6",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "initial_freqEMA_2": {
+            "dtype": "float32",
+            "sha256": "89cbf8a900a0775cbdd543aac50e3fc219b71369c00dd34f5aff0270cd2bae6f",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "pairwise_t_matrix": {
+            "dtype": "float64",
+            "sha256": "d8b722afeeadb9bb5e50d1be8719200ac84bde706ce3bc1c34fce825e85c15c7",
+            "shape": [
+              1,
+              2,
+              2,
+              4,
+              4
+            ]
+          },
+          "record_len": {
+            "dtype": "int64",
+            "sha256": "7c9fa136d4413fa6173637e883b6998d32e1d675f88cddff9dcbcf331820f4b8",
+            "shape": [
+              1
+            ]
+          },
+          "voxel_coords": {
+            "dtype": "int32",
+            "sha256": "7f715d6cf45fb1a8bc4d268c33eee3fac9f9f719e3b497f132f92bd607b4751c",
+            "shape": [
+              8578,
+              4
+            ]
+          },
+          "voxel_features": {
+            "dtype": "float32",
+            "sha256": "fd31e476957cb002f0301ab81b166313fe97aa2d07f1c4c9e8cc947cb827ed2b",
+            "shape": [
+              8578,
+              32,
+              4
+            ]
+          },
+          "voxel_num_points": {
+            "dtype": "int32",
+            "sha256": "0111d75aec07733ae849c87d268b85ed44630ad5a586b3a324db7f3e55d7dc6f",
+            "shape": [
+              8578
+            ]
+          }
+        },
+        "sha256": "65be431a107e3f77a4765f45c315d809bea597e6e33dd279b75099c0d5e6c3f1"
+      },
+      "inputs": "first_validation_full_inputs_a1.npz",
+      "key": "control_a1",
+      "reference": "control_a1_outputs.npz",
+      "reference_spec": {
+        "arrays": {
+          "cls_preds": {
+            "dtype": "float32",
+            "sha256": "884bc7d446afb7e9ca6d00b17a0c7894e05d5e0be70da0b0a904b3386fe8bae8",
+            "shape": [
+              1,
+              2,
+              128,
+              256
+            ]
+          },
+          "dir_preds": {
+            "dtype": "float32",
+            "sha256": "a5c103f0c38d860401ff61b283cc040fcc77af3c67775d39dbe601151b5ab18d",
+            "shape": [
+              1,
+              4,
+              128,
+              256
+            ]
+          },
+          "final_freqEMA_0": {
+            "dtype": "float32",
+            "sha256": "f3ccd75e28677661efa2929f8bbbd1a31065ac0e44d96520dbcc3994d659dfa3",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "final_freqEMA_1": {
+            "dtype": "float32",
+            "sha256": "58bd238e264bfe97139baa6f94df70fce6c9a8f846031f81e6953a0b644638a0",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "final_freqEMA_2": {
+            "dtype": "float32",
+            "sha256": "9e04519fe24e9bbd73aaeb66433695fcc6af2978dac01c6899a94962d7461b15",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "reg_preds": {
+            "dtype": "float32",
+            "sha256": "551a23e9363690a61d27287ff71b7ff12950c82f185e8412f34b7b26f9e6df76",
+            "shape": [
+              1,
+              14,
+              128,
+              256
+            ]
+          }
+        },
+        "sha256": "8adcfcf3b036635b645165ec39cc1d706c4b41ee8920f0bf719ca839bf82fe7a"
+      }
+    },
+    {
+      "graph": "calibrated_w8a8_explicit_random.onnx",
+      "graph_sha256": "2f687e405ee0766cf2fbaba4b4846859597ecbff12ae8966c0fa196d548692c3",
+      "input_spec": {
+        "arrays": {
+          "gumbel_uniform_0": {
+            "dtype": "float32",
+            "sha256": "e3f1708e68c87761257986c4fde1b3b7a8d7f15b796b54dccf0b7d2009ed124b",
+            "shape": [
+              65536,
+              2,
+              256
+            ]
+          },
+          "gumbel_uniform_1": {
+            "dtype": "float32",
+            "sha256": "745177bd8084af52807098d5612716e94a8b385f79dd0e4f51f6ff2c260dea4f",
+            "shape": [
+              65536,
+              2,
+              256
+            ]
+          },
+          "gumbel_uniform_2": {
+            "dtype": "float32",
+            "sha256": "b7ed1b10fcc4fe587693bcb38a8a5729cb5326f42d412077e2fd9bca178922c0",
+            "shape": [
+              65536,
+              2,
+              256
+            ]
+          },
+          "initial_freqEMA_0": {
+            "dtype": "float32",
+            "sha256": "d546f0c1acc7590a4f3b260e7be06ba5e1724c40de6059ed49e44b7423e695a9",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "initial_freqEMA_1": {
+            "dtype": "float32",
+            "sha256": "8b97f0eb44f77bfffa3dd3b8e5188c1ca95ced832ca90dd5b5cb6996f867f01c",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "initial_freqEMA_2": {
+            "dtype": "float32",
+            "sha256": "13e5f105e1a6b6f95c36cec46b656b302c1d1bc52b4b480667474e13a25dcc46",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "pairwise_t_matrix": {
+            "dtype": "float64",
+            "sha256": "ba8478d720e2e96a2491447162fc24ad6e4b16911965c7bd5759eb0cb5ce8e94",
+            "shape": [
+              1,
+              2,
+              2,
+              4,
+              4
+            ]
+          },
+          "record_len": {
+            "dtype": "int64",
+            "sha256": "d86e8112f3c4c4442126f8e9f44f16867da487f29052bf91b810457db34209a4",
+            "shape": [
+              1
+            ]
+          },
+          "voxel_coords": {
+            "dtype": "int32",
+            "sha256": "e304538ae6af0fa66d91160d6c6bc9ee47aa0a49517c926c1d4a2d1ab2467c1c",
+            "shape": [
+              20646,
+              4
+            ]
+          },
+          "voxel_features": {
+            "dtype": "float32",
+            "sha256": "221628935be726ffe17feb2491a25832ceee53aa0cfe94753bc0cb736cdd15ac",
+            "shape": [
+              20646,
+              32,
+              4
+            ]
+          },
+          "voxel_num_points": {
+            "dtype": "int32",
+            "sha256": "7d794563a6693fe51822d4d05e4e9cce33c14ceb37de738d006d0c7a5a770a6c",
+            "shape": [
+              20646
+            ]
+          }
+        },
+        "sha256": "712552243c0016110cea97823b0eb61793283f741734562e20654b5e16975d21"
+      },
+      "inputs": "first_validation_full_inputs_a2.npz",
+      "key": "control_a2",
+      "reference": "control_a2_outputs.npz",
+      "reference_spec": {
+        "arrays": {
+          "cls_preds": {
+            "dtype": "float32",
+            "sha256": "8e1b3da1f355fda7bb9cbcf84555ce9104d328d97a0bf66715bef99199cf7a3a",
+            "shape": [
+              1,
+              2,
+              128,
+              256
+            ]
+          },
+          "dir_preds": {
+            "dtype": "float32",
+            "sha256": "b3888c04ce56aa9c69c0e10046641d8cd591063b61d51f04d50b5f6343f256f4",
+            "shape": [
+              1,
+              4,
+              128,
+              256
+            ]
+          },
+          "final_freqEMA_0": {
+            "dtype": "float32",
+            "sha256": "ddf2fd1381778bc5329fec12c459f1dabdd092cbd96e948e95339803226cced7",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "final_freqEMA_1": {
+            "dtype": "float32",
+            "sha256": "68d937c450294d7397e4a72fb8f26e57fe785bd2f452d73d08ad602bf1d4e968",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "final_freqEMA_2": {
+            "dtype": "float32",
+            "sha256": "88d597787fe902c7b8692b86274ec8969c6ce39f3de3916929ca9782076e7983",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "reg_preds": {
+            "dtype": "float32",
+            "sha256": "0f9047ec4cab3e9ba35ace5608ad85ee281849e6c3b9ab3f2839628ce85bbdaa",
+            "shape": [
+              1,
+              14,
+              128,
+              256
+            ]
+          }
+        },
+        "sha256": "460362fa691db5ecc419d4f892f4a74169c57a45897d57e1b4ef2741ae0d3fe1"
+      }
+    },
+    {
+      "graph": "hardware_adapted_mixed_uint8_a1.onnx",
+      "graph_sha256": "7f4ab2c5699f91b1872ec94fc756a81873e14fb2f8742179d9d8bf3a81bb96d4",
+      "input_spec": {
+        "arrays": {
+          "gumbel_uniform_0": {
+            "dtype": "float32",
+            "sha256": "11e59004c0fd8ecbce4ceb89d7ffa2105cb59e91c105e1363199a7a1a877e407",
+            "shape": [
+              32768,
+              2,
+              256
+            ]
+          },
+          "gumbel_uniform_1": {
+            "dtype": "float32",
+            "sha256": "93349cc9eb31d34a5003e3cff22c187e3f82e5a7fd9bbe5ace64efc8337cf6b1",
+            "shape": [
+              32768,
+              2,
+              256
+            ]
+          },
+          "gumbel_uniform_2": {
+            "dtype": "float32",
+            "sha256": "fd8d6a698843ddb5236bc9da9b7c11c17cafeb1a82a68bbddc5b6a266170c8bf",
+            "shape": [
+              32768,
+              2,
+              256
+            ]
+          },
+          "initial_freqEMA_0": {
+            "dtype": "float32",
+            "sha256": "5b95bab98a7f0b22f0a54ed3a27cfafd76e5af97574fa9620db611bb0d9d949a",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "initial_freqEMA_1": {
+            "dtype": "float32",
+            "sha256": "6fb9066059a9ee9a273aca7491227fcf3759c6ab2a33ed250d35aa4db3c048f6",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "initial_freqEMA_2": {
+            "dtype": "float32",
+            "sha256": "89cbf8a900a0775cbdd543aac50e3fc219b71369c00dd34f5aff0270cd2bae6f",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "pairwise_t_matrix": {
+            "dtype": "float64",
+            "sha256": "d8b722afeeadb9bb5e50d1be8719200ac84bde706ce3bc1c34fce825e85c15c7",
+            "shape": [
+              1,
+              2,
+              2,
+              4,
+              4
+            ]
+          },
+          "record_len": {
+            "dtype": "int64",
+            "sha256": "7c9fa136d4413fa6173637e883b6998d32e1d675f88cddff9dcbcf331820f4b8",
+            "shape": [
+              1
+            ]
+          },
+          "voxel_coords": {
+            "dtype": "int32",
+            "sha256": "7f715d6cf45fb1a8bc4d268c33eee3fac9f9f719e3b497f132f92bd607b4751c",
+            "shape": [
+              8578,
+              4
+            ]
+          },
+          "voxel_features": {
+            "dtype": "float32",
+            "sha256": "fd31e476957cb002f0301ab81b166313fe97aa2d07f1c4c9e8cc947cb827ed2b",
+            "shape": [
+              8578,
+              32,
+              4
+            ]
+          },
+          "voxel_num_points": {
+            "dtype": "int32",
+            "sha256": "0111d75aec07733ae849c87d268b85ed44630ad5a586b3a324db7f3e55d7dc6f",
+            "shape": [
+              8578
+            ]
+          }
+        },
+        "sha256": "65be431a107e3f77a4765f45c315d809bea597e6e33dd279b75099c0d5e6c3f1"
+      },
+      "inputs": "first_validation_full_inputs_a1.npz",
+      "key": "integer_a1",
+      "reference": "integer_a1_outputs.npz",
+      "reference_spec": {
+        "arrays": {
+          "cls_preds": {
+            "dtype": "float32",
+            "sha256": "3da44fa950caeaace6c79c73b4d314cf367ca8d2f3a51dc1844caed9c2dadf74",
+            "shape": [
+              1,
+              2,
+              128,
+              256
+            ]
+          },
+          "dir_preds": {
+            "dtype": "float32",
+            "sha256": "02a7f2101726335d96d17469fdb91dec28acebb77fadd19d6a80014a524667db",
+            "shape": [
+              1,
+              4,
+              128,
+              256
+            ]
+          },
+          "final_freqEMA_0": {
+            "dtype": "float32",
+            "sha256": "f3ccd75e28677661efa2929f8bbbd1a31065ac0e44d96520dbcc3994d659dfa3",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "final_freqEMA_1": {
+            "dtype": "float32",
+            "sha256": "58bd238e264bfe97139baa6f94df70fce6c9a8f846031f81e6953a0b644638a0",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "final_freqEMA_2": {
+            "dtype": "float32",
+            "sha256": "9e04519fe24e9bbd73aaeb66433695fcc6af2978dac01c6899a94962d7461b15",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "reg_preds": {
+            "dtype": "float32",
+            "sha256": "5acbbb7b366306c4b60fa2f52fdcbf6ae103228cb87a8b4e42396436b27b387a",
+            "shape": [
+              1,
+              14,
+              128,
+              256
+            ]
+          }
+        },
+        "sha256": "0adcaefab3ba8fee0905f356f415cf6289243ad8f6536d5f75c3d3732d37b89e"
+      }
+    },
+    {
+      "graph": "hardware_adapted_mixed_uint8.onnx",
+      "graph_sha256": "dbc18dd125d57e0c03e958064a31c683551428330b17585d5a25d66f302647df",
+      "input_spec": {
+        "arrays": {
+          "gumbel_uniform_0": {
+            "dtype": "float32",
+            "sha256": "e3f1708e68c87761257986c4fde1b3b7a8d7f15b796b54dccf0b7d2009ed124b",
+            "shape": [
+              65536,
+              2,
+              256
+            ]
+          },
+          "gumbel_uniform_1": {
+            "dtype": "float32",
+            "sha256": "745177bd8084af52807098d5612716e94a8b385f79dd0e4f51f6ff2c260dea4f",
+            "shape": [
+              65536,
+              2,
+              256
+            ]
+          },
+          "gumbel_uniform_2": {
+            "dtype": "float32",
+            "sha256": "b7ed1b10fcc4fe587693bcb38a8a5729cb5326f42d412077e2fd9bca178922c0",
+            "shape": [
+              65536,
+              2,
+              256
+            ]
+          },
+          "initial_freqEMA_0": {
+            "dtype": "float32",
+            "sha256": "d546f0c1acc7590a4f3b260e7be06ba5e1724c40de6059ed49e44b7423e695a9",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "initial_freqEMA_1": {
+            "dtype": "float32",
+            "sha256": "8b97f0eb44f77bfffa3dd3b8e5188c1ca95ced832ca90dd5b5cb6996f867f01c",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "initial_freqEMA_2": {
+            "dtype": "float32",
+            "sha256": "13e5f105e1a6b6f95c36cec46b656b302c1d1bc52b4b480667474e13a25dcc46",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "pairwise_t_matrix": {
+            "dtype": "float64",
+            "sha256": "ba8478d720e2e96a2491447162fc24ad6e4b16911965c7bd5759eb0cb5ce8e94",
+            "shape": [
+              1,
+              2,
+              2,
+              4,
+              4
+            ]
+          },
+          "record_len": {
+            "dtype": "int64",
+            "sha256": "d86e8112f3c4c4442126f8e9f44f16867da487f29052bf91b810457db34209a4",
+            "shape": [
+              1
+            ]
+          },
+          "voxel_coords": {
+            "dtype": "int32",
+            "sha256": "e304538ae6af0fa66d91160d6c6bc9ee47aa0a49517c926c1d4a2d1ab2467c1c",
+            "shape": [
+              20646,
+              4
+            ]
+          },
+          "voxel_features": {
+            "dtype": "float32",
+            "sha256": "221628935be726ffe17feb2491a25832ceee53aa0cfe94753bc0cb736cdd15ac",
+            "shape": [
+              20646,
+              32,
+              4
+            ]
+          },
+          "voxel_num_points": {
+            "dtype": "int32",
+            "sha256": "7d794563a6693fe51822d4d05e4e9cce33c14ceb37de738d006d0c7a5a770a6c",
+            "shape": [
+              20646
+            ]
+          }
+        },
+        "sha256": "712552243c0016110cea97823b0eb61793283f741734562e20654b5e16975d21"
+      },
+      "inputs": "first_validation_full_inputs_a2.npz",
+      "key": "integer_a2",
+      "reference": "integer_a2_outputs.npz",
+      "reference_spec": {
+        "arrays": {
+          "cls_preds": {
+            "dtype": "float32",
+            "sha256": "55e763c2e73fed7724bf1f89db22487c801c8288187a06dde20ac3cd92572cef",
+            "shape": [
+              1,
+              2,
+              128,
+              256
+            ]
+          },
+          "dir_preds": {
+            "dtype": "float32",
+            "sha256": "a35853f506ab2ca8a14ceef36a3f929054bdbf31a2cb23a9509bf6fd93777a55",
+            "shape": [
+              1,
+              4,
+              128,
+              256
+            ]
+          },
+          "final_freqEMA_0": {
+            "dtype": "float32",
+            "sha256": "4b92db9659ba0f701e7da431df232b0164fdc81f5af92008902882af408605ae",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "final_freqEMA_1": {
+            "dtype": "float32",
+            "sha256": "0d3f22477c2a83c20532d5961bd9bf491ccc2bae5db437e04dda2a4b26416b1a",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "final_freqEMA_2": {
+            "dtype": "float32",
+            "sha256": "c04acc407bc5030ac928d69cdacaeb49619bde02ba7332104420e126927f01c4",
+            "shape": [
+              2,
+              256
+            ]
+          },
+          "reg_preds": {
+            "dtype": "float32",
+            "sha256": "694f5b21217b810a403182c6d58cf2c84c5f44f6a5f85c71e91586f9e42efb95",
+            "shape": [
+              1,
+              14,
+              128,
+              256
+            ]
+          }
+        },
+        "sha256": "8b75385cde802932a07920d5439461a4727e9f74cbae67bdb24735593e917195"
+      }
+    }
+  ],
+  "power_reader_sha256": "5ce12ed85bcf092db4ef3fe27bbd4d4f86547f6e5a11da826c9d9f813fb5e493",
+  "qualification_sha256": "32fee8e62901143dcd08878aa3061d5512456eefac1f3e118a076946d1ddea68",
+  "reference_identity_sha256": "03bf7a8941e62bf4c261723ce9d444333f74c8207a1929a7990c4163e23dde12",
+  "runner_sha256": "a3fa100ae4e8710d4e43e24b10676fc11f2da934b4007220dfa0d2214464d842",
+  "target_ap": {},
+  "target_options": {
+    "graph_optimization": "ORT_DISABLE_ALL",
+    "inter_op_threads": 1,
+    "intra_op_threads": 4,
+    "numpy_version": "1.26.4",
+    "provider": "CPUExecutionProvider",
+    "python_major_minor": "3.12",
+    "version": "1.27.0"
+  },
+  "wheel_inventory_sha256": "ecddc921c2544d2ebcbcc381b848ce311268cddcba56774572313df52ae9035d"
+}

@@ -1,0 +1,180 @@
+{
+  "schema": "coptv2x.p4-final-bundle-references.v1",
+  "bundle_remote_path": "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z/final-bundle",
+  "external_frozen_artifacts": [
+    {
+      "arm_id": "original_default",
+      "host_path": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/source/codriving/064x128x256/net_epoch29.pth",
+      "kind": "checkpoint",
+      "orin_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/064x128x256/net_epoch29.pth",
+      "relative_path": "source/codriving/064x128x256/net_epoch29.pth",
+      "sha256": "43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4"
+    },
+    {
+      "arm_id": "original_default",
+      "host_path": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/source/codriving/064x128x256/config.yaml",
+      "kind": "config",
+      "orin_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/064x128x256/config.yaml",
+      "relative_path": "source/codriving/064x128x256/config.yaml",
+      "sha256": "7601361830f27eb56d328e9f3fb1e8d66847cbcf2dc47f0c3a52dbab318eddc2"
+    },
+    {
+      "arm_id": "compression_only",
+      "host_path": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/source/codriving/032x064x096/net_epoch_bestval_at11.pth",
+      "kind": "checkpoint",
+      "orin_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/032x064x096/net_epoch_bestval_at11.pth",
+      "relative_path": "source/codriving/032x064x096/net_epoch_bestval_at11.pth",
+      "sha256": "92dfb0e71d8b26cc15fbdc65504a6e1896343f9fdbbb48ac69aaee80f4646a50"
+    },
+    {
+      "arm_id": "compression_only",
+      "host_path": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/source/codriving/032x064x096/config.yaml",
+      "kind": "config",
+      "orin_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/032x064x096/config.yaml",
+      "relative_path": "source/codriving/032x064x096/config.yaml",
+      "sha256": "b991d45e5a65b769077453dd4c7e62cad33d6bfe3c769360003ae3fcb42077dd"
+    },
+    {
+      "arm_id": "compression_only",
+      "host_path": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/codriving/compression_only/backbone.engine",
+      "kind": "engine",
+      "orin_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/codriving/compression_only/backbone.engine",
+      "relative_path": "codriving/compression_only/backbone.engine",
+      "sha256": "ac45f2dec35cbef552959724f7e65e79bd223af50c0e31ce432baa06c6512267"
+    },
+    {
+      "arm_id": "schedule_only",
+      "host_path": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/source/codriving/064x128x256/net_epoch29.pth",
+      "kind": "checkpoint",
+      "orin_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/064x128x256/net_epoch29.pth",
+      "relative_path": "source/codriving/064x128x256/net_epoch29.pth",
+      "sha256": "43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4"
+    },
+    {
+      "arm_id": "schedule_only",
+      "host_path": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/source/codriving/064x128x256/config.yaml",
+      "kind": "config",
+      "orin_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/064x128x256/config.yaml",
+      "relative_path": "source/codriving/064x128x256/config.yaml",
+      "sha256": "7601361830f27eb56d328e9f3fb1e8d66847cbcf2dc47f0c3a52dbab318eddc2"
+    },
+    {
+      "arm_id": "schedule_only",
+      "host_path": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/codriving/schedule_only/backbone.engine",
+      "kind": "engine",
+      "orin_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/codriving/schedule_only/backbone.engine",
+      "relative_path": "codriving/schedule_only/backbone.engine",
+      "sha256": "a4a464dc3838f35550313b70e52434ed738d4a71ce1c624c708f5447066fed21"
+    },
+    {
+      "arm_id": "compress_then_tune",
+      "host_path": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/source/codriving/032x080x128/net_epoch_bestval_at5.pth",
+      "kind": "checkpoint",
+      "orin_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/032x080x128/net_epoch_bestval_at5.pth",
+      "relative_path": "source/codriving/032x080x128/net_epoch_bestval_at5.pth",
+      "sha256": "f73acdf344cc11bfee6019099e6a3407362feb35109a20bf4ad34dc688fedae7"
+    },
+    {
+      "arm_id": "compress_then_tune",
+      "host_path": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/source/codriving/032x080x128/config.yaml",
+      "kind": "config",
+      "orin_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/032x080x128/config.yaml",
+      "relative_path": "source/codriving/032x080x128/config.yaml",
+      "sha256": "e509c1ae7aa4574e3512111bebbfba2e86ed71524db7056796886a96a2789b92"
+    },
+    {
+      "arm_id": "compress_then_tune",
+      "host_path": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/codriving/compress_then_tune/backbone.engine",
+      "kind": "engine",
+      "orin_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/codriving/compress_then_tune/backbone.engine",
+      "relative_path": "codriving/compress_then_tune/backbone.engine",
+      "sha256": "df18a052669a836f5094a95a6d8f13f6eef40d02629611efc7c94ee7796846f5"
+    },
+    {
+      "arm_id": "joint_shcosearch",
+      "host_path": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/source/codriving/016x032x064/net_epoch_bestval_at9.pth",
+      "kind": "checkpoint",
+      "orin_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/016x032x064/net_epoch_bestval_at9.pth",
+      "relative_path": "source/codriving/016x032x064/net_epoch_bestval_at9.pth",
+      "sha256": "ccbd1c2881f6736e1e4a57e9e873583befbe3a3fdc11f21c2a381a63d4356a8e"
+    },
+    {
+      "arm_id": "joint_shcosearch",
+      "host_path": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/source/codriving/016x032x064/config.yaml",
+      "kind": "config",
+      "orin_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/016x032x064/config.yaml",
+      "relative_path": "source/codriving/016x032x064/config.yaml",
+      "sha256": "d2bdbf66b4efaf96094761e2586d7c3c8f1f6d1b47c47707cc60e3972655a191"
+    },
+    {
+      "arm_id": "joint_shcosearch",
+      "host_path": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/codriving/joint_shcosearch_fp16/backbone.engine",
+      "kind": "engine",
+      "orin_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/codriving/joint_shcosearch_fp16/backbone.engine",
+      "relative_path": "codriving/joint_shcosearch_fp16/backbone.engine",
+      "sha256": "9ab2eb723b90f0e4ee7ae0fb1827bb10f8c69822545db5244bbff1830a01de87"
+    }
+  ],
+  "checkpoint_symlinks": [
+    {
+      "bundle_relative_path": "p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compress_then_tune_seed2000_rep0/attempt-01/runtime-perception/compress_then_tune/net_epoch_bestval_at5.pth",
+      "original_target": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/source/codriving/032x080x128/net_epoch_bestval_at5.pth",
+      "sha256": "f73acdf344cc11bfee6019099e6a3407362feb35109a20bf4ad34dc688fedae7",
+      "verified_orin_artifact": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/032x080x128/net_epoch_bestval_at5.pth"
+    },
+    {
+      "bundle_relative_path": "p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compression_only_seed2000_rep0/attempt-01/runtime-perception/compression_only/net_epoch_bestval_at11.pth",
+      "original_target": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/source/codriving/032x064x096/net_epoch_bestval_at11.pth",
+      "sha256": "92dfb0e71d8b26cc15fbdc65504a6e1896343f9fdbbb48ac69aaee80f4646a50",
+      "verified_orin_artifact": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/032x064x096/net_epoch_bestval_at11.pth"
+    },
+    {
+      "bundle_relative_path": "p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_joint_shcosearch_seed2000_rep0/attempt-01/runtime-perception/joint_shcosearch/net_epoch_bestval_at9.pth",
+      "original_target": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/source/codriving/016x032x064/net_epoch_bestval_at9.pth",
+      "sha256": "ccbd1c2881f6736e1e4a57e9e873583befbe3a3fdc11f21c2a381a63d4356a8e",
+      "verified_orin_artifact": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/016x032x064/net_epoch_bestval_at9.pth"
+    },
+    {
+      "bundle_relative_path": "p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-01/runtime-perception/original_default/net_epoch29.pth",
+      "original_target": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/source/codriving/064x128x256/net_epoch29.pth",
+      "sha256": "43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4",
+      "verified_orin_artifact": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/064x128x256/net_epoch29.pth"
+    },
+    {
+      "bundle_relative_path": "p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-02/runtime-perception/original_default/net_epoch29.pth",
+      "original_target": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/source/codriving/064x128x256/net_epoch29.pth",
+      "sha256": "43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4",
+      "verified_orin_artifact": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/064x128x256/net_epoch29.pth"
+    },
+    {
+      "bundle_relative_path": "p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-03/runtime-perception/original_default/net_epoch29.pth",
+      "original_target": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/source/codriving/064x128x256/net_epoch29.pth",
+      "sha256": "43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4",
+      "verified_orin_artifact": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/064x128x256/net_epoch29.pth"
+    },
+    {
+      "bundle_relative_path": "p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-04/runtime-perception/original_default/net_epoch29.pth",
+      "original_target": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/source/codriving/064x128x256/net_epoch29.pth",
+      "sha256": "43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4",
+      "verified_orin_artifact": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/064x128x256/net_epoch29.pth"
+    },
+    {
+      "bundle_relative_path": "p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-05/runtime-perception/original_default/net_epoch29.pth",
+      "original_target": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/source/codriving/064x128x256/net_epoch29.pth",
+      "sha256": "43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4",
+      "verified_orin_artifact": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/064x128x256/net_epoch29.pth"
+    },
+    {
+      "bundle_relative_path": "p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_schedule_only_seed2000_rep0/attempt-01/runtime-perception/schedule_only/net_epoch29.pth",
+      "original_target": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/source/codriving/064x128x256/net_epoch29.pth",
+      "sha256": "43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4",
+      "verified_orin_artifact": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/064x128x256/net_epoch29.pth"
+    }
+  ],
+  "input_cache_remote_root": "/home/jichengzhi/coptv2x_hil_p4_smoke_20261001T074559Z/input",
+  "input_manifest_bundle_path": "evidence/orin-local-input-manifest.json",
+  "input_cache_verified_file_count": 2225,
+  "no_input_cache_recopied": true,
+  "source_attempts_unchanged": true,
+  "server_dependencies_bundle_manifest": "evidence/server-dependency-assets.json"
+}

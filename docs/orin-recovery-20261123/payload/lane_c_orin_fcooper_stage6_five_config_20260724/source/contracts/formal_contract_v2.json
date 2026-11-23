@@ -1,0 +1,69 @@
+{
+  "ap30_ref": 0.9109858655135962,
+  "ap50_ref": 0.8220486712640361,
+  "ap70_ref": 0.6331612589797273,
+  "dataset": "OPV2V",
+  "gate_width_selection": {
+    "policy": "nearest_legal_width_to_base_ratio_v1",
+    "ratios": [
+      0.75,
+      0.5
+    ],
+    "widths": [
+      [
+        64,
+        96,
+        192,
+        96,
+        192
+      ],
+      [
+        32,
+        64,
+        128,
+        64,
+        128
+      ]
+    ]
+  },
+  "initial_ap70_anchor": 0.6329491512978785,
+  "initial_ap70_anchor_status": "must_be_revalidated_by_v2_original_gate",
+  "model": "fcooper",
+  "original_ap_gate_report_sha256": "f9258c71e216879aa18c2e6c3ddc6f76126521357d13f71bdc9c2657296ea390",
+  "partition_path": "/exdata/jichengzhi/results/fcooper_workpackage_a_v2_20260723/scanner/fcooper_partition.yaml",
+  "partition_sha256": "5ab65f100fc15338972547b1562d7b9c5c2d3f4a3625ee3409491a76be255364",
+  "pilot_online_labels_loaded": false,
+  "precision_genome_count": 3584,
+  "probe_labels_allowed_in_training": false,
+  "probe_rows_allowed_as_winner": false,
+  "q_modes": [
+    "fp16",
+    "int8"
+  ],
+  "recovery_contract_path": "/exdata/jichengzhi/results/fcooper_workpackage_a_v2_20260723/contracts/recovery_training_contract.json",
+  "recovery_contract_sha256": "4e854d6fa1f0d538301fdf0640e47cf01db09aa0614093d889de05a4dfeae109",
+  "registry_path": "/exdata/jichengzhi/results/fcooper_workpackage_a_v2_20260723/contracts/candidate_source_registry.json",
+  "registry_sha256": "b2d01bf95ac47b8a103a452a17b61a622ca04efe377d0eab3e57d8ab7557c31f",
+  "schema_version": "fcooper_formal_v2_contract",
+  "search_budget": {
+    "batch_size": 4,
+    "rounds": 4,
+    "total": 16
+  },
+  "source_checkpoint_path": "/exdata/jichengzhi/heal_research/checkpoints/fcooper_opv2v_baseline/net_epoch_bestval_at23.pth",
+  "source_checkpoint_sha256": "9ba4786726c71b226ee9ee9561ea82bfe92a21909ddad7653896dd34fb06d0c0",
+  "source_config_path": "/exdata/jichengzhi/heal_research/checkpoints/fcooper_opv2v_baseline/config.yaml",
+  "source_config_sha256": "8ac5183db729072a4efd50f7eb8b10003263396c6cd7e15d92d520f41cadc1c7",
+  "split": "test",
+  "structure_candidate_count": 1792,
+  "test_manifest_path": "/exdata/jichengzhi/results/fcooper_workpackage_a_v2_20260723/contracts/opv2v_test_manifest_fresh.txt",
+  "test_manifest_sha256": "e70afc9c82d29d405d86aa75fc6651a0fec77e88b825934c6464650f3416aafb",
+  "test_yaml_count": 5985,
+  "width_schema": [
+    "backbone.s0",
+    "backbone.s1",
+    "backbone.s2",
+    "neck.deblock",
+    "neck.output"
+  ]
+}

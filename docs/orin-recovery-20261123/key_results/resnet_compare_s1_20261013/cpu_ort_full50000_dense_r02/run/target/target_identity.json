@@ -1,0 +1,41 @@
+{
+  "point": "dense",
+  "candidate_id": "rn50_v1_dense",
+  "model_sha256": "232f666524f07b9d3971381462365774222f0488f6912e144f73c50d36d2fc21",
+  "source_sha256": {
+    "onnx": "232f666524f07b9d3971381462365774222f0488f6912e144f73c50d36d2fc21",
+    "manifest": "bded4e74c656424bf38cce70b2375ff61107ff4e2eb5e0817d84a1aa006427b2",
+    "final": "34117fa447b6cc4236b59e3f2c804f2a69fd01f221b25bcc7cf0983400e077a0"
+  },
+  "manifest_identity": "34117fa447b6cc4236b59e3f2c804f2a69fd01f221b25bcc7cf0983400e077a0",
+  "final_sample_manifest_sha256": "98395d0907d3bee96b59ed4baa9d5aa6d0b693599d33163a3fc7aa048595d2c5",
+  "execution_provider": "CPUExecutionProvider",
+  "execution_precision": "FP32",
+  "ort_version": "1.27.0",
+  "ort_pybind_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c",
+  "session_config": {
+    "provider": "CPUExecutionProvider",
+    "intra_op_num_threads": 4,
+    "inter_op_num_threads": 1,
+    "execution_mode": "ORT_SEQUENTIAL",
+    "graph_optimization_level": "ORT_ENABLE_ALL",
+    "profiling": false
+  },
+  "code_sha256": {
+    "cpu_identity.py": "e94c502f66245781e7ffa4d7acfc9dbaac994527b5f029fbcf0da85022d211b6",
+    "cpu_backend.py": "142a90b5a6229bfa474f5d294a1071ad6ebc0d595c55cea14ceeee67414f28cf",
+    "cpu_session.py": "61a221b5e1ac5dc5124019806461fa0a3b80b03fef0ba0d662b0a578d5d3d44d",
+    "cpu_bootstrap.py": "bf1990e21fdfd553d2840600eba9ed3900658f009e6751a0390dd2e194f9557e",
+    "cpu_target.py": "36bdebe9d5a922bb47aacaaaa777bc0c4f63316d15de63a97897377f4828c1f2",
+    "cpu_host.py": "918b95749615f7f45b0a50c58bedc020717ac500f141a3fcbc4faf21ef93155a",
+    "frozen_stream.py": "6214df738caa17bb1d51e9b08d7c62658c8c5a89ac21a9de4da16a4684ed9b7d"
+  },
+  "selection_used": false,
+  "timing_or_energy_qualified": false,
+  "pybind_path": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so",
+  "python_version": "3.12.10",
+  "numpy_version": "1.26.4",
+  "boot_id": "bb2ced1a-bad7-482f-af22-11ef1e4aca61",
+  "scope": "FULL50000",
+  "count": 50000
+}

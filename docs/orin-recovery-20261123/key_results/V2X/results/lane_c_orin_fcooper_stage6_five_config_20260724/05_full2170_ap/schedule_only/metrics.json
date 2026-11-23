@@ -1,0 +1,65 @@
+{
+  "ap30": 0.9110249807493462,
+  "ap50": 0.8222809400246195,
+  "ap70": 0.6327695279143368,
+  "arm": "schedule_only",
+  "build_identity": {
+    "arm": "schedule_only",
+    "build_platform": [
+      "Linux",
+      "aarch64",
+      "Jetson AGX Orin Developer Kit Linux-5.10.216-tegra-aarch64-with-glibc2.29"
+    ],
+    "build_receipt_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/02_engines/schedule_only/build.json",
+    "build_receipt_sha256": "e4ba9d1c0a86a49ad1750e3bf0b8e1872364cac4f85231bd8069ec977a6eabdc",
+    "builder_contract": {
+      "builder_optimization_level": null,
+      "builder_policy": "trt85_default",
+      "q_mode": "fp32"
+    },
+    "checkpoint_sha256": "9ba4786726c71b226ee9ee9561ea82bfe92a21909ddad7653896dd34fb06d0c0",
+    "config_sha256": "8ac5183db729072a4efd50f7eb8b10003263396c6cd7e15d92d520f41cadc1c7",
+    "engine_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/02_engines/schedule_only/model.engine",
+    "engine_sha256": "6debd9fa91057a52987dbe140838042449c71fdc0dd4c0b0525c0ca8a67a2858",
+    "manifest_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/canonical_manifest.json",
+    "manifest_sha256": "f154788ae6234fed7e0a03d34849d6a7aa72c77c266a4cc76d2479c16849b984",
+    "onnx_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/64x128x256x128x256/fcooper_dense_64x128x256x128x256.onnx",
+    "onnx_sha256": "4370cb078e53e84838414c2c3947b5986bded82f2b217631ad4e8356846840cc",
+    "scope": "post_scatter_backbone_shrinker",
+    "tensorrt_version": "8.5.2.2"
+  },
+  "checkpoint_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/64x128x256x128x256/recovered_checkpoint.pth",
+  "checkpoint_sha256": "9ba4786726c71b226ee9ee9561ea82bfe92a21909ddad7653896dd34fb06d0c0",
+  "config_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/64x128x256x128x256/config.yaml",
+  "config_sha256": "8ac5183db729072a4efd50f7eb8b10003263396c6cd7e15d92d520f41cadc1c7",
+  "dataset": "OPV2V",
+  "dataset_samples": 2170,
+  "elapsed_seconds": 4543.776299715042,
+  "engine_calls": 2170,
+  "engine_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/02_engines/schedule_only/model.engine",
+  "engine_sha256": "6debd9fa91057a52987dbe140838042449c71fdc0dd4c0b0525c0ca8a67a2858",
+  "failed_samples": 0,
+  "fallback_samples": 0,
+  "native_identity": null,
+  "numerical_contract": {
+    "dense_scope_engine_execution": true,
+    "fallback_samples": 0,
+    "silent_fallback_forbidden": true
+  },
+  "prediction_manifest_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/05_full2170_ap/schedule_only/prediction_manifest.json",
+  "prediction_manifest_sha256": "05a4a4b4a4ae79b445db97404a33f6a5fb89c61adf1e1c47d1a1686b61ff2c50",
+  "processed_samples": 2170,
+  "requested_runtime": "trt",
+  "runtime": "trt",
+  "schema_version": "fcooper_ap_report_v2",
+  "scope": "post_scatter_backbone_shrinker",
+  "split": "test",
+  "status": "success_full",
+  "versions": {
+    "host": "ubuntu",
+    "platform": "Linux-5.10.216-tegra-aarch64-with-glibc2.29",
+    "python": "3.8.10",
+    "pytorch": "1.12.0a0+2c916ef.nv22.3",
+    "tensorrt": "8.5.2.2"
+  }
+}

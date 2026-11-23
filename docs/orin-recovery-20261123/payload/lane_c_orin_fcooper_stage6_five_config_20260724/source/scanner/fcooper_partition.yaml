@@ -1,0 +1,2881 @@
+stage: stage1_partition
+model: fcooper
+model_class: HeterModelBaseline (MaxFusion)
+config: /exdata/jichengzhi/heal_research/checkpoints/fcooper_opv2v_baseline/config.yaml
+ckpt: /exdata/jichengzhi/heal_research/checkpoints/fcooper_opv2v_baseline/net_epoch_bestval_at23.pth
+ckpt_status: ok
+hw_capability:
+  path: /home/jichengzhi/V2X/configs/hardware/h800_hopper.yaml
+  name: NVIDIA H800
+  arch: hopper sm90
+  schema_validated: true
+  schema_validate_err: null
+  has_dla: false
+  dla_op_whitelist: null
+  int8_align: 32
+  fp16_align: 8
+  alignment_enforcement: hard
+  legal_bits:
+  - INT8
+  - FP16
+  legal_granularity_w: &id001
+  - per_tensor
+  - per_channel
+  - per_group
+  per_channel_act: false
+  symmetric_only: true
+  mem_capacity_gb: 78.0
+trace:
+  entry_shape:
+  - 1
+  - 64
+  - 512
+  - 512
+  skipped_modules:
+  - pillar_vfe (sparse VFE, auto-skip)
+  - scatter (sparse scatter, auto-skip)
+  - 'fusion_net (MaxFusion: 无参数 max pooling, auto-skip)'
+  skipped_subgraphs:
+  - name: pillar_vfe
+    type: sparse_or_geometry_preprocess
+    description: pillar_vfe (sparse VFE, auto-skip)
+    full_model_verdict_blocker: true
+    blocker_gate: trace_closure_required
+    source: trace_adapter.skipped_modules
+  - name: scatter
+    type: sparse_or_geometry_preprocess
+    description: scatter (sparse scatter, auto-skip)
+    full_model_verdict_blocker: true
+    blocker_gate: trace_closure_required
+    source: trace_adapter.skipped_modules
+  - name: fusion_net
+    type: fusion_or_alignment
+    description: 'fusion_net (MaxFusion: 无参数 max pooling, auto-skip)'
+    full_model_verdict_blocker: true
+    blocker_gate: trace_closure_required
+    source: trace_adapter.skipped_modules
+  note: 'auto_trace: _HeterBaselineTraceNet (backbone_m1 + optional shrink + heads);
+    push-button: 零源码 surgery, 零 _Net 子类'
+trace_plan:
+  schema: stage1_trace_plan_v1
+  model: fcooper
+  model_class: HeterModelBaseline
+  config_path: /exdata/jichengzhi/heal_research/checkpoints/fcooper_opv2v_baseline/config.yaml
+  ckpt_path: /exdata/jichengzhi/heal_research/checkpoints/fcooper_opv2v_baseline/net_epoch_bestval_at23.pth
+  ckpt_status: ok
+  detector: TraceBoundaryDetector.heter_baseline_v1
+  manual_override_used: false
+  trace_confidence: medium
+  coverage_scope: dense_core_only
+  review_required: true
+  review_reasons:
+  - skipped_subgraphs_require_user_review
+  candidates:
+  - candidate_id: heter_baseline_dense_m1
+    entry: post_scatter_bev
+    input_shape:
+    - 1
+    - 64
+    - 256
+    - 256
+    included_modules:
+    - backbone_m1
+    - shrinker_m1
+    - cls_head
+    - reg_head
+    - dir_head
+    ignored_layers:
+    - cls_head
+    - reg_head
+    - dir_head
+    skipped_subgraphs:
+    - fusion_net
+    - encoder_m1.pillar_vfe
+    - encoder_m1.scatter
+    confidence: medium
+    selection_reason: 'HeterModelBaseline dense path selected from module tree: backbone_m1
+      -> shrinker_m1.'
+    wrapper_kind: heter_baseline_dense_path
+    status: candidate
+  selected_candidate:
+    candidate_id: heter_baseline_dense_m1
+    entry: post_scatter_bev
+    input_shape:
+    - 1
+    - 64
+    - 256
+    - 256
+    included_modules:
+    - backbone_m1
+    - shrinker_m1
+    - cls_head
+    - reg_head
+    - dir_head
+    ignored_layers:
+    - cls_head
+    - reg_head
+    - dir_head
+    skipped_subgraphs:
+    - fusion_net
+    - encoder_m1.pillar_vfe
+    - encoder_m1.scatter
+    confidence: medium
+    selection_reason: 'HeterModelBaseline dense path selected from module tree: backbone_m1
+      -> shrinker_m1.'
+    wrapper_kind: heter_baseline_dense_path
+    status: selected
+    validation:
+      full_model_module_tree_scan: ok
+      wrapper_forward_dryrun: ok
+      depgraph_build: ok
+      prune_dryrun: ok
+      boundary_validator: BoundaryValidator.graph_scan_integrated_v1
+      interface_invariant_check: ok
+      n_prunable_groups: 24
+      output_shape_sanity: ok
+      out_shapes:
+      - - 1
+        - 2
+        - 256
+        - 256
+      - - 1
+        - 14
+        - 256
+        - 256
+      - - 1
+        - 4
+        - 256
+        - 256
+      latency_coverage_annotation: trace_net_only
+  included_modules:
+  - name: backbone_m1
+    type: BaseBEVBackbone
+    role: included
+    param_count: 6577408
+    tags:
+    - dense_path_candidate
+    reason: selected dense trace path
+  - name: shrinker_m1
+    type: DownsampleConv
+    role: included
+    param_count: 1475072
+    tags:
+    - dense_path_candidate
+    reason: selected dense trace path
+  - name: cls_head
+    type: Conv2d
+    role: included
+    param_count: 514
+    tags:
+    - dense_op
+    - dense_path_candidate
+    - head_candidate
+    - ignored_candidate
+    reason: selected dense trace path
+  - name: reg_head
+    type: Conv2d
+    role: included
+    param_count: 3598
+    tags:
+    - dense_op
+    - dense_path_candidate
+    - head_candidate
+    - ignored_candidate
+    reason: selected dense trace path
+  - name: dir_head
+    type: Conv2d
+    role: included
+    param_count: 1028
+    tags:
+    - dense_op
+    - dense_path_candidate
+    - head_candidate
+    - ignored_candidate
+    reason: selected dense trace path
+  ignored_layers:
+  - name: cls_head
+    type: Conv2d
+    role: ignored
+    param_count: 514
+    tags:
+    - dense_op
+    - dense_path_candidate
+    - head_candidate
+    - ignored_candidate
+    reason: head/interface layer kept in forward but ignored by pruning
+  - name: reg_head
+    type: Conv2d
+    role: ignored
+    param_count: 3598
+    tags:
+    - dense_op
+    - dense_path_candidate
+    - head_candidate
+    - ignored_candidate
+    reason: head/interface layer kept in forward but ignored by pruning
+  - name: dir_head
+    type: Conv2d
+    role: ignored
+    param_count: 1028
+    tags:
+    - dense_op
+    - dense_path_candidate
+    - head_candidate
+    - ignored_candidate
+    reason: head/interface layer kept in forward but ignored by pruning
+  skipped_subgraphs:
+  - name: fusion_net
+    type: fusion_or_alignment
+    description: fusion_net (MaxFusion) auto-skipped by module-tree heuristic
+    full_model_verdict_blocker: false
+    blocker_gate: maxfusion_coverage_anchor
+    source: trace_boundary_detector.module_tree
+    tags:
+    - fusion_or_alignment
+    - skipped_candidate
+    reason: name/type matches fusion or alignment hints
+  - name: encoder_m1.pillar_vfe
+    type: sparse_or_geometry_preprocess
+    description: encoder_m1.pillar_vfe (PillarVFE) auto-skipped by module-tree heuristic
+    full_model_verdict_blocker: false
+    blocker_gate: trace_sparse_frontend_boundary
+    source: trace_boundary_detector.module_tree
+    tags:
+    - skipped_candidate
+    - sparse_or_geometry_preprocess
+    reason: name/type matches sparse or geometry preprocess hints
+  - name: encoder_m1.scatter
+    type: sparse_or_geometry_preprocess
+    description: encoder_m1.scatter (PointPillarScatter) auto-skipped by module-tree
+      heuristic
+    full_model_verdict_blocker: false
+    blocker_gate: trace_sparse_frontend_boundary
+    source: trace_boundary_detector.module_tree
+    tags:
+    - skipped_candidate
+    - sparse_or_geometry_preprocess
+    reason: name/type matches sparse or geometry preprocess hints
+  rejected_candidates: []
+  module_inventory:
+  - path: <root>
+    type_name: opencood.models.heter_model_baseline.HeterModelBaseline
+    class_name: HeterModelBaseline
+    depth: 0
+    n_children: 7
+    params_direct: 0
+    params_recursive: 8058388
+    tags: []
+    reasons: []
+  - path: encoder_m1
+    type_name: opencood.models.heter_encoders.PointPillar
+    class_name: PointPillar
+    depth: 1
+    n_children: 2
+    params_direct: 0
+    params_recursive: 768
+    tags: []
+    reasons: []
+  - path: encoder_m1.pillar_vfe
+    type_name: opencood.models.sub_modules.pillar_vfe.PillarVFE
+    class_name: PillarVFE
+    depth: 2
+    n_children: 1
+    params_direct: 0
+    params_recursive: 768
+    tags:
+    - skipped_candidate
+    - sparse_or_geometry_preprocess
+    reasons:
+    - name/type matches sparse or geometry preprocess hints
+  - path: encoder_m1.pillar_vfe.pfn_layers
+    type_name: torch.nn.modules.container.ModuleList
+    class_name: ModuleList
+    depth: 3
+    n_children: 1
+    params_direct: 0
+    params_recursive: 768
+    tags:
+    - skipped_candidate
+    - sparse_or_geometry_preprocess
+    reasons:
+    - name/type matches sparse or geometry preprocess hints
+  - path: encoder_m1.pillar_vfe.pfn_layers.0
+    type_name: opencood.models.sub_modules.pillar_vfe.PFNLayer
+    class_name: PFNLayer
+    depth: 4
+    n_children: 2
+    params_direct: 0
+    params_recursive: 768
+    tags:
+    - skipped_candidate
+    - sparse_or_geometry_preprocess
+    reasons:
+    - name/type matches sparse or geometry preprocess hints
+  - path: encoder_m1.pillar_vfe.pfn_layers.0.linear
+    type_name: torch.nn.modules.linear.Linear
+    class_name: Linear
+    depth: 5
+    n_children: 0
+    params_direct: 640
+    params_recursive: 640
+    tags:
+    - dense_op
+    - skipped_candidate
+    - sparse_or_geometry_preprocess
+    reasons:
+    - module type is a dense torch op
+    - name/type matches sparse or geometry preprocess hints
+  - path: encoder_m1.pillar_vfe.pfn_layers.0.norm
+    type_name: torch.nn.modules.batchnorm.BatchNorm1d
+    class_name: BatchNorm1d
+    depth: 5
+    n_children: 0
+    params_direct: 128
+    params_recursive: 128
+    tags:
+    - skipped_candidate
+    - sparse_or_geometry_preprocess
+    reasons:
+    - name/type matches sparse or geometry preprocess hints
+  - path: encoder_m1.scatter
+    type_name: opencood.models.sub_modules.point_pillar_scatter.PointPillarScatter
+    class_name: PointPillarScatter
+    depth: 2
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - skipped_candidate
+    - sparse_or_geometry_preprocess
+    reasons:
+    - name/type matches sparse or geometry preprocess hints
+  - path: backbone_m1
+    type_name: opencood.models.sub_modules.base_bev_backbone.BaseBEVBackbone
+    class_name: BaseBEVBackbone
+    depth: 1
+    n_children: 2
+    params_direct: 0
+    params_recursive: 6577408
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks
+    type_name: torch.nn.modules.container.ModuleList
+    class_name: ModuleList
+    depth: 2
+    n_children: 3
+    params_direct: 0
+    params_recursive: 5978624
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.0
+    type_name: torch.nn.modules.container.Sequential
+    class_name: Sequential
+    depth: 3
+    n_children: 13
+    params_direct: 0
+    params_recursive: 147968
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.0.0
+    type_name: torch.nn.modules.padding.ZeroPad2d
+    class_name: ZeroPad2d
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.0.1
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 4
+    n_children: 0
+    params_direct: 36864
+    params_recursive: 36864
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.0.2
+    type_name: torch.nn.modules.batchnorm.BatchNorm2d
+    class_name: BatchNorm2d
+    depth: 4
+    n_children: 0
+    params_direct: 128
+    params_recursive: 128
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.0.3
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.0.4
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 4
+    n_children: 0
+    params_direct: 36864
+    params_recursive: 36864
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.0.5
+    type_name: torch.nn.modules.batchnorm.BatchNorm2d
+    class_name: BatchNorm2d
+    depth: 4
+    n_children: 0
+    params_direct: 128
+    params_recursive: 128
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.0.6
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.0.7
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 4
+    n_children: 0
+    params_direct: 36864
+    params_recursive: 36864
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.0.8
+    type_name: torch.nn.modules.batchnorm.BatchNorm2d
+    class_name: BatchNorm2d
+    depth: 4
+    n_children: 0
+    params_direct: 128
+    params_recursive: 128
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.0.9
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.0.10
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 4
+    n_children: 0
+    params_direct: 36864
+    params_recursive: 36864
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.0.11
+    type_name: torch.nn.modules.batchnorm.BatchNorm2d
+    class_name: BatchNorm2d
+    depth: 4
+    n_children: 0
+    params_direct: 128
+    params_recursive: 128
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.0.12
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.1
+    type_name: torch.nn.modules.container.Sequential
+    class_name: Sequential
+    depth: 3
+    n_children: 19
+    params_direct: 0
+    params_recursive: 812544
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.1.0
+    type_name: torch.nn.modules.padding.ZeroPad2d
+    class_name: ZeroPad2d
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.1.1
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 4
+    n_children: 0
+    params_direct: 73728
+    params_recursive: 73728
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.1.2
+    type_name: torch.nn.modules.batchnorm.BatchNorm2d
+    class_name: BatchNorm2d
+    depth: 4
+    n_children: 0
+    params_direct: 256
+    params_recursive: 256
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.1.3
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.1.4
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 4
+    n_children: 0
+    params_direct: 147456
+    params_recursive: 147456
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.1.5
+    type_name: torch.nn.modules.batchnorm.BatchNorm2d
+    class_name: BatchNorm2d
+    depth: 4
+    n_children: 0
+    params_direct: 256
+    params_recursive: 256
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.1.6
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.1.7
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 4
+    n_children: 0
+    params_direct: 147456
+    params_recursive: 147456
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.1.8
+    type_name: torch.nn.modules.batchnorm.BatchNorm2d
+    class_name: BatchNorm2d
+    depth: 4
+    n_children: 0
+    params_direct: 256
+    params_recursive: 256
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.1.9
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.1.10
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 4
+    n_children: 0
+    params_direct: 147456
+    params_recursive: 147456
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.1.11
+    type_name: torch.nn.modules.batchnorm.BatchNorm2d
+    class_name: BatchNorm2d
+    depth: 4
+    n_children: 0
+    params_direct: 256
+    params_recursive: 256
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.1.12
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.1.13
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 4
+    n_children: 0
+    params_direct: 147456
+    params_recursive: 147456
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.1.14
+    type_name: torch.nn.modules.batchnorm.BatchNorm2d
+    class_name: BatchNorm2d
+    depth: 4
+    n_children: 0
+    params_direct: 256
+    params_recursive: 256
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.1.15
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.1.16
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 4
+    n_children: 0
+    params_direct: 147456
+    params_recursive: 147456
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.1.17
+    type_name: torch.nn.modules.batchnorm.BatchNorm2d
+    class_name: BatchNorm2d
+    depth: 4
+    n_children: 0
+    params_direct: 256
+    params_recursive: 256
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.1.18
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2
+    type_name: torch.nn.modules.container.Sequential
+    class_name: Sequential
+    depth: 3
+    n_children: 28
+    params_direct: 0
+    params_recursive: 5018112
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.0
+    type_name: torch.nn.modules.padding.ZeroPad2d
+    class_name: ZeroPad2d
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.1
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 4
+    n_children: 0
+    params_direct: 294912
+    params_recursive: 294912
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.2
+    type_name: torch.nn.modules.batchnorm.BatchNorm2d
+    class_name: BatchNorm2d
+    depth: 4
+    n_children: 0
+    params_direct: 512
+    params_recursive: 512
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.3
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.4
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 4
+    n_children: 0
+    params_direct: 589824
+    params_recursive: 589824
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.5
+    type_name: torch.nn.modules.batchnorm.BatchNorm2d
+    class_name: BatchNorm2d
+    depth: 4
+    n_children: 0
+    params_direct: 512
+    params_recursive: 512
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.6
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.7
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 4
+    n_children: 0
+    params_direct: 589824
+    params_recursive: 589824
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.8
+    type_name: torch.nn.modules.batchnorm.BatchNorm2d
+    class_name: BatchNorm2d
+    depth: 4
+    n_children: 0
+    params_direct: 512
+    params_recursive: 512
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.9
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.10
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 4
+    n_children: 0
+    params_direct: 589824
+    params_recursive: 589824
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.11
+    type_name: torch.nn.modules.batchnorm.BatchNorm2d
+    class_name: BatchNorm2d
+    depth: 4
+    n_children: 0
+    params_direct: 512
+    params_recursive: 512
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.12
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.13
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 4
+    n_children: 0
+    params_direct: 589824
+    params_recursive: 589824
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.14
+    type_name: torch.nn.modules.batchnorm.BatchNorm2d
+    class_name: BatchNorm2d
+    depth: 4
+    n_children: 0
+    params_direct: 512
+    params_recursive: 512
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.15
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.16
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 4
+    n_children: 0
+    params_direct: 589824
+    params_recursive: 589824
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.17
+    type_name: torch.nn.modules.batchnorm.BatchNorm2d
+    class_name: BatchNorm2d
+    depth: 4
+    n_children: 0
+    params_direct: 512
+    params_recursive: 512
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.18
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.19
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 4
+    n_children: 0
+    params_direct: 589824
+    params_recursive: 589824
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.20
+    type_name: torch.nn.modules.batchnorm.BatchNorm2d
+    class_name: BatchNorm2d
+    depth: 4
+    n_children: 0
+    params_direct: 512
+    params_recursive: 512
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.21
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.22
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 4
+    n_children: 0
+    params_direct: 589824
+    params_recursive: 589824
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.23
+    type_name: torch.nn.modules.batchnorm.BatchNorm2d
+    class_name: BatchNorm2d
+    depth: 4
+    n_children: 0
+    params_direct: 512
+    params_recursive: 512
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.24
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.25
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 4
+    n_children: 0
+    params_direct: 589824
+    params_recursive: 589824
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.26
+    type_name: torch.nn.modules.batchnorm.BatchNorm2d
+    class_name: BatchNorm2d
+    depth: 4
+    n_children: 0
+    params_direct: 512
+    params_recursive: 512
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.blocks.2.27
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.deblocks
+    type_name: torch.nn.modules.container.ModuleList
+    class_name: ModuleList
+    depth: 2
+    n_children: 3
+    params_direct: 0
+    params_recursive: 598784
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.deblocks.0
+    type_name: torch.nn.modules.container.Sequential
+    class_name: Sequential
+    depth: 3
+    n_children: 3
+    params_direct: 0
+    params_recursive: 8448
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.deblocks.0.0
+    type_name: torch.nn.modules.conv.ConvTranspose2d
+    class_name: ConvTranspose2d
+    depth: 4
+    n_children: 0
+    params_direct: 8192
+    params_recursive: 8192
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.deblocks.0.1
+    type_name: torch.nn.modules.batchnorm.BatchNorm2d
+    class_name: BatchNorm2d
+    depth: 4
+    n_children: 0
+    params_direct: 256
+    params_recursive: 256
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.deblocks.0.2
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.deblocks.1
+    type_name: torch.nn.modules.container.Sequential
+    class_name: Sequential
+    depth: 3
+    n_children: 3
+    params_direct: 0
+    params_recursive: 65792
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.deblocks.1.0
+    type_name: torch.nn.modules.conv.ConvTranspose2d
+    class_name: ConvTranspose2d
+    depth: 4
+    n_children: 0
+    params_direct: 65536
+    params_recursive: 65536
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.deblocks.1.1
+    type_name: torch.nn.modules.batchnorm.BatchNorm2d
+    class_name: BatchNorm2d
+    depth: 4
+    n_children: 0
+    params_direct: 256
+    params_recursive: 256
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.deblocks.1.2
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.deblocks.2
+    type_name: torch.nn.modules.container.Sequential
+    class_name: Sequential
+    depth: 3
+    n_children: 3
+    params_direct: 0
+    params_recursive: 524544
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.deblocks.2.0
+    type_name: torch.nn.modules.conv.ConvTranspose2d
+    class_name: ConvTranspose2d
+    depth: 4
+    n_children: 0
+    params_direct: 524288
+    params_recursive: 524288
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.deblocks.2.1
+    type_name: torch.nn.modules.batchnorm.BatchNorm2d
+    class_name: BatchNorm2d
+    depth: 4
+    n_children: 0
+    params_direct: 256
+    params_recursive: 256
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: backbone_m1.deblocks.2.2
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 4
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: shrinker_m1
+    type_name: opencood.models.sub_modules.downsample_conv.DownsampleConv
+    class_name: DownsampleConv
+    depth: 1
+    n_children: 1
+    params_direct: 0
+    params_recursive: 1475072
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: shrinker_m1.layers
+    type_name: torch.nn.modules.container.ModuleList
+    class_name: ModuleList
+    depth: 2
+    n_children: 1
+    params_direct: 0
+    params_recursive: 1475072
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: shrinker_m1.layers.0
+    type_name: opencood.models.sub_modules.downsample_conv.DoubleConv
+    class_name: DoubleConv
+    depth: 3
+    n_children: 1
+    params_direct: 0
+    params_recursive: 1475072
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: shrinker_m1.layers.0.double_conv
+    type_name: torch.nn.modules.container.Sequential
+    class_name: Sequential
+    depth: 4
+    n_children: 4
+    params_direct: 0
+    params_recursive: 1475072
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: shrinker_m1.layers.0.double_conv.0
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 5
+    n_children: 0
+    params_direct: 884992
+    params_recursive: 884992
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: shrinker_m1.layers.0.double_conv.1
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 5
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: shrinker_m1.layers.0.double_conv.2
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 5
+    n_children: 0
+    params_direct: 590080
+    params_recursive: 590080
+    tags:
+    - dense_op
+    - dense_path_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches dense backbone/neck/shrinker hints
+  - path: shrinker_m1.layers.0.double_conv.3
+    type_name: torch.nn.modules.activation.ReLU
+    class_name: ReLU
+    depth: 5
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - dense_path_candidate
+    reasons:
+    - name matches dense backbone/neck/shrinker hints
+  - path: fusion_net
+    type_name: opencood.models.fuse_modules.fusion_in_one.MaxFusion
+    class_name: MaxFusion
+    depth: 1
+    n_children: 0
+    params_direct: 0
+    params_recursive: 0
+    tags:
+    - fusion_or_alignment
+    - skipped_candidate
+    reasons:
+    - name/type matches fusion or alignment hints
+  - path: cls_head
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 1
+    n_children: 0
+    params_direct: 514
+    params_recursive: 514
+    tags:
+    - dense_op
+    - dense_path_candidate
+    - head_candidate
+    - ignored_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches output head hints
+  - path: reg_head
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 1
+    n_children: 0
+    params_direct: 3598
+    params_recursive: 3598
+    tags:
+    - dense_op
+    - dense_path_candidate
+    - head_candidate
+    - ignored_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches output head hints
+  - path: dir_head
+    type_name: torch.nn.modules.conv.Conv2d
+    class_name: Conv2d
+    depth: 1
+    n_children: 0
+    params_direct: 1028
+    params_recursive: 1028
+    tags:
+    - dense_op
+    - dense_path_candidate
+    - head_candidate
+    - ignored_candidate
+    reasons:
+    - module type is a dense torch op
+    - name matches output head hints
+prune_object: channel
+stats:
+  params_total: 8057620
+  param_dist:
+    backbone: 0.742
+    heads: 0.0006
+    neck: 0.2574
+search_space_summary:
+  n_b1_groups_structural: 24
+  n_b1_search_knobs: 4
+  n_b2_quant_units: 3
+  n_d_routing_segments: 1
+  latency_status: skipped
+  latency_e2e_forward_ms: null
+view_b1_search_groups:
+- search_group_id: neck
+  bucket: neck
+  n_b1_groups: 5
+  member_b1_groups:
+  - g0
+  - g1
+  - g2
+  - g22
+  - g23
+  widths:
+  - 128
+  - 256
+  max_rate: 0.75
+  round_to: 32
+  int8_buildable_align: 4
+  grouped_conv: false
+  criterion_pool:
+  - FPGM
+  - L1
+  feature:
+    min_ic_bn: 64.0
+    max_groups: 1
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    - ConvTranspose2d
+    fanout_buckets:
+    - heads
+    - neck
+- search_group_id: backbone.s2
+  bucket: backbone
+  n_b1_groups: 9
+  member_b1_groups:
+  - g3
+  - g4
+  - g5
+  - g6
+  - g7
+  - g8
+  - g9
+  - g10
+  - g11
+  widths:
+  - 256
+  max_rate: 0.875
+  round_to: 32
+  int8_buildable_align: 4
+  grouped_conv: false
+  criterion_pool:
+  - FPGM
+  - L1
+  feature:
+    min_ic_bn: 128.0
+    max_groups: 1
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    - ConvTranspose2d
+    fanout_buckets:
+    - backbone
+    - neck
+- search_group_id: backbone.s1
+  bucket: backbone
+  n_b1_groups: 6
+  member_b1_groups:
+  - g12
+  - g13
+  - g14
+  - g15
+  - g16
+  - g17
+  widths:
+  - 128
+  max_rate: 0.75
+  round_to: 32
+  int8_buildable_align: 4
+  grouped_conv: false
+  criterion_pool:
+  - FPGM
+  - L1
+  feature:
+    min_ic_bn: 64.0
+    max_groups: 1
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    - ConvTranspose2d
+    fanout_buckets:
+    - backbone
+    - neck
+- search_group_id: backbone.s0
+  bucket: backbone
+  n_b1_groups: 4
+  member_b1_groups:
+  - g18
+  - g19
+  - g20
+  - g21
+  widths:
+  - 64
+  max_rate: 0.5
+  round_to: 32
+  int8_buildable_align: 4
+  grouped_conv: false
+  criterion_pool:
+  - FPGM
+  - L1
+  feature:
+    min_ic_bn: 64.0
+    max_groups: 1
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    - ConvTranspose2d
+    fanout_buckets:
+    - backbone
+    - neck
+view_b1_prune_groups:
+- group_id: g0
+  bucket: neck
+  root_layer: body.shrinker_m1.layers.0.double_conv.2
+  member_layers:
+  - body.shrinker_m1.layers.0.double_conv.2
+  - heads.cls_head
+  - heads.reg_head
+  - heads.dir_head
+  n_members: 4
+  prune_dim: out
+  cur_width: 256
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.875
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets:
+  - heads
+  - neck
+  feature:
+    cin: 256
+    cout: 256
+    groups: 1
+    ic_bn: 256.0
+    kernel:
+    - 3
+    - 3
+    stride:
+    - 1
+    - 1
+    op_types:
+    - Conv2d
+    fanout_buckets:
+    - heads
+    - neck
+- group_id: g1
+  bucket: neck
+  root_layer: body.shrinker_m1.layers.0.double_conv.0
+  member_layers:
+  - body.shrinker_m1.layers.0.double_conv.0
+  - body.shrinker_m1.layers.0.double_conv.2
+  n_members: 2
+  prune_dim: out
+  cur_width: 256
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.875
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets: null
+  feature:
+    cin: 384
+    cout: 256
+    groups: 1
+    ic_bn: 256.0
+    kernel:
+    - 3
+    - 3
+    stride:
+    - 1
+    - 1
+    op_types:
+    - Conv2d
+    fanout_buckets:
+    - neck
+- group_id: g2
+  bucket: neck
+  root_layer: body.backbone_m1.deblocks.2.0
+  member_layers:
+  - body.backbone_m1.deblocks.2.0
+  - body.backbone_m1.deblocks.2.1
+  - body.shrinker_m1.layers.0.double_conv.0
+  n_members: 3
+  prune_dim: out
+  cur_width: 128
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.75
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets: null
+  feature:
+    cin: 256
+    cout: 128
+    groups: 1
+    ic_bn: 128.0
+    kernel:
+    - 4
+    - 4
+    stride:
+    - 4
+    - 4
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    - ConvTranspose2d
+    fanout_buckets:
+    - neck
+- group_id: g3
+  bucket: backbone
+  root_layer: body.backbone_m1.blocks.2.25
+  member_layers:
+  - body.backbone_m1.blocks.2.25
+  - body.backbone_m1.blocks.2.26
+  - body.backbone_m1.deblocks.2.0
+  n_members: 3
+  prune_dim: out
+  cur_width: 256
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.875
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets:
+  - backbone
+  - neck
+  feature:
+    cin: 256
+    cout: 256
+    groups: 1
+    ic_bn: 256.0
+    kernel:
+    - 3
+    - 3
+    stride:
+    - 1
+    - 1
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    - ConvTranspose2d
+    fanout_buckets:
+    - backbone
+    - neck
+- group_id: g4
+  bucket: backbone
+  root_layer: body.backbone_m1.blocks.2.22
+  member_layers:
+  - body.backbone_m1.blocks.2.22
+  - body.backbone_m1.blocks.2.23
+  - body.backbone_m1.blocks.2.25
+  n_members: 3
+  prune_dim: out
+  cur_width: 256
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.875
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets: null
+  feature:
+    cin: 256
+    cout: 256
+    groups: 1
+    ic_bn: 256.0
+    kernel:
+    - 3
+    - 3
+    stride:
+    - 1
+    - 1
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    fanout_buckets:
+    - backbone
+- group_id: g5
+  bucket: backbone
+  root_layer: body.backbone_m1.blocks.2.19
+  member_layers:
+  - body.backbone_m1.blocks.2.19
+  - body.backbone_m1.blocks.2.20
+  - body.backbone_m1.blocks.2.22
+  n_members: 3
+  prune_dim: out
+  cur_width: 256
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.875
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets: null
+  feature:
+    cin: 256
+    cout: 256
+    groups: 1
+    ic_bn: 256.0
+    kernel:
+    - 3
+    - 3
+    stride:
+    - 1
+    - 1
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    fanout_buckets:
+    - backbone
+- group_id: g6
+  bucket: backbone
+  root_layer: body.backbone_m1.blocks.2.16
+  member_layers:
+  - body.backbone_m1.blocks.2.16
+  - body.backbone_m1.blocks.2.17
+  - body.backbone_m1.blocks.2.19
+  n_members: 3
+  prune_dim: out
+  cur_width: 256
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.875
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets: null
+  feature:
+    cin: 256
+    cout: 256
+    groups: 1
+    ic_bn: 256.0
+    kernel:
+    - 3
+    - 3
+    stride:
+    - 1
+    - 1
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    fanout_buckets:
+    - backbone
+- group_id: g7
+  bucket: backbone
+  root_layer: body.backbone_m1.blocks.2.13
+  member_layers:
+  - body.backbone_m1.blocks.2.13
+  - body.backbone_m1.blocks.2.14
+  - body.backbone_m1.blocks.2.16
+  n_members: 3
+  prune_dim: out
+  cur_width: 256
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.875
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets: null
+  feature:
+    cin: 256
+    cout: 256
+    groups: 1
+    ic_bn: 256.0
+    kernel:
+    - 3
+    - 3
+    stride:
+    - 1
+    - 1
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    fanout_buckets:
+    - backbone
+- group_id: g8
+  bucket: backbone
+  root_layer: body.backbone_m1.blocks.2.10
+  member_layers:
+  - body.backbone_m1.blocks.2.10
+  - body.backbone_m1.blocks.2.11
+  - body.backbone_m1.blocks.2.13
+  n_members: 3
+  prune_dim: out
+  cur_width: 256
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.875
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets: null
+  feature:
+    cin: 256
+    cout: 256
+    groups: 1
+    ic_bn: 256.0
+    kernel:
+    - 3
+    - 3
+    stride:
+    - 1
+    - 1
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    fanout_buckets:
+    - backbone
+- group_id: g9
+  bucket: backbone
+  root_layer: body.backbone_m1.blocks.2.7
+  member_layers:
+  - body.backbone_m1.blocks.2.7
+  - body.backbone_m1.blocks.2.8
+  - body.backbone_m1.blocks.2.10
+  n_members: 3
+  prune_dim: out
+  cur_width: 256
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.875
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets: null
+  feature:
+    cin: 256
+    cout: 256
+    groups: 1
+    ic_bn: 256.0
+    kernel:
+    - 3
+    - 3
+    stride:
+    - 1
+    - 1
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    fanout_buckets:
+    - backbone
+- group_id: g10
+  bucket: backbone
+  root_layer: body.backbone_m1.blocks.2.4
+  member_layers:
+  - body.backbone_m1.blocks.2.4
+  - body.backbone_m1.blocks.2.5
+  - body.backbone_m1.blocks.2.7
+  n_members: 3
+  prune_dim: out
+  cur_width: 256
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.875
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets: null
+  feature:
+    cin: 256
+    cout: 256
+    groups: 1
+    ic_bn: 256.0
+    kernel:
+    - 3
+    - 3
+    stride:
+    - 1
+    - 1
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    fanout_buckets:
+    - backbone
+- group_id: g11
+  bucket: backbone
+  root_layer: body.backbone_m1.blocks.2.1
+  member_layers:
+  - body.backbone_m1.blocks.2.1
+  - body.backbone_m1.blocks.2.2
+  - body.backbone_m1.blocks.2.4
+  n_members: 3
+  prune_dim: out
+  cur_width: 256
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.875
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets: null
+  feature:
+    cin: 128
+    cout: 256
+    groups: 1
+    ic_bn: 128.0
+    kernel:
+    - 3
+    - 3
+    stride:
+    - 2
+    - 2
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    fanout_buckets:
+    - backbone
+- group_id: g12
+  bucket: backbone
+  root_layer: body.backbone_m1.blocks.1.16
+  member_layers:
+  - body.backbone_m1.blocks.1.16
+  - body.backbone_m1.blocks.1.17
+  - body.backbone_m1.deblocks.1.0
+  - body.backbone_m1.blocks.2.1
+  n_members: 4
+  prune_dim: out
+  cur_width: 128
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.75
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets:
+  - backbone
+  - neck
+  feature:
+    cin: 128
+    cout: 128
+    groups: 1
+    ic_bn: 128.0
+    kernel:
+    - 3
+    - 3
+    stride:
+    - 1
+    - 1
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    - ConvTranspose2d
+    fanout_buckets:
+    - backbone
+    - neck
+- group_id: g13
+  bucket: backbone
+  root_layer: body.backbone_m1.blocks.1.13
+  member_layers:
+  - body.backbone_m1.blocks.1.13
+  - body.backbone_m1.blocks.1.14
+  - body.backbone_m1.blocks.1.16
+  n_members: 3
+  prune_dim: out
+  cur_width: 128
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.75
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets: null
+  feature:
+    cin: 128
+    cout: 128
+    groups: 1
+    ic_bn: 128.0
+    kernel:
+    - 3
+    - 3
+    stride:
+    - 1
+    - 1
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    fanout_buckets:
+    - backbone
+- group_id: g14
+  bucket: backbone
+  root_layer: body.backbone_m1.blocks.1.10
+  member_layers:
+  - body.backbone_m1.blocks.1.10
+  - body.backbone_m1.blocks.1.11
+  - body.backbone_m1.blocks.1.13
+  n_members: 3
+  prune_dim: out
+  cur_width: 128
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.75
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets: null
+  feature:
+    cin: 128
+    cout: 128
+    groups: 1
+    ic_bn: 128.0
+    kernel:
+    - 3
+    - 3
+    stride:
+    - 1
+    - 1
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    fanout_buckets:
+    - backbone
+- group_id: g15
+  bucket: backbone
+  root_layer: body.backbone_m1.blocks.1.7
+  member_layers:
+  - body.backbone_m1.blocks.1.7
+  - body.backbone_m1.blocks.1.8
+  - body.backbone_m1.blocks.1.10
+  n_members: 3
+  prune_dim: out
+  cur_width: 128
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.75
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets: null
+  feature:
+    cin: 128
+    cout: 128
+    groups: 1
+    ic_bn: 128.0
+    kernel:
+    - 3
+    - 3
+    stride:
+    - 1
+    - 1
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    fanout_buckets:
+    - backbone
+- group_id: g16
+  bucket: backbone
+  root_layer: body.backbone_m1.blocks.1.4
+  member_layers:
+  - body.backbone_m1.blocks.1.4
+  - body.backbone_m1.blocks.1.5
+  - body.backbone_m1.blocks.1.7
+  n_members: 3
+  prune_dim: out
+  cur_width: 128
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.75
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets: null
+  feature:
+    cin: 128
+    cout: 128
+    groups: 1
+    ic_bn: 128.0
+    kernel:
+    - 3
+    - 3
+    stride:
+    - 1
+    - 1
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    fanout_buckets:
+    - backbone
+- group_id: g17
+  bucket: backbone
+  root_layer: body.backbone_m1.blocks.1.1
+  member_layers:
+  - body.backbone_m1.blocks.1.1
+  - body.backbone_m1.blocks.1.2
+  - body.backbone_m1.blocks.1.4
+  n_members: 3
+  prune_dim: out
+  cur_width: 128
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.75
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets: null
+  feature:
+    cin: 64
+    cout: 128
+    groups: 1
+    ic_bn: 64.0
+    kernel:
+    - 3
+    - 3
+    stride:
+    - 2
+    - 2
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    fanout_buckets:
+    - backbone
+- group_id: g18
+  bucket: backbone
+  root_layer: body.backbone_m1.blocks.0.10
+  member_layers:
+  - body.backbone_m1.blocks.0.10
+  - body.backbone_m1.blocks.0.11
+  - body.backbone_m1.deblocks.0.0
+  - body.backbone_m1.blocks.1.1
+  n_members: 4
+  prune_dim: out
+  cur_width: 64
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.5
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets:
+  - backbone
+  - neck
+  feature:
+    cin: 64
+    cout: 64
+    groups: 1
+    ic_bn: 64.0
+    kernel:
+    - 3
+    - 3
+    stride:
+    - 1
+    - 1
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    - ConvTranspose2d
+    fanout_buckets:
+    - backbone
+    - neck
+- group_id: g19
+  bucket: backbone
+  root_layer: body.backbone_m1.blocks.0.7
+  member_layers:
+  - body.backbone_m1.blocks.0.7
+  - body.backbone_m1.blocks.0.8
+  - body.backbone_m1.blocks.0.10
+  n_members: 3
+  prune_dim: out
+  cur_width: 64
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.5
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets: null
+  feature:
+    cin: 64
+    cout: 64
+    groups: 1
+    ic_bn: 64.0
+    kernel:
+    - 3
+    - 3
+    stride:
+    - 1
+    - 1
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    fanout_buckets:
+    - backbone
+- group_id: g20
+  bucket: backbone
+  root_layer: body.backbone_m1.blocks.0.4
+  member_layers:
+  - body.backbone_m1.blocks.0.4
+  - body.backbone_m1.blocks.0.5
+  - body.backbone_m1.blocks.0.7
+  n_members: 3
+  prune_dim: out
+  cur_width: 64
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.5
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets: null
+  feature:
+    cin: 64
+    cout: 64
+    groups: 1
+    ic_bn: 64.0
+    kernel:
+    - 3
+    - 3
+    stride:
+    - 1
+    - 1
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    fanout_buckets:
+    - backbone
+- group_id: g21
+  bucket: backbone
+  root_layer: body.backbone_m1.blocks.0.1
+  member_layers:
+  - body.backbone_m1.blocks.0.1
+  - body.backbone_m1.blocks.0.2
+  - body.backbone_m1.blocks.0.4
+  n_members: 3
+  prune_dim: out
+  cur_width: 64
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.5
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets: null
+  feature:
+    cin: 64
+    cout: 64
+    groups: 1
+    ic_bn: 64.0
+    kernel:
+    - 3
+    - 3
+    stride:
+    - 2
+    - 2
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    fanout_buckets:
+    - backbone
+- group_id: g22
+  bucket: neck
+  root_layer: body.backbone_m1.deblocks.1.0
+  member_layers:
+  - body.backbone_m1.deblocks.1.0
+  - body.backbone_m1.deblocks.1.1
+  - body.shrinker_m1.layers.0.double_conv.0
+  n_members: 3
+  prune_dim: out
+  cur_width: 128
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.75
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets: null
+  feature:
+    cin: 128
+    cout: 128
+    groups: 1
+    ic_bn: 128.0
+    kernel:
+    - 2
+    - 2
+    stride:
+    - 2
+    - 2
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    - ConvTranspose2d
+    fanout_buckets:
+    - neck
+- group_id: g23
+  bucket: neck
+  root_layer: body.backbone_m1.deblocks.0.0
+  member_layers:
+  - body.backbone_m1.deblocks.0.0
+  - body.backbone_m1.deblocks.0.1
+  - body.shrinker_m1.layers.0.double_conv.0
+  n_members: 3
+  prune_dim: out
+  cur_width: 128
+  grouped_conv_g: 1
+  round_to_int8: 32
+  round_to_fp16: 8
+  round_to_default: 32
+  int8_buildable_align: 4
+  width_floor: 32
+  enforcement: hard
+  max_rate: 0.75
+  criterion_pool:
+  - L1
+  - FPGM
+  prunable: true
+  coupled_buckets: null
+  feature:
+    cin: 64
+    cout: 128
+    groups: 1
+    ic_bn: 64.0
+    kernel:
+    - 1
+    - 1
+    stride:
+    - 1
+    - 1
+    op_types:
+    - BatchNorm2d
+    - Conv2d
+    - ConvTranspose2d
+    fanout_buckets:
+    - neck
+view_b2_quant_units:
+- unit: backbone
+  param_count: 5978624
+  op_composition:
+    Conv2d: 19
+    BatchNorm2d: 19
+  member_groups:
+  - g3
+  - g4
+  - g5
+  - g6
+  - g7
+  - g8
+  - g9
+  - g10
+  - g11
+  - g12
+  - g13
+  - g14
+  - g15
+  - g16
+  - g17
+  - g18
+  - g19
+  - g20
+  - g21
+  quantizable: true
+  legal_bits:
+  - INT8
+  - FP16
+  legal_granularity_w: *id001
+  per_channel_act_ok: false
+- unit: heads
+  param_count: 5140
+  op_composition:
+    Conv2d: 3
+  member_groups: []
+  quantizable: false
+  legal_bits:
+  - FP16
+  legal_granularity_w: *id001
+  per_channel_act_ok: false
+- unit: neck
+  param_count: 2073856
+  op_composition:
+    ConvTranspose2d: 3
+    BatchNorm2d: 3
+    Conv2d: 2
+  member_groups:
+  - g0
+  - g1
+  - g2
+  - g22
+  - g23
+  quantizable: true
+  legal_bits:
+  - INT8
+  - FP16
+  legal_granularity_w: *id001
+  per_channel_act_ok: false
+view_d_routing_segments:
+  n_segments: 1
+  note: 硬件无 DLA → 整图单 GPU 段, D.L1 退化, 无路由决策 (逐节点 dla_able 全 False)
+  segments:
+  - device: gpu
+    n_nodes: 49
+view_d_routing:
+- node: body.backbone_m1.blocks.0.1
+  op_type: Conv2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.0.2
+  op_type: BatchNorm2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.0.4
+  op_type: Conv2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.0.5
+  op_type: BatchNorm2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.0.7
+  op_type: Conv2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.0.8
+  op_type: BatchNorm2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.0.10
+  op_type: Conv2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.0.11
+  op_type: BatchNorm2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.1.1
+  op_type: Conv2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.1.2
+  op_type: BatchNorm2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.1.4
+  op_type: Conv2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.1.5
+  op_type: BatchNorm2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.1.7
+  op_type: Conv2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.1.8
+  op_type: BatchNorm2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.1.10
+  op_type: Conv2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.1.11
+  op_type: BatchNorm2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.1.13
+  op_type: Conv2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.1.14
+  op_type: BatchNorm2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.1.16
+  op_type: Conv2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.1.17
+  op_type: BatchNorm2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.2.1
+  op_type: Conv2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.2.2
+  op_type: BatchNorm2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.2.4
+  op_type: Conv2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.2.5
+  op_type: BatchNorm2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.2.7
+  op_type: Conv2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.2.8
+  op_type: BatchNorm2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.2.10
+  op_type: Conv2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.2.11
+  op_type: BatchNorm2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.2.13
+  op_type: Conv2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.2.14
+  op_type: BatchNorm2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.2.16
+  op_type: Conv2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.2.17
+  op_type: BatchNorm2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.2.19
+  op_type: Conv2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.2.20
+  op_type: BatchNorm2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.2.22
+  op_type: Conv2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.2.23
+  op_type: BatchNorm2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.2.25
+  op_type: Conv2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.blocks.2.26
+  op_type: BatchNorm2d
+  bucket: backbone
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.deblocks.0.0
+  op_type: ConvTranspose2d
+  bucket: neck
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.deblocks.0.1
+  op_type: BatchNorm2d
+  bucket: neck
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.deblocks.1.0
+  op_type: ConvTranspose2d
+  bucket: neck
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.deblocks.1.1
+  op_type: BatchNorm2d
+  bucket: neck
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.deblocks.2.0
+  op_type: ConvTranspose2d
+  bucket: neck
+  dla_able: false
+  propagate_b2: null
+- node: body.backbone_m1.deblocks.2.1
+  op_type: BatchNorm2d
+  bucket: neck
+  dla_able: false
+  propagate_b2: null
+- node: body.shrinker_m1.layers.0.double_conv.0
+  op_type: Conv2d
+  bucket: neck
+  dla_able: false
+  propagate_b2: null
+- node: body.shrinker_m1.layers.0.double_conv.2
+  op_type: Conv2d
+  bucket: neck
+  dla_able: false
+  propagate_b2: null
+- node: heads.cls_head
+  op_type: Conv2d
+  bucket: heads
+  dla_able: false
+  propagate_b2: null
+- node: heads.reg_head
+  op_type: Conv2d
+  bucket: heads
+  dla_able: false
+  propagate_b2: null
+- node: heads.dir_head
+  op_type: Conv2d
+  bucket: heads
+  dla_able: false
+  propagate_b2: null
+view_latency:
+  status: skipped
+  reason: profile_latency_mode=off, device=cuda:0 (auto 仅 cuda 开; --profile-latency
+    on 可强制 cpu 估算)
+  coverage:
+    coverage_scope: trace_net_only
+    trace_net_latency_pct: null
+    full_model_latency_pct: null
+    skipped_subgraphs_accounted_separately: true
+    n_skipped_subgraphs: 3
+    note: Trace-net latency coverage only; this is not full-model coverage. Sparse,
+      fusion, attention, routing, and custom skipped subgraphs remain separate blockers
+      until traced or gated.
+checks:
+  all_floor_mod_round_to: true
+  floor_violations: null
+  dryrun_prune05:
+    status: ok
+    params_before: 8057620
+    params_after: 2026900
+    reduction_pct: 74.8
+    grouped_conv_consistent: true
+    out_shapes:
+    - - 1
+      - 2
+      - 256
+      - 256
+    - - 1
+      - 14
+      - 256
+      - 256
+    - - 1
+      - 4
+      - 256
+      - 256
+scan_status: ok

@@ -1,0 +1,26 @@
+arm_id: compress_then_tune
+model: codriving
+widths: [32, 80, 128]
+precision: fp16
+runtime: tensorrt
+config: source/codriving/032x080x128/config.yaml
+checkpoint: source/codriving/032x080x128/net_epoch_bestval_at5.pth
+engine: codriving/compress_then_tune/backbone.engine
+artifact_sha256:
+  config: e509c1ae7aa4574e3512111bebbfba2e86ed71524db7056796886a96a2789b92
+  checkpoint: f73acdf344cc11bfee6019099e6a3407362feb35109a20bf4ad34dc688fedae7
+  engine: df18a052669a836f5094a95a6d8f13f6eef40d02629611efc7c94ee7796846f5
+input_contract:
+  spatial_features:
+    shape: [2, 64, 256, 512]
+    dtype: float32
+output_contract:
+  res0:
+    shape: [2, 32, 128, 256]
+    dtype: float32
+  res1:
+    shape: [2, 80, 64, 128]
+    dtype: float32
+  res2:
+    shape: [2, 128, 32, 64]
+    dtype: float32

@@ -1,0 +1,39 @@
+{
+  "status": "CPU_ONLY_RESUMED_FROM110_AFTER_SDK_WINDOW",
+  "pid": 13825,
+  "start_epoch": 1793028519.7097304,
+  "boot_id": "bb2ced1a-bad7-482f-af22-11ef1e4aca61",
+  "next_index": 110,
+  "hashes": {
+    "manifest.json": "07b3af267096fefe9fae406a659239bdbdad198387532e5a7f3be7635bc6bdb0",
+    "checkpoints/batch_00027.json": "fedbecf965c4c5436416145da7ccf074cb1e10b5914f3655b5de8991f8d6bb91",
+    "checkpoints/batch_00027.npz": "e74fe2f692e366d4f218bf6d311a4a094a084be67fe068a1d0ba0d8630211b3c"
+  },
+  "identity": {
+    "runtime_binary_file": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so",
+    "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c",
+    "target_options": {
+      "graph_optimization": "ORT_DISABLE_ALL",
+      "inter_op_threads": 1,
+      "intra_op_threads": 4,
+      "numpy_version": "1.26.4",
+      "provider": "CPUExecutionProvider",
+      "python_major_minor": "3.12",
+      "version": "1.27.0"
+    },
+    "code_sha256": {
+      "daemon.py": "3d724a8203cd99731704747d0730bdbfd6ccf892af6b6a2721c068653cdf1010",
+      "exchange.py": "df40ee0a5aadb4186b62255bca86dc559f0631375c4bd8f2e656fce517da4caa",
+      "protocol.py": "1baf55afd8e5454d56ccbd3416f741d9e6dc1348fcc86b5a26e113cd60036a7a",
+      "worker.py": "e81f90355aeb4889be576b16df3e7e5a51aac9853beee610067548da8c44fdb7"
+    },
+    "manifest_sha256": "4b6018aa2b1052d30da2dd1333b4e932ab05e87d3defaa8f92ca710fad978c25",
+    "python": "3.12.10 | packaged by conda-forge | (main, Apr 10 2025, 22:10:27) [GCC 13.3.0]",
+    "ort_file": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py",
+    "numpy_file": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py"
+  },
+  "cpu_kernel_memory_errors_before_resume": [],
+  "gpu_ctxsw_faults": 1,
+  "kernel_journal_sha256": "f334666cf1d8747430bc20cacd67e370080b82ad4164d0d6a10c913ee945d453",
+  "gpu_inference_authorized": false
+}

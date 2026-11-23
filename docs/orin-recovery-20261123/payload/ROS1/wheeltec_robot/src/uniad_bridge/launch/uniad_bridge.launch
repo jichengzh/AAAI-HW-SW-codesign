@@ -1,0 +1,13 @@
+<launch>
+  <arg name="max_speed" default="0.15"/>
+  <arg name="enable" default="false"/>
+  <!-- steer_gain: 转向可视化放大倍数，恢复原样改回 1.0 -->
+  <arg name="steer_gain" default="5.0"/>
+  <node pkg="uniad_bridge" type="uniad_cmdvel_bridge.py" name="uniad_bridge" output="screen">
+    <param name="max_speed" value="$(arg max_speed)"/>
+    <param name="enable" value="$(arg enable)"/>
+    <param name="wheelbase" value="0.322"/>
+    <param name="steer_gain" value="$(arg steer_gain)"/>
+    <param name="watchdog_timeout" value="1.5"/>
+  </node>
+</launch>

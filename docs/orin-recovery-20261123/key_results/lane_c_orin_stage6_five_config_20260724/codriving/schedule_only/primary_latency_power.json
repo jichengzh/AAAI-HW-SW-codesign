@@ -1,0 +1,82 @@
+{
+  "engine_sha256": "a4a464dc3838f35550313b70e52434ed738d4a71ce1c624c708f5447066fed21",
+  "expected_output_channels": [
+    64,
+    128,
+    256
+  ],
+  "inputs_sha256": "0897da44f61df0a05f75963abbcfe80a7d8c35a9670c9b0d69c962c296f99ddb",
+  "mean_ms": 92.50878132120768,
+  "measurement_wall_seconds": 138.907875248231,
+  "median_ms": 92.50537872314453,
+  "output_channel_signature": [
+    64,
+    128,
+    256
+  ],
+  "p90_ms": 92.61337280273438,
+  "p99_ms": 92.89129638671875,
+  "per_repeat": [
+    {
+      "mean_ms": 92.51195332845052,
+      "median_ms": 92.50820922851562,
+      "p90_ms": 92.60870361328125,
+      "p99_ms": 92.91747283935547,
+      "repeat_index": 0,
+      "sample_count": 300
+    },
+    {
+      "mean_ms": 92.48650123596191,
+      "median_ms": 92.4856948852539,
+      "p90_ms": 92.59760284423828,
+      "p99_ms": 92.65158081054688,
+      "repeat_index": 1,
+      "sample_count": 300
+    },
+    {
+      "mean_ms": 92.54705126444499,
+      "median_ms": 92.54148864746094,
+      "p90_ms": 92.62207794189453,
+      "p99_ms": 92.71209716796875,
+      "repeat_index": 2,
+      "sample_count": 300
+    },
+    {
+      "mean_ms": 92.48201065063476,
+      "median_ms": 92.48406600952148,
+      "p90_ms": 92.59430694580078,
+      "p99_ms": 92.68672180175781,
+      "repeat_index": 3,
+      "sample_count": 300
+    },
+    {
+      "mean_ms": 92.51639012654623,
+      "median_ms": 92.49480056762695,
+      "p90_ms": 92.67110443115234,
+      "p99_ms": 93.4329605102539,
+      "repeat_index": 4,
+      "sample_count": 300
+    }
+  ],
+  "power_log": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/codriving/schedule_only/primary_tegrastats.log",
+  "power_log_sha256": "570cc1a2689208028048e842e6878fe3f399a69dc301160954bbccdf0fa32367",
+  "power_measurement": {
+    "blocker": "missing_tegrastats_power_rails",
+    "measurement_status": "unavailable",
+    "raw_log_sha256": "570cc1a2689208028048e842e6878fe3f399a69dc301160954bbccdf0fa32367",
+    "source": "Orin tegrastats unavailable_without_privileged_rail_access",
+    "used_sudo": false
+  },
+  "protocol": {
+    "agent_batch": 2,
+    "data_transfer_inside_timed_region": false,
+    "iters": 300,
+    "repeat": 5,
+    "timing": "CUDA_event",
+    "warmup": 20
+  },
+  "sample_count": 1500,
+  "schema_version": "lane_c_backbone_orin_h800_protocol_latency_v1",
+  "scope": "codriving_backbone_resnet_64x128x256_engine_compute_no_data_transfer",
+  "timestamp_utc": "2026-07-24T08:16:22.895297+00:00"
+}

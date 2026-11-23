@@ -1,0 +1,26 @@
+<launch>
+  <arg name="car_mode" default="senior_akm"/>
+  <arg name="map_yaml" default="$(find turn_on_wheeltec_robot)/map/WHEELTEC.yaml"/>
+  <arg name="init_x" default="0.0"/>
+  <arg name="init_y" default="0.0"/>
+  <arg name="init_yaw" default="0.0"/>
+
+  <include file="$(find turn_on_wheeltec_robot)/launch/robot_model_visualization.launch">
+    <arg name="car_mode" value="$(arg car_mode)"/>
+  </include>
+
+  <node name="map_server_for_test" pkg="map_server" type="map_server" args="$(arg map_yaml)"/>
+
+  <include file="$(find turn_on_wheeltec_robot)/launch/include/amcl.launch"/>
+
+  <include file="$(find turn_on_wheeltec_robot)/launch/include/teb_local_planner.launch">
+    <arg name="car_mode" value="$(arg car_mode)"/>
+  </include>
+
+  <node name="fake_robot" pkg="offline_test" type="fake_robot.py" output="screen">
+    <param name="map_yaml" value="$(arg map_yaml)"/>
+    <param name="init_x" value="$(arg init_x)"/>
+    <param name="init_y" value="$(arg init_y)"/>
+    <param name="init_yaw" value="$(arg init_yaw)"/>
+  </node>
+</launch>

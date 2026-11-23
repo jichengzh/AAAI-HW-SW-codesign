@@ -1,0 +1,89 @@
+{
+  "files": [
+    {
+      "source": "/home/jichengzhi/lane_c_orin_fcooper_stage6_five_config_20260724/source/search_artifacts/sources/32x64x64x32x64/fcooper_dense_32x64x64x32x64.onnx",
+      "relative_path": "lane_c_orin_fcooper_stage6_five_config_20260724/source/search_artifacts/sources/32x64x64x32x64/fcooper_dense_32x64x64x32x64.onnx",
+      "bytes": 1266101,
+      "kind": "custom_fcooper_model",
+      "reason": "Exact final five-arm FCooper architecture and recovered weights",
+      "sha256": "e91a270037092c342fd7ec36a522dbceea4f4e94f200ec15efd9e4137c14e5eb",
+      "source_mtime_ns": 1784860217000000000
+    },
+    {
+      "source": "/home/jichengzhi/lane_c_orin_fcooper_stage6_five_config_20260724/source/search_artifacts/sources/32x64x64x32x64/recovered_checkpoint.pth",
+      "relative_path": "lane_c_orin_fcooper_stage6_five_config_20260724/source/search_artifacts/sources/32x64x64x32x64/recovered_checkpoint.pth",
+      "bytes": 2939313,
+      "kind": "custom_fcooper_model",
+      "reason": "Exact final five-arm FCooper architecture and recovered weights",
+      "sha256": "b46497fce1e9529c2748e1777fb1f3c786c41c3e0cacc168ed59f2b4f3a837af",
+      "source_mtime_ns": 1784855119000000000
+    },
+    {
+      "source": "/home/jichengzhi/lane_c_orin_fcooper_stage6_five_config_20260724/source/search_artifacts/sources/64x64x64x32x64/fcooper_dense_64x64x64x32x64.onnx",
+      "relative_path": "lane_c_orin_fcooper_stage6_five_config_20260724/source/search_artifacts/sources/64x64x64x32x64/fcooper_dense_64x64x64x32x64.onnx",
+      "bytes": 1602508,
+      "kind": "custom_fcooper_model",
+      "reason": "Exact final five-arm FCooper architecture and recovered weights",
+      "sha256": "52865e600e7d38e81e85c6d3df96e5169cdb2e19c9c64f547b963d7e28559b96",
+      "source_mtime_ns": 1784873682000000000
+    },
+    {
+      "source": "/home/jichengzhi/lane_c_orin_fcooper_stage6_five_config_20260724/source/search_artifacts/sources/64x64x64x32x64/recovered_checkpoint.pth",
+      "relative_path": "lane_c_orin_fcooper_stage6_five_config_20260724/source/search_artifacts/sources/64x64x64x32x64/recovered_checkpoint.pth",
+      "bytes": 3424689,
+      "kind": "custom_fcooper_model",
+      "reason": "Exact final five-arm FCooper architecture and recovered weights",
+      "sha256": "a6015df1acb9b31c8fb975ca1b36bf5c558a965cc7635754c6b73ea1e45cbdba",
+      "source_mtime_ns": 1784868738000000000
+    },
+    {
+      "source": "/home/jichengzhi/lane_c_orin_fcooper_stage6_five_config_20260724/source/search_artifacts/sources/32x32x64x32x64/fcooper_dense_32x32x64x32x64.onnx",
+      "relative_path": "lane_c_orin_fcooper_stage6_five_config_20260724/source/search_artifacts/sources/32x32x64x32x64/fcooper_dense_32x32x64x32x64.onnx",
+      "bytes": 1285790,
+      "kind": "custom_fcooper_model",
+      "reason": "Exact final five-arm FCooper architecture and recovered weights",
+      "sha256": "3854d04fc855b142203971273cc923522bc6ebb6da1472993dcb19240695cda5",
+      "source_mtime_ns": 1784846374000000000
+    },
+    {
+      "source": "/home/jichengzhi/lane_c_orin_fcooper_stage6_five_config_20260724/source/search_artifacts/sources/32x32x64x32x64/recovered_checkpoint.pth",
+      "relative_path": "lane_c_orin_fcooper_stage6_five_config_20260724/source/search_artifacts/sources/32x32x64x32x64/recovered_checkpoint.pth",
+      "bytes": 2256305,
+      "kind": "custom_fcooper_model",
+      "reason": "Exact final five-arm FCooper architecture and recovered weights",
+      "sha256": "66ff9a6bc2c5b99866d436daf7835c14707c0b54ed69e7d3ae38abf1a4f4ed3d",
+      "source_mtime_ns": 1784841412000000000
+    },
+    {
+      "source": "/home/jichengzhi/lane_c_orin_fcooper_stage6_five_config_20260724/source/search_artifacts/sources/64x128x256x128x256/recovered_checkpoint.pth",
+      "relative_path": "lane_c_orin_fcooper_stage6_five_config_20260724/source/search_artifacts/sources/64x128x256x128x256/recovered_checkpoint.pth",
+      "bytes": 32314969,
+      "kind": "custom_fcooper_model",
+      "reason": "Exact final five-arm FCooper architecture and recovered weights",
+      "sha256": "9ba4786726c71b226ee9ee9561ea82bfe92a21909ddad7653896dd34fb06d0c0",
+      "source_mtime_ns": 1706166108000000000
+    },
+    {
+      "source": "/home/jichengzhi/lane_c_orin_fcooper_stage6_five_config_20260724/source/search_artifacts/sources/64x128x256x128x256/fcooper_dense_64x128x256x128x256.onnx",
+      "relative_path": "lane_c_orin_fcooper_stage6_five_config_20260724/source/search_artifacts/sources/64x128x256x128x256/fcooper_dense_64x128x256x128x256.onnx",
+      "bytes": 18066633,
+      "kind": "custom_fcooper_model",
+      "reason": "Exact final five-arm FCooper architecture and recovered weights",
+      "sha256": "4370cb078e53e84838414c2c3947b5986bded82f2b217631ad4e8356846840cc",
+      "source_mtime_ns": 1784847707000000000
+    }
+  ],
+  "verified": true,
+  "verification": "Every archived regular file SHA256 equals the source-side streaming hash; source stat remained stable",
+  "archive_parts": [
+    {
+      "name": "fcooper-assets.tar.gz.part000",
+      "bytes": 36717260,
+      "sha256": "abc47e11fa39f49f5e1dbf1a8e9e9cf3047b5dd32d7874eea3892faa9e39f0ab"
+    }
+  ],
+  "compressed_bytes": 36717260,
+  "logical_bytes": 63156308,
+  "restore_root": "/home/jichengzhi",
+  "public_download_url": null
+}

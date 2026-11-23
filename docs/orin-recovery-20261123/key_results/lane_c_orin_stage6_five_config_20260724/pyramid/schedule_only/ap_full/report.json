@@ -1,0 +1,120 @@
+{
+  "ap30": 0.8326826064940739,
+  "ap50": 0.7907684832747645,
+  "ap70": 0.6313895459546577,
+  "ap_measured": true,
+  "checkpoint_epoch": 23,
+  "checkpoint_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/pyramid/064x128x256/net_epoch23.pth",
+  "checkpoint_sha256": "4ccc6fe1f7cc13b5d1294f74014b01e849cc8e90b69cbded14158e1999fa42b2",
+  "ckpt_dir": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/pyramid/064x128x256",
+  "config_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/pyramid/064x128x256/config.yaml",
+  "config_sha256": "143831e75b041f9cd571c0e5a73c58bdfcbe092f7162c0130f3dcc146bb98088",
+  "dataset_split_file": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/val.json",
+  "dataset_split_sha256": "f6805e26aec6af0f994395ad8c74105e65c88770bc7261bd7e995e30d47e2814",
+  "elapsed_secs": 2294.7139160633087,
+  "engine_ap_claim": true,
+  "engine_ap_claim_blockers": [],
+  "engine_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/pyramid/schedule_only/backbone.engine",
+  "engine_sha256": "e7c4be7994b89e47c1e25b4a8ea52081da21cb2a2de5d8fe3dbf1c00f6805329",
+  "failed_samples": 0,
+  "fallback_samples": 0,
+  "full_ap_min_samples": 1789,
+  "head_output_samples": [
+    {
+      "cls_preds": {
+        "dtype": "float32",
+        "max": 3.4860799312591553,
+        "mean": -6.486489772796631,
+        "min": -16.401687622070312,
+        "path": "",
+        "shape": [
+          1,
+          2,
+          128,
+          256
+        ],
+        "size": 65536,
+        "std": 1.2896076440811157,
+        "tensor_name": "cls_preds"
+      },
+      "dir_preds": {
+        "dtype": "float32",
+        "max": 5.282411575317383,
+        "mean": 0.00018475204706192017,
+        "min": -5.20576286315918,
+        "path": "",
+        "shape": [
+          1,
+          4,
+          128,
+          256
+        ],
+        "size": 131072,
+        "std": 0.5429790019989014,
+        "tensor_name": "dir_preds"
+      },
+      "occ_single_list": {
+        "length": 3,
+        "tensor_name": "occ_single_list",
+        "type": "list"
+      },
+      "pyramid": {
+        "tensor_name": "pyramid",
+        "type": "str"
+      },
+      "reg_preds": {
+        "dtype": "float32",
+        "max": 2.1251864433288574,
+        "mean": -0.315064936876297,
+        "min": -5.962828636169434,
+        "path": "",
+        "shape": [
+          1,
+          14,
+          128,
+          256
+        ],
+        "size": 458752,
+        "std": 1.2208523750305176,
+        "tensor_name": "reg_preds"
+      },
+      "sample_index": 0
+    }
+  ],
+  "label": "pyramid_schedule_only_orin",
+  "model_dtype_counts": {
+    "torch.float32": 5496151,
+    "torch.int64": 61
+  },
+  "output_error_summary": {
+    "all_finite": true,
+    "max_abs_err": 0.04824066162109375,
+    "mean_abs_err": 8.06663266162932e-05,
+    "nonfinite_count": 0,
+    "num_compared": 5367,
+    "num_records": 5367,
+    "shape_mismatch_count": 0
+  },
+  "precision_tag": "fp32",
+  "pred_nonempty_count": 1789,
+  "pred_total_count": 33679,
+  "processed_samples": 1789,
+  "protocol": {
+    "bridge": "stage3_trt_multiscale_ap_bridge_v3",
+    "engine_batch": 2,
+    "eval_range": "102.4,51.2",
+    "expected_output_channels": [
+      64,
+      128,
+      256
+    ],
+    "fallback_policy": "forbidden_for_engine_ap_claim",
+    "full_ap_min_samples": 1789,
+    "input_route": "HEAL spatial_features -> TensorRT multiscale outputs -> PyTorch fusion/head/postprocess",
+    "precision_tag": "fp32"
+  },
+  "protocol_sha256": "691cff987721504ef0fae7033697e83b0e0a97154c5acae704973c0858f7f5c7",
+  "resume_epoch": 23,
+  "schema": "stage3_trt_multiscale_ap_bridge_v3",
+  "status": "success"
+}

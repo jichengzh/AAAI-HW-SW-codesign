@@ -1,0 +1,53 @@
+{
+  "ap30": 0.6304612341276716,
+  "ap50": 0.48967690742546705,
+  "ap70": 0.26829257351453284,
+  "checkpoint_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/codriving/016x032x064/net_epoch9.pth",
+  "config_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/codriving/016x032x064/config.yaml",
+  "dataset_path": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/val.json",
+  "elapsed_secs": 1528.623097896576,
+  "engine_calls": 3578,
+  "engine_calls_per_sample": 2.0,
+  "engine_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/codriving/joint_shcosearch_fp16/backbone.engine",
+  "engine_samples": 1789,
+  "failed_samples": 0,
+  "fallback_samples": 0,
+  "gates": {
+    "blockers": [],
+    "full_1789": true,
+    "sanity_16": true
+  },
+  "model_dir": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/codriving/016x032x064",
+  "output_vs_reference_error": {
+    "all_finite": true,
+    "max_abs_err": 0.08576351404190063,
+    "mean_abs_err": 0.0020217324896605045,
+    "nonfinite_count": 0,
+    "num_compared": 10734,
+    "num_records": 10734,
+    "shape_mismatch_count": 0
+  },
+  "pipeline_scope": "codriving_resnet_trt_in_full_pytorch_fusion_head_postprocess",
+  "processed_samples": 1789,
+  "protocol": {
+    "engine_batch": 2,
+    "engine_inputs": 1,
+    "engine_outputs": 3,
+    "fallback_policy": "forbidden",
+    "full_samples": 1789,
+    "patch_target": "model.backbone.resnet",
+    "pipeline_scope": "codriving_resnet_trt_in_full_pytorch_fusion_head_postprocess",
+    "precision_tag": "fp16",
+    "sanity_samples": 16,
+    "schema": "stage3_codriving_trt_multiscale_ap_bridge_v3_protocol_v1"
+  },
+  "schema": "stage3_codriving_trt_multiscale_ap_bridge_v3",
+  "sha256": {
+    "checkpoint": "ccbd1c2881f6736e1e4a57e9e873583befbe3a3fdc11f21c2a381a63d4356a8e",
+    "config": "cb2beb7ea92d2fb17e16f03c5ca6b9286713663fc67c499c7a0b10127dc80a69",
+    "dataset": "f6805e26aec6af0f994395ad8c74105e65c88770bc7261bd7e995e30d47e2814",
+    "engine": "9ab2eb723b90f0e4ee7ae0fb1827bb10f8c69822545db5244bbff1830a01de87",
+    "protocol": "8591cf8d7ecdc8bfc8f39a6136562a0525c45d7fa10534bfc5890b3e4ca53a09"
+  },
+  "status": "success"
+}

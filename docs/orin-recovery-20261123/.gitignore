@@ -1,0 +1,34 @@
+# Binary assets belong in separate backed-up storage / Release, not ordinary Git.
+offline_assets/
+work/
+*.tar
+*.tar.gz
+*.tar.xz
+*.tgz
+*.zip
+*.part[0-9]*
+*.onnx
+*.engine
+*.plan
+*.pth
+*.pt
+*.whl
+*.npy
+*.npz
+*.so
+*.a
+*.o
+*.pyc
+__pycache__/
+.git/
+.venv/
+venv/
+miniforge3/
+build/
+devel/
+.env
+.env.*
+*.pem
+id_rsa*
+id_ed25519*
+# Source payload may contain vendored license notices: retain those notices.

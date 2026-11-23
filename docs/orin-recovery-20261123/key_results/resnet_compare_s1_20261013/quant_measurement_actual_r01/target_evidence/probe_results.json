@@ -1,0 +1,398 @@
+{
+  "control_a1": {
+    "differences": {
+      "cls_preds": {
+        "allclose": false,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 0.39206743240356445,
+        "outside_count": 1811,
+        "rtol": 0.0001,
+        "shape": [
+          1,
+          2,
+          128,
+          256
+        ]
+      },
+      "dir_preds": {
+        "allclose": false,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 0.32106614112854004,
+        "outside_count": 3396,
+        "rtol": 0.0001,
+        "shape": [
+          1,
+          4,
+          128,
+          256
+        ]
+      },
+      "final_freqEMA_0": {
+        "allclose": true,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 3.0528753995895386e-06,
+        "outside_count": 0,
+        "rtol": 0.0001,
+        "shape": [
+          2,
+          256
+        ]
+      },
+      "final_freqEMA_1": {
+        "allclose": true,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 3.0528753995895386e-06,
+        "outside_count": 0,
+        "rtol": 0.0001,
+        "shape": [
+          2,
+          256
+        ]
+      },
+      "final_freqEMA_2": {
+        "allclose": true,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 6.1034224927425385e-06,
+        "outside_count": 0,
+        "rtol": 0.0001,
+        "shape": [
+          2,
+          256
+        ]
+      },
+      "reg_preds": {
+        "allclose": false,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 0.31069302558898926,
+        "outside_count": 7900,
+        "rtol": 0.0001,
+        "shape": [
+          1,
+          14,
+          128,
+          256
+        ]
+      }
+    },
+    "execution": {
+      "convinteger": 0,
+      "kernel_count": 2323,
+      "providers": [
+        "CPUExecutionProvider"
+      ]
+    },
+    "graph_sha256": "fb55b940b9a19decc14c046b083b393c0ff891a9cdc381b29ca9689d9f945146",
+    "versions": {
+      "numpy": "1.26.4",
+      "numpy_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py",
+      "onnxruntime": "1.27.0",
+      "ort_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py",
+      "python": "3.12.10",
+      "runtime_binary": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so",
+      "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+    }
+  },
+  "control_a2": {
+    "differences": {
+      "cls_preds": {
+        "allclose": true,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 0.0,
+        "outside_count": 0,
+        "rtol": 0.0001,
+        "shape": [
+          1,
+          2,
+          128,
+          256
+        ]
+      },
+      "dir_preds": {
+        "allclose": true,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 0.0,
+        "outside_count": 0,
+        "rtol": 0.0001,
+        "shape": [
+          1,
+          4,
+          128,
+          256
+        ]
+      },
+      "final_freqEMA_0": {
+        "allclose": true,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 0.0,
+        "outside_count": 0,
+        "rtol": 0.0001,
+        "shape": [
+          2,
+          256
+        ]
+      },
+      "final_freqEMA_1": {
+        "allclose": true,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 0.0,
+        "outside_count": 0,
+        "rtol": 0.0001,
+        "shape": [
+          2,
+          256
+        ]
+      },
+      "final_freqEMA_2": {
+        "allclose": true,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 0.0,
+        "outside_count": 0,
+        "rtol": 0.0001,
+        "shape": [
+          2,
+          256
+        ]
+      },
+      "reg_preds": {
+        "allclose": true,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 0.0,
+        "outside_count": 0,
+        "rtol": 0.0001,
+        "shape": [
+          1,
+          14,
+          128,
+          256
+        ]
+      }
+    },
+    "execution": {
+      "convinteger": 0,
+      "kernel_count": 2362,
+      "providers": [
+        "CPUExecutionProvider"
+      ]
+    },
+    "graph_sha256": "2f687e405ee0766cf2fbaba4b4846859597ecbff12ae8966c0fa196d548692c3",
+    "versions": {
+      "numpy": "1.26.4",
+      "numpy_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py",
+      "onnxruntime": "1.27.0",
+      "ort_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py",
+      "python": "3.12.10",
+      "runtime_binary": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so",
+      "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+    }
+  },
+  "integer_a1": {
+    "differences": {
+      "cls_preds": {
+        "allclose": false,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 0.39206743240356445,
+        "outside_count": 1811,
+        "rtol": 0.0001,
+        "shape": [
+          1,
+          2,
+          128,
+          256
+        ]
+      },
+      "dir_preds": {
+        "allclose": false,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 0.32106614112854004,
+        "outside_count": 3396,
+        "rtol": 0.0001,
+        "shape": [
+          1,
+          4,
+          128,
+          256
+        ]
+      },
+      "final_freqEMA_0": {
+        "allclose": true,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 3.0528753995895386e-06,
+        "outside_count": 0,
+        "rtol": 0.0001,
+        "shape": [
+          2,
+          256
+        ]
+      },
+      "final_freqEMA_1": {
+        "allclose": true,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 3.0528753995895386e-06,
+        "outside_count": 0,
+        "rtol": 0.0001,
+        "shape": [
+          2,
+          256
+        ]
+      },
+      "final_freqEMA_2": {
+        "allclose": true,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 6.1034224927425385e-06,
+        "outside_count": 0,
+        "rtol": 0.0001,
+        "shape": [
+          2,
+          256
+        ]
+      },
+      "reg_preds": {
+        "allclose": false,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 0.31069302558898926,
+        "outside_count": 7900,
+        "rtol": 0.0001,
+        "shape": [
+          1,
+          14,
+          128,
+          256
+        ]
+      }
+    },
+    "execution": {
+      "convinteger": 122,
+      "kernel_count": 2811,
+      "providers": [
+        "CPUExecutionProvider"
+      ]
+    },
+    "graph_sha256": "7f4ab2c5699f91b1872ec94fc756a81873e14fb2f8742179d9d8bf3a81bb96d4",
+    "versions": {
+      "numpy": "1.26.4",
+      "numpy_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py",
+      "onnxruntime": "1.27.0",
+      "ort_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py",
+      "python": "3.12.10",
+      "runtime_binary": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so",
+      "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+    }
+  },
+  "integer_a2": {
+    "differences": {
+      "cls_preds": {
+        "allclose": true,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 0.0,
+        "outside_count": 0,
+        "rtol": 0.0001,
+        "shape": [
+          1,
+          2,
+          128,
+          256
+        ]
+      },
+      "dir_preds": {
+        "allclose": true,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 0.0,
+        "outside_count": 0,
+        "rtol": 0.0001,
+        "shape": [
+          1,
+          4,
+          128,
+          256
+        ]
+      },
+      "final_freqEMA_0": {
+        "allclose": true,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 0.0,
+        "outside_count": 0,
+        "rtol": 0.0001,
+        "shape": [
+          2,
+          256
+        ]
+      },
+      "final_freqEMA_1": {
+        "allclose": true,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 0.0,
+        "outside_count": 0,
+        "rtol": 0.0001,
+        "shape": [
+          2,
+          256
+        ]
+      },
+      "final_freqEMA_2": {
+        "allclose": true,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 0.0,
+        "outside_count": 0,
+        "rtol": 0.0001,
+        "shape": [
+          2,
+          256
+        ]
+      },
+      "reg_preds": {
+        "allclose": true,
+        "atol": 1e-05,
+        "dtype": "float32",
+        "max_abs_error": 0.0,
+        "outside_count": 0,
+        "rtol": 0.0001,
+        "shape": [
+          1,
+          14,
+          128,
+          256
+        ]
+      }
+    },
+    "execution": {
+      "convinteger": 122,
+      "kernel_count": 2850,
+      "providers": [
+        "CPUExecutionProvider"
+      ]
+    },
+    "graph_sha256": "dbc18dd125d57e0c03e958064a31c683551428330b17585d5a25d66f302647df",
+    "versions": {
+      "numpy": "1.26.4",
+      "numpy_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py",
+      "onnxruntime": "1.27.0",
+      "ort_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py",
+      "python": "3.12.10",
+      "runtime_binary": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so",
+      "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "status": "PASS_ACTUAL_FULL1789_AUDIT_COMPLETION",
+  "actual_python_exit_code": 0,
+  "exit_evidence": "exec session17932 final result exit_code0, wall45.154671498 final poll; command redirected to actual_audit_r03.log",
+  "rng_rows": 1789,
+  "rng_arrays": 5367,
+  "code_freeze_unchanged": true,
+  "official_source_head": "f02056c574f233f2df16971845927676c2fa74e9",
+  "files_sha256": {
+    "receipt_r01.json": "ead9d1bc8a282321e187e5583af29b2ddf62b55df65070ceb9431f732a29d202",
+    "code_freeze_r02.json": "779c8a3f596a3fd0e4e58df2a397e7d032aa8b87ccfde7e5a000f1b9d649719c",
+    "actual_audit_r03.log": "0d3e77b87597bf4eb8b2a75bfd789cabe392563d8af27a0783e2bfde920e236d",
+    "rng_regenerated_r01.jsonl": "5eec3982ad50e4a00be9103ef061e0982f6b325926229874cba02eae2f292b12",
+    "tests_green_final.log": "9d2e29b0bb711a526796811eb1951c44cd8022cb06c2f708e217d00b456c11b9",
+    "coverage_unit_and_actual_integration.txt": "d3015001a0dd9c682b52c9306259a40b94e361e053ddba342b6740b0d1e868f6",
+    "auditor_runtime_r01.json": "73cfe4a4685f922c8ad272694b1921d599d38bb5a74a3fca241f81d34366fe2d",
+    "transport_receipt_crosscheck_r01.json": "c4dc7b700959c08f972c0c0edeef92a6a25309ef96e287682193122563b3dc74",
+    "record_len_voxel_contract_r01.json": "d9173c923a5bc4a3956e81be2d8eede92390cdf6ef841359c4b09960180def71",
+    "float32_roundtrip_r01.json": "d65e7c8de41e39178ffecd0745b69decc83ddaa75f9846c0b72ac32453ba55f6"
+  },
+  "coverage_scope": "14 unit/regression tests plus actual full1789 CPU integration audit; not unit-only coverage"
+}

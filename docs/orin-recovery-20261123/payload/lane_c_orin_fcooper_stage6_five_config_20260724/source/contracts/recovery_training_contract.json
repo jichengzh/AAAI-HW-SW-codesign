@@ -1,0 +1,20 @@
+{
+  "amp_fp16": true,
+  "early_stopping_min_delta": 0.0001,
+  "early_stopping_patience": 3,
+  "full_train_split": true,
+  "full_validation_split": true,
+  "importance_criterion": "conv_filter_l1",
+  "initialization_policy": "scanner_dependency_l1_v2",
+  "minimum_epochs": 4,
+  "num_workers": 4,
+  "optimizer_source": "frozen_model_config",
+  "prefix_projection_is_final_measurement_source": false,
+  "recovery_epochs": 8,
+  "scheduler_source": "frozen_model_config",
+  "schema_version": "fcooper_recovery_training_contract_v2",
+  "seed": 20260723,
+  "start_epoch": 23,
+  "train_shuffle": true,
+  "validation_shuffle": false
+}

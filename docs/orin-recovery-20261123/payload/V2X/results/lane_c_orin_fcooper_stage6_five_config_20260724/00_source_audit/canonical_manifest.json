@@ -1,0 +1,275 @@
+{
+  "arms": {
+    "compress_then_tune": {
+      "builder_optimization_level": null,
+      "builder_policy": "trt85_default",
+      "checkpoint_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/64x64x64x32x64/recovered_checkpoint.pth",
+      "checkpoint_sha256": "a6015df1acb9b31c8fb975ca1b36bf5c558a965cc7635754c6b73ea1e45cbdba",
+      "config_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/64x64x64x32x64/config.yaml",
+      "config_sha256": "4e96d01fadb4336029a65eb1e06f4b053c9ef5751a2185e6cd6aa308d4f32feb",
+      "input_name": "spatial_features",
+      "input_shape": [
+        5,
+        64,
+        512,
+        512
+      ],
+      "onnx_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/64x64x64x32x64/fcooper_dense_64x64x64x32x64.onnx",
+      "onnx_sha256": "52865e600e7d38e81e85c6d3df96e5169cdb2e19c9c64f547b963d7e28559b96",
+      "output_contract_source": "source_export_report",
+      "output_dtype": "float32",
+      "output_name": "encoded_features",
+      "output_shape": [
+        5,
+        64,
+        256,
+        256
+      ],
+      "q_mode": "fp16",
+      "raw_onnx_output_shape": [
+        null,
+        64,
+        null,
+        null
+      ],
+      "requires_trt_static_resolution": true,
+      "runtime": "trt",
+      "source_export_report": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/64x64x64x32x64/source_export_report.json",
+      "widths": [
+        64,
+        64,
+        64,
+        32,
+        64
+      ]
+    },
+    "compression_only": {
+      "builder_optimization_level": null,
+      "builder_policy": "trt85_default",
+      "checkpoint_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/32x64x64x32x64/recovered_checkpoint.pth",
+      "checkpoint_sha256": "b46497fce1e9529c2748e1777fb1f3c786c41c3e0cacc168ed59f2b4f3a837af",
+      "config_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/32x64x64x32x64/config.yaml",
+      "config_sha256": "256837ebda0d1fa705d2d59e64b8d128c30f1f84d1a6a36aa979ec31410560ba",
+      "input_name": "spatial_features",
+      "input_shape": [
+        5,
+        64,
+        512,
+        512
+      ],
+      "onnx_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/32x64x64x32x64/fcooper_dense_32x64x64x32x64.onnx",
+      "onnx_sha256": "e91a270037092c342fd7ec36a522dbceea4f4e94f200ec15efd9e4137c14e5eb",
+      "output_contract_source": "source_export_report",
+      "output_dtype": "float32",
+      "output_name": "encoded_features",
+      "output_shape": [
+        5,
+        64,
+        256,
+        256
+      ],
+      "q_mode": "fp16",
+      "raw_onnx_output_shape": [
+        null,
+        64,
+        null,
+        null
+      ],
+      "requires_trt_static_resolution": true,
+      "runtime": "trt",
+      "source_export_report": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/32x64x64x32x64/source_export_report.json",
+      "widths": [
+        32,
+        64,
+        64,
+        32,
+        64
+      ]
+    },
+    "joint_fp16_control": {
+      "builder_optimization_level": null,
+      "builder_policy": "trt85_default",
+      "checkpoint_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/32x32x64x32x64/recovered_checkpoint.pth",
+      "checkpoint_sha256": "66ff9a6bc2c5b99866d436daf7835c14707c0b54ed69e7d3ae38abf1a4f4ed3d",
+      "config_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/32x32x64x32x64/config.yaml",
+      "config_sha256": "a7525a7a3c490b8a363f973f2ea6c9487a2ad5fb588adc6e48b3fa024af55f60",
+      "input_name": "spatial_features",
+      "input_shape": [
+        5,
+        64,
+        512,
+        512
+      ],
+      "joint_cross_precision_control": true,
+      "onnx_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/32x32x64x32x64/fcooper_dense_32x32x64x32x64.onnx",
+      "onnx_sha256": "3854d04fc855b142203971273cc923522bc6ebb6da1472993dcb19240695cda5",
+      "output_contract_source": "source_export_report",
+      "output_dtype": "float32",
+      "output_name": "encoded_features",
+      "output_shape": [
+        5,
+        64,
+        256,
+        256
+      ],
+      "q_mode": "fp16",
+      "raw_onnx_output_shape": [
+        null,
+        64,
+        null,
+        null
+      ],
+      "requires_trt_static_resolution": true,
+      "runtime": "trt",
+      "source_export_report": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/32x32x64x32x64/source_export_report.json",
+      "widths": [
+        32,
+        32,
+        64,
+        32,
+        64
+      ]
+    },
+    "original_default": {
+      "checkpoint_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/64x128x256x128x256/recovered_checkpoint.pth",
+      "checkpoint_sha256": "9ba4786726c71b226ee9ee9561ea82bfe92a21909ddad7653896dd34fb06d0c0",
+      "config_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/64x128x256x128x256/config.yaml",
+      "config_sha256": "8ac5183db729072a4efd50f7eb8b10003263396c6cd7e15d92d520f41cadc1c7",
+      "input_name": "spatial_features",
+      "input_shape": [
+        5,
+        64,
+        512,
+        512
+      ],
+      "onnx_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/64x128x256x128x256/fcooper_dense_64x128x256x128x256.onnx",
+      "onnx_sha256": "4370cb078e53e84838414c2c3947b5986bded82f2b217631ad4e8356846840cc",
+      "output_contract_source": "source_export_report",
+      "output_dtype": "float32",
+      "output_name": "encoded_features",
+      "output_shape": [
+        5,
+        256,
+        256,
+        256
+      ],
+      "q_mode": "fp32",
+      "raw_onnx_output_shape": [
+        null,
+        256,
+        null,
+        null
+      ],
+      "requires_trt_static_resolution": true,
+      "runtime": "native",
+      "source_export_report": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/64x128x256x128x256/source_export_report.json",
+      "widths": [
+        64,
+        128,
+        256,
+        128,
+        256
+      ]
+    },
+    "schedule_only": {
+      "builder_optimization_level": null,
+      "builder_policy": "trt85_default",
+      "checkpoint_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/64x128x256x128x256/recovered_checkpoint.pth",
+      "checkpoint_sha256": "9ba4786726c71b226ee9ee9561ea82bfe92a21909ddad7653896dd34fb06d0c0",
+      "config_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/64x128x256x128x256/config.yaml",
+      "config_sha256": "8ac5183db729072a4efd50f7eb8b10003263396c6cd7e15d92d520f41cadc1c7",
+      "input_name": "spatial_features",
+      "input_shape": [
+        5,
+        64,
+        512,
+        512
+      ],
+      "onnx_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/64x128x256x128x256/fcooper_dense_64x128x256x128x256.onnx",
+      "onnx_sha256": "4370cb078e53e84838414c2c3947b5986bded82f2b217631ad4e8356846840cc",
+      "output_contract_source": "source_export_report",
+      "output_dtype": "float32",
+      "output_name": "encoded_features",
+      "output_shape": [
+        5,
+        256,
+        256,
+        256
+      ],
+      "q_mode": "fp32",
+      "raw_onnx_output_shape": [
+        null,
+        256,
+        null,
+        null
+      ],
+      "requires_trt_static_resolution": true,
+      "runtime": "trt",
+      "source_export_report": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/64x128x256x128x256/source_export_report.json",
+      "strict_fp32": true,
+      "widths": [
+        64,
+        128,
+        256,
+        128,
+        256
+      ]
+    }
+  },
+  "global_identities": {
+    "contracts/formal_contract_v2.json": {
+      "path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/contracts/formal_contract_v2.json",
+      "sha256": "ef35bab47ec147620f1671257a3a9723063754df3675a04ef28e55c7bed12832"
+    },
+    "contracts/frozen_contract.json": {
+      "path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/contracts/frozen_contract.json",
+      "sha256": "c9066feb5bfc992957201adf666c0e08fe4b4d42b7ebaf11e3c94bb56e6f950b"
+    },
+    "contracts/opv2v_test_manifest_fresh.txt": {
+      "path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/contracts/opv2v_test_manifest_fresh.txt",
+      "sha256": "e70afc9c82d29d405d86aa75fc6651a0fec77e88b825934c6464650f3416aafb"
+    },
+    "contracts/recovery_training_contract.json": {
+      "path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/contracts/recovery_training_contract.json",
+      "sha256": "4e854d6fa1f0d538301fdf0640e47cf01db09aa0614093d889de05a4dfeae109"
+    },
+    "final/fcooper_stage6_five_arm_audit_v2.json": {
+      "path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/final/fcooper_stage6_five_arm_audit_v2.json",
+      "sha256": "ed5ba5815496215a431930508436e0eec8aada1e12237d6c0964aee0bbbaae61"
+    },
+    "final/fcooper_stage6_trt_delta_ap_0.10_v2.csv": {
+      "path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/final/fcooper_stage6_trt_delta_ap_0.10_v2.csv",
+      "sha256": "5fb5c816fe5f7987afb8c8c5c158c3ccf654d9bd68c2ded6a4b6cf8d64ff7476"
+    },
+    "original_checkpoint": {
+      "path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/64x128x256x128x256/recovered_checkpoint.pth",
+      "sha256": "9ba4786726c71b226ee9ee9561ea82bfe92a21909ddad7653896dd34fb06d0c0"
+    },
+    "original_config": {
+      "path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/64x128x256x128x256/config.yaml",
+      "sha256": "8ac5183db729072a4efd50f7eb8b10003263396c6cd7e15d92d520f41cadc1c7"
+    },
+    "scanner/fcooper_partition.yaml": {
+      "path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/scanner/fcooper_partition.yaml",
+      "sha256": "5ab65f100fc15338972547b1562d7b9c5c2d3f4a3625ee3409491a76be255364"
+    }
+  },
+  "input_name": "spatial_features",
+  "input_shape": [
+    5,
+    64,
+    512,
+    512
+  ],
+  "output_name": "encoded_features",
+  "scope": "post_scatter_backbone_shrinker",
+  "source_root": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800",
+  "status": "ready",
+  "tensorrt_source_restrictions": {
+    "calibration_cache_read": false,
+    "h800_engine_or_cache_read": false,
+    "onnxruntime": "forbidden",
+    "platform": "Linux aarch64 Orin",
+    "pycuda": "forbidden"
+  }
+}

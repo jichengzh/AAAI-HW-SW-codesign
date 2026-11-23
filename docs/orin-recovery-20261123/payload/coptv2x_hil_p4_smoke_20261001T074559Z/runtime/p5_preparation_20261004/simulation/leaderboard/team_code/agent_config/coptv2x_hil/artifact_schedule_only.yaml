@@ -1,0 +1,26 @@
+arm_id: schedule_only
+model: codriving
+widths: [64, 128, 256]
+precision: fp32
+runtime: tensorrt
+config: source/codriving/064x128x256/config.yaml
+checkpoint: source/codriving/064x128x256/net_epoch29.pth
+engine: codriving/schedule_only/backbone.engine
+artifact_sha256:
+  config: 7601361830f27eb56d328e9f3fb1e8d66847cbcf2dc47f0c3a52dbab318eddc2
+  checkpoint: 43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4
+  engine: a4a464dc3838f35550313b70e52434ed738d4a71ce1c624c708f5447066fed21
+input_contract:
+  spatial_features:
+    shape: [2, 64, 256, 512]
+    dtype: float32
+output_contract:
+  res0:
+    shape: [2, 64, 128, 256]
+    dtype: float32
+  res1:
+    shape: [2, 128, 64, 128]
+    dtype: float32
+  res2:
+    shape: [2, 256, 32, 64]
+    dtype: float32

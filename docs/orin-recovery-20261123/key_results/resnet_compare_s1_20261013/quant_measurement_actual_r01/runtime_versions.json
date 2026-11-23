@@ -1,0 +1,57 @@
+{
+  "host_reference_options": {
+    "graph_optimization": "ORT_DISABLE_ALL",
+    "inter_op_threads": 1,
+    "intra_op_threads": 4,
+    "provider": "CPUExecutionProvider",
+    "version": "1.19.2"
+  },
+  "sessions": {
+    "control_a1": {
+      "numpy": "1.26.4",
+      "numpy_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py",
+      "onnxruntime": "1.27.0",
+      "ort_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py",
+      "python": "3.12.10",
+      "runtime_binary": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so",
+      "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+    },
+    "control_a2": {
+      "numpy": "1.26.4",
+      "numpy_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py",
+      "onnxruntime": "1.27.0",
+      "ort_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py",
+      "python": "3.12.10",
+      "runtime_binary": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so",
+      "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+    },
+    "integer_a1": {
+      "numpy": "1.26.4",
+      "numpy_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py",
+      "onnxruntime": "1.27.0",
+      "ort_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py",
+      "python": "3.12.10",
+      "runtime_binary": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so",
+      "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+    },
+    "integer_a2": {
+      "numpy": "1.26.4",
+      "numpy_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py",
+      "onnxruntime": "1.27.0",
+      "ort_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py",
+      "python": "3.12.10",
+      "runtime_binary": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so",
+      "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+    }
+  },
+  "target_options": {
+    "graph_optimization": "ORT_DISABLE_ALL",
+    "inter_op_threads": 1,
+    "intra_op_threads": 4,
+    "numpy_version": "1.26.4",
+    "provider": "CPUExecutionProvider",
+    "python_major_minor": "3.12",
+    "version": "1.27.0"
+  },
+  "wheel_inventory_sha256": "ecddc921c2544d2ebcbcc381b848ce311268cddcba56774572313df52ae9035d"
+}

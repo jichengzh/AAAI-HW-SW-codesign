@@ -1,0 +1,57 @@
+{
+  "arguments": {
+    "arm": "joint_fp16_control",
+    "build_receipt": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/02_engines/joint_fp16_control/build.json",
+    "checkpoint": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/32x32x64x32x64/recovered_checkpoint.pth",
+    "checkpoint_dir": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/32x32x64x32x64",
+    "config": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/32x32x64x32x64/config.yaml",
+    "engine": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/02_engines/joint_fp16_control/model.engine",
+    "expected_dataset_samples": 2170,
+    "manifest": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/canonical_manifest.json",
+    "max_samples": null,
+    "native": false,
+    "num_workers": 4,
+    "output_json": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/05_full2170_ap/joint_fp16_control/metrics.json",
+    "prediction_manifest": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/05_full2170_ap/joint_fp16_control/prediction_manifest.json",
+    "require_full2170": true,
+    "run_log_manifest": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/05_full2170_ap/joint_fp16_control/run_manifest.json"
+  },
+  "arm": "joint_fp16_control",
+  "build_identity": {
+    "arm": "joint_fp16_control",
+    "build_platform": [
+      "Linux",
+      "aarch64",
+      "Jetson AGX Orin Developer Kit Linux-5.10.216-tegra-aarch64-with-glibc2.29"
+    ],
+    "build_receipt_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/02_engines/joint_fp16_control/build.json",
+    "build_receipt_sha256": "db9a95a03dfffb20e514208114606c96320526546acec93f5d1a436b8a2bada2",
+    "builder_contract": {
+      "builder_optimization_level": null,
+      "builder_policy": "trt85_default",
+      "q_mode": "fp16"
+    },
+    "checkpoint_sha256": "66ff9a6bc2c5b99866d436daf7835c14707c0b54ed69e7d3ae38abf1a4f4ed3d",
+    "config_sha256": "a7525a7a3c490b8a363f973f2ea6c9487a2ad5fb588adc6e48b3fa024af55f60",
+    "engine_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/02_engines/joint_fp16_control/model.engine",
+    "engine_sha256": "aa064a8599a6b4769960154193de420fcf4089712114789ccfc0fa35515d142e",
+    "manifest_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/canonical_manifest.json",
+    "manifest_sha256": "f154788ae6234fed7e0a03d34849d6a7aa72c77c266a4cc76d2479c16849b984",
+    "onnx_path": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/32x32x64x32x64/fcooper_dense_32x32x64x32x64.onnx",
+    "onnx_sha256": "3854d04fc855b142203971273cc923522bc6ebb6da1472993dcb19240695cda5",
+    "scope": "post_scatter_backbone_shrinker",
+    "tensorrt_version": "8.5.2.2"
+  },
+  "checkpoint_sha256": "66ff9a6bc2c5b99866d436daf7835c14707c0b54ed69e7d3ae38abf1a4f4ed3d",
+  "config_sha256": "a7525a7a3c490b8a363f973f2ea6c9487a2ad5fb588adc6e48b3fa024af55f60",
+  "dataset_samples": 2170,
+  "ended_at": "2026-07-25T07:54:31.093534+00:00",
+  "engine_sha256": "aa064a8599a6b4769960154193de420fcf4089712114789ccfc0fa35515d142e",
+  "output_json_sha256": "9776ce087f56047bb9de7ab221d1325a8c5d2625377adae3f3562d5204fa7346",
+  "prediction_manifest_sha256": "05a4a4b4a4ae79b445db97404a33f6a5fb89c61adf1e1c47d1a1686b61ff2c50",
+  "runtime": "trt",
+  "schema_version": "fcooper_ap_run_log_v1",
+  "scope": "post_scatter_backbone_shrinker",
+  "started_at": "2026-07-25T06:47:16.681121+00:00",
+  "status": "success"
+}

@@ -1,0 +1,351 @@
+{
+  "batch_order": [
+    "ego",
+    "rsu"
+  ],
+  "route_id": "Town05-route-2",
+  "samples": [
+    {
+      "inputs": {
+        "spatial_features": {
+          "dtype": "float32",
+          "path": "spatial_features_00000001.npy",
+          "sha256": "d685d156c22e59506a436ed8baccdee5ca093739f1ee94c7da01a89fcd802103",
+          "shape": [
+            2,
+            64,
+            256,
+            512
+          ]
+        }
+      },
+      "sample_id": "carla-frame-1",
+      "source_frame": 1
+    },
+    {
+      "inputs": {
+        "spatial_features": {
+          "dtype": "float32",
+          "path": "spatial_features_00000002.npy",
+          "sha256": "51dacc9f1d4e90bca40d6d06b767b2523c2b9e501c62d4266d5bf2c955e22159",
+          "shape": [
+            2,
+            64,
+            256,
+            512
+          ]
+        }
+      },
+      "sample_id": "carla-frame-2",
+      "source_frame": 2
+    },
+    {
+      "inputs": {
+        "spatial_features": {
+          "dtype": "float32",
+          "path": "spatial_features_00000004.npy",
+          "sha256": "36dedd7fa00597e441393b1c357a05bcdc02e88514e31d00413f0c86433284cc",
+          "shape": [
+            2,
+            64,
+            256,
+            512
+          ]
+        }
+      },
+      "sample_id": "carla-frame-4",
+      "source_frame": 4
+    },
+    {
+      "inputs": {
+        "spatial_features": {
+          "dtype": "float32",
+          "path": "spatial_features_00000006.npy",
+          "sha256": "15f4ab4afc38934912a35a7d547bde5525c410a913389c3127a7beccfb4b109d",
+          "shape": [
+            2,
+            64,
+            256,
+            512
+          ]
+        }
+      },
+      "sample_id": "carla-frame-6",
+      "source_frame": 6
+    },
+    {
+      "inputs": {
+        "spatial_features": {
+          "dtype": "float32",
+          "path": "spatial_features_00000008.npy",
+          "sha256": "43d74305c832a842d7a3b0d0ccf6ccb7513cebfd0330435bdbf99f1ef2af26ab",
+          "shape": [
+            2,
+            64,
+            256,
+            512
+          ]
+        }
+      },
+      "sample_id": "carla-frame-8",
+      "source_frame": 8
+    },
+    {
+      "inputs": {
+        "spatial_features": {
+          "dtype": "float32",
+          "path": "spatial_features_00000012.npy",
+          "sha256": "13192461a3b8cbe150e2aa44b8e466e5e6eabf476832aae4a511e7486a29c2fd",
+          "shape": [
+            2,
+            64,
+            256,
+            512
+          ]
+        }
+      },
+      "sample_id": "carla-frame-12",
+      "source_frame": 12
+    },
+    {
+      "inputs": {
+        "spatial_features": {
+          "dtype": "float32",
+          "path": "spatial_features_00000014.npy",
+          "sha256": "ff93ecb47e4e77f79a0280057b590d4ddbc774dee1809cc11d90d1870f8e80c7",
+          "shape": [
+            2,
+            64,
+            256,
+            512
+          ]
+        }
+      },
+      "sample_id": "carla-frame-14",
+      "source_frame": 14
+    },
+    {
+      "inputs": {
+        "spatial_features": {
+          "dtype": "float32",
+          "path": "spatial_features_00000016.npy",
+          "sha256": "8fd075df3fee766df5507a1eb6930018c7241d4d5f89584811990e0170656aac",
+          "shape": [
+            2,
+            64,
+            256,
+            512
+          ]
+        }
+      },
+      "sample_id": "carla-frame-16",
+      "source_frame": 16
+    },
+    {
+      "inputs": {
+        "spatial_features": {
+          "dtype": "float32",
+          "path": "spatial_features_00000018.npy",
+          "sha256": "95cb2b1ba19824e894fc9e50ca092166c842d38a6656a25a74e0e51877dddd4e",
+          "shape": [
+            2,
+            64,
+            256,
+            512
+          ]
+        }
+      },
+      "sample_id": "carla-frame-18",
+      "source_frame": 18
+    },
+    {
+      "inputs": {
+        "spatial_features": {
+          "dtype": "float32",
+          "path": "spatial_features_00000022.npy",
+          "sha256": "8deb149badab997cc4af333d83764e56fd568601de6923882d9771981eda3ece",
+          "shape": [
+            2,
+            64,
+            256,
+            512
+          ]
+        }
+      },
+      "sample_id": "carla-frame-22",
+      "source_frame": 22
+    },
+    {
+      "inputs": {
+        "spatial_features": {
+          "dtype": "float32",
+          "path": "spatial_features_00000024.npy",
+          "sha256": "16faa1dc44e7c33f4db45009b209cf54f0925884c90b0f90c9d3bfad5584cabe",
+          "shape": [
+            2,
+            64,
+            256,
+            512
+          ]
+        }
+      },
+      "sample_id": "carla-frame-24",
+      "source_frame": 24
+    },
+    {
+      "inputs": {
+        "spatial_features": {
+          "dtype": "float32",
+          "path": "spatial_features_00000026.npy",
+          "sha256": "6906be4edb8b897c14dfbee1b51be505cebe79ab566b1ee4752f32f9e0a0ae1a",
+          "shape": [
+            2,
+            64,
+            256,
+            512
+          ]
+        }
+      },
+      "sample_id": "carla-frame-26",
+      "source_frame": 26
+    },
+    {
+      "inputs": {
+        "spatial_features": {
+          "dtype": "float32",
+          "path": "spatial_features_00000028.npy",
+          "sha256": "d8ffdd9dc2ed34c8b69bfd1e50641b5de9dce3954f31e33f484eeed05c7e1375",
+          "shape": [
+            2,
+            64,
+            256,
+            512
+          ]
+        }
+      },
+      "sample_id": "carla-frame-28",
+      "source_frame": 28
+    },
+    {
+      "inputs": {
+        "spatial_features": {
+          "dtype": "float32",
+          "path": "spatial_features_00000032.npy",
+          "sha256": "0251f2db8b7d4e7a016f3cf12aef350fc041d835ac205fa5574a7d2c0408b332",
+          "shape": [
+            2,
+            64,
+            256,
+            512
+          ]
+        }
+      },
+      "sample_id": "carla-frame-32",
+      "source_frame": 32
+    },
+    {
+      "inputs": {
+        "spatial_features": {
+          "dtype": "float32",
+          "path": "spatial_features_00000034.npy",
+          "sha256": "0966d96424b25563a1dc57bf964918255d44a70a24b7d639c233cd52f303b30a",
+          "shape": [
+            2,
+            64,
+            256,
+            512
+          ]
+        }
+      },
+      "sample_id": "carla-frame-34",
+      "source_frame": 34
+    },
+    {
+      "inputs": {
+        "spatial_features": {
+          "dtype": "float32",
+          "path": "spatial_features_00000036.npy",
+          "sha256": "7164f3305510aa110e5d9b808823cf44e2bc712ec5f272301704d47c27ff23b9",
+          "shape": [
+            2,
+            64,
+            256,
+            512
+          ]
+        }
+      },
+      "sample_id": "carla-frame-36",
+      "source_frame": 36
+    },
+    {
+      "inputs": {
+        "spatial_features": {
+          "dtype": "float32",
+          "path": "spatial_features_00000038.npy",
+          "sha256": "7fe0c17c7d9192648072e5a24f11c565c864e9a721765ba6dbef72ed6166fc2e",
+          "shape": [
+            2,
+            64,
+            256,
+            512
+          ]
+        }
+      },
+      "sample_id": "carla-frame-38",
+      "source_frame": 38
+    },
+    {
+      "inputs": {
+        "spatial_features": {
+          "dtype": "float32",
+          "path": "spatial_features_00000042.npy",
+          "sha256": "4ce390d79dfc49e3093ea87e6f8f7e24f6ae89b3d6326e1b8524f86f32774d0a",
+          "shape": [
+            2,
+            64,
+            256,
+            512
+          ]
+        }
+      },
+      "sample_id": "carla-frame-42",
+      "source_frame": 42
+    },
+    {
+      "inputs": {
+        "spatial_features": {
+          "dtype": "float32",
+          "path": "spatial_features_00000044.npy",
+          "sha256": "b70c9551adbf20d1bbf7aa1970965637f4d101ab012ec4942aad7dac7008754f",
+          "shape": [
+            2,
+            64,
+            256,
+            512
+          ]
+        }
+      },
+      "sample_id": "carla-frame-44",
+      "source_frame": 44
+    },
+    {
+      "inputs": {
+        "spatial_features": {
+          "dtype": "float32",
+          "path": "spatial_features_00000046.npy",
+          "sha256": "aa7b46420fba29b0f3a7046f42c0e292e8b25526189e53f3a67beea60b24abeb",
+          "shape": [
+            2,
+            64,
+            256,
+            512
+          ]
+        }
+      },
+      "sample_id": "carla-frame-46",
+      "source_frame": 46
+    }
+  ],
+  "scenario_id": "scenario1",
+  "schema_version": "coptv2x.local-input-manifest.v1"
+}

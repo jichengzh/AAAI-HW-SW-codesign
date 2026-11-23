@@ -1,0 +1,62 @@
+{
+  "carla_result": {
+    "index": -1,
+    "infractions": {
+      "collisions_layout": 0.0,
+      "collisions_pedestrian": 0.0,
+      "collisions_vehicle": 0.0,
+      "outside_route_lanes": 0.0,
+      "red_light": 0.0,
+      "route_dev": 0.0,
+      "route_timeout": 0.36171508423263904,
+      "stop_infraction": 0.0,
+      "vehicle_blocked": 0.0
+    },
+    "meta": {
+      "exceptions": [
+        [
+          "RouteScenario_2",
+          0,
+          "Failed - Agent timed out"
+        ]
+      ]
+    },
+    "route_id": -1,
+    "scores": {
+      "score_composed": 39.097443542486346,
+      "score_penalty": 1.0,
+      "score_route": 39.097443542486346
+    },
+    "status": "Failed"
+  },
+  "episode": {
+    "arm_id": "compression_only",
+    "carla_result_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compression_only_seed2000_rep0/attempt-01/carla/ego_vehicle_0/results.json",
+    "carla_result_sha256": "bd9065be191d9b848d866120dfdfed9ebee599bbbbd2876f1738c7b19d096bfd",
+    "carla_status": "route_timeout",
+    "classification": "DRIVING_TERMINAL",
+    "fusion_audit_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compression_only_seed2000_rep0/attempt-01/evidence/fusion_audit.jsonl",
+    "fusion_audit_sha256": "af185dc837da8aa4bbead9aae72bf0025d7148d4113ace267de1438bd839ff02",
+    "integration_smoke_only": true,
+    "performance_conclusion_allowed": false,
+    "selected_fusion_frames": 2773,
+    "task_id": "hil_Town05__1_r2_compression_only_seed2000_rep0",
+    "unique_selected_source_frames": 325
+  },
+  "input_authority": {
+    "exact_source_sample_sha256_mapping": true,
+    "expected_frame_count": 2225,
+    "host_input_index_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_smoke_20261001T074559Z/evidence/host-input-index.json",
+    "host_input_index_sha256": "3222c599a0859ede56454f70324a6d600e13e0a87c859a8b76480e9428fc7016",
+    "npy_bytes_rehashed_by_finalizer": false,
+    "orin_input_manifest_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/evidence/orin-local-input-manifest.json",
+    "orin_input_manifest_sha256": "4e59fa61d379a3c9eace433bd8d58e1f15f595bd4cea60cd4351fed226f581fa",
+    "route_scenario_id": "Town05:_1:r2",
+    "verified_frame_identities": 2225
+  },
+  "integration_smoke_only": true,
+  "performance_conclusion_allowed": false,
+  "schema": "coptv2x.hil-p4-bundle-audit.v1",
+  "scope": "single-route five-arm asynchronous HIL integration smoke",
+  "status": "ONE_EPISODE_VALID_P4_STILL_RUNNING"
+}

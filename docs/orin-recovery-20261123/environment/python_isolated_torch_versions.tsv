@@ -1,0 +1,16 @@
+package	version	location
+filelock	3.16.1	/home/jichengzhi/resnet_compare_s1_20261013/isolated_torch_compat_r01/venv/lib/python3.8/site-packages
+fsspec	2025.3.0	/home/jichengzhi/resnet_compare_s1_20261013/isolated_torch_compat_r01/venv/lib/python3.8/site-packages
+Jinja2	3.1.6	/home/jichengzhi/resnet_compare_s1_20261013/isolated_torch_compat_r01/venv/lib/python3.8/site-packages
+MarkupSafe	2.1.5	/home/jichengzhi/resnet_compare_s1_20261013/isolated_torch_compat_r01/venv/lib/python3.8/site-packages
+mpmath	1.3.0	/home/jichengzhi/resnet_compare_s1_20261013/isolated_torch_compat_r01/venv/lib/python3.8/site-packages
+networkx	3.1	/home/jichengzhi/resnet_compare_s1_20261013/isolated_torch_compat_r01/venv/lib/python3.8/site-packages
+numpy	1.22.4	/home/jichengzhi/resnet_compare_s1_20261013/isolated_torch_compat_r01/venv/lib/python3.8/site-packages
+pip	20.0.2	/home/jichengzhi/resnet_compare_s1_20261013/isolated_torch_compat_r01/venv/lib/python3.8/site-packages
+pkg_resources	0.0.0	/home/jichengzhi/resnet_compare_s1_20261013/isolated_torch_compat_r01/venv/lib/python3.8/site-packages
+PyYAML	5.3.1	/home/jichengzhi/resnet_compare_s1_20261013/isolated_torch_compat_r01/venv/lib/python3.8/site-packages
+setuptools	44.0.0	/home/jichengzhi/resnet_compare_s1_20261013/isolated_torch_compat_r01/venv/lib/python3.8/site-packages
+sympy	1.12	/home/jichengzhi/resnet_compare_s1_20261013/isolated_torch_compat_r01/venv/lib/python3.8/site-packages
+tensorrt	8.5.2.2	/home/jichengzhi/resnet_compare_s1_20261013/isolated_torch_compat_r01/venv/lib/python3.8/site-packages
+torch	2.1.0a0+41361538.nv23.6	/home/jichengzhi/resnet_compare_s1_20261013/isolated_torch_compat_r01/venv/lib/python3.8/site-packages
+typing_extensions	4.13.2	/home/jichengzhi/resnet_compare_s1_20261013/isolated_torch_compat_r01/venv/lib/python3.8/site-packages

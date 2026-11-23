@@ -1,0 +1,29 @@
+FROM ros@sha256:7bc031f0f6603d9ee6a21ccc0d8f6b9204d7f2a9e1dcbf9181cc0926c0e30a06
+
+ARG ROS2_TRACING_COMMIT=449a0123fd12032519ca6bea2209cc0505304771
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+       git \
+       liblttng-ust-dev \
+       lttng-tools \
+       ros-foxy-ros2trace \
+    && mkdir -p /opt/ros2-tracing-src \
+    && git -C /opt/ros2-tracing-src init \
+    && git -C /opt/ros2-tracing-src remote add origin https://github.com/ros2/ros2_tracing.git \
+    && git -C /opt/ros2-tracing-src fetch --depth 1 origin "${ROS2_TRACING_COMMIT}" \
+    && git -C /opt/ros2-tracing-src checkout --detach FETCH_HEAD \
+    && bash -lc 'source /opt/ros/foxy/setup.bash \
+       && cd /opt/ros2-tracing-src \
+       && colcon build --merge-install \
+          --install-base /opt/ros2-tracing-overlay \
+          --packages-select tracetools \
+          --cmake-args -DCMAKE_BUILD_TYPE=Release -DTRACETOOLS_DISABLED=OFF' \
+    && rm -rf /var/lib/apt/lists/* \
+       /opt/ros2-tracing-src/.git \
+       /opt/ros2-tracing-src/build \
+       /opt/ros2-tracing-src/log
+
+# Source both files before launching traced nodes:
+#   source /opt/ros/foxy/setup.bash
+#   source /opt/ros2-tracing-overlay/local_setup.bash

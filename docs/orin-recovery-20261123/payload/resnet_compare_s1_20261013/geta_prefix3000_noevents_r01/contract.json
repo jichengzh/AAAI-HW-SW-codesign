@@ -1,0 +1,23 @@
+{
+  "scope": "diagnostic_no_cuda_timing_events_real_final_prefix3000_not_accuracy",
+  "samples": 3000,
+  "offset": 0,
+  "repetitions": 1,
+  "batch_size": 1,
+  "warmup": 0,
+  "jit_policy": "default_unchanged",
+  "final_file_sha256": "34117fa447b6cc4236b59e3f2c804f2a69fd01f221b25bcc7cf0983400e077a0",
+  "final_sample_manifest_sha256": "98395d0907d3bee96b59ed4baa9d5aa6d0b693599d33163a3fc7aa048595d2c5",
+  "prefix_rows_sha256": "d2d03d147d4da49ba6b9e0820b1f21f04edcf4c73d6bf67eb6e439570c618d33",
+  "preprocess_source_sha256": {
+    "/home/jichengzhi/V2X_resnet_compare_s1_20261013/scripts/resnet_frozen_validate.py": "ed615ac0d5e08bfbb4dae4d1ab20d62de97db798ac5a4164bd5e094c105ae9dd",
+    "/home/jichengzhi/V2X_resnet_compare_s1_20261013/framework/resnet_compare/data.py": "e842f35d1d084c1cc8e453d0fe86aed5563c02e4fedf70927235343de5354035"
+  },
+  "code_sha256": {
+    "prefix.py": "094035373a8b14e5f81336dbbf028b942c9df4528cf79bf2e7d8726537f2ccd2",
+    "protocol.py": "6214df738caa17bb1d51e9b08d7c62658c8c5a89ac21a9de4da16a4684ed9b7d"
+  },
+  "execution_path": "direct_model_CPU_to_CUDA_half_then_blocking_CPU_return",
+  "cuda_timing_events": 0,
+  "original_contract_sha256": "26317babc2d2cc3e7aed95a34de330e63293343d7bc788432b137190253f840f"
+}

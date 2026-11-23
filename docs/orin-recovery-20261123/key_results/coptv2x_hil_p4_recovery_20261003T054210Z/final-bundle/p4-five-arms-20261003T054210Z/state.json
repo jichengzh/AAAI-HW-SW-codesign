@@ -1,0 +1,1629 @@
+{
+  "attempts": {
+    "hil_Town05__1_r2_compress_then_tune_seed2000_rep0": [
+      {
+        "arm_id": "compress_then_tune",
+        "attempt": 1,
+        "carla_result": {
+          "index": -1,
+          "infractions": {
+            "collisions_layout": 0.0,
+            "collisions_pedestrian": 0.0,
+            "collisions_vehicle": 0.0,
+            "outside_route_lanes": 0.0,
+            "red_light": 0.0,
+            "route_dev": 0.0,
+            "route_timeout": 0.1495678301557814,
+            "stop_infraction": 0.0,
+            "vehicle_blocked": 0.0
+          },
+          "meta": {
+            "exceptions": [
+              [
+                "RouteScenario_2",
+                0,
+                "Failed - Agent timed out"
+              ]
+            ]
+          },
+          "route_id": -1,
+          "scores": {
+            "score_composed": 94.55332118893247,
+            "score_penalty": 1.0,
+            "score_route": 94.55332118893247
+          },
+          "status": "Failed"
+        },
+        "classification": "DRIVING_TERMINAL",
+        "command": [
+          "/home/jichengzhi/miniconda3/envs/v2xverse/bin/python",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/leaderboard_evaluator_parameter.py",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "56800",
+          "--trafficManagerPort",
+          "56805",
+          "--trafficManagerSeed",
+          "2000",
+          "--carlaProviderSeed",
+          "2000",
+          "--routes",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/evaluation_routes/town05_short_r2.xml",
+          "--scenarios",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/scenarios/town05_all_scenarios_2.json",
+          "--scenario_parameter",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/scenarios/scenario_parameter_1.yaml",
+          "--repetitions",
+          "1",
+          "--agent",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/team_code/pnp_agent_e2e.py",
+          "--agent-config",
+          "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compress_then_tune_seed2000_rep0/attempt-01/agent_config.yaml",
+          "--track",
+          "SENSORS",
+          "--resume",
+          "0",
+          "--checkpoint",
+          "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compress_then_tune_seed2000_rep0/attempt-01/carla/results.json",
+          "--ego-num",
+          "1",
+          "--skip_existed",
+          "0",
+          "--timeout",
+          "600.0"
+        ],
+        "episode_start": {
+          "command": [
+            "/home/jichengzhi/miniconda3/bin/python",
+            "scripts/coptv2x_hil_episode_services.py",
+            "--mode",
+            "start",
+            "--remote-root",
+            "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+          ],
+          "finished_unix_ns": 1791018968917743607,
+          "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compress_then_tune_seed2000_rep0/attempt-01/evidence/episode-start.log",
+          "return_code": 0,
+          "started_unix_ns": 1791018966034126073
+        },
+        "episode_stop": {
+          "command": [
+            "/home/jichengzhi/miniconda3/bin/python",
+            "scripts/coptv2x_hil_episode_services.py",
+            "--mode",
+            "stop",
+            "--remote-root",
+            "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+          ],
+          "finished_unix_ns": 1791023029590885828,
+          "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compress_then_tune_seed2000_rep0/attempt-01/evidence/episode-stop.log",
+          "return_code": 0,
+          "started_unix_ns": 1791023023603957307
+        },
+        "finished_unix_ns": 1791023029737293840,
+        "return_code": 0,
+        "run_dir": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compress_then_tune_seed2000_rep0/attempt-01",
+        "started_unix_ns": 1791018965969837201,
+        "status": "route_timeout"
+      }
+    ],
+    "hil_Town05__1_r2_compression_only_seed2000_rep0": [
+      {
+        "arm_id": "compression_only",
+        "attempt": 1,
+        "carla_result": {
+          "index": -1,
+          "infractions": {
+            "collisions_layout": 0.0,
+            "collisions_pedestrian": 0.0,
+            "collisions_vehicle": 0.0,
+            "outside_route_lanes": 0.0,
+            "red_light": 0.0,
+            "route_dev": 0.0,
+            "route_timeout": 0.36171508423263904,
+            "stop_infraction": 0.0,
+            "vehicle_blocked": 0.0
+          },
+          "meta": {
+            "exceptions": [
+              [
+                "RouteScenario_2",
+                0,
+                "Failed - Agent timed out"
+              ]
+            ]
+          },
+          "route_id": -1,
+          "scores": {
+            "score_composed": 39.097443542486346,
+            "score_penalty": 1.0,
+            "score_route": 39.097443542486346
+          },
+          "status": "Failed"
+        },
+        "classification": "DRIVING_TERMINAL",
+        "command": [
+          "/home/jichengzhi/miniconda3/envs/v2xverse/bin/python",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/leaderboard_evaluator_parameter.py",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "56800",
+          "--trafficManagerPort",
+          "56805",
+          "--trafficManagerSeed",
+          "2000",
+          "--carlaProviderSeed",
+          "2000",
+          "--routes",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/evaluation_routes/town05_short_r2.xml",
+          "--scenarios",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/scenarios/town05_all_scenarios_2.json",
+          "--scenario_parameter",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/scenarios/scenario_parameter_1.yaml",
+          "--repetitions",
+          "1",
+          "--agent",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/team_code/pnp_agent_e2e.py",
+          "--agent-config",
+          "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compression_only_seed2000_rep0/attempt-01/agent_config.yaml",
+          "--track",
+          "SENSORS",
+          "--resume",
+          "0",
+          "--checkpoint",
+          "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compression_only_seed2000_rep0/attempt-01/carla/results.json",
+          "--ego-num",
+          "1",
+          "--skip_existed",
+          "0",
+          "--timeout",
+          "600.0"
+        ],
+        "episode_start": {
+          "command": [
+            "/home/jichengzhi/miniconda3/bin/python",
+            "scripts/coptv2x_hil_episode_services.py",
+            "--mode",
+            "start",
+            "--remote-root",
+            "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+          ],
+          "finished_unix_ns": 1791011641140984501,
+          "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compression_only_seed2000_rep0/attempt-01/evidence/episode-start.log",
+          "return_code": 0,
+          "started_unix_ns": 1791011638267131426
+        },
+        "episode_stop": {
+          "command": [
+            "/home/jichengzhi/miniconda3/bin/python",
+            "scripts/coptv2x_hil_episode_services.py",
+            "--mode",
+            "stop",
+            "--remote-root",
+            "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+          ],
+          "finished_unix_ns": 1791015044636543007,
+          "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compression_only_seed2000_rep0/attempt-01/evidence/episode-stop.log",
+          "return_code": 0,
+          "started_unix_ns": 1791015038653739089
+        },
+        "finished_unix_ns": 1791015044783434148,
+        "return_code": 0,
+        "run_dir": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compression_only_seed2000_rep0/attempt-01",
+        "started_unix_ns": 1791011638207047895,
+        "status": "route_timeout"
+      }
+    ],
+    "hil_Town05__1_r2_joint_shcosearch_seed2000_rep0": [
+      {
+        "arm_id": "joint_shcosearch",
+        "attempt": 1,
+        "carla_result": {
+          "index": -1,
+          "infractions": {
+            "collisions_layout": 0.0,
+            "collisions_pedestrian": 0.0,
+            "collisions_vehicle": 0.0,
+            "outside_route_lanes": 0.0,
+            "red_light": 0.0,
+            "route_dev": 0.0,
+            "route_timeout": 0.28476098638913194,
+            "stop_infraction": 0.0,
+            "vehicle_blocked": 0.0
+          },
+          "meta": {
+            "exceptions": [
+              [
+                "RouteScenario_2",
+                0,
+                "Failed - Agent timed out"
+              ]
+            ]
+          },
+          "route_id": -1,
+          "scores": {
+            "score_composed": 49.66317634862302,
+            "score_penalty": 1.0,
+            "score_route": 49.66317634862302
+          },
+          "status": "Failed"
+        },
+        "classification": "DRIVING_TERMINAL",
+        "command": [
+          "/home/jichengzhi/miniconda3/envs/v2xverse/bin/python",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/leaderboard_evaluator_parameter.py",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "56800",
+          "--trafficManagerPort",
+          "56805",
+          "--trafficManagerSeed",
+          "2000",
+          "--carlaProviderSeed",
+          "2000",
+          "--routes",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/evaluation_routes/town05_short_r2.xml",
+          "--scenarios",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/scenarios/town05_all_scenarios_2.json",
+          "--scenario_parameter",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/scenarios/scenario_parameter_1.yaml",
+          "--repetitions",
+          "1",
+          "--agent",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/team_code/pnp_agent_e2e.py",
+          "--agent-config",
+          "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_joint_shcosearch_seed2000_rep0/attempt-01/agent_config.yaml",
+          "--track",
+          "SENSORS",
+          "--resume",
+          "0",
+          "--checkpoint",
+          "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_joint_shcosearch_seed2000_rep0/attempt-01/carla/results.json",
+          "--ego-num",
+          "1",
+          "--skip_existed",
+          "0",
+          "--timeout",
+          "600.0"
+        ],
+        "episode_start": {
+          "command": [
+            "/home/jichengzhi/miniconda3/bin/python",
+            "scripts/coptv2x_hil_episode_services.py",
+            "--mode",
+            "start",
+            "--remote-root",
+            "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+          ],
+          "finished_unix_ns": 1791023033280048662,
+          "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_joint_shcosearch_seed2000_rep0/attempt-01/evidence/episode-start.log",
+          "return_code": 0,
+          "started_unix_ns": 1791023029796519102
+        },
+        "episode_stop": {
+          "command": [
+            "/home/jichengzhi/miniconda3/bin/python",
+            "scripts/coptv2x_hil_episode_services.py",
+            "--mode",
+            "stop",
+            "--remote-root",
+            "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+          ],
+          "finished_unix_ns": 1791027058099230753,
+          "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_joint_shcosearch_seed2000_rep0/attempt-01/evidence/episode-stop.log",
+          "return_code": 0,
+          "started_unix_ns": 1791027052316621067
+        },
+        "finished_unix_ns": 1791027058262392168,
+        "return_code": 0,
+        "run_dir": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_joint_shcosearch_seed2000_rep0/attempt-01",
+        "started_unix_ns": 1791023029742288571,
+        "status": "route_timeout"
+      }
+    ],
+    "hil_Town05__1_r2_original_default_seed2000_rep0": [
+      {
+        "arm_id": "original_default",
+        "attempt": 1,
+        "carla_result": {
+          "index": -1,
+          "infractions": {
+            "collisions_layout": 0.0,
+            "collisions_pedestrian": 0.0,
+            "collisions_vehicle": 0.0,
+            "outside_route_lanes": 0.0,
+            "red_light": 0.0,
+            "route_dev": 0.0,
+            "route_timeout": 0.0,
+            "stop_infraction": 0.0,
+            "vehicle_blocked": 0.0
+          },
+          "meta": {
+            "exceptions": [
+              [
+                "RouteScenario_2",
+                0,
+                "Failed - Run scenario crashed"
+              ]
+            ]
+          },
+          "route_id": -1,
+          "scores": {
+            "score_composed": 0.0,
+            "score_penalty": 1.0,
+            "score_route": 0.0
+          },
+          "status": "Failed"
+        },
+        "classification": "INFRA_RETRY",
+        "command": [
+          "/home/jichengzhi/miniconda3/envs/v2xverse/bin/python",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/leaderboard_evaluator_parameter.py",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "56800",
+          "--trafficManagerPort",
+          "56805",
+          "--trafficManagerSeed",
+          "2000",
+          "--carlaProviderSeed",
+          "2000",
+          "--routes",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/evaluation_routes/town05_short_r2.xml",
+          "--scenarios",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/scenarios/town05_all_scenarios_2.json",
+          "--scenario_parameter",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/scenarios/scenario_parameter_1.yaml",
+          "--repetitions",
+          "1",
+          "--agent",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/team_code/pnp_agent_e2e.py",
+          "--agent-config",
+          "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-01/agent_config.yaml",
+          "--track",
+          "SENSORS",
+          "--resume",
+          "0",
+          "--checkpoint",
+          "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-01/carla/results.json",
+          "--ego-num",
+          "1",
+          "--skip_existed",
+          "0",
+          "--timeout",
+          "600.0"
+        ],
+        "episode_start": {
+          "command": [
+            "/home/jichengzhi/miniconda3/bin/python",
+            "scripts/coptv2x_hil_episode_services.py",
+            "--mode",
+            "start",
+            "--remote-root",
+            "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+          ],
+          "finished_unix_ns": 1791006805710002167,
+          "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-01/evidence/episode-start.log",
+          "return_code": 0,
+          "started_unix_ns": 1791006802484698184
+        },
+        "episode_stop": {
+          "command": [
+            "/home/jichengzhi/miniconda3/bin/python",
+            "scripts/coptv2x_hil_episode_services.py",
+            "--mode",
+            "stop",
+            "--remote-root",
+            "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+          ],
+          "finished_unix_ns": 1791006975063906493,
+          "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-01/evidence/episode-stop.log",
+          "return_code": 0,
+          "started_unix_ns": 1791006969174752059
+        },
+        "finished_unix_ns": 1791006975064691004,
+        "return_code": 0,
+        "run_dir": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-01",
+        "started_unix_ns": 1791006802428962120,
+        "status": "Failed - Run scenario crashed"
+      },
+      {
+        "arm_id": "original_default",
+        "attempt": 2,
+        "carla_result": {
+          "index": -1,
+          "infractions": {
+            "collisions_layout": 0.0,
+            "collisions_pedestrian": 0.0,
+            "collisions_vehicle": 0.0,
+            "outside_route_lanes": 0.0,
+            "red_light": 0.0,
+            "route_dev": 0.0,
+            "route_timeout": 0.0,
+            "stop_infraction": 0.0,
+            "vehicle_blocked": 0.0
+          },
+          "meta": {
+            "exceptions": [
+              [
+                "RouteScenario_2",
+                0,
+                "Failed - Run scenario crashed"
+              ]
+            ]
+          },
+          "route_id": -1,
+          "scores": {
+            "score_composed": 0.0,
+            "score_penalty": 1.0,
+            "score_route": 0.0
+          },
+          "status": "Failed"
+        },
+        "classification": "INFRA_RETRY",
+        "command": [
+          "/home/jichengzhi/miniconda3/envs/v2xverse/bin/python",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/leaderboard_evaluator_parameter.py",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "56800",
+          "--trafficManagerPort",
+          "56805",
+          "--trafficManagerSeed",
+          "2000",
+          "--carlaProviderSeed",
+          "2000",
+          "--routes",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/evaluation_routes/town05_short_r2.xml",
+          "--scenarios",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/scenarios/town05_all_scenarios_2.json",
+          "--scenario_parameter",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/scenarios/scenario_parameter_1.yaml",
+          "--repetitions",
+          "1",
+          "--agent",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/team_code/pnp_agent_e2e.py",
+          "--agent-config",
+          "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-02/agent_config.yaml",
+          "--track",
+          "SENSORS",
+          "--resume",
+          "0",
+          "--checkpoint",
+          "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-02/carla/results.json",
+          "--ego-num",
+          "1",
+          "--skip_existed",
+          "0",
+          "--timeout",
+          "600.0"
+        ],
+        "episode_start": {
+          "command": [
+            "/home/jichengzhi/miniconda3/bin/python",
+            "scripts/coptv2x_hil_episode_services.py",
+            "--mode",
+            "start",
+            "--remote-root",
+            "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+          ],
+          "finished_unix_ns": 1791006977997595520,
+          "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-02/evidence/episode-start.log",
+          "return_code": 0,
+          "started_unix_ns": 1791006975172640029
+        },
+        "episode_stop": {
+          "command": [
+            "/home/jichengzhi/miniconda3/bin/python",
+            "scripts/coptv2x_hil_episode_services.py",
+            "--mode",
+            "stop",
+            "--remote-root",
+            "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+          ],
+          "finished_unix_ns": 1791007270808248156,
+          "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-02/evidence/episode-stop.log",
+          "return_code": 0,
+          "started_unix_ns": 1791007265025476095
+        },
+        "finished_unix_ns": 1791007270809544679,
+        "return_code": 0,
+        "run_dir": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-02",
+        "started_unix_ns": 1791006975066690244,
+        "status": "Failed - Run scenario crashed"
+      },
+      {
+        "arm_id": "original_default",
+        "attempt": 3,
+        "classification": "INFRA_RETRY",
+        "finished_unix_ns": 1791007810955983591,
+        "reason": "Observed approximately580 simframes in449 seconds; preserve in-flight evidence and extend episode wallclock budget without altering simulation timing",
+        "return_code": 143,
+        "run_dir": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-03",
+        "status": "operator_wallclock_budget_adjustment"
+      },
+      {
+        "arm_id": "original_default",
+        "attempt": 4,
+        "carla_result": {
+          "index": -1,
+          "infractions": {
+            "collisions_layout": 0.0,
+            "collisions_pedestrian": 0.0,
+            "collisions_vehicle": 0.0,
+            "outside_route_lanes": 0.0,
+            "red_light": 0.0,
+            "route_dev": 0.0,
+            "route_timeout": 0.0,
+            "stop_infraction": 0.0,
+            "vehicle_blocked": 0.0
+          },
+          "meta": {
+            "exceptions": [
+              [
+                "RouteScenario_2",
+                0,
+                "Failed - Run scenario crashed"
+              ]
+            ]
+          },
+          "route_id": -1,
+          "scores": {
+            "score_composed": 0.0,
+            "score_penalty": 1.0,
+            "score_route": 0.0
+          },
+          "status": "Failed"
+        },
+        "classification": "INFRA_RETRY",
+        "command": [
+          "/home/jichengzhi/miniconda3/envs/v2xverse/bin/python",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/leaderboard_evaluator_parameter.py",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "56800",
+          "--trafficManagerPort",
+          "56805",
+          "--trafficManagerSeed",
+          "2000",
+          "--carlaProviderSeed",
+          "2000",
+          "--routes",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/evaluation_routes/town05_short_r2.xml",
+          "--scenarios",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/scenarios/town05_all_scenarios_2.json",
+          "--scenario_parameter",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/scenarios/scenario_parameter_1.yaml",
+          "--repetitions",
+          "1",
+          "--agent",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/team_code/pnp_agent_e2e.py",
+          "--agent-config",
+          "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-04/agent_config.yaml",
+          "--track",
+          "SENSORS",
+          "--resume",
+          "0",
+          "--checkpoint",
+          "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-04/carla/results.json",
+          "--ego-num",
+          "1",
+          "--skip_existed",
+          "0",
+          "--timeout",
+          "600.0"
+        ],
+        "episode_start": {
+          "command": [
+            "/home/jichengzhi/miniconda3/bin/python",
+            "scripts/coptv2x_hil_episode_services.py",
+            "--mode",
+            "start",
+            "--remote-root",
+            "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+          ],
+          "finished_unix_ns": 1791008055966431954,
+          "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-04/evidence/episode-start.log",
+          "return_code": 0,
+          "started_unix_ns": 1791008052791878634
+        },
+        "episode_stop": {
+          "command": [
+            "/home/jichengzhi/miniconda3/bin/python",
+            "scripts/coptv2x_hil_episode_services.py",
+            "--mode",
+            "stop",
+            "--remote-root",
+            "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+          ],
+          "finished_unix_ns": 1791008225667725885,
+          "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-04/evidence/episode-stop.log",
+          "return_code": 0,
+          "started_unix_ns": 1791008219788976463
+        },
+        "finished_unix_ns": 1791008225668966860,
+        "return_code": 0,
+        "run_dir": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-04",
+        "started_unix_ns": 1791008052724564369,
+        "status": "Failed - Run scenario crashed"
+      },
+      {
+        "arm_id": "original_default",
+        "attempt": 5,
+        "carla_result": {
+          "index": -1,
+          "infractions": {
+            "collisions_layout": 0.0,
+            "collisions_pedestrian": 0.0,
+            "collisions_vehicle": 0.0,
+            "outside_route_lanes": 0.0,
+            "red_light": 0.0,
+            "route_dev": 0.0,
+            "route_timeout": 0.20080449827242194,
+            "stop_infraction": 0.0,
+            "vehicle_blocked": 0.0
+          },
+          "meta": {
+            "exceptions": [
+              [
+                "RouteScenario_2",
+                0,
+                "Failed - Agent timed out"
+              ]
+            ]
+          },
+          "route_id": -1,
+          "scores": {
+            "score_composed": 70.4273818859642,
+            "score_penalty": 1.0,
+            "score_route": 70.4273818859642
+          },
+          "status": "Failed"
+        },
+        "classification": "DRIVING_TERMINAL",
+        "command": [
+          "/home/jichengzhi/miniconda3/envs/v2xverse/bin/python",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/leaderboard_evaluator_parameter.py",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "56800",
+          "--trafficManagerPort",
+          "56805",
+          "--trafficManagerSeed",
+          "2000",
+          "--carlaProviderSeed",
+          "2000",
+          "--routes",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/evaluation_routes/town05_short_r2.xml",
+          "--scenarios",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/scenarios/town05_all_scenarios_2.json",
+          "--scenario_parameter",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/scenarios/scenario_parameter_1.yaml",
+          "--repetitions",
+          "1",
+          "--agent",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/team_code/pnp_agent_e2e.py",
+          "--agent-config",
+          "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-05/agent_config.yaml",
+          "--track",
+          "SENSORS",
+          "--resume",
+          "0",
+          "--checkpoint",
+          "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-05/carla/results.json",
+          "--ego-num",
+          "1",
+          "--skip_existed",
+          "0",
+          "--timeout",
+          "600.0"
+        ],
+        "episode_start": {
+          "command": [
+            "/home/jichengzhi/miniconda3/bin/python",
+            "scripts/coptv2x_hil_episode_services.py",
+            "--mode",
+            "start",
+            "--remote-root",
+            "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+          ],
+          "finished_unix_ns": 1791008228616173780,
+          "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-05/evidence/episode-start.log",
+          "return_code": 0,
+          "started_unix_ns": 1791008225795006228
+        },
+        "episode_stop": {
+          "command": [
+            "/home/jichengzhi/miniconda3/bin/python",
+            "scripts/coptv2x_hil_episode_services.py",
+            "--mode",
+            "stop",
+            "--remote-root",
+            "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+          ],
+          "finished_unix_ns": 1791011638055166926,
+          "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-05/evidence/episode-stop.log",
+          "return_code": 0,
+          "started_unix_ns": 1791011632176380756
+        },
+        "finished_unix_ns": 1791011638203662862,
+        "return_code": 0,
+        "run_dir": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-05",
+        "started_unix_ns": 1791008225672755614,
+        "status": "route_timeout"
+      }
+    ],
+    "hil_Town05__1_r2_schedule_only_seed2000_rep0": [
+      {
+        "arm_id": "schedule_only",
+        "attempt": 1,
+        "carla_result": {
+          "index": -1,
+          "infractions": {
+            "collisions_layout": 0.0,
+            "collisions_pedestrian": 0.0,
+            "collisions_vehicle": 0.0,
+            "outside_route_lanes": 0.0,
+            "red_light": 0.0,
+            "route_dev": 0.0,
+            "route_timeout": 0.22168947919834678,
+            "stop_infraction": 0.0,
+            "vehicle_blocked": 0.0
+          },
+          "meta": {
+            "exceptions": [
+              [
+                "RouteScenario_2",
+                0,
+                "Failed - Agent timed out"
+              ]
+            ]
+          },
+          "route_id": -1,
+          "scores": {
+            "score_composed": 63.79254051834482,
+            "score_penalty": 1.0,
+            "score_route": 63.79254051834482
+          },
+          "status": "Failed"
+        },
+        "classification": "DRIVING_TERMINAL",
+        "command": [
+          "/home/jichengzhi/miniconda3/envs/v2xverse/bin/python",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/leaderboard_evaluator_parameter.py",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "56800",
+          "--trafficManagerPort",
+          "56805",
+          "--trafficManagerSeed",
+          "2000",
+          "--carlaProviderSeed",
+          "2000",
+          "--routes",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/evaluation_routes/town05_short_r2.xml",
+          "--scenarios",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/scenarios/town05_all_scenarios_2.json",
+          "--scenario_parameter",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/scenarios/scenario_parameter_1.yaml",
+          "--repetitions",
+          "1",
+          "--agent",
+          "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/team_code/pnp_agent_e2e.py",
+          "--agent-config",
+          "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_schedule_only_seed2000_rep0/attempt-01/agent_config.yaml",
+          "--track",
+          "SENSORS",
+          "--resume",
+          "0",
+          "--checkpoint",
+          "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_schedule_only_seed2000_rep0/attempt-01/carla/results.json",
+          "--ego-num",
+          "1",
+          "--skip_existed",
+          "0",
+          "--timeout",
+          "600.0"
+        ],
+        "episode_start": {
+          "command": [
+            "/home/jichengzhi/miniconda3/bin/python",
+            "scripts/coptv2x_hil_episode_services.py",
+            "--mode",
+            "start",
+            "--remote-root",
+            "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+          ],
+          "finished_unix_ns": 1791015047630753891,
+          "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_schedule_only_seed2000_rep0/attempt-01/evidence/episode-start.log",
+          "return_code": 0,
+          "started_unix_ns": 1791015044856120506
+        },
+        "episode_stop": {
+          "command": [
+            "/home/jichengzhi/miniconda3/bin/python",
+            "scripts/coptv2x_hil_episode_services.py",
+            "--mode",
+            "stop",
+            "--remote-root",
+            "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+          ],
+          "finished_unix_ns": 1791018965824204168,
+          "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_schedule_only_seed2000_rep0/attempt-01/evidence/episode-stop.log",
+          "return_code": 0,
+          "started_unix_ns": 1791018959792605539
+        },
+        "finished_unix_ns": 1791018965965292030,
+        "return_code": 0,
+        "run_dir": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_schedule_only_seed2000_rep0/attempt-01",
+        "started_unix_ns": 1791015044789908484,
+        "status": "route_timeout"
+      }
+    ]
+  },
+  "host_input_index": {
+    "path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_smoke_20261001T074559Z/evidence/host-input-index.json",
+    "route_scenarios_sha256": "f423f9a54203db59a517c9554ce0a41a3e8c186cb6b9832869685ad12e49cf13",
+    "sha256": "3222c599a0859ede56454f70324a6d600e13e0a87c859a8b76480e9428fc7016",
+    "verified_feature_files": 2225,
+    "version": "coptv2x.route-input-host-index.v1"
+  },
+  "manifest_sha256": "6a3523e8c0f9c3648c0cf51ffe0e083f045a84fd094a88db99d98fa3d56dac7e",
+  "manifest_task_ids_sha256": "bd24d62e2cfd7d85ea6b6d747e37b45579c34e69ec9a94c0e2ee7a6a0b633f89",
+  "results": {
+    "hil_Town05__1_r2_compress_then_tune_seed2000_rep0": {
+      "arm_id": "compress_then_tune",
+      "artifact_sha256": {
+        "checkpoint": "f73acdf344cc11bfee6019099e6a3407362feb35109a20bf4ad34dc688fedae7",
+        "config": "e509c1ae7aa4574e3512111bebbfba2e86ed71524db7056796886a96a2789b92",
+        "engine": "df18a052669a836f5094a95a6d8f13f6eef40d02629611efc7c94ee7796846f5"
+      },
+      "attempt": 1,
+      "carla_result": {
+        "index": -1,
+        "infractions": {
+          "collisions_layout": 0.0,
+          "collisions_pedestrian": 0.0,
+          "collisions_vehicle": 0.0,
+          "outside_route_lanes": 0.0,
+          "red_light": 0.0,
+          "route_dev": 0.0,
+          "route_timeout": 0.1495678301557814,
+          "stop_infraction": 0.0,
+          "vehicle_blocked": 0.0
+        },
+        "meta": {
+          "exceptions": [
+            [
+              "RouteScenario_2",
+              0,
+              "Failed - Agent timed out"
+            ]
+          ]
+        },
+        "route_id": -1,
+        "scores": {
+          "score_composed": 94.55332118893247,
+          "score_penalty": 1.0,
+          "score_route": 94.55332118893247
+        },
+        "status": "Failed"
+      },
+      "carla_result_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compress_then_tune_seed2000_rep0/attempt-01/carla/results.json",
+      "classification": "DRIVING_TERMINAL",
+      "command": [
+        "/home/jichengzhi/miniconda3/envs/v2xverse/bin/python",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/leaderboard_evaluator_parameter.py",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "56800",
+        "--trafficManagerPort",
+        "56805",
+        "--trafficManagerSeed",
+        "2000",
+        "--carlaProviderSeed",
+        "2000",
+        "--routes",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/evaluation_routes/town05_short_r2.xml",
+        "--scenarios",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/scenarios/town05_all_scenarios_2.json",
+        "--scenario_parameter",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/scenarios/scenario_parameter_1.yaml",
+        "--repetitions",
+        "1",
+        "--agent",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/team_code/pnp_agent_e2e.py",
+        "--agent-config",
+        "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compress_then_tune_seed2000_rep0/attempt-01/agent_config.yaml",
+        "--track",
+        "SENSORS",
+        "--resume",
+        "0",
+        "--checkpoint",
+        "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compress_then_tune_seed2000_rep0/attempt-01/carla/results.json",
+        "--ego-num",
+        "1",
+        "--skip_existed",
+        "0",
+        "--timeout",
+        "600.0"
+      ],
+      "episode_start": {
+        "command": [
+          "/home/jichengzhi/miniconda3/bin/python",
+          "scripts/coptv2x_hil_episode_services.py",
+          "--mode",
+          "start",
+          "--remote-root",
+          "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+        ],
+        "finished_unix_ns": 1791018968917743607,
+        "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compress_then_tune_seed2000_rep0/attempt-01/evidence/episode-start.log",
+        "return_code": 0,
+        "started_unix_ns": 1791018966034126073
+      },
+      "episode_stop": {
+        "command": [
+          "/home/jichengzhi/miniconda3/bin/python",
+          "scripts/coptv2x_hil_episode_services.py",
+          "--mode",
+          "stop",
+          "--remote-root",
+          "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+        ],
+        "finished_unix_ns": 1791023029590885828,
+        "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compress_then_tune_seed2000_rep0/attempt-01/evidence/episode-stop.log",
+        "return_code": 0,
+        "started_unix_ns": 1791023023603957307
+      },
+      "finished_unix_ns": 1791023029737293840,
+      "fusion_audit_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compress_then_tune_seed2000_rep0/attempt-01/evidence/fusion_audit.jsonl",
+      "hil_audit": {
+        "aoi_frames": 4618,
+        "artifact_sha256": {
+          "checkpoint": "f73acdf344cc11bfee6019099e6a3407362feb35109a20bf4ad34dc688fedae7",
+          "config": "e509c1ae7aa4574e3512111bebbfba2e86ed71524db7056796886a96a2789b92",
+          "engine": "df18a052669a836f5094a95a6d8f13f6eef40d02629611efc7c94ee7796846f5"
+        },
+        "batch_order": [
+          "ego",
+          "rsu"
+        ],
+        "remote_input_tensor_bytes": 0,
+        "result_identity": {
+          "arm_id": "compress_then_tune",
+          "route_id": "Town05-route-2",
+          "run_id": "p4-five-arms-20261003T054210Z",
+          "sample_id": "carla-frame-942",
+          "scenario_id": "scenario1",
+          "schema_version": "coptv2x.hil-trigger.v1",
+          "sequence_no": 377,
+          "source_frame": 942,
+          "source_sim_time_ns": 47150000703
+        },
+        "trigger_identity": {
+          "arm_id": "compress_then_tune",
+          "route_id": "Town05-route-2",
+          "run_id": "p4-five-arms-20261003T054210Z",
+          "sample_id": "carla-frame-5560",
+          "scenario_id": "scenario1",
+          "schema_version": "coptv2x.hil-trigger.v1",
+          "sequence_no": 2225,
+          "source_frame": 5560,
+          "source_sim_time_ns": 278050004143
+        }
+      },
+      "return_code": 0,
+      "run_dir": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compress_then_tune_seed2000_rep0/attempt-01",
+      "started_unix_ns": 1791018965969837201,
+      "status": "route_timeout"
+    },
+    "hil_Town05__1_r2_compression_only_seed2000_rep0": {
+      "arm_id": "compression_only",
+      "artifact_sha256": {
+        "checkpoint": "92dfb0e71d8b26cc15fbdc65504a6e1896343f9fdbbb48ac69aaee80f4646a50",
+        "config": "b991d45e5a65b769077453dd4c7e62cad33d6bfe3c769360003ae3fcb42077dd",
+        "engine": "ac45f2dec35cbef552959724f7e65e79bd223af50c0e31ce432baa06c6512267"
+      },
+      "attempt": 1,
+      "carla_result": {
+        "index": -1,
+        "infractions": {
+          "collisions_layout": 0.0,
+          "collisions_pedestrian": 0.0,
+          "collisions_vehicle": 0.0,
+          "outside_route_lanes": 0.0,
+          "red_light": 0.0,
+          "route_dev": 0.0,
+          "route_timeout": 0.36171508423263904,
+          "stop_infraction": 0.0,
+          "vehicle_blocked": 0.0
+        },
+        "meta": {
+          "exceptions": [
+            [
+              "RouteScenario_2",
+              0,
+              "Failed - Agent timed out"
+            ]
+          ]
+        },
+        "route_id": -1,
+        "scores": {
+          "score_composed": 39.097443542486346,
+          "score_penalty": 1.0,
+          "score_route": 39.097443542486346
+        },
+        "status": "Failed"
+      },
+      "carla_result_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compression_only_seed2000_rep0/attempt-01/carla/results.json",
+      "classification": "DRIVING_TERMINAL",
+      "command": [
+        "/home/jichengzhi/miniconda3/envs/v2xverse/bin/python",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/leaderboard_evaluator_parameter.py",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "56800",
+        "--trafficManagerPort",
+        "56805",
+        "--trafficManagerSeed",
+        "2000",
+        "--carlaProviderSeed",
+        "2000",
+        "--routes",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/evaluation_routes/town05_short_r2.xml",
+        "--scenarios",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/scenarios/town05_all_scenarios_2.json",
+        "--scenario_parameter",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/scenarios/scenario_parameter_1.yaml",
+        "--repetitions",
+        "1",
+        "--agent",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/team_code/pnp_agent_e2e.py",
+        "--agent-config",
+        "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compression_only_seed2000_rep0/attempt-01/agent_config.yaml",
+        "--track",
+        "SENSORS",
+        "--resume",
+        "0",
+        "--checkpoint",
+        "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compression_only_seed2000_rep0/attempt-01/carla/results.json",
+        "--ego-num",
+        "1",
+        "--skip_existed",
+        "0",
+        "--timeout",
+        "600.0"
+      ],
+      "episode_start": {
+        "command": [
+          "/home/jichengzhi/miniconda3/bin/python",
+          "scripts/coptv2x_hil_episode_services.py",
+          "--mode",
+          "start",
+          "--remote-root",
+          "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+        ],
+        "finished_unix_ns": 1791011641140984501,
+        "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compression_only_seed2000_rep0/attempt-01/evidence/episode-start.log",
+        "return_code": 0,
+        "started_unix_ns": 1791011638267131426
+      },
+      "episode_stop": {
+        "command": [
+          "/home/jichengzhi/miniconda3/bin/python",
+          "scripts/coptv2x_hil_episode_services.py",
+          "--mode",
+          "stop",
+          "--remote-root",
+          "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+        ],
+        "finished_unix_ns": 1791015044636543007,
+        "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compression_only_seed2000_rep0/attempt-01/evidence/episode-stop.log",
+        "return_code": 0,
+        "started_unix_ns": 1791015038653739089
+      },
+      "finished_unix_ns": 1791015044783434148,
+      "fusion_audit_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compression_only_seed2000_rep0/attempt-01/evidence/fusion_audit.jsonl",
+      "hil_audit": {
+        "aoi_frames": 4752,
+        "artifact_sha256": {
+          "checkpoint": "92dfb0e71d8b26cc15fbdc65504a6e1896343f9fdbbb48ac69aaee80f4646a50",
+          "config": "b991d45e5a65b769077453dd4c7e62cad33d6bfe3c769360003ae3fcb42077dd",
+          "engine": "ac45f2dec35cbef552959724f7e65e79bd223af50c0e31ce432baa06c6512267"
+        },
+        "batch_order": [
+          "ego",
+          "rsu"
+        ],
+        "remote_input_tensor_bytes": 0,
+        "result_identity": {
+          "arm_id": "compression_only",
+          "route_id": "Town05-route-2",
+          "run_id": "p4-five-arms-20261003T054210Z",
+          "sample_id": "carla-frame-808",
+          "scenario_id": "scenario1",
+          "schema_version": "coptv2x.hil-trigger.v1",
+          "sequence_no": 324,
+          "source_frame": 808,
+          "source_sim_time_ns": 40450000603
+        },
+        "trigger_identity": {
+          "arm_id": "compression_only",
+          "route_id": "Town05-route-2",
+          "run_id": "p4-five-arms-20261003T054210Z",
+          "sample_id": "carla-frame-5560",
+          "scenario_id": "scenario1",
+          "schema_version": "coptv2x.hil-trigger.v1",
+          "sequence_no": 2225,
+          "source_frame": 5560,
+          "source_sim_time_ns": 278050004143
+        }
+      },
+      "return_code": 0,
+      "run_dir": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_compression_only_seed2000_rep0/attempt-01",
+      "started_unix_ns": 1791011638207047895,
+      "status": "route_timeout"
+    },
+    "hil_Town05__1_r2_joint_shcosearch_seed2000_rep0": {
+      "arm_id": "joint_shcosearch",
+      "artifact_sha256": {
+        "checkpoint": "ccbd1c2881f6736e1e4a57e9e873583befbe3a3fdc11f21c2a381a63d4356a8e",
+        "config": "d2bdbf66b4efaf96094761e2586d7c3c8f1f6d1b47c47707cc60e3972655a191",
+        "engine": "9ab2eb723b90f0e4ee7ae0fb1827bb10f8c69822545db5244bbff1830a01de87"
+      },
+      "attempt": 1,
+      "carla_result": {
+        "index": -1,
+        "infractions": {
+          "collisions_layout": 0.0,
+          "collisions_pedestrian": 0.0,
+          "collisions_vehicle": 0.0,
+          "outside_route_lanes": 0.0,
+          "red_light": 0.0,
+          "route_dev": 0.0,
+          "route_timeout": 0.28476098638913194,
+          "stop_infraction": 0.0,
+          "vehicle_blocked": 0.0
+        },
+        "meta": {
+          "exceptions": [
+            [
+              "RouteScenario_2",
+              0,
+              "Failed - Agent timed out"
+            ]
+          ]
+        },
+        "route_id": -1,
+        "scores": {
+          "score_composed": 49.66317634862302,
+          "score_penalty": 1.0,
+          "score_route": 49.66317634862302
+        },
+        "status": "Failed"
+      },
+      "carla_result_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_joint_shcosearch_seed2000_rep0/attempt-01/carla/results.json",
+      "classification": "DRIVING_TERMINAL",
+      "command": [
+        "/home/jichengzhi/miniconda3/envs/v2xverse/bin/python",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/leaderboard_evaluator_parameter.py",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "56800",
+        "--trafficManagerPort",
+        "56805",
+        "--trafficManagerSeed",
+        "2000",
+        "--carlaProviderSeed",
+        "2000",
+        "--routes",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/evaluation_routes/town05_short_r2.xml",
+        "--scenarios",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/scenarios/town05_all_scenarios_2.json",
+        "--scenario_parameter",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/scenarios/scenario_parameter_1.yaml",
+        "--repetitions",
+        "1",
+        "--agent",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/team_code/pnp_agent_e2e.py",
+        "--agent-config",
+        "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_joint_shcosearch_seed2000_rep0/attempt-01/agent_config.yaml",
+        "--track",
+        "SENSORS",
+        "--resume",
+        "0",
+        "--checkpoint",
+        "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_joint_shcosearch_seed2000_rep0/attempt-01/carla/results.json",
+        "--ego-num",
+        "1",
+        "--skip_existed",
+        "0",
+        "--timeout",
+        "600.0"
+      ],
+      "episode_start": {
+        "command": [
+          "/home/jichengzhi/miniconda3/bin/python",
+          "scripts/coptv2x_hil_episode_services.py",
+          "--mode",
+          "start",
+          "--remote-root",
+          "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+        ],
+        "finished_unix_ns": 1791023033280048662,
+        "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_joint_shcosearch_seed2000_rep0/attempt-01/evidence/episode-start.log",
+        "return_code": 0,
+        "started_unix_ns": 1791023029796519102
+      },
+      "episode_stop": {
+        "command": [
+          "/home/jichengzhi/miniconda3/bin/python",
+          "scripts/coptv2x_hil_episode_services.py",
+          "--mode",
+          "stop",
+          "--remote-root",
+          "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+        ],
+        "finished_unix_ns": 1791027058099230753,
+        "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_joint_shcosearch_seed2000_rep0/attempt-01/evidence/episode-stop.log",
+        "return_code": 0,
+        "started_unix_ns": 1791027052316621067
+      },
+      "finished_unix_ns": 1791027058262392168,
+      "fusion_audit_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_joint_shcosearch_seed2000_rep0/attempt-01/evidence/fusion_audit.jsonl",
+      "hil_audit": {
+        "aoi_frames": 3572,
+        "artifact_sha256": {
+          "checkpoint": "ccbd1c2881f6736e1e4a57e9e873583befbe3a3fdc11f21c2a381a63d4356a8e",
+          "config": "d2bdbf66b4efaf96094761e2586d7c3c8f1f6d1b47c47707cc60e3972655a191",
+          "engine": "9ab2eb723b90f0e4ee7ae0fb1827bb10f8c69822545db5244bbff1830a01de87"
+        },
+        "batch_order": [
+          "ego",
+          "rsu"
+        ],
+        "remote_input_tensor_bytes": 0,
+        "result_identity": {
+          "arm_id": "joint_shcosearch",
+          "route_id": "Town05-route-2",
+          "run_id": "p4-five-arms-20261003T054210Z",
+          "sample_id": "carla-frame-1988",
+          "scenario_id": "scenario1",
+          "schema_version": "coptv2x.hil-trigger.v1",
+          "sequence_no": 796,
+          "source_frame": 1988,
+          "source_sim_time_ns": 99450001482
+        },
+        "trigger_identity": {
+          "arm_id": "joint_shcosearch",
+          "route_id": "Town05-route-2",
+          "run_id": "p4-five-arms-20261003T054210Z",
+          "sample_id": "carla-frame-5560",
+          "scenario_id": "scenario1",
+          "schema_version": "coptv2x.hil-trigger.v1",
+          "sequence_no": 2225,
+          "source_frame": 5560,
+          "source_sim_time_ns": 278050004143
+        }
+      },
+      "return_code": 0,
+      "run_dir": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_joint_shcosearch_seed2000_rep0/attempt-01",
+      "started_unix_ns": 1791023029742288571,
+      "status": "route_timeout"
+    },
+    "hil_Town05__1_r2_original_default_seed2000_rep0": {
+      "arm_id": "original_default",
+      "artifact_sha256": {
+        "checkpoint": "43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4",
+        "config": "7601361830f27eb56d328e9f3fb1e8d66847cbcf2dc47f0c3a52dbab318eddc2"
+      },
+      "attempt": 5,
+      "carla_result": {
+        "index": -1,
+        "infractions": {
+          "collisions_layout": 0.0,
+          "collisions_pedestrian": 0.0,
+          "collisions_vehicle": 0.0,
+          "outside_route_lanes": 0.0,
+          "red_light": 0.0,
+          "route_dev": 0.0,
+          "route_timeout": 0.20080449827242194,
+          "stop_infraction": 0.0,
+          "vehicle_blocked": 0.0
+        },
+        "meta": {
+          "exceptions": [
+            [
+              "RouteScenario_2",
+              0,
+              "Failed - Agent timed out"
+            ]
+          ]
+        },
+        "route_id": -1,
+        "scores": {
+          "score_composed": 70.4273818859642,
+          "score_penalty": 1.0,
+          "score_route": 70.4273818859642
+        },
+        "status": "Failed"
+      },
+      "carla_result_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-05/carla/results.json",
+      "classification": "DRIVING_TERMINAL",
+      "command": [
+        "/home/jichengzhi/miniconda3/envs/v2xverse/bin/python",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/leaderboard_evaluator_parameter.py",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "56800",
+        "--trafficManagerPort",
+        "56805",
+        "--trafficManagerSeed",
+        "2000",
+        "--carlaProviderSeed",
+        "2000",
+        "--routes",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/evaluation_routes/town05_short_r2.xml",
+        "--scenarios",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/scenarios/town05_all_scenarios_2.json",
+        "--scenario_parameter",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/scenarios/scenario_parameter_1.yaml",
+        "--repetitions",
+        "1",
+        "--agent",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/team_code/pnp_agent_e2e.py",
+        "--agent-config",
+        "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-05/agent_config.yaml",
+        "--track",
+        "SENSORS",
+        "--resume",
+        "0",
+        "--checkpoint",
+        "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-05/carla/results.json",
+        "--ego-num",
+        "1",
+        "--skip_existed",
+        "0",
+        "--timeout",
+        "600.0"
+      ],
+      "episode_start": {
+        "command": [
+          "/home/jichengzhi/miniconda3/bin/python",
+          "scripts/coptv2x_hil_episode_services.py",
+          "--mode",
+          "start",
+          "--remote-root",
+          "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+        ],
+        "finished_unix_ns": 1791008228616173780,
+        "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-05/evidence/episode-start.log",
+        "return_code": 0,
+        "started_unix_ns": 1791008225795006228
+      },
+      "episode_stop": {
+        "command": [
+          "/home/jichengzhi/miniconda3/bin/python",
+          "scripts/coptv2x_hil_episode_services.py",
+          "--mode",
+          "stop",
+          "--remote-root",
+          "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+        ],
+        "finished_unix_ns": 1791011638055166926,
+        "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-05/evidence/episode-stop.log",
+        "return_code": 0,
+        "started_unix_ns": 1791011632176380756
+      },
+      "finished_unix_ns": 1791011638203662862,
+      "fusion_audit_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-05/evidence/fusion_audit.jsonl",
+      "hil_audit": {
+        "aoi_frames": 5168,
+        "artifact_sha256": {
+          "checkpoint": "43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4",
+          "config": "7601361830f27eb56d328e9f3fb1e8d66847cbcf2dc47f0c3a52dbab318eddc2"
+        },
+        "batch_order": [
+          "ego",
+          "rsu"
+        ],
+        "remote_input_tensor_bytes": 0,
+        "result_identity": {
+          "arm_id": "original_default",
+          "route_id": "Town05-route-2",
+          "run_id": "p4-five-arms-20261003T054210Z",
+          "sample_id": "carla-frame-392",
+          "scenario_id": "scenario1",
+          "schema_version": "coptv2x.hil-trigger.v1",
+          "sequence_no": 157,
+          "source_frame": 392,
+          "source_sim_time_ns": 19650000293
+        },
+        "trigger_identity": {
+          "arm_id": "original_default",
+          "route_id": "Town05-route-2",
+          "run_id": "p4-five-arms-20261003T054210Z",
+          "sample_id": "carla-frame-5560",
+          "scenario_id": "scenario1",
+          "schema_version": "coptv2x.hil-trigger.v1",
+          "sequence_no": 2225,
+          "source_frame": 5560,
+          "source_sim_time_ns": 278050004143
+        }
+      },
+      "return_code": 0,
+      "run_dir": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-05",
+      "started_unix_ns": 1791008225672755614,
+      "status": "route_timeout"
+    },
+    "hil_Town05__1_r2_schedule_only_seed2000_rep0": {
+      "arm_id": "schedule_only",
+      "artifact_sha256": {
+        "checkpoint": "43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4",
+        "config": "7601361830f27eb56d328e9f3fb1e8d66847cbcf2dc47f0c3a52dbab318eddc2",
+        "engine": "a4a464dc3838f35550313b70e52434ed738d4a71ce1c624c708f5447066fed21"
+      },
+      "attempt": 1,
+      "carla_result": {
+        "index": -1,
+        "infractions": {
+          "collisions_layout": 0.0,
+          "collisions_pedestrian": 0.0,
+          "collisions_vehicle": 0.0,
+          "outside_route_lanes": 0.0,
+          "red_light": 0.0,
+          "route_dev": 0.0,
+          "route_timeout": 0.22168947919834678,
+          "stop_infraction": 0.0,
+          "vehicle_blocked": 0.0
+        },
+        "meta": {
+          "exceptions": [
+            [
+              "RouteScenario_2",
+              0,
+              "Failed - Agent timed out"
+            ]
+          ]
+        },
+        "route_id": -1,
+        "scores": {
+          "score_composed": 63.79254051834482,
+          "score_penalty": 1.0,
+          "score_route": 63.79254051834482
+        },
+        "status": "Failed"
+      },
+      "carla_result_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_schedule_only_seed2000_rep0/attempt-01/carla/results.json",
+      "classification": "DRIVING_TERMINAL",
+      "command": [
+        "/home/jichengzhi/miniconda3/envs/v2xverse/bin/python",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/leaderboard_evaluator_parameter.py",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "56800",
+        "--trafficManagerPort",
+        "56805",
+        "--trafficManagerSeed",
+        "2000",
+        "--carlaProviderSeed",
+        "2000",
+        "--routes",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/evaluation_routes/town05_short_r2.xml",
+        "--scenarios",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/data/scenarios/town05_all_scenarios_2.json",
+        "--scenario_parameter",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/leaderboard/scenarios/scenario_parameter_1.yaml",
+        "--repetitions",
+        "1",
+        "--agent",
+        "/home/jichengzhi/V2X/.worktrees/V2Xverse-ditl/simulation/leaderboard/team_code/pnp_agent_e2e.py",
+        "--agent-config",
+        "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_schedule_only_seed2000_rep0/attempt-01/agent_config.yaml",
+        "--track",
+        "SENSORS",
+        "--resume",
+        "0",
+        "--checkpoint",
+        "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_schedule_only_seed2000_rep0/attempt-01/carla/results.json",
+        "--ego-num",
+        "1",
+        "--skip_existed",
+        "0",
+        "--timeout",
+        "600.0"
+      ],
+      "episode_start": {
+        "command": [
+          "/home/jichengzhi/miniconda3/bin/python",
+          "scripts/coptv2x_hil_episode_services.py",
+          "--mode",
+          "start",
+          "--remote-root",
+          "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+        ],
+        "finished_unix_ns": 1791015047630753891,
+        "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_schedule_only_seed2000_rep0/attempt-01/evidence/episode-start.log",
+        "return_code": 0,
+        "started_unix_ns": 1791015044856120506
+      },
+      "episode_stop": {
+        "command": [
+          "/home/jichengzhi/miniconda3/bin/python",
+          "scripts/coptv2x_hil_episode_services.py",
+          "--mode",
+          "stop",
+          "--remote-root",
+          "/home/jichengzhi/coptv2x_hil_p4_recovery_20261003T054210Z"
+        ],
+        "finished_unix_ns": 1791018965824204168,
+        "log_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_schedule_only_seed2000_rep0/attempt-01/evidence/episode-stop.log",
+        "return_code": 0,
+        "started_unix_ns": 1791018959792605539
+      },
+      "finished_unix_ns": 1791018965965292030,
+      "fusion_audit_path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_schedule_only_seed2000_rep0/attempt-01/evidence/fusion_audit.jsonl",
+      "hil_audit": {
+        "aoi_frames": 5086,
+        "artifact_sha256": {
+          "checkpoint": "43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4",
+          "config": "7601361830f27eb56d328e9f3fb1e8d66847cbcf2dc47f0c3a52dbab318eddc2",
+          "engine": "a4a464dc3838f35550313b70e52434ed738d4a71ce1c624c708f5447066fed21"
+        },
+        "batch_order": [
+          "ego",
+          "rsu"
+        ],
+        "remote_input_tensor_bytes": 0,
+        "result_identity": {
+          "arm_id": "schedule_only",
+          "route_id": "Town05-route-2",
+          "run_id": "p4-five-arms-20261003T054210Z",
+          "sample_id": "carla-frame-474",
+          "scenario_id": "scenario1",
+          "schema_version": "coptv2x.hil-trigger.v1",
+          "sequence_no": 190,
+          "source_frame": 474,
+          "source_sim_time_ns": 23750000354
+        },
+        "trigger_identity": {
+          "arm_id": "schedule_only",
+          "route_id": "Town05-route-2",
+          "run_id": "p4-five-arms-20261003T054210Z",
+          "sample_id": "carla-frame-5560",
+          "scenario_id": "scenario1",
+          "schema_version": "coptv2x.hil-trigger.v1",
+          "sequence_no": 2225,
+          "source_frame": 5560,
+          "source_sim_time_ns": 278050004143
+        }
+      },
+      "return_code": 0,
+      "run_dir": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_schedule_only_seed2000_rep0/attempt-01",
+      "started_unix_ns": 1791015044789908484,
+      "status": "route_timeout"
+    }
+  },
+  "schema": "coptv2x.hil-run-state.v1",
+  "task_ids": [
+    "hil_Town05__1_r2_original_default_seed2000_rep0",
+    "hil_Town05__1_r2_compression_only_seed2000_rep0",
+    "hil_Town05__1_r2_schedule_only_seed2000_rep0",
+    "hil_Town05__1_r2_compress_then_tune_seed2000_rep0",
+    "hil_Town05__1_r2_joint_shcosearch_seed2000_rep0"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "control_a1": {
+    "convinteger": 0,
+    "kernel_count": 2323,
+    "providers": [
+      "CPUExecutionProvider"
+    ]
+  },
+  "control_a2": {
+    "convinteger": 0,
+    "kernel_count": 2362,
+    "providers": [
+      "CPUExecutionProvider"
+    ]
+  },
+  "integer_a1": {
+    "convinteger": 122,
+    "kernel_count": 2811,
+    "providers": [
+      "CPUExecutionProvider"
+    ]
+  },
+  "integer_a2": {
+    "convinteger": 122,
+    "kernel_count": 2850,
+    "providers": [
+      "CPUExecutionProvider"
+    ]
+  }
+}

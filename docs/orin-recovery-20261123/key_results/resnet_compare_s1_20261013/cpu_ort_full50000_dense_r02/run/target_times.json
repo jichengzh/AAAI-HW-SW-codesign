@@ -1,0 +1,7 @@
+{
+  "scope": "DIAGNOSTIC_WALL_NOT_BENCHMARK",
+  "samples": 50000,
+  "identity_mtime_ns": 1793198624393688323,
+  "completion_mtime_ns": 1793206723634903838,
+  "elapsed_s": 8099.241215515
+}

@@ -1,0 +1,302 @@
+[
+  {
+    "infra_npy": "infra/007410.npy",
+    "veh_npy": "veh/000211.npy",
+    "veh_id": "000211"
+  },
+  {
+    "infra_npy": "infra/007411.npy",
+    "veh_npy": "veh/000212.npy",
+    "veh_id": "000212"
+  },
+  {
+    "infra_npy": "infra/007413.npy",
+    "veh_npy": "veh/000214.npy",
+    "veh_id": "000214"
+  },
+  {
+    "infra_npy": "infra/007414.npy",
+    "veh_npy": "veh/000215.npy",
+    "veh_id": "000215"
+  },
+  {
+    "infra_npy": "infra/007415.npy",
+    "veh_npy": "veh/000216.npy",
+    "veh_id": "000216"
+  },
+  {
+    "infra_npy": "infra/007416.npy",
+    "veh_npy": "veh/000217.npy",
+    "veh_id": "000217"
+  },
+  {
+    "infra_npy": "infra/005759.npy",
+    "veh_npy": "veh/000871.npy",
+    "veh_id": "000871"
+  },
+  {
+    "infra_npy": "infra/005760.npy",
+    "veh_npy": "veh/000872.npy",
+    "veh_id": "000872"
+  },
+  {
+    "infra_npy": "infra/005761.npy",
+    "veh_npy": "veh/000873.npy",
+    "veh_id": "000873"
+  },
+  {
+    "infra_npy": "infra/005762.npy",
+    "veh_npy": "veh/000874.npy",
+    "veh_id": "000874"
+  },
+  {
+    "infra_npy": "infra/005764.npy",
+    "veh_npy": "veh/000876.npy",
+    "veh_id": "000876"
+  },
+  {
+    "infra_npy": "infra/005769.npy",
+    "veh_npy": "veh/000881.npy",
+    "veh_id": "000881"
+  },
+  {
+    "infra_npy": "infra/005771.npy",
+    "veh_npy": "veh/000883.npy",
+    "veh_id": "000883"
+  },
+  {
+    "infra_npy": "infra/005787.npy",
+    "veh_npy": "veh/000898.npy",
+    "veh_id": "000898"
+  },
+  {
+    "infra_npy": "infra/005792.npy",
+    "veh_npy": "veh/000903.npy",
+    "veh_id": "000903"
+  },
+  {
+    "infra_npy": "infra/005793.npy",
+    "veh_npy": "veh/000904.npy",
+    "veh_id": "000904"
+  },
+  {
+    "infra_npy": "infra/005794.npy",
+    "veh_npy": "veh/000905.npy",
+    "veh_id": "000905"
+  },
+  {
+    "infra_npy": "infra/005796.npy",
+    "veh_npy": "veh/000907.npy",
+    "veh_id": "000907"
+  },
+  {
+    "infra_npy": "infra/005798.npy",
+    "veh_npy": "veh/000909.npy",
+    "veh_id": "000909"
+  },
+  {
+    "infra_npy": "infra/005800.npy",
+    "veh_npy": "veh/000911.npy",
+    "veh_id": "000911"
+  },
+  {
+    "infra_npy": "infra/005805.npy",
+    "veh_npy": "veh/000916.npy",
+    "veh_id": "000916"
+  },
+  {
+    "infra_npy": "infra/005806.npy",
+    "veh_npy": "veh/000917.npy",
+    "veh_id": "000917"
+  },
+  {
+    "infra_npy": "infra/005807.npy",
+    "veh_npy": "veh/000918.npy",
+    "veh_id": "000918"
+  },
+  {
+    "infra_npy": "infra/005808.npy",
+    "veh_npy": "veh/000919.npy",
+    "veh_id": "000919"
+  },
+  {
+    "infra_npy": "infra/005809.npy",
+    "veh_npy": "veh/000920.npy",
+    "veh_id": "000920"
+  },
+  {
+    "infra_npy": "infra/005810.npy",
+    "veh_npy": "veh/000921.npy",
+    "veh_id": "000921"
+  },
+  {
+    "infra_npy": "infra/005811.npy",
+    "veh_npy": "veh/000922.npy",
+    "veh_id": "000922"
+  },
+  {
+    "infra_npy": "infra/005812.npy",
+    "veh_npy": "veh/000923.npy",
+    "veh_id": "000923"
+  },
+  {
+    "infra_npy": "infra/005813.npy",
+    "veh_npy": "veh/000924.npy",
+    "veh_id": "000924"
+  },
+  {
+    "infra_npy": "infra/005814.npy",
+    "veh_npy": "veh/000925.npy",
+    "veh_id": "000925"
+  },
+  {
+    "infra_npy": "infra/005816.npy",
+    "veh_npy": "veh/000927.npy",
+    "veh_id": "000927"
+  },
+  {
+    "infra_npy": "infra/005817.npy",
+    "veh_npy": "veh/000928.npy",
+    "veh_id": "000928"
+  },
+  {
+    "infra_npy": "infra/005818.npy",
+    "veh_npy": "veh/000929.npy",
+    "veh_id": "000929"
+  },
+  {
+    "infra_npy": "infra/005819.npy",
+    "veh_npy": "veh/000930.npy",
+    "veh_id": "000930"
+  },
+  {
+    "infra_npy": "infra/005820.npy",
+    "veh_npy": "veh/000931.npy",
+    "veh_id": "000931"
+  },
+  {
+    "infra_npy": "infra/005821.npy",
+    "veh_npy": "veh/000932.npy",
+    "veh_id": "000932"
+  },
+  {
+    "infra_npy": "infra/005822.npy",
+    "veh_npy": "veh/000933.npy",
+    "veh_id": "000933"
+  },
+  {
+    "infra_npy": "infra/005823.npy",
+    "veh_npy": "veh/000934.npy",
+    "veh_id": "000934"
+  },
+  {
+    "infra_npy": "infra/005824.npy",
+    "veh_npy": "veh/000935.npy",
+    "veh_id": "000935"
+  },
+  {
+    "infra_npy": "infra/005825.npy",
+    "veh_npy": "veh/000936.npy",
+    "veh_id": "000936"
+  },
+  {
+    "infra_npy": "infra/005826.npy",
+    "veh_npy": "veh/000937.npy",
+    "veh_id": "000937"
+  },
+  {
+    "infra_npy": "infra/005827.npy",
+    "veh_npy": "veh/000938.npy",
+    "veh_id": "000938"
+  },
+  {
+    "infra_npy": "infra/005828.npy",
+    "veh_npy": "veh/000939.npy",
+    "veh_id": "000939"
+  },
+  {
+    "infra_npy": "infra/005829.npy",
+    "veh_npy": "veh/000940.npy",
+    "veh_id": "000940"
+  },
+  {
+    "infra_npy": "infra/005830.npy",
+    "veh_npy": "veh/000941.npy",
+    "veh_id": "000941"
+  },
+  {
+    "infra_npy": "infra/005831.npy",
+    "veh_npy": "veh/000942.npy",
+    "veh_id": "000942"
+  },
+  {
+    "infra_npy": "infra/005832.npy",
+    "veh_npy": "veh/000943.npy",
+    "veh_id": "000943"
+  },
+  {
+    "infra_npy": "infra/005833.npy",
+    "veh_npy": "veh/000944.npy",
+    "veh_id": "000944"
+  },
+  {
+    "infra_npy": "infra/005834.npy",
+    "veh_npy": "veh/000945.npy",
+    "veh_id": "000945"
+  },
+  {
+    "infra_npy": "infra/005835.npy",
+    "veh_npy": "veh/000946.npy",
+    "veh_id": "000946"
+  },
+  {
+    "infra_npy": "infra/005836.npy",
+    "veh_npy": "veh/000947.npy",
+    "veh_id": "000947"
+  },
+  {
+    "infra_npy": "infra/005837.npy",
+    "veh_npy": "veh/000948.npy",
+    "veh_id": "000948"
+  },
+  {
+    "infra_npy": "infra/005839.npy",
+    "veh_npy": "veh/000950.npy",
+    "veh_id": "000950"
+  },
+  {
+    "infra_npy": "infra/005840.npy",
+    "veh_npy": "veh/000951.npy",
+    "veh_id": "000951"
+  },
+  {
+    "infra_npy": "infra/005841.npy",
+    "veh_npy": "veh/000952.npy",
+    "veh_id": "000952"
+  },
+  {
+    "infra_npy": "infra/005842.npy",
+    "veh_npy": "veh/000953.npy",
+    "veh_id": "000953"
+  },
+  {
+    "infra_npy": "infra/005843.npy",
+    "veh_npy": "veh/000954.npy",
+    "veh_id": "000954"
+  },
+  {
+    "infra_npy": "infra/005844.npy",
+    "veh_npy": "veh/000955.npy",
+    "veh_id": "000955"
+  },
+  {
+    "infra_npy": "infra/005845.npy",
+    "veh_npy": "veh/000956.npy",
+    "veh_id": "000956"
+  },
+  {
+    "infra_npy": "infra/005846.npy",
+    "veh_npy": "veh/000957.npy",
+    "veh_id": "000957"
+  }
+]

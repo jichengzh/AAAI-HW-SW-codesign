@@ -1,0 +1,171 @@
+{
+  "boundary": {
+    "backend": "ONNX Runtime CPU; no TensorRT or GPU",
+    "energy": "VIN_SYS_5V0 designated rail integral; includes reader start/stop boundary overhead; not whole-board or GPU energy",
+    "forward": "synchronous CPU session.run including output allocation",
+    "geometry": "full saved dynamic voxel count, actual FP64 transforms; geometry and codebook remain float",
+    "independent_samples": 2,
+    "random": "fixed explicit native uniform arrays replayed; no argmax substitution",
+    "service": "CPU input array copies through CPU output copies; excludes NPZ loading, preprocessing, uniform generation, postprocessing and communication",
+    "state": "each request independently replays its saved initial EMA; final EMA verified, no cross-request state carry"
+  },
+  "host_reference_options": {
+    "graph_optimization": "ORT_DISABLE_ALL",
+    "inter_op_threads": 1,
+    "intra_op_threads": 4,
+    "provider": "CPUExecutionProvider",
+    "version": "1.19.2"
+  },
+  "manifest_sha256": "d2276667e2b6bcc47f3ff81531d6b666e4beaddfdd324652998f39be2e0db941",
+  "measurements": {
+    "energy_control": {
+      "forward_ms": {
+        "mean": 4060.8117018731837,
+        "p50": 4079.718776498339,
+        "p95": 5307.985139451921,
+        "p99": 5363.98985032487
+      },
+      "rail_energy_j": {
+        "mean": 23.97168001164225,
+        "p50": 24.12926687206471,
+        "p95": 31.45294075525761,
+        "p99": 31.748032781126962
+      },
+      "service_ms": {
+        "mean": 4124.213162276756,
+        "p50": 4142.979549502343,
+        "p95": 5392.038167953069,
+        "p99": 5448.737854801075
+      }
+    },
+    "energy_integer": {
+      "forward_ms": {
+        "mean": 3837.285691903768,
+        "p50": 3859.3316139958915,
+        "p95": 4854.247878256865,
+        "p99": 4871.078780449607
+      },
+      "rail_energy_j": {
+        "mean": 24.629189182734706,
+        "p50": 24.777198213652774,
+        "p95": 31.536035019857927,
+        "p99": 31.679665563039315
+      },
+      "service_ms": {
+        "mean": 3900.6773211080877,
+        "p50": 3923.1154554945533,
+        "p95": 4937.802329748229,
+        "p99": 4954.706113206048
+      }
+    },
+    "latency_control": {
+      "forward_ms": {
+        "mean": 4035.0516762883008,
+        "p50": 4046.8610809984966,
+        "p95": 5261.3732449051895,
+        "p99": 5292.133294709565
+      },
+      "service_ms": {
+        "mean": 4097.384421481656,
+        "p50": 4109.19813950386,
+        "p95": 5343.586362900169,
+        "p99": 5376.925078874119
+      }
+    },
+    "latency_integer": {
+      "forward_ms": {
+        "mean": 3822.4604366117396,
+        "p50": 3849.991893999686,
+        "p95": 4790.653729597761,
+        "p99": 4805.617185759547
+      },
+      "service_ms": {
+        "mean": 3885.236290900042,
+        "p50": 3913.1479664974904,
+        "p95": 4873.923596096938,
+        "p99": 4888.637694901263
+      }
+    }
+  },
+  "qualification": {
+    "ap": {
+      "control": {
+        "ap30": 0.8282446171226401,
+        "ap50": 0.7864770161108571,
+        "ap70": 0.6233111826164482
+      },
+      "integer": {
+        "ap30": 0.8280526403463419,
+        "ap50": 0.7864572421224172,
+        "ap70": 0.6234709986750319
+      }
+    },
+    "count": 1789,
+    "eval_code_sha256": "aac400857a0cfd936973cf03ef7798dbfd1e9814e6500d12db5f2dddb9112542",
+    "evidence_sha256": "f0fa5665e0a79eff981dd4813196b24d0341aab8864f9534866ec2136b232702",
+    "host_equivalence": false,
+    "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c",
+    "source_identity": {
+      "calibration_sha256": "de39cb4700c1b66cf6b7f126d12f65c5d878b3483dc7f3cec3539853408cd5f7",
+      "checkpoint_sha256": "b4fdd89bc29bbd206d2c82f67e763b52ea2f8ff22405d66925c184c3391fd931",
+      "source_commit": "f02056c574f233f2df16971845927676c2fa74e9"
+    },
+    "split_sha256": "f6805e26aec6af0f994395ad8c74105e65c88770bc7261bd7e995e30d47e2814",
+    "status": "qualified_target_replay"
+  },
+  "runtime_versions": {
+    "control_a1": {
+      "numpy": "1.26.4",
+      "numpy_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py",
+      "onnxruntime": "1.27.0",
+      "ort_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py",
+      "python": "3.12.10",
+      "runtime_binary": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so",
+      "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+    },
+    "control_a2": {
+      "numpy": "1.26.4",
+      "numpy_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py",
+      "onnxruntime": "1.27.0",
+      "ort_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py",
+      "python": "3.12.10",
+      "runtime_binary": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so",
+      "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+    },
+    "integer_a1": {
+      "numpy": "1.26.4",
+      "numpy_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py",
+      "onnxruntime": "1.27.0",
+      "ort_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py",
+      "python": "3.12.10",
+      "runtime_binary": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so",
+      "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+    },
+    "integer_a2": {
+      "numpy": "1.26.4",
+      "numpy_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/numpy/__init__.py",
+      "onnxruntime": "1.27.0",
+      "ort_module": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/__init__.py",
+      "python": "3.12.10",
+      "runtime_binary": "/home/jichengzhi/resnet_compare_s1_20261013/ort_cpu_20261026_r02/python/onnxruntime/capi/onnxruntime_pybind11_state.cpython-312-aarch64-linux-gnu.so",
+      "runtime_binary_sha256": "4ec12754e38ce571d5d0f14d6658e9646ae7f36a9eab3abe63c1bae06886ba5c"
+    }
+  },
+  "same_sessions_both_phases": true,
+  "status": "complete",
+  "target_options": {
+    "graph_optimization": "ORT_DISABLE_ALL",
+    "inter_op_threads": 1,
+    "intra_op_threads": 4,
+    "numpy_version": "1.26.4",
+    "provider": "CPUExecutionProvider",
+    "python_major_minor": "3.12",
+    "version": "1.27.0"
+  },
+  "target_reference_qualification": {
+    "host_equivalence": false,
+    "identity_sha256": "7a10abe690cfc596b7a43b04be5435136c23c5b551fe8b14a080a8ed0433627b",
+    "kind": "independent_target_probe_fixed_input_replay"
+  },
+  "wheel_inventory_sha256": "ecddc921c2544d2ebcbcc381b848ce311268cddcba56774572313df52ae9035d"
+}

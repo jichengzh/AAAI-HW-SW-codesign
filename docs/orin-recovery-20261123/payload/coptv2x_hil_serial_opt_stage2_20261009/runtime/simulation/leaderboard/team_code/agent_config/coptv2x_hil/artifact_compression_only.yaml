@@ -1,0 +1,26 @@
+arm_id: compression_only
+model: codriving
+widths: [32, 64, 96]
+precision: fp16
+runtime: tensorrt
+config: source/codriving/032x064x096/config.yaml
+checkpoint: source/codriving/032x064x096/net_epoch_bestval_at11.pth
+engine: codriving/compression_only/backbone.engine
+artifact_sha256:
+  config: b991d45e5a65b769077453dd4c7e62cad33d6bfe3c769360003ae3fcb42077dd
+  checkpoint: 92dfb0e71d8b26cc15fbdc65504a6e1896343f9fdbbb48ac69aaee80f4646a50
+  engine: ac45f2dec35cbef552959724f7e65e79bd223af50c0e31ce432baa06c6512267
+input_contract:
+  spatial_features:
+    shape: [2, 64, 256, 512]
+    dtype: float32
+output_contract:
+  res0:
+    shape: [2, 32, 128, 256]
+    dtype: float32
+  res1:
+    shape: [2, 64, 64, 128]
+    dtype: float32
+  res2:
+    shape: [2, 96, 32, 64]
+    dtype: float32

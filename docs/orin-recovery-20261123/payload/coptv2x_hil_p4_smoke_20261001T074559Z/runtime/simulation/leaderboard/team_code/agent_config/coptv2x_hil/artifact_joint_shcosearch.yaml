@@ -1,0 +1,26 @@
+arm_id: joint_shcosearch
+model: codriving
+widths: [16, 32, 64]
+precision: fp16
+runtime: tensorrt
+config: source/codriving/016x032x064/config.yaml
+checkpoint: source/codriving/016x032x064/net_epoch_bestval_at9.pth
+engine: codriving/joint_shcosearch_fp16/backbone.engine
+artifact_sha256:
+  config: d2bdbf66b4efaf96094761e2586d7c3c8f1f6d1b47c47707cc60e3972655a191
+  checkpoint: ccbd1c2881f6736e1e4a57e9e873583befbe3a3fdc11f21c2a381a63d4356a8e
+  engine: 9ab2eb723b90f0e4ee7ae0fb1827bb10f8c69822545db5244bbff1830a01de87
+input_contract:
+  spatial_features:
+    shape: [2, 64, 256, 512]
+    dtype: float32
+output_contract:
+  res0:
+    shape: [2, 16, 128, 256]
+    dtype: float32
+  res1:
+    shape: [2, 32, 64, 128]
+    dtype: float32
+  res2:
+    shape: [2, 64, 32, 64]
+    dtype: float32

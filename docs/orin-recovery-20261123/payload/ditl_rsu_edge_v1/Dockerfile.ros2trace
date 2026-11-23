@@ -1,0 +1,4 @@
+FROM ditl/ros-foxy:arm64-exact
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ros-foxy-ros2trace lttng-tools \
+ && rm -rf /var/lib/apt/lists/*

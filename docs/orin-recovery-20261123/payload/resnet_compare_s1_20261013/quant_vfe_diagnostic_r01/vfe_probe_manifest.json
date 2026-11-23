@@ -1,0 +1,26 @@
+{
+  "source_graph_sha256": "fb55b940b9a19decc14c046b083b393c0ff891a9cdc381b29ca9689d9f945146",
+  "probe_graph_sha256": "e64adc89d6ddd411cdf9dce3fefb96e7dc688cace215fb2dae0b7dd903fa3cc1",
+  "ort_version": "1.19.2",
+  "options": {
+    "intra_op_threads": 4,
+    "inter_op_threads": 1,
+    "graph_optimization": "ORT_DISABLE_ALL"
+  },
+  "points": {
+    "1": {
+      "input_path": "/data/jichengzhi_v2x/resnet_compare_20261013/s6_comparison_completion_20261021/quantv2x_deployment_r02_20261026/first_validation_full_inputs_a1.npz",
+      "input_sha256": "65be431a107e3f77a4765f45c315d809bea597e6e33dd279b75099c0d5e6c3f1",
+      "reference": "/data/jichengzhi_v2x/resnet_compare_20261013/s7_hardware_adaptation_20261026/host_ort127_r01/vfe_reference_a1.npz",
+      "reference_sha256": "0b9674129386142f5b47ecef0323b36350a4018bd08961f64707159965ff9a0e",
+      "voxel_rows": 8578
+    },
+    "2": {
+      "input_path": "/data/jichengzhi_v2x/resnet_compare_20261013/s6_comparison_completion_20261021/quantv2x_deployment_r02_20261026/first_validation_full_inputs_a2.npz",
+      "input_sha256": "712552243c0016110cea97823b0eb61793283f741734562e20654b5e16975d21",
+      "reference": "/data/jichengzhi_v2x/resnet_compare_20261013/s7_hardware_adaptation_20261026/host_ort127_r01/vfe_reference_a2.npz",
+      "reference_sha256": "0565931e53f468b12f6c9eb7c7a34e1534609e0bbb1b28799a797ff1fa631668",
+      "voxel_rows": 20646
+    }
+  }
+}

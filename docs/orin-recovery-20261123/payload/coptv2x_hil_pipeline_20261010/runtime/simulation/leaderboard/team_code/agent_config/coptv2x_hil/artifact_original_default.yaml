@@ -1,0 +1,25 @@
+arm_id: original_default
+model: codriving
+widths: [64, 128, 256]
+precision: fp32
+runtime: native_pytorch
+config: source/codriving/064x128x256/config.yaml
+checkpoint: source/codriving/064x128x256/net_epoch29.pth
+engine: null
+artifact_sha256:
+  config: 7601361830f27eb56d328e9f3fb1e8d66847cbcf2dc47f0c3a52dbab318eddc2
+  checkpoint: 43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4
+input_contract:
+  spatial_features:
+    shape: [2, 64, 256, 512]
+    dtype: float32
+output_contract:
+  res0:
+    shape: [2, 64, 128, 256]
+    dtype: float32
+  res1:
+    shape: [2, 128, 64, 128]
+    dtype: float32
+  res2:
+    shape: [2, 256, 32, 64]
+    dtype: float32

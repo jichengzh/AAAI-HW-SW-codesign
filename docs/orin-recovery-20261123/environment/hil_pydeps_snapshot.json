@@ -1,0 +1,58 @@
+[
+  {
+    "path": "/home/jichengzhi/coptv2x_hil_p4_smoke_20261001T074559Z/runtime/pydeps",
+    "packages": [
+      {
+        "name": "asttokens",
+        "version": "3.0.2"
+      },
+      {
+        "name": "colorama",
+        "version": "0.4.6"
+      },
+      {
+        "name": "executing",
+        "version": "2.2.1"
+      },
+      {
+        "name": "icecream",
+        "version": "2.2.0"
+      },
+      {
+        "name": "Pygments",
+        "version": "2.19.2"
+      }
+    ],
+    "note": "Metadata only; project modules and shared libraries are not a complete dependency closure"
+  },
+  {
+    "path": "/home/jichengzhi/coptv2x_hil_p5_preparation_20261004/runtime/pydeps",
+    "packages": [
+      {
+        "name": "asttokens",
+        "version": "3.0.2"
+      },
+      {
+        "name": "colorama",
+        "version": "0.4.6"
+      },
+      {
+        "name": "executing",
+        "version": "2.2.1"
+      },
+      {
+        "name": "icecream",
+        "version": "2.2.0"
+      },
+      {
+        "name": "Pygments",
+        "version": "2.19.2"
+      }
+    ],
+    "note": "Metadata only; project modules and shared libraries are not a complete dependency closure"
+  },
+  {
+    "path": "/home/jichengzhi/coptv2x_hil_pipeline_20261010/runtime/pydeps",
+    "same_as": "/home/jichengzhi/coptv2x_hil_p4_smoke_20261001T074559Z/runtime/pydeps"
+  }
+]

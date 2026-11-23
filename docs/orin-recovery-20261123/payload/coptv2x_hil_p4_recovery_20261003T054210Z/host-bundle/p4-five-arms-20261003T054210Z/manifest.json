@@ -1,0 +1,222 @@
+{
+  "arms": [
+    {
+      "arm_id": "original_default",
+      "artifact_id": "original_default",
+      "runtime_config": "simulation/leaderboard/team_code/agent_config/coptv2x_hil/original_default.yaml"
+    },
+    {
+      "arm_id": "compression_only",
+      "artifact_id": "compression_only",
+      "runtime_config": "simulation/leaderboard/team_code/agent_config/coptv2x_hil/compression_only.yaml"
+    },
+    {
+      "arm_id": "schedule_only",
+      "artifact_id": "schedule_only",
+      "runtime_config": "simulation/leaderboard/team_code/agent_config/coptv2x_hil/schedule_only.yaml"
+    },
+    {
+      "arm_id": "compress_then_tune",
+      "artifact_id": "compress_then_tune",
+      "runtime_config": "simulation/leaderboard/team_code/agent_config/coptv2x_hil/compress_then_tune.yaml"
+    },
+    {
+      "arm_id": "joint_shcosearch",
+      "artifact_id": "joint_shcosearch_fp16",
+      "runtime_config": "simulation/leaderboard/team_code/agent_config/coptv2x_hil/joint_shcosearch.yaml"
+    }
+  ],
+  "host_input_index": {
+    "path": "/data/jichengzhi_v2x/ditl/coptv2x_hil_p4_smoke_20261001T074559Z/evidence/host-input-index.json",
+    "route_scenarios_sha256": "f423f9a54203db59a517c9554ce0a41a3e8c186cb6b9832869685ad12e49cf13",
+    "sha256": "3222c599a0859ede56454f70324a6d600e13e0a87c859a8b76480e9428fc7016",
+    "verified_feature_files": 2225,
+    "version": "coptv2x.route-input-host-index.v1"
+  },
+  "input_manifest_sha256": "a073773d67b57495d7e16bcf957d75ad4d971137e7b67fdbe61f7ec6e3e32fdd",
+  "input_manifest_version": "town05-action-fifo-subsets.v1",
+  "inputs": {
+    "artifact_config_sha256": {
+      "compress_then_tune": "844b6c5a049f7d29ef4aae41a883b6e286d3a367853f278f1b0fb58bcb981077",
+      "compression_only": "4e8f7bfb8131c45568ed7bfc6e98e3fe828610b623cd9f26fd347e9290969970",
+      "joint_shcosearch": "119d8bed7d00d9a51174135db0d41de1cbb8bb6f00c3e53c89a799c417671fb5",
+      "original_default": "a52e7617b5177b5c6cbc774da4ee29cdb680bfcbda96ae0f0f2b42d24c6f6820",
+      "schedule_only": "4f0a462751e618bf4610dd1e378c7b18b464307b7c78fdfd61ca46ae18e2e5df"
+    },
+    "artifact_registry_version": "coptv2x.hil-artifact-registry.v1",
+    "route_authority": "scripts/batch_eval_driving_e2e.sh@f63e92b",
+    "route_authority_sha256": "49cfad0e0962bb62a4f195b7a4c26b00c3337a66aa363665707ffe58ce1d4105",
+    "route_manifest_version": "town05-action-fifo-subsets.v1",
+    "route_scenarios_sha256": "f423f9a54203db59a517c9554ce0a41a3e8c186cb6b9832869685ad12e49cf13",
+    "runtime_config_sha256": {
+      "compress_then_tune": "4d3f4a2f4fad6d348ec5caed65c3aa01537f6faae53a398e7787cdf79918b07d",
+      "compression_only": "9c96773c288b524c31aca617f7a3d3851581ade775d519f05c4b153d2da992c0",
+      "joint_shcosearch": "5ec158ea780cc92c729c44f0652918ae555563eabe903833c7849b51e6d2932d",
+      "original_default": "115c8ae7d9ca405f70f603e0169c5061c768d4885def256200bf0c44df16b8f2",
+      "schedule_only": "d946749fa19b7863928c3059cd88c326f39dfb7ce1e6de69b49248e22db29efa"
+    }
+  },
+  "manifest_version": "coptv2x-live-hil-v1",
+  "pilot_route_scenarios": [
+    "Town05:_1:r2"
+  ],
+  "protocol": {
+    "cadence": 2,
+    "dt_ms": 50,
+    "frequency_hz": 20,
+    "profile": "5_10",
+    "remote_input_tensor_bytes": 0,
+    "repeat": 0,
+    "seed": 2000,
+    "town": "Town05",
+    "traffic_seed": 2000
+  },
+  "route_scenario_records": [
+    {
+      "cell_id": "Town05:_1:r2",
+      "profile": "5_10",
+      "route": 2,
+      "route_xml": "simulation/leaderboard/data/evaluation_routes/town05_short_r2.xml",
+      "scenario": "_1",
+      "scenarios_json": "simulation/leaderboard/data/scenarios/town05_all_scenarios_2.json",
+      "subset": "1s",
+      "town": "Town05"
+    }
+  ],
+  "route_scenarios": [
+    "Town05:_1:r2"
+  ],
+  "route_scenarios_sha256": "f423f9a54203db59a517c9554ce0a41a3e8c186cb6b9832869685ad12e49cf13",
+  "schema": "coptv2x.hil-cohort.v1",
+  "tasks": [
+    {
+      "arm_id": "original_default",
+      "artifact_id": "original_default",
+      "artifact_sha256": {
+        "checkpoint": "43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4",
+        "config": "7601361830f27eb56d328e9f3fb1e8d66847cbcf2dc47f0c3a52dbab318eddc2"
+      },
+      "cadence": 2,
+      "dt_ms": 50,
+      "frequency_hz": 20,
+      "profile": "5_10",
+      "repeat": 0,
+      "route": 2,
+      "route_scenario_id": "Town05:_1:r2",
+      "route_xml": "simulation/leaderboard/data/evaluation_routes/town05_short_r2.xml",
+      "runtime_config": "simulation/leaderboard/team_code/agent_config/coptv2x_hil/original_default.yaml",
+      "scenario": "_1",
+      "scenario_id": "scenario1",
+      "scenarios_json": "simulation/leaderboard/data/scenarios/town05_all_scenarios_2.json",
+      "seed": 2000,
+      "subset": "1s",
+      "task_id": "hil_Town05__1_r2_original_default_seed2000_rep0",
+      "town": "Town05",
+      "traffic_seed": 2000
+    },
+    {
+      "arm_id": "compression_only",
+      "artifact_id": "compression_only",
+      "artifact_sha256": {
+        "checkpoint": "92dfb0e71d8b26cc15fbdc65504a6e1896343f9fdbbb48ac69aaee80f4646a50",
+        "config": "b991d45e5a65b769077453dd4c7e62cad33d6bfe3c769360003ae3fcb42077dd",
+        "engine": "ac45f2dec35cbef552959724f7e65e79bd223af50c0e31ce432baa06c6512267"
+      },
+      "cadence": 2,
+      "dt_ms": 50,
+      "frequency_hz": 20,
+      "profile": "5_10",
+      "repeat": 0,
+      "route": 2,
+      "route_scenario_id": "Town05:_1:r2",
+      "route_xml": "simulation/leaderboard/data/evaluation_routes/town05_short_r2.xml",
+      "runtime_config": "simulation/leaderboard/team_code/agent_config/coptv2x_hil/compression_only.yaml",
+      "scenario": "_1",
+      "scenario_id": "scenario1",
+      "scenarios_json": "simulation/leaderboard/data/scenarios/town05_all_scenarios_2.json",
+      "seed": 2000,
+      "subset": "1s",
+      "task_id": "hil_Town05__1_r2_compression_only_seed2000_rep0",
+      "town": "Town05",
+      "traffic_seed": 2000
+    },
+    {
+      "arm_id": "schedule_only",
+      "artifact_id": "schedule_only",
+      "artifact_sha256": {
+        "checkpoint": "43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4",
+        "config": "7601361830f27eb56d328e9f3fb1e8d66847cbcf2dc47f0c3a52dbab318eddc2",
+        "engine": "a4a464dc3838f35550313b70e52434ed738d4a71ce1c624c708f5447066fed21"
+      },
+      "cadence": 2,
+      "dt_ms": 50,
+      "frequency_hz": 20,
+      "profile": "5_10",
+      "repeat": 0,
+      "route": 2,
+      "route_scenario_id": "Town05:_1:r2",
+      "route_xml": "simulation/leaderboard/data/evaluation_routes/town05_short_r2.xml",
+      "runtime_config": "simulation/leaderboard/team_code/agent_config/coptv2x_hil/schedule_only.yaml",
+      "scenario": "_1",
+      "scenario_id": "scenario1",
+      "scenarios_json": "simulation/leaderboard/data/scenarios/town05_all_scenarios_2.json",
+      "seed": 2000,
+      "subset": "1s",
+      "task_id": "hil_Town05__1_r2_schedule_only_seed2000_rep0",
+      "town": "Town05",
+      "traffic_seed": 2000
+    },
+    {
+      "arm_id": "compress_then_tune",
+      "artifact_id": "compress_then_tune",
+      "artifact_sha256": {
+        "checkpoint": "f73acdf344cc11bfee6019099e6a3407362feb35109a20bf4ad34dc688fedae7",
+        "config": "e509c1ae7aa4574e3512111bebbfba2e86ed71524db7056796886a96a2789b92",
+        "engine": "df18a052669a836f5094a95a6d8f13f6eef40d02629611efc7c94ee7796846f5"
+      },
+      "cadence": 2,
+      "dt_ms": 50,
+      "frequency_hz": 20,
+      "profile": "5_10",
+      "repeat": 0,
+      "route": 2,
+      "route_scenario_id": "Town05:_1:r2",
+      "route_xml": "simulation/leaderboard/data/evaluation_routes/town05_short_r2.xml",
+      "runtime_config": "simulation/leaderboard/team_code/agent_config/coptv2x_hil/compress_then_tune.yaml",
+      "scenario": "_1",
+      "scenario_id": "scenario1",
+      "scenarios_json": "simulation/leaderboard/data/scenarios/town05_all_scenarios_2.json",
+      "seed": 2000,
+      "subset": "1s",
+      "task_id": "hil_Town05__1_r2_compress_then_tune_seed2000_rep0",
+      "town": "Town05",
+      "traffic_seed": 2000
+    },
+    {
+      "arm_id": "joint_shcosearch",
+      "artifact_id": "joint_shcosearch_fp16",
+      "artifact_sha256": {
+        "checkpoint": "ccbd1c2881f6736e1e4a57e9e873583befbe3a3fdc11f21c2a381a63d4356a8e",
+        "config": "d2bdbf66b4efaf96094761e2586d7c3c8f1f6d1b47c47707cc60e3972655a191",
+        "engine": "9ab2eb723b90f0e4ee7ae0fb1827bb10f8c69822545db5244bbff1830a01de87"
+      },
+      "cadence": 2,
+      "dt_ms": 50,
+      "frequency_hz": 20,
+      "profile": "5_10",
+      "repeat": 0,
+      "route": 2,
+      "route_scenario_id": "Town05:_1:r2",
+      "route_xml": "simulation/leaderboard/data/evaluation_routes/town05_short_r2.xml",
+      "runtime_config": "simulation/leaderboard/team_code/agent_config/coptv2x_hil/joint_shcosearch.yaml",
+      "scenario": "_1",
+      "scenario_id": "scenario1",
+      "scenarios_json": "simulation/leaderboard/data/scenarios/town05_all_scenarios_2.json",
+      "seed": 2000,
+      "subset": "1s",
+      "task_id": "hil_Town05__1_r2_joint_shcosearch_seed2000_rep0",
+      "town": "Town05",
+      "traffic_seed": 2000
+    }
+  ]
+}

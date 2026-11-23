@@ -1,0 +1,33 @@
+# Observed Python 3.8 runtime/import subset; not a complete training lock.
+# torch / torchvision / MMCV family are installed separately.
+# See IMPORT_DEPENDENCY_NOTES.md before --no-deps builds.
+# PyYAML 5.3.1 is inherited from apt python3-yaml (system-site-packages=true).
+addict==2.4.0
+einops==0.4.1
+filelock==3.16.1
+fonttools==4.57.0
+fsspec==2025.3.0
+importlib-metadata==8.5.0
+Jinja2==3.1.6
+MarkupSafe==2.1.5
+matplotlib==3.5.1
+networkx==3.1
+numba==0.58.1
+numpy==1.22.4
+onnx==1.16.2
+opencv-python==4.6.0.66
+packaging==26.2
+Pillow==9.5.0
+platformdirs==4.3.6
+prettytable==3.11.0
+protobuf==5.29.6
+pycocotools==2.0.7
+pyquaternion==0.9.9
+python-dateutil==2.9.0.post0
+scipy==1.10.1
+Shapely==1.8.4
+six==1.14.0
+terminaltables==3.1.10
+tomli==2.4.1
+typing_extensions==4.13.2
+yapf==0.40.1

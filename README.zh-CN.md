@@ -1,5 +1,7 @@
 # GEAR 协同设计复现包
 
+> **Orin恢复分支：** 请先阅读[Orin部署恢复入口](docs/ORIN_RECOVERY.md)，取得源码/配置快照、关键结果、安装目录及数据/权重下载清单。该恢复快照与下文CPU smoke制品分别使用，大型离线归档仍需单独保存。
+
 本仓库提供 CPU-only smoke 工作流、小型已验证 Stage4 制品，以及用于审计投稿的
 Stage1–7 选择与分析契约。仓库不打包、也不执行外部硬件测量、AP 评估、模型
 checkpoint、ONNX 文件、编译 engine、TVM 或 TensorRT。

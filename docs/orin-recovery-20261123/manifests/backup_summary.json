@@ -1,0 +1,50 @@
+{
+  "status": "selected_backups_complete_and_verified",
+  "backup_host": "bm-2s55he",
+  "backup_root": "/home/jichengzhi/V2X/docs/orin-recovery-20261123",
+  "origin": "Orin ubuntu / /home/jichengzhi",
+  "source_files": 7176,
+  "source_original_bytes": 73192234,
+  "source_published_bytes": 73192275,
+  "key_result_files": 111,
+  "key_result_bytes": 4852498,
+  "selected_asset_files": 14703,
+  "selected_asset_logical_bytes": 4036099554,
+  "offline_archive_bytes": 1718109787,
+  "archive_file_count": 6,
+  "profiles": [
+    {
+      "label": "\u4e3b\u6a21\u578b/\u5b89\u88c5\u8d44\u4ea7",
+      "manifest": "offline_assets_manifest.json",
+      "file_count": 362,
+      "logical_bytes": 3610840548,
+      "compressed_bytes": 1218492636
+    },
+    {
+      "label": "FCooper\u5b9a\u5236\u6a21\u578b",
+      "manifest": "fcooper_assets_manifest.json",
+      "file_count": 8,
+      "logical_bytes": 63156308,
+      "compressed_bytes": 36717260
+    },
+    {
+      "label": "ResNet\u5019\u9009/UniAD\u5355\u5e27",
+      "manifest": "supplemental_assets_manifest.json",
+      "file_count": 18,
+      "logical_bytes": 245280961,
+      "compressed_bytes": 171561243
+    },
+    {
+      "label": "DAIR split/\u6821\u51c6/\u6807\u7b7e",
+      "manifest": "dataset_metadata_assets_manifest.json",
+      "file_count": 14315,
+      "logical_bytes": 116821737,
+      "compressed_bytes": 37097047
+    }
+  ],
+  "docker_images": 3,
+  "system_reinstallation_tested": false,
+  "public_upload_performed": false,
+  "public_download_urls_for_custom_assets": null,
+  "publication_note": "Published metadata for 3 credential-bearing files and 6 GPU allocation prose files was redacted; original backup retained privately."
+}

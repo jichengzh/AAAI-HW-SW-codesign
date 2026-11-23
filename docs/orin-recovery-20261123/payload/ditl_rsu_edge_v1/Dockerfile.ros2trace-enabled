@@ -1,0 +1,8 @@
+FROM ditl/ros-foxy-tracing:arm64
+COPY ros2_tracing_foxy_20260922_v1.tar.gz /tmp/
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends liblttng-ust-dev \
+ && mkdir -p /opt/ros2-tracing-src \
+ && tar -xzf /tmp/ros2_tracing_foxy_20260922_v1.tar.gz -C /opt/ros2-tracing-src --strip-components=1 \
+ && bash -lc "source /opt/ros/foxy/setup.bash && cd /opt/ros2-tracing-src && colcon build --merge-install --install-base /opt/ros2-tracing-overlay --packages-select tracetools --cmake-args -DCMAKE_BUILD_TYPE=Release -DTRACETOOLS_DISABLED=OFF -DTRACETOOLS_TRACEPOINTS_EXCLUDED=OFF" \
+ && rm -rf /var/lib/apt/lists/* /tmp/ros2_tracing_foxy_20260922_v1.tar.gz /opt/ros2-tracing-src/build /opt/ros2-tracing-src/log

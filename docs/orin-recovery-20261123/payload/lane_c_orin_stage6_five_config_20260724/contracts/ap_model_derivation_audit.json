@@ -1,0 +1,270 @@
+{
+  "dataset": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure",
+  "rows": [
+    {
+      "actual_changes": [
+        "data_dir",
+        "root_dir",
+        "test_dir",
+        "validate_dir"
+      ],
+      "allowed_changes": [
+        "data_dir",
+        "root_dir",
+        "test_dir",
+        "validate_dir"
+      ],
+      "checkpoint_alias": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/pyramid/064x128x256/net_epoch23.pth",
+      "checkpoint_alias_sha256": "4ccc6fe1f7cc13b5d1294f74014b01e849cc8e90b69cbded14158e1999fa42b2",
+      "checkpoint_sha256": "4ccc6fe1f7cc13b5d1294f74014b01e849cc8e90b69cbded14158e1999fa42b2",
+      "derived_checkpoint": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/pyramid/064x128x256/net_epoch_bestval_at23.pth",
+      "derived_checkpoint_sha256": "4ccc6fe1f7cc13b5d1294f74014b01e849cc8e90b69cbded14158e1999fa42b2",
+      "derived_config": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/pyramid/064x128x256/config.yaml",
+      "derived_config_sha256": "143831e75b041f9cd571c0e5a73c58bdfcbe092f7162c0130f3dcc146bb98088",
+      "derived_values": {
+        "data_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure",
+        "root_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/train.json",
+        "test_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/val.json",
+        "validate_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/val.json"
+      },
+      "model": "pyramid",
+      "source_checkpoint": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/pyramid/064x128x256/net_epoch_bestval_at23.pth",
+      "source_config": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/pyramid/064x128x256/config.yaml",
+      "source_config_sha256": "f55a6ad8cff9fa522ce74fe9ef4d85d682314455278240ce7d5ec998d567f540",
+      "unexpected_changes": [],
+      "width": "064x128x256"
+    },
+    {
+      "actual_changes": [
+        "data_dir",
+        "root_dir",
+        "test_dir",
+        "validate_dir"
+      ],
+      "allowed_changes": [
+        "data_dir",
+        "root_dir",
+        "test_dir",
+        "validate_dir"
+      ],
+      "checkpoint_alias": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/pyramid/024x128x064/net_epoch1.pth",
+      "checkpoint_alias_sha256": "befc76004aac7193785c80e4bc1712072e012104a5ac3cbfb99d61e0f5119fea",
+      "checkpoint_sha256": "befc76004aac7193785c80e4bc1712072e012104a5ac3cbfb99d61e0f5119fea",
+      "derived_checkpoint": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/pyramid/024x128x064/net_epoch_bestval_at1.pth",
+      "derived_checkpoint_sha256": "befc76004aac7193785c80e4bc1712072e012104a5ac3cbfb99d61e0f5119fea",
+      "derived_config": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/pyramid/024x128x064/config.yaml",
+      "derived_config_sha256": "3c46fe09aefa7fb204841c53c522535002fa50fd62d38bcd90720fe58eb455a3",
+      "derived_values": {
+        "data_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure",
+        "root_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/train.json",
+        "test_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/val.json",
+        "validate_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/val.json"
+      },
+      "model": "pyramid",
+      "source_checkpoint": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/pyramid/024x128x064/net_epoch_bestval_at1.pth",
+      "source_config": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/pyramid/024x128x064/config.yaml",
+      "source_config_sha256": "4fc413810b545ba5ed8b26bf35b37c70b1df4bf3ab1985c0cdedaf46967dfd21",
+      "unexpected_changes": [],
+      "width": "024x128x064"
+    },
+    {
+      "actual_changes": [
+        "data_dir",
+        "root_dir",
+        "test_dir",
+        "validate_dir"
+      ],
+      "allowed_changes": [
+        "data_dir",
+        "root_dir",
+        "test_dir",
+        "validate_dir"
+      ],
+      "checkpoint_alias": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/pyramid/032x048x128/net_epoch1.pth",
+      "checkpoint_alias_sha256": "fecf7a2beec5e14d067f02df6b3cd5bd3e5a476c628a096c5428b3e1c03110ad",
+      "checkpoint_sha256": "fecf7a2beec5e14d067f02df6b3cd5bd3e5a476c628a096c5428b3e1c03110ad",
+      "derived_checkpoint": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/pyramid/032x048x128/net_epoch_bestval_at1.pth",
+      "derived_checkpoint_sha256": "fecf7a2beec5e14d067f02df6b3cd5bd3e5a476c628a096c5428b3e1c03110ad",
+      "derived_config": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/pyramid/032x048x128/config.yaml",
+      "derived_config_sha256": "6d8473217b94ad8d4fab4718aa09c2a772b0c34d58fbccee4a2e11ae8762b515",
+      "derived_values": {
+        "data_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure",
+        "root_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/train.json",
+        "test_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/val.json",
+        "validate_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/val.json"
+      },
+      "model": "pyramid",
+      "source_checkpoint": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/pyramid/032x048x128/net_epoch_bestval_at1.pth",
+      "source_config": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/pyramid/032x048x128/config.yaml",
+      "source_config_sha256": "fc9ff8566b280db2cd1b45a8e50a2d3a0bd4de88d8f0632e476066444812ead4",
+      "unexpected_changes": [],
+      "width": "032x048x128"
+    },
+    {
+      "actual_changes": [
+        "data_dir",
+        "root_dir",
+        "test_dir",
+        "validate_dir"
+      ],
+      "allowed_changes": [
+        "data_dir",
+        "root_dir",
+        "test_dir",
+        "validate_dir"
+      ],
+      "checkpoint_alias": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/pyramid/016x032x064/net_epoch31.pth",
+      "checkpoint_alias_sha256": "d08fb16e778c6701aef7172e8d9609f1e4d73f20c419ee27bb8f158acc24a279",
+      "checkpoint_sha256": "d08fb16e778c6701aef7172e8d9609f1e4d73f20c419ee27bb8f158acc24a279",
+      "derived_checkpoint": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/pyramid/016x032x064/net_epoch_bestval_at31.pth",
+      "derived_checkpoint_sha256": "d08fb16e778c6701aef7172e8d9609f1e4d73f20c419ee27bb8f158acc24a279",
+      "derived_config": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/pyramid/016x032x064/config.yaml",
+      "derived_config_sha256": "172b49928fb96a1dfdcbf68d86b479fe4c50893e6215a8cacc6a2fd3d6f6041b",
+      "derived_values": {
+        "data_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure",
+        "root_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/train.json",
+        "test_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/val.json",
+        "validate_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/val.json"
+      },
+      "model": "pyramid",
+      "source_checkpoint": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/pyramid/016x032x064/net_epoch_bestval_at31.pth",
+      "source_config": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/pyramid/016x032x064/config.yaml",
+      "source_config_sha256": "d0d14eebff3046ebec07a72cdbb4b23680d894920daf2a296cb8be0630173d33",
+      "unexpected_changes": [],
+      "width": "016x032x064"
+    },
+    {
+      "actual_changes": [
+        "data_dir",
+        "root_dir",
+        "test_dir",
+        "validate_dir"
+      ],
+      "allowed_changes": [
+        "data_dir",
+        "root_dir",
+        "test_dir",
+        "validate_dir"
+      ],
+      "checkpoint_alias": null,
+      "checkpoint_alias_sha256": null,
+      "checkpoint_sha256": "43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4",
+      "derived_checkpoint": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/codriving/064x128x256/net_epoch29.pth",
+      "derived_checkpoint_sha256": "43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4",
+      "derived_config": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/codriving/064x128x256/config.yaml",
+      "derived_config_sha256": "ca5da3f248f8ba686742d2891692e50af02d2a3b440fde31858e1641e303a471",
+      "derived_values": {
+        "data_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure",
+        "root_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/train.json",
+        "test_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/val.json",
+        "validate_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/val.json"
+      },
+      "model": "codriving",
+      "source_checkpoint": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/064x128x256/net_epoch29.pth",
+      "source_config": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/064x128x256/config.yaml",
+      "source_config_sha256": "7601361830f27eb56d328e9f3fb1e8d66847cbcf2dc47f0c3a52dbab318eddc2",
+      "unexpected_changes": [],
+      "width": "064x128x256"
+    },
+    {
+      "actual_changes": [
+        "data_dir",
+        "root_dir",
+        "test_dir",
+        "validate_dir"
+      ],
+      "allowed_changes": [
+        "data_dir",
+        "root_dir",
+        "test_dir",
+        "validate_dir"
+      ],
+      "checkpoint_alias": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/codriving/032x064x096/net_epoch11.pth",
+      "checkpoint_alias_sha256": "92dfb0e71d8b26cc15fbdc65504a6e1896343f9fdbbb48ac69aaee80f4646a50",
+      "checkpoint_sha256": "92dfb0e71d8b26cc15fbdc65504a6e1896343f9fdbbb48ac69aaee80f4646a50",
+      "derived_checkpoint": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/codriving/032x064x096/net_epoch_bestval_at11.pth",
+      "derived_checkpoint_sha256": "92dfb0e71d8b26cc15fbdc65504a6e1896343f9fdbbb48ac69aaee80f4646a50",
+      "derived_config": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/codriving/032x064x096/config.yaml",
+      "derived_config_sha256": "a8ecbec41522030628aa8b2afec66b6589a7205814f56ef999ade8c764d0eae6",
+      "derived_values": {
+        "data_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure",
+        "root_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/train.json",
+        "test_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/val.json",
+        "validate_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/val.json"
+      },
+      "model": "codriving",
+      "source_checkpoint": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/032x064x096/net_epoch_bestval_at11.pth",
+      "source_config": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/032x064x096/config.yaml",
+      "source_config_sha256": "b991d45e5a65b769077453dd4c7e62cad33d6bfe3c769360003ae3fcb42077dd",
+      "unexpected_changes": [],
+      "width": "032x064x096"
+    },
+    {
+      "actual_changes": [
+        "data_dir",
+        "root_dir",
+        "test_dir",
+        "validate_dir"
+      ],
+      "allowed_changes": [
+        "data_dir",
+        "root_dir",
+        "test_dir",
+        "validate_dir"
+      ],
+      "checkpoint_alias": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/codriving/032x080x128/net_epoch5.pth",
+      "checkpoint_alias_sha256": "f73acdf344cc11bfee6019099e6a3407362feb35109a20bf4ad34dc688fedae7",
+      "checkpoint_sha256": "f73acdf344cc11bfee6019099e6a3407362feb35109a20bf4ad34dc688fedae7",
+      "derived_checkpoint": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/codriving/032x080x128/net_epoch_bestval_at5.pth",
+      "derived_checkpoint_sha256": "f73acdf344cc11bfee6019099e6a3407362feb35109a20bf4ad34dc688fedae7",
+      "derived_config": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/codriving/032x080x128/config.yaml",
+      "derived_config_sha256": "c98239888028c4669ee6b2f3b247fd9ecd1e2e32057a79c5c4296e1e08f7c564",
+      "derived_values": {
+        "data_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure",
+        "root_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/train.json",
+        "test_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/val.json",
+        "validate_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/val.json"
+      },
+      "model": "codriving",
+      "source_checkpoint": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/032x080x128/net_epoch_bestval_at5.pth",
+      "source_config": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/032x080x128/config.yaml",
+      "source_config_sha256": "e509c1ae7aa4574e3512111bebbfba2e86ed71524db7056796886a96a2789b92",
+      "unexpected_changes": [],
+      "width": "032x080x128"
+    },
+    {
+      "actual_changes": [
+        "data_dir",
+        "root_dir",
+        "test_dir",
+        "validate_dir"
+      ],
+      "allowed_changes": [
+        "data_dir",
+        "root_dir",
+        "test_dir",
+        "validate_dir"
+      ],
+      "checkpoint_alias": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/codriving/016x032x064/net_epoch9.pth",
+      "checkpoint_alias_sha256": "ccbd1c2881f6736e1e4a57e9e873583befbe3a3fdc11f21c2a381a63d4356a8e",
+      "checkpoint_sha256": "ccbd1c2881f6736e1e4a57e9e873583befbe3a3fdc11f21c2a381a63d4356a8e",
+      "derived_checkpoint": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/codriving/016x032x064/net_epoch_bestval_at9.pth",
+      "derived_checkpoint_sha256": "ccbd1c2881f6736e1e4a57e9e873583befbe3a3fdc11f21c2a381a63d4356a8e",
+      "derived_config": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/codriving/016x032x064/config.yaml",
+      "derived_config_sha256": "cb2beb7ea92d2fb17e16f03c5ca6b9286713663fc67c499c7a0b10127dc80a69",
+      "derived_values": {
+        "data_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure",
+        "root_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/train.json",
+        "test_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/val.json",
+        "validate_dir": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/val.json"
+      },
+      "model": "codriving",
+      "source_checkpoint": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/016x032x064/net_epoch_bestval_at9.pth",
+      "source_config": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/source/codriving/016x032x064/config.yaml",
+      "source_config_sha256": "d2bdbf66b4efaf96094761e2586d7c3c8f1f6d1b47c47707cc60e3972655a191",
+      "unexpected_changes": [],
+      "width": "016x032x064"
+    }
+  ],
+  "schema_version": "lane_c_stage6_orin_ap_model_derivation_v1"
+}

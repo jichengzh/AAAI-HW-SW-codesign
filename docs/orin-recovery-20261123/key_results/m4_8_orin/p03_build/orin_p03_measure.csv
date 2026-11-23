@@ -1,0 +1,7 @@
+config,precision,engine,power_mode,latency_kind,lat_gpu_compute_median_ms,throughput_qps,power_gpu_soc_w,power_module_vin_w,power_cpu_cv_w,energy_per_frame_module_mj,perf_per_watt_module_fps_per_w,int8_layer_count,fp16_layer_count,fp32_layer_count,other_layer_count,scale_field_available,n_power_samples,source
+base,fp16,base_fp16_orin.engine,MODE_30W,body_subnet_collab2_orin,48.645,20.4732,8.203,7.166,0.452,349.999,2.8572,0,0,0,0,False,245,orin_p03_measure;trtexec-GPU;sudo-tegrastats-VIN_SYS;IEngineInspector
+base,int8,base_int8_orin.engine,MODE_30W,body_subnet_collab2_orin,32.9937,30.218,7.615,6.851,0.489,226.732,4.4105,0,0,0,0,False,246,orin_p03_measure;trtexec-GPU;sudo-tegrastats-VIN_SYS;IEngineInspector
+p50,fp16,p50_fp16_orin.engine,MODE_30W,body_subnet_collab2_orin,42.0645,23.6893,8.247,7.142,0.512,301.472,3.3171,0,0,0,0,False,257,orin_p03_measure;trtexec-GPU;sudo-tegrastats-VIN_SYS;IEngineInspector
+p50,int8,p50_int8_orin.engine,MODE_30W,body_subnet_collab2_orin,32.9668,30.2547,7.593,6.686,0.487,220.974,4.5254,0,0,0,0,False,245,orin_p03_measure;trtexec-GPU;sudo-tegrastats-VIN_SYS;IEngineInspector
+p75,fp16,p75_fp16_orin.engine,MODE_30W,body_subnet_collab2_orin,26.3721,37.8272,8.616,6.93,0.521,183.205,5.4584,0,0,0,0,False,256,orin_p03_measure;trtexec-GPU;sudo-tegrastats-VIN_SYS;IEngineInspector
+p75,int8,p75_int8_orin.engine,MODE_30W,body_subnet_collab2_orin,20.3105,49.1455,7.506,6.821,0.468,138.796,7.2048,0,0,0,0,False,256,orin_p03_measure;trtexec-GPU;sudo-tegrastats-VIN_SYS;IEngineInspector

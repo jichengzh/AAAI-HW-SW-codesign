@@ -1,0 +1,27 @@
+{
+  "batch_size": 1,
+  "capability": [
+    8,
+    7
+  ],
+  "cudnn_version": 8600,
+  "evidence_scope": "real_orin_layer_measurement",
+  "failed_key_count": 0,
+  "failed_keys": [],
+  "hardware_id": "Orin",
+  "latency_unit": "seconds",
+  "lut_sha256": "ced47b7b06a574226f584ca7e9c25996e7ff0e88e01d2cbf6f7b04f8e200eefe",
+  "measured_key_count": 12,
+  "measurement_boundary": "single Conv2d forward, CUDA event start/end, synchronized; excludes tensor allocation and warmup",
+  "measurement_wall_seconds": 3.6308281756937504,
+  "precision": "float32",
+  "repeats_per_key": 30,
+  "request_sha256": "70981cc133259c153177479ede69ddac5ffc982cd717b8673fad43d5f26b25af",
+  "requested_key_count": 12,
+  "status": "COMPLETE",
+  "target": "Jetson AGX Orin Developer Kit",
+  "tf32_enabled": false,
+  "timings_sha256": "0d2384ba33f3c737e4bd7556146d1fe34f1403effb9315d9b52a0a8488ce368f",
+  "torch_version": "1.12.0a0+2c916ef.nv22.3",
+  "warmup_per_key": 10
+}

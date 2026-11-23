@@ -1,0 +1,19 @@
+{
+  "source": "/home/jichengzhi/coptv2x_hil_p4_smoke_20261001T074559Z/input/preflight.npy",
+  "bytes": 67108992,
+  "npy_version": [
+    1,
+    0
+  ],
+  "header": {
+    "descr": "<f4",
+    "fortran_order": false,
+    "shape": [
+      2,
+      64,
+      256,
+      512
+    ]
+  },
+  "scope": "Single prerecorded feature input; not a full HIL/CARLA sequence"
+}

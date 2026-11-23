@@ -1,0 +1,383 @@
+{
+  "root_mount": {
+    "filesystems": [
+      {
+        "source": "/dev/nvme0n1p1",
+        "target": "/",
+        "fstype": "ext4"
+      }
+    ]
+  },
+  "block_devices": {
+    "blockdevices": [
+      {
+        "name": "loop1",
+        "size": "16M",
+        "type": "loop",
+        "fstype": "vfat",
+        "mountpoint": null,
+        "model": null
+      },
+      {
+        "name": "mmcblk0",
+        "size": "59.3G",
+        "type": "disk",
+        "fstype": null,
+        "mountpoint": null,
+        "model": null,
+        "children": [
+          {
+            "name": "mmcblk0p1",
+            "size": "57.8G",
+            "type": "part",
+            "fstype": "ext4",
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "mmcblk0p2",
+            "size": "128M",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "mmcblk0p3",
+            "size": "768K",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "mmcblk0p4",
+            "size": "31.6M",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "mmcblk0p5",
+            "size": "128M",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "mmcblk0p6",
+            "size": "768K",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "mmcblk0p7",
+            "size": "31.6M",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "mmcblk0p8",
+            "size": "80M",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "mmcblk0p9",
+            "size": "512K",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "mmcblk0p10",
+            "size": "64M",
+            "type": "part",
+            "fstype": "vfat",
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "mmcblk0p11",
+            "size": "80M",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "mmcblk0p12",
+            "size": "512K",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "mmcblk0p13",
+            "size": "64M",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "mmcblk0p14",
+            "size": "400M",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "mmcblk0p15",
+            "size": "479.5M",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          }
+        ]
+      },
+      {
+        "name": "zram0",
+        "size": "2.6G",
+        "type": "disk",
+        "fstype": null,
+        "mountpoint": "[SWAP]",
+        "model": null
+      },
+      {
+        "name": "zram1",
+        "size": "2.6G",
+        "type": "disk",
+        "fstype": null,
+        "mountpoint": "[SWAP]",
+        "model": null
+      },
+      {
+        "name": "zram2",
+        "size": "2.6G",
+        "type": "disk",
+        "fstype": null,
+        "mountpoint": "[SWAP]",
+        "model": null
+      },
+      {
+        "name": "zram3",
+        "size": "2.6G",
+        "type": "disk",
+        "fstype": null,
+        "mountpoint": "[SWAP]",
+        "model": null
+      },
+      {
+        "name": "zram4",
+        "size": "2.6G",
+        "type": "disk",
+        "fstype": null,
+        "mountpoint": "[SWAP]",
+        "model": null
+      },
+      {
+        "name": "zram5",
+        "size": "2.6G",
+        "type": "disk",
+        "fstype": null,
+        "mountpoint": "[SWAP]",
+        "model": null
+      },
+      {
+        "name": "zram6",
+        "size": "2.6G",
+        "type": "disk",
+        "fstype": null,
+        "mountpoint": "[SWAP]",
+        "model": null
+      },
+      {
+        "name": "zram7",
+        "size": "2.6G",
+        "type": "disk",
+        "fstype": null,
+        "mountpoint": "[SWAP]",
+        "model": null
+      },
+      {
+        "name": "zram8",
+        "size": "2.6G",
+        "type": "disk",
+        "fstype": null,
+        "mountpoint": "[SWAP]",
+        "model": null
+      },
+      {
+        "name": "zram9",
+        "size": "2.6G",
+        "type": "disk",
+        "fstype": null,
+        "mountpoint": "[SWAP]",
+        "model": null
+      },
+      {
+        "name": "zram10",
+        "size": "2.6G",
+        "type": "disk",
+        "fstype": null,
+        "mountpoint": "[SWAP]",
+        "model": null
+      },
+      {
+        "name": "zram11",
+        "size": "2.6G",
+        "type": "disk",
+        "fstype": null,
+        "mountpoint": "[SWAP]",
+        "model": null
+      },
+      {
+        "name": "nvme0n1",
+        "size": "931.5G",
+        "type": "disk",
+        "fstype": null,
+        "mountpoint": null,
+        "model": "CT1000P3PSSD8",
+        "children": [
+          {
+            "name": "nvme0n1p1",
+            "size": "930.1G",
+            "type": "part",
+            "fstype": "ext4",
+            "mountpoint": "/",
+            "model": null
+          },
+          {
+            "name": "nvme0n1p2",
+            "size": "128M",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "nvme0n1p3",
+            "size": "768K",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "nvme0n1p4",
+            "size": "31.6M",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "nvme0n1p5",
+            "size": "128M",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "nvme0n1p6",
+            "size": "768K",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "nvme0n1p7",
+            "size": "31.6M",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "nvme0n1p8",
+            "size": "80M",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "nvme0n1p9",
+            "size": "512K",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "nvme0n1p10",
+            "size": "64M",
+            "type": "part",
+            "fstype": "vfat",
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "nvme0n1p11",
+            "size": "80M",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "nvme0n1p12",
+            "size": "512K",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "nvme0n1p13",
+            "size": "64M",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "nvme0n1p14",
+            "size": "400M",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          },
+          {
+            "name": "nvme0n1p15",
+            "size": "479.5M",
+            "type": "part",
+            "fstype": null,
+            "mountpoint": null,
+            "model": null
+          }
+        ]
+      }
+    ]
+  },
+  "board_specs": [
+    "TNSPEC 3701-500-0005-M.0-1-1-jetson-agx-orin-devkit-",
+    "COMPATIBLE_SPEC 3701--0005--1--jetson-agx-orin-devkit-"
+  ]
+}

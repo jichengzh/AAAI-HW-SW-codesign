@@ -1,0 +1,21 @@
+{
+  "scope": "Current read-only observation; not automatically the settings of every historical benchmark",
+  "nvpmodel": {
+    "command": [
+      "/usr/sbin/nvpmodel",
+      "-q"
+    ],
+    "returncode": 0,
+    "stdout": "NV Power Mode: MAXN\n0\nNVPM ERROR: Error opening /sys/kernel/nvpmodel_emc_cap/emc_iso_cap: 13\nNVPM ERROR: failed to read PARAM EMC: ARG MAX_FREQ: PATH /sys/kernel/nvpmodel_emc_cap/emc_iso_cap\n",
+    "stderr": ""
+  },
+  "jetson_clocks": {
+    "command": [
+      "/usr/bin/jetson_clocks",
+      "--show"
+    ],
+    "returncode": 1,
+    "stdout": "SOC family:tegra234  Machine:Jetson AGX Orin Developer Kit\nError: Run this script(/usr/bin/jetson_clocks) as a root user\n",
+    "stderr": ""
+  }
+}

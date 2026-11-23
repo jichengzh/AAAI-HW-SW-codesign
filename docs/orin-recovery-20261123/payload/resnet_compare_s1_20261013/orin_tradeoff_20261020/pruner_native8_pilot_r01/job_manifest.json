@@ -1,0 +1,36 @@
+{
+  "approved_root": "/home/jichengzhi/resnet_compare_s1_20261013",
+  "artifacts": {
+    "graph_json": {
+      "path": "/home/jichengzhi/resnet_compare_s1_20261013/orin_tradeoff_20261020/pruner_native8_pilot_r01/artifacts/full_graph.json",
+      "sha256": "2ad02e6b4c8693a638bc6b0a92ed4455309ccdd66a40424900605fedb6a0c21a"
+    },
+    "library": {
+      "path": "/home/jichengzhi/resnet_compare_s1_20261013/orin_tradeoff_20261020/pruner_native8_pilot_r01/artifacts/full_graph.tar",
+      "sha256": "4bceee08fbfeafb143e906278bcf4e488f539164f878b8d6dc518ad61dcad028"
+    },
+    "params": {
+      "path": "/home/jichengzhi/resnet_compare_s1_20261013/orin_tradeoff_20261020/pruner_native8_pilot_r01/artifacts/full_graph.params",
+      "sha256": "f2196a608beded79fad60613aa9a0a8c4f1607356b74bef0eca7c9ac021d04de"
+    },
+    "samples": {
+      "path": "/home/jichengzhi/resnet_compare_s1_20261013/s3_20261020_dense_FP32_r01/61df39760cd00e500a6627d9295e4de0af0886d76c90e155a74423619b1256f9/samples.npz",
+      "sha256": "e1dfeb629fdf8a70e431db1ab42d71e2fdd35dd3faa34f59b52c09c33bb75521"
+    },
+    "samples_manifest": {
+      "path": "/home/jichengzhi/resnet_compare_s1_20261013/s3_20261020_dense_FP32_r01/61df39760cd00e500a6627d9295e4de0af0886d76c90e155a74423619b1256f9/transfer_manifest.json",
+      "sha256": "dc4be1b22866f2e66eff0ddb4ae9a40571ca5df6decb1a1a71c7db2c804752e6"
+    }
+  },
+  "input_layout": "NCHW",
+  "input_name": "input0",
+  "job_id": "pruner_native8_pilot_r01",
+  "power_reader": {
+    "path": "/home/jichengzhi/resnet_compare_s1_20261013/orin_validation_20261016/orin_power_reader.py",
+    "sha256": "5ce12ed85bcf092db4ef3fe27bbd4d4f86547f6e5a11da826c9d9f813fb5e493"
+  },
+  "precision": "float32",
+  "runner_sha256": "eeb34e059b05062d7bd51f4d507e5e64d598592075405683666919546cb878de",
+  "sample_layout": "NCHW",
+  "schema_version": "pruner_local_measure_v1"
+}

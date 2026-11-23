@@ -1,0 +1,33 @@
+{
+  "arguments": {
+    "arm": null,
+    "build_receipt": null,
+    "checkpoint": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/64x128x256x128x256/recovered_checkpoint.pth",
+    "checkpoint_dir": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/64x128x256x128x256",
+    "config": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/00_source_audit/recovered_h800/search_artifacts/sources/64x128x256x128x256/config.yaml",
+    "engine": null,
+    "expected_dataset_samples": 2170,
+    "manifest": null,
+    "max_samples": null,
+    "native": true,
+    "num_workers": 4,
+    "output_json": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/05_full2170_ap/original_default/metrics.json",
+    "prediction_manifest": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/05_full2170_ap/original_default/prediction_manifest.json",
+    "require_full2170": true,
+    "run_log_manifest": "/home/jichengzhi/V2X/results/lane_c_orin_fcooper_stage6_five_config_20260724/05_full2170_ap/original_default/run_manifest.json"
+  },
+  "arm": null,
+  "build_identity": null,
+  "checkpoint_sha256": "9ba4786726c71b226ee9ee9561ea82bfe92a21909ddad7653896dd34fb06d0c0",
+  "config_sha256": "8ac5183db729072a4efd50f7eb8b10003263396c6cd7e15d92d520f41cadc1c7",
+  "dataset_samples": 2170,
+  "ended_at": "2026-07-25T09:01:43.009091+00:00",
+  "engine_sha256": null,
+  "output_json_sha256": "48c763de113c3c98d80373e41abcc9681171abfe875cad9b655e71f50d419de7",
+  "prediction_manifest_sha256": "05a4a4b4a4ae79b445db97404a33f6a5fb89c61adf1e1c47d1a1686b61ff2c50",
+  "runtime": "native_fp32",
+  "schema_version": "fcooper_ap_run_log_v1",
+  "scope": "post_scatter_backbone_shrinker",
+  "started_at": "2026-07-25T07:54:32.762277+00:00",
+  "status": "success"
+}

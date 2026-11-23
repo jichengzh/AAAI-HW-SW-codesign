@@ -1,0 +1,57 @@
+{
+  "fcooper_model_hash_checks": [
+    {
+      "arm": "compress_then_tune",
+      "kind": "checkpoint",
+      "sha256_matches_formal_manifest": true
+    },
+    {
+      "arm": "compress_then_tune",
+      "kind": "onnx",
+      "sha256_matches_formal_manifest": true
+    },
+    {
+      "arm": "compression_only",
+      "kind": "checkpoint",
+      "sha256_matches_formal_manifest": true
+    },
+    {
+      "arm": "compression_only",
+      "kind": "onnx",
+      "sha256_matches_formal_manifest": true
+    },
+    {
+      "arm": "joint_fp16_control",
+      "kind": "checkpoint",
+      "sha256_matches_formal_manifest": true
+    },
+    {
+      "arm": "joint_fp16_control",
+      "kind": "onnx",
+      "sha256_matches_formal_manifest": true
+    },
+    {
+      "arm": "original_default",
+      "kind": "checkpoint",
+      "sha256_matches_formal_manifest": true
+    },
+    {
+      "arm": "original_default",
+      "kind": "onnx",
+      "sha256_matches_formal_manifest": true
+    },
+    {
+      "arm": "schedule_only",
+      "kind": "checkpoint",
+      "sha256_matches_formal_manifest": true
+    },
+    {
+      "arm": "schedule_only",
+      "kind": "onnx",
+      "sha256_matches_formal_manifest": true
+    }
+  ],
+  "dataset_metadata_source_overlap_hashes_match": 2,
+  "scope": "Exact alternate FCooper asset hashes equal formal five-arm canonical hashes; metadata overlap equals captured source.",
+  "resnet_candidate_source_hash_checks": 3
+}

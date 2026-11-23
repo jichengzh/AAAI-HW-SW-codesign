@@ -1,0 +1,53 @@
+{
+  "ap30": 0.4632249013047238,
+  "ap50": 0.3479661051971001,
+  "ap70": 0.21100677805715526,
+  "checkpoint_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/codriving/064x128x256/net_epoch29.pth",
+  "config_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/codriving/064x128x256/config.yaml",
+  "dataset_path": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/val.json",
+  "elapsed_secs": 4123.524127244949,
+  "engine_calls": 3578,
+  "engine_calls_per_sample": 2.0,
+  "engine_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/codriving/schedule_only/backbone.engine",
+  "engine_samples": 1789,
+  "failed_samples": 0,
+  "fallback_samples": 0,
+  "gates": {
+    "blockers": [],
+    "full_1789": true,
+    "sanity_16": true
+  },
+  "model_dir": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/codriving/064x128x256",
+  "output_vs_reference_error": {
+    "all_finite": true,
+    "max_abs_err": 26.965476989746094,
+    "mean_abs_err": 0.29543796562884184,
+    "nonfinite_count": 0,
+    "num_compared": 10734,
+    "num_records": 10734,
+    "shape_mismatch_count": 0
+  },
+  "pipeline_scope": "codriving_resnet_trt_in_full_pytorch_fusion_head_postprocess",
+  "processed_samples": 1789,
+  "protocol": {
+    "engine_batch": 2,
+    "engine_inputs": 1,
+    "engine_outputs": 3,
+    "fallback_policy": "forbidden",
+    "full_samples": 1789,
+    "patch_target": "model.backbone.resnet",
+    "pipeline_scope": "codriving_resnet_trt_in_full_pytorch_fusion_head_postprocess",
+    "precision_tag": "fp32",
+    "sanity_samples": 16,
+    "schema": "stage3_codriving_trt_multiscale_ap_bridge_v3_protocol_v1"
+  },
+  "schema": "stage3_codriving_trt_multiscale_ap_bridge_v3",
+  "sha256": {
+    "checkpoint": "8685ee8ccc606798a008ec2852cd7ecd41f56ef13c6734bd85e7f1973c98a046",
+    "config": "6d27c5b15e4fad6d635ddf7fa762585b6035bc7355a6e878cc893f93c9b08204",
+    "dataset": "d4136fd2147efcb53ae8684651e5871d530dbad389c8728029193e3dfa45a861",
+    "engine": "be69d9f5e9290f3431d05c8074f206b9ae96656a24d850afae32a46191a11f0e",
+    "protocol": "67db93dfc52cba91e6d8bcfcbe2ed4ce387ff8825d72e5dbbc13eaa2d578099e"
+  },
+  "status": "success"
+}

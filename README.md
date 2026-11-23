@@ -1,5 +1,7 @@
 # GEAR Co-design reproducibility package
 
+> **Orin recovery branch:** Start with the [Orin recovery guide](docs/ORIN_RECOVERY.md) for the device source/config snapshot, key results, installation paths and dataset/model download catalog. This recovery snapshot is separate from the CPU smoke artifact described below; large offline archives remain external.
+
 This repository is a scoped reproducibility artifact for the submission. It
 provides a deterministic CPU-only smoke workflow, a small verified cost-model
 selection audit, and public interfaces for candidate selection, evidence

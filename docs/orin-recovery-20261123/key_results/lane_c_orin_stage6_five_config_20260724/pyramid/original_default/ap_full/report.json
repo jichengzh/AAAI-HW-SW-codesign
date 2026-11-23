@@ -1,0 +1,22 @@
+{
+  "ap30": 0.8325927246264727,
+  "ap50": 0.7907711273842135,
+  "ap70": 0.6313597545108283,
+  "checkpoint_sha256": "4ccc6fe1f7cc13b5d1294f74014b01e849cc8e90b69cbded14158e1999fa42b2",
+  "ckpt_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/pyramid/064x128x256/net_epoch_bestval_at23.pth",
+  "config_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/pyramid/064x128x256/config.yaml",
+  "dataset": "DAIR-V2X",
+  "elapsed_secs": 2177.1839561462402,
+  "eval_command": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/scripts/run_pyramid_native_ap_on_orin.py --heal-root /home/jichengzhi/lane_c_orin_backbone_parity_20260723/code/HEAL --model-dir /home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/pyramid/064x128x256 --checkpoint /home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/pyramid/064x128x256/net_epoch_bestval_at23.pth --num-samples 1789 --raw-dir /home/jichengzhi/lane_c_orin_stage6_five_config_20260724/pyramid/original_default/ap_full --report-json /home/jichengzhi/lane_c_orin_stage6_five_config_20260724/pyramid/original_default/ap_full/report.json",
+  "eval_split": "val",
+  "label": "pyramid_original_default_orin",
+  "num_samples": 1789,
+  "path_counts": {
+    "pytorch_model_output_fp32_postprocess": 1789
+  },
+  "precision": "fp32",
+  "precision_mode": "model_float32",
+  "raw_artifact": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/pyramid/original_default/ap_full",
+  "resume_epoch": 23,
+  "status": "success"
+}

@@ -1,0 +1,28 @@
+{
+  "files_scanned": 7345,
+  "logical_bytes_scanned": 92686791,
+  "patterns": [
+    "private_key",
+    "github_token",
+    "aws_key",
+    "url_credentials",
+    "password_assignment",
+    "password_pipe",
+    "sshpass_inline",
+    "api_secret"
+  ],
+  "findings": [],
+  "files_over_100_mib": [],
+  "binary_files": [],
+  "curated_bash_blocks": 36,
+  "curated_links_and_syntax_errors": [],
+  "json_files_parsed": 18,
+  "method": "Static scan, stdlib parse and bash syntax checks; no payload execution. Not an exhaustive security proof.",
+  "scope_excludes_generated_report_and_final_checksum_list": true,
+  "branch_publication_checks": {
+    "full_local_tests_passed": 986,
+    "original_metadata_redactions": 9,
+    "gpu_prose_files_verified_ast_unchanged_except_strings": 6,
+    "private_backups_unchanged": true
+  }
+}

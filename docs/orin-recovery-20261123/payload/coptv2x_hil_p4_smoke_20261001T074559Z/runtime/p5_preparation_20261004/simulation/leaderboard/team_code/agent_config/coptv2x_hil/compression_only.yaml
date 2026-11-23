@@ -1,0 +1,12 @@
+# Runtime overlay; the immutable artifact registry remains artifact_*.yaml.
+base_config: simulation/leaderboard/team_code/agent_config/pnp_config_codriving_5_10.yaml
+arm_id: compression_only
+cadence: 2
+profile: 5_10
+simulation:
+  coptv2x_hil:
+    enabled: true
+    arm_id: compression_only
+    buffer_capacity: 8
+    outbound_capacity: 8
+    inbound_capacity: 8

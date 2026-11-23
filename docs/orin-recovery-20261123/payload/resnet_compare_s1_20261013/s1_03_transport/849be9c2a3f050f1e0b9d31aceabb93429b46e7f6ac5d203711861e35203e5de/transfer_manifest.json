@@ -1,0 +1,45 @@
+{
+  "candidate": {
+    "candidate_id": "D2_dense_synthetic_transport",
+    "initial_weight_sha256": "0676ba61b6795bbe1773cffd859882e5e297624d384b6993f7c9e683e722fb8a",
+    "method_id": "copt",
+    "precision_semantics": "FP16",
+    "run_id": "s1_03_transport",
+    "sample_manifest_sha256": "55e788dd6dcd9e2005219ddedc94958ed810902328331f8991dd5ad21a9fdd8d",
+    "seed": 17,
+    "source_commit": "11369ae0df2e891d5dab84d862be07a9f89ff3cd",
+    "structure_digest": "a8fb98acefa9ba54c1adc039b210a29073dbd5fd12019a518580725effb05c6f"
+  },
+  "code_sha256": {
+    "__init__.py": "d2040ebc66687f6200b04cff914ec9b61ae6692f7016e75b3da150b50a3bfb4a",
+    "contracts.py": "3899120e3d1d0b95b7bd31bfb64891a61f975861e1a3292ab434f2f673a677be",
+    "remote.py": "3616753491248832224e6a69fbbe1853a0e22f2d5822e0126f7e1b4afde147e7",
+    "runtime.py": "2bc5e5f335464f362d67643c16a229ec01d8fc52b5a05cf312134848c3c0c585",
+    "target_entry.py": "8b011b6e30cd4504f71cda66e1fc3784ee940051d3e9ffb2d39dc092d1113da7",
+    "trt_runtime.py": "c388e94c14473d6dbe2980235652641933158adcf8c836fa4419563fb833bb67"
+  },
+  "export_sha256": "232f666524f07b9d3971381462365774222f0488f6912e144f73c50d36d2fc21",
+  "precision": "FP16",
+  "sample_pack_sha256": "96804831f6aaf4e0384dacd66db59fd5509bf0a62ca0a227c0646bdd6b7134d1",
+  "sample_rows_sha256": "823e3a8bbc7ce982f8c4d67101ff5628328428cf12ed6e73af2bc181c4b7fd03",
+  "samples": [
+    {
+      "input_sha256": "650ab0d3ed6c29de5470c3c439c40856eef7c0e6441e6106e005c83251c885b3",
+      "is_synthetic": true,
+      "label": null,
+      "sample_id": "synthetic_seed17_0",
+      "source_logits_sha256": "ab657371e0c13503df2badb9c72aca3a61089f06771674cded24ac269f56e3cc"
+    }
+  ],
+  "schema_version": "resnet_compare_transfer_v1",
+  "transport": {
+    "host": "jichengzhi@172.16.62.222",
+    "python": "/home/jichengzhi/uniad_venv/bin/python",
+    "remote_root": "/home/jichengzhi/resnet_compare_s1_20261013",
+    "requests_per_window": 200,
+    "timeout_s": 1800,
+    "warmup": 50,
+    "windows": 3
+  },
+  "transport_id": "849be9c2a3f050f1e0b9d31aceabb93429b46e7f6ac5d203711861e35203e5de"
+}

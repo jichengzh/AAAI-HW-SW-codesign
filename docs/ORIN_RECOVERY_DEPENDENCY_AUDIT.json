@@ -1,0 +1,83 @@
+{
+  "captured_utc": "2026-11-23T09:08:25.952785+00:00",
+  "tool": "pip-audit",
+  "scope": "Existing root requirements.txt direct pinned dependencies, --no-deps --disable-pip; not an audit of the archived Jetson environment or the full dependency closure.",
+  "baseline_commit": "64f94fa3cfce07c3ec8a2dc7ed7180882bb8749b",
+  "requirements_sha256": "1c8b696b9a0147b33d34e17393be7c1aa3e1e04b5910844f8d3d30231bc8d2c4",
+  "requirements_changed_by_recovery_branch": false,
+  "advisory_record_count": 6,
+  "unique_cve_count": 5,
+  "affected_dependencies": [
+    {
+      "name": "torch",
+      "version": "2.9.0",
+      "advisories": [
+        {
+          "id": "PYSEC-2026-139",
+          "aliases": [
+            "CVE-2026-4538",
+            "BIT-pytorch-2026-4538"
+          ],
+          "fix_versions": []
+        },
+        {
+          "id": "PYSEC-2025-193",
+          "aliases": [
+            "CVE-2025-2999",
+            "BIT-pytorch-2025-2999",
+            "GHSA-vgrw-7cvw-pwgx"
+          ],
+          "fix_versions": [
+            "2.9.1"
+          ]
+        },
+        {
+          "id": "PYSEC-2025-194",
+          "aliases": [
+            "BIT-pytorch-2025-3000",
+            "CVE-2025-3000",
+            "GHSA-rrmf-rvhw-rf47"
+          ],
+          "fix_versions": [
+            "2.13.0"
+          ]
+        },
+        {
+          "id": "PYSEC-2025-195",
+          "aliases": [
+            "GHSA-qfhq-4f3w-5fph",
+            "BIT-pytorch-2025-3001",
+            "CVE-2025-3001"
+          ],
+          "fix_versions": [
+            "2.10.0"
+          ]
+        },
+        {
+          "id": "PYSEC-2026-2286",
+          "aliases": [
+            "CVE-2026-24747",
+            "BIT-pytorch-2026-24747",
+            "GHSA-63cw-57p8-fm3p"
+          ],
+          "fix_versions": [
+            "2.10.0"
+          ]
+        },
+        {
+          "id": "PYSEC-2026-1856",
+          "aliases": [
+            "CVE-2026-24747",
+            "GHSA-63cw-57p8-fm3p",
+            "PYSEC-2026-2286",
+            "BIT-pytorch-2026-24747"
+          ],
+          "fix_versions": [
+            "2.10.0"
+          ]
+        }
+      ]
+    }
+  ],
+  "note": "Historical environment pins are preserved for reproducibility. This record does not claim that the pinned environments are safe for general-purpose deployment."
+}

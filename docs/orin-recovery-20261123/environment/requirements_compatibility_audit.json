@@ -1,0 +1,278 @@
+[
+  {
+    "requirement": "Jinja2==3.1.6",
+    "metadata_url": "https://pypi.org/pypi/Jinja2/3.1.6/json",
+    "requires_python": ">=3.7",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "MarkupSafe==2.1.5",
+    "metadata_url": "https://pypi.org/pypi/MarkupSafe/2.1.5/json",
+    "requires_python": ">=3.7",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "Pillow==10.4.0",
+    "metadata_url": "https://pypi.org/pypi/Pillow/10.4.0/json",
+    "requires_python": ">=3.8",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "Pillow==9.5.0",
+    "metadata_url": "https://pypi.org/pypi/Pillow/9.5.0/json",
+    "requires_python": ">=3.7",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "PyYAML==5.3.1",
+    "metadata_url": "https://pypi.org/pypi/PyYAML/5.3.1/json",
+    "requires_python": "",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "PyYAML==6.0.2",
+    "metadata_url": "https://pypi.org/pypi/PyYAML/6.0.2/json",
+    "requires_python": ">=3.8",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "Shapely==1.8.4",
+    "metadata_url": "https://pypi.org/pypi/Shapely/1.8.4/json",
+    "requires_python": ">=3.6",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "Shapely==1.8.5.post1",
+    "metadata_url": "https://pypi.org/pypi/Shapely/1.8.5.post1/json",
+    "requires_python": ">=3.6",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "addict==2.4.0",
+    "metadata_url": "https://pypi.org/pypi/addict/2.4.0/json",
+    "requires_python": "",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "casadi==3.6.7",
+    "metadata_url": "https://pypi.org/pypi/casadi/3.6.7/json",
+    "requires_python": "",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "einops==0.4.1",
+    "metadata_url": "https://pypi.org/pypi/einops/0.4.1/json",
+    "requires_python": "",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "einops==0.8.1",
+    "metadata_url": "https://pypi.org/pypi/einops/0.8.1/json",
+    "requires_python": ">=3.8",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "filelock==3.16.1",
+    "metadata_url": "https://pypi.org/pypi/filelock/3.16.1/json",
+    "requires_python": ">=3.8",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "fonttools==4.57.0",
+    "metadata_url": "https://pypi.org/pypi/fonttools/4.57.0/json",
+    "requires_python": ">=3.8",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "fsspec==2025.3.0",
+    "metadata_url": "https://pypi.org/pypi/fsspec/2025.3.0/json",
+    "requires_python": ">=3.8",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "importlib-metadata==8.5.0",
+    "metadata_url": "https://pypi.org/pypi/importlib-metadata/8.5.0/json",
+    "requires_python": ">=3.8",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "matplotlib==3.5.1",
+    "metadata_url": "https://pypi.org/pypi/matplotlib/3.5.1/json",
+    "requires_python": ">=3.7",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "matplotlib==3.5.3",
+    "metadata_url": "https://pypi.org/pypi/matplotlib/3.5.3/json",
+    "requires_python": ">=3.7",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "mpmath==1.3.0",
+    "metadata_url": "https://pypi.org/pypi/mpmath/1.3.0/json",
+    "requires_python": "",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "networkx==2.2",
+    "metadata_url": "https://pypi.org/pypi/networkx/2.2/json",
+    "requires_python": "",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "networkx==3.1",
+    "metadata_url": "https://pypi.org/pypi/networkx/3.1/json",
+    "requires_python": ">=3.8",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "numba==0.53.0",
+    "metadata_url": "https://pypi.org/pypi/numba/0.53.0/json",
+    "requires_python": ">=3.6,<3.10",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "numba==0.58.1",
+    "metadata_url": "https://pypi.org/pypi/numba/0.58.1/json",
+    "requires_python": ">=3.8",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "numpy==1.22.4",
+    "metadata_url": "https://pypi.org/pypi/numpy/1.22.4/json",
+    "requires_python": ">=3.8",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "nuscenes-devkit==1.1.11",
+    "metadata_url": "https://pypi.org/pypi/nuscenes-devkit/1.1.11/json",
+    "requires_python": ">=3.6",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "onnx==1.16.2",
+    "metadata_url": "https://pypi.org/pypi/onnx/1.16.2/json",
+    "requires_python": ">=3.8",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "opencv-python==4.12.0.88",
+    "metadata_url": "https://pypi.org/pypi/opencv-python/4.12.0.88/json",
+    "requires_python": ">=3.6",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "opencv-python==4.6.0.66",
+    "metadata_url": "https://pypi.org/pypi/opencv-python/4.6.0.66/json",
+    "requires_python": ">=3.6",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "packaging==25.0",
+    "metadata_url": "https://pypi.org/pypi/packaging/25.0/json",
+    "requires_python": ">=3.8",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "packaging==26.2",
+    "metadata_url": "https://pypi.org/pypi/packaging/26.2/json",
+    "requires_python": ">=3.8",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "platformdirs==4.3.6",
+    "metadata_url": "https://pypi.org/pypi/platformdirs/4.3.6/json",
+    "requires_python": ">=3.8",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "prettytable==3.11.0",
+    "metadata_url": "https://pypi.org/pypi/prettytable/3.11.0/json",
+    "requires_python": ">=3.8",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "protobuf==5.29.5",
+    "metadata_url": "https://pypi.org/pypi/protobuf/5.29.5/json",
+    "requires_python": ">=3.8",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "protobuf==5.29.6",
+    "metadata_url": "https://pypi.org/pypi/protobuf/5.29.6/json",
+    "requires_python": ">=3.8",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "pycocotools==2.0.7",
+    "metadata_url": "https://pypi.org/pypi/pycocotools/2.0.7/json",
+    "requires_python": ">=3.5",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "pyquaternion==0.9.9",
+    "metadata_url": "https://pypi.org/pypi/pyquaternion/0.9.9/json",
+    "requires_python": "",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "python-dateutil==2.9.0.post0",
+    "metadata_url": "https://pypi.org/pypi/python-dateutil/2.9.0.post0/json",
+    "requires_python": "!=3.0.*,!=3.1.*,!=3.2.*,>=2.7",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "scipy==1.10.1",
+    "metadata_url": "https://pypi.org/pypi/scipy/1.10.1/json",
+    "requires_python": "<3.12,>=3.8",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "six==1.14.0",
+    "metadata_url": "https://pypi.org/pypi/six/1.14.0/json",
+    "requires_python": ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "six==1.17.0",
+    "metadata_url": "https://pypi.org/pypi/six/1.17.0/json",
+    "requires_python": "!=3.0.*,!=3.1.*,!=3.2.*,>=2.7",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "sympy==1.12",
+    "metadata_url": "https://pypi.org/pypi/sympy/1.12/json",
+    "requires_python": ">=3.8",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "terminaltables==3.1.10",
+    "metadata_url": "https://pypi.org/pypi/terminaltables/3.1.10/json",
+    "requires_python": ">=2.6",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "tomli==2.2.1",
+    "metadata_url": "https://pypi.org/pypi/tomli/2.2.1/json",
+    "requires_python": ">=3.8",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "tomli==2.4.1",
+    "metadata_url": "https://pypi.org/pypi/tomli/2.4.1/json",
+    "requires_python": ">=3.8",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "typing_extensions==4.13.2",
+    "metadata_url": "https://pypi.org/pypi/typing_extensions/4.13.2/json",
+    "requires_python": ">=3.8",
+    "python38_allowed": true
+  },
+  {
+    "requirement": "yapf==0.40.1",
+    "metadata_url": "https://pypi.org/pypi/yapf/0.40.1/json",
+    "requires_python": ">=3.7",
+    "python38_allowed": true
+  }
+]

@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>offline_test</name>
+  <version>0.1.0</version>
+  <description>No-hardware offline test: simulated base odometry and lidar for the WHEELTEC navigation stack.</description>
+  <maintainer email="jichengzhi@example.com">jichengzhi</maintainer>
+  <license>BSD</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <exec_depend>rospy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>tf</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+</package>

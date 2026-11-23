@@ -1,0 +1,68 @@
+control:
+  turn_KP: 1.0
+  turn_KI: 0.2
+  turn_KD: 0.1
+  turn_n: 5
+  speed_KP: 5.0
+  speed_KI: 1
+  speed_KD: 0.1
+  speed_n: 20
+  max_throttle: 0.75
+  brake_speed: 0.1
+  brake_ratio: 1.1
+  clip_delta: 0.35
+  max_speed: 5
+  collision_buffer:
+  - 2.5
+  - 1.2
+  momentum: 0
+  target_point_distance: 10
+  detect_threshold: 0.04
+RSU:
+  change_rsu_frame: 5
+  rsu_height: 7.5
+  rsu_lane_side: right
+  rsu_distance: 12
+simulation:
+  ego_num: 1
+  skip_frames: 2
+  coptv2x_hil:
+    enabled: true
+    arm_id: original_default
+    buffer_capacity: 8
+    trigger_capacity: 4096
+    outbound_capacity: 4096
+    inbound_capacity: 8
+    run_id: p4-five-arms-20261003T054210Z
+    route_id: Town05-route-2
+    scenario_id: scenario1
+    audit_jsonl: /data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-03/evidence/fusion_audit.jsonl
+    transport: reverse_ssh_ros_proxy
+    proxy_listen_host: 127.0.0.1
+    proxy_listen_port: 56810
+    trigger_topic: /coptv2x/hil/trigger
+    result_topic: /ditl/rsu/perception_result
+    ack_topic: /ditl/rsu/perception_result_ack
+perception:
+  core_method: collaborative_perception
+  detect_threshold: 0.04
+  detection_range:
+  - 36
+  - 12
+  - 12
+  - 12
+  perception_model_dir: /data/jichengzhi_v2x/ditl/coptv2x_hil_p4_recovery_20261003T054210Z/p4-five-arms-20261003T054210Z/runs/hil_Town05__1_r2_original_default_seed2000_rep0/attempt-03/runtime-perception/original_default
+planning:
+  core_method: MotionNet
+  planner_config: codriving/hypes_yaml/codriving/end2end_codriving.yaml
+  planner_model_checkpoint: /home/jichengzhi/V2Xverse/checkpoints/codriving/planner/codriving_planner.ckpt
+  feature_adapter_checkpoint: /home/jichengzhi/V2Xverse/checkpoints/codriving/perception/net_epoch_bestval_at16.pth
+  feature_adapter_hypes: /home/jichengzhi/V2Xverse/checkpoints/codriving/perception/config.yaml
+  feature_adapter_source_widths:
+  - 128
+  - 128
+  - 128
+  feature_adapter_retained_widths:
+  - 128
+  - 128
+  - 128

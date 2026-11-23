@@ -1,0 +1,179 @@
+{
+  "files": [
+    {
+      "source": "/home/jichengzhi/liruozhan/toOrinV2/uniad_trt_input/timestamp/0.bin",
+      "relative_path": "liruozhan/toOrinV2/uniad_trt_input/timestamp/0.bin",
+      "bytes": 4,
+      "kind": "supplemental_model_or_smoke",
+      "reason": "Exact ResNet candidate, first UniAD smoke frame or required visualisation asset",
+      "sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
+      "source_mtime_ns": 1781367214000000000
+    },
+    {
+      "source": "/home/jichengzhi/liruozhan/toOrinV2/uniad_trt_input/l2g_r_mat/0.bin",
+      "relative_path": "liruozhan/toOrinV2/uniad_trt_input/l2g_r_mat/0.bin",
+      "bytes": 36,
+      "kind": "supplemental_model_or_smoke",
+      "reason": "Exact ResNet candidate, first UniAD smoke frame or required visualisation asset",
+      "sha256": "2d09cbe5472c7bb4e61ebbd8b510488fac15e864ec6f3d346407093aee714790",
+      "source_mtime_ns": 1781367213000000000
+    },
+    {
+      "source": "/home/jichengzhi/liruozhan/toOrinV2/uniad_trt_input/l2g_t/0.bin",
+      "relative_path": "liruozhan/toOrinV2/uniad_trt_input/l2g_t/0.bin",
+      "bytes": 12,
+      "kind": "supplemental_model_or_smoke",
+      "reason": "Exact ResNet candidate, first UniAD smoke frame or required visualisation asset",
+      "sha256": "0937db173352479135694d0ae04be8ed107bd57f030434897d6725e835c28c15",
+      "source_mtime_ns": 1781367213000000000
+    },
+    {
+      "source": "/home/jichengzhi/liruozhan/toOrinV2/uniad_trt_input/command/0.bin",
+      "relative_path": "liruozhan/toOrinV2/uniad_trt_input/command/0.bin",
+      "bytes": 4,
+      "kind": "supplemental_model_or_smoke",
+      "reason": "Exact ResNet candidate, first UniAD smoke frame or required visualisation asset",
+      "sha256": "e00e5eb9444182f352323374ef4e08ebcb784725fdd4fd612d7730540b3e0c8c",
+      "source_mtime_ns": 1781367213000000000
+    },
+    {
+      "source": "/home/jichengzhi/liruozhan/toOrinV2/uniad_trt_input/img_metas_can_bus/0.bin",
+      "relative_path": "liruozhan/toOrinV2/uniad_trt_input/img_metas_can_bus/0.bin",
+      "bytes": 72,
+      "kind": "supplemental_model_or_smoke",
+      "reason": "Exact ResNet candidate, first UniAD smoke frame or required visualisation asset",
+      "sha256": "7d3139bad1ab66dca15316f678832ee773bd4cba154d7b589f0359e834b44c60",
+      "source_mtime_ns": 1781367213000000000
+    },
+    {
+      "source": "/home/jichengzhi/liruozhan/toOrinV2/uniad_trt_input/img_metas_lidar2img/0.bin",
+      "relative_path": "liruozhan/toOrinV2/uniad_trt_input/img_metas_lidar2img/0.bin",
+      "bytes": 384,
+      "kind": "supplemental_model_or_smoke",
+      "reason": "Exact ResNet candidate, first UniAD smoke frame or required visualisation asset",
+      "sha256": "85502cf417801806cc837020fb4636bee266f863a89bd6c79c55073f71dc66a2",
+      "source_mtime_ns": 1781367213000000000
+    },
+    {
+      "source": "/home/jichengzhi/liruozhan/toOrinV2/uniad_trt_input/img_metas_scene_token/0.bin",
+      "relative_path": "liruozhan/toOrinV2/uniad_trt_input/img_metas_scene_token/0.bin",
+      "bytes": 128,
+      "kind": "supplemental_model_or_smoke",
+      "reason": "Exact ResNet candidate, first UniAD smoke frame or required visualisation asset",
+      "sha256": "08ec35269fb78f26ca15e77f72fa6a90382c1343de703b49ea3ad8499cae1736",
+      "source_mtime_ns": 1781367213000000000
+    },
+    {
+      "source": "/home/jichengzhi/liruozhan/toOrinV2/DL4AGX_min/uniad-trt/inference_app/enqueueV2/data/nuscenes/samples/CAM_FRONT/n015-2018-07-11-11-54-16+0800__CAM_FRONT__1531281439762460.jpg",
+      "relative_path": "liruozhan/toOrinV2/DL4AGX_min/uniad-trt/inference_app/enqueueV2/data/nuscenes/samples/CAM_FRONT/n015-2018-07-11-11-54-16+0800__CAM_FRONT__1531281439762460.jpg",
+      "bytes": 124942,
+      "kind": "supplemental_model_or_smoke",
+      "reason": "Exact ResNet candidate, first UniAD smoke frame or required visualisation asset",
+      "sha256": "663c8bb0db4e805913288be410a8709fa8627a277814685f788466fe5ed05866",
+      "source_mtime_ns": 1552739744000000000
+    },
+    {
+      "source": "/home/jichengzhi/liruozhan/toOrinV2/DL4AGX_min/uniad-trt/inference_app/enqueueV2/data/nuscenes/samples/CAM_FRONT_RIGHT/n015-2018-07-11-11-54-16+0800__CAM_FRONT_RIGHT__1531281439770339.jpg",
+      "relative_path": "liruozhan/toOrinV2/DL4AGX_min/uniad-trt/inference_app/enqueueV2/data/nuscenes/samples/CAM_FRONT_RIGHT/n015-2018-07-11-11-54-16+0800__CAM_FRONT_RIGHT__1531281439770339.jpg",
+      "bytes": 128606,
+      "kind": "supplemental_model_or_smoke",
+      "reason": "Exact ResNet candidate, first UniAD smoke frame or required visualisation asset",
+      "sha256": "eb6394e9f8dd991f315e2839d829299f4f4b4dcf4a28d5200aa09ee3a81927ef",
+      "source_mtime_ns": 1552739949000000000
+    },
+    {
+      "source": "/home/jichengzhi/liruozhan/toOrinV2/DL4AGX_min/uniad-trt/inference_app/enqueueV2/data/nuscenes/samples/CAM_FRONT_LEFT/n015-2018-07-11-11-54-16+0800__CAM_FRONT_LEFT__1531281439754844.jpg",
+      "relative_path": "liruozhan/toOrinV2/DL4AGX_min/uniad-trt/inference_app/enqueueV2/data/nuscenes/samples/CAM_FRONT_LEFT/n015-2018-07-11-11-54-16+0800__CAM_FRONT_LEFT__1531281439754844.jpg",
+      "bytes": 165388,
+      "kind": "supplemental_model_or_smoke",
+      "reason": "Exact ResNet candidate, first UniAD smoke frame or required visualisation asset",
+      "sha256": "39f1c1438cd0369144cbae39413b8d11064ced78ccf087ecf0f74fb504103ca4",
+      "source_mtime_ns": 1552739541000000000
+    },
+    {
+      "source": "/home/jichengzhi/liruozhan/toOrinV2/DL4AGX_min/uniad-trt/inference_app/enqueueV2/data/nuscenes/samples/CAM_BACK/n015-2018-07-11-11-54-16+0800__CAM_BACK__1531281439787525.jpg",
+      "relative_path": "liruozhan/toOrinV2/DL4AGX_min/uniad-trt/inference_app/enqueueV2/data/nuscenes/samples/CAM_BACK/n015-2018-07-11-11-54-16+0800__CAM_BACK__1531281439787525.jpg",
+      "bytes": 128157,
+      "kind": "supplemental_model_or_smoke",
+      "reason": "Exact ResNet candidate, first UniAD smoke frame or required visualisation asset",
+      "sha256": "6fd287777639498a81bde2521bbb4d962a831a0d57df3bacf56c2868f19403f3",
+      "source_mtime_ns": 1552739130000000000
+    },
+    {
+      "source": "/home/jichengzhi/liruozhan/toOrinV2/DL4AGX_min/uniad-trt/inference_app/enqueueV2/data/nuscenes/samples/CAM_BACK_LEFT/n015-2018-07-11-11-54-16+0800__CAM_BACK_LEFT__1531281439797423.jpg",
+      "relative_path": "liruozhan/toOrinV2/DL4AGX_min/uniad-trt/inference_app/enqueueV2/data/nuscenes/samples/CAM_BACK_LEFT/n015-2018-07-11-11-54-16+0800__CAM_BACK_LEFT__1531281439797423.jpg",
+      "bytes": 177542,
+      "kind": "supplemental_model_or_smoke",
+      "reason": "Exact ResNet candidate, first UniAD smoke frame or required visualisation asset",
+      "sha256": "4327baceb650306c434f5555c9e9100f014e9c50c52393bcf998bad5cc4bec03",
+      "source_mtime_ns": 1552738934000000000
+    },
+    {
+      "source": "/home/jichengzhi/liruozhan/toOrinV2/DL4AGX_min/uniad-trt/inference_app/enqueueV2/data/nuscenes/samples/CAM_BACK_RIGHT/n015-2018-07-11-11-54-16+0800__CAM_BACK_RIGHT__1531281439777893.jpg",
+      "relative_path": "liruozhan/toOrinV2/DL4AGX_min/uniad-trt/inference_app/enqueueV2/data/nuscenes/samples/CAM_BACK_RIGHT/n015-2018-07-11-11-54-16+0800__CAM_BACK_RIGHT__1531281439777893.jpg",
+      "bytes": 147396,
+      "kind": "supplemental_model_or_smoke",
+      "reason": "Exact ResNet candidate, first UniAD smoke frame or required visualisation asset",
+      "sha256": "62604354ab9190eb51fd9653465facc0321066962418e5f986a33a2b8f1dc073",
+      "source_mtime_ns": 1552739335000000000
+    },
+    {
+      "source": "/home/jichengzhi/liruozhan/toOrinV2/uniad_trt_input/info.txt",
+      "relative_path": "liruozhan/toOrinV2/uniad_trt_input/info.txt",
+      "bytes": 23751,
+      "kind": "supplemental_model_or_smoke",
+      "reason": "Exact ResNet candidate, first UniAD smoke frame or required visualisation asset",
+      "sha256": "4878e8bd546f064bfd8af41fb93fb25a65381f2953e1b741f079a2cec1b3eaf2",
+      "source_mtime_ns": 1794038068635907469
+    },
+    {
+      "source": "/home/jichengzhi/liruozhan/toOrinV2/DL4AGX_min/common/dependencies/cuOSD/data/simhei.ttf",
+      "relative_path": "liruozhan/toOrinV2/DL4AGX_min/common/dependencies/cuOSD/data/simhei.ttf",
+      "bytes": 9753388,
+      "kind": "supplemental_model_or_smoke",
+      "reason": "Exact ResNet candidate, first UniAD smoke frame or required visualisation asset",
+      "sha256": "aa4560dd8fe5645745fed3ffa301c3ca4d6c03cbd738145b613303961ba733b8",
+      "source_mtime_ns": 1781367318000000000
+    },
+    {
+      "source": "/home/jichengzhi/resnet_compare_s1_20261013/s7_20261026_latency_dense_FP16_r01/73be4628be4e86c24419b345f778054f4d145ffb5495507834e93fd4fc5c2f53/candidate.onnx",
+      "relative_path": "resnet_compare_s1_20261013/s7_20261026_latency_dense_FP16_r01/73be4628be4e86c24419b345f778054f4d145ffb5495507834e93fd4fc5c2f53/candidate.onnx",
+      "bytes": 102146351,
+      "kind": "supplemental_model_or_smoke",
+      "reason": "Exact ResNet candidate, first UniAD smoke frame or required visualisation asset",
+      "sha256": "232f666524f07b9d3971381462365774222f0488f6912e144f73c50d36d2fc21",
+      "source_mtime_ns": 1793005741812434034
+    },
+    {
+      "source": "/home/jichengzhi/resnet_compare_s1_20261013/s7_20261025_latency_geta_FP32_r01/62d395cc16e348db709b2b27280f49aad6ab29a69111c8a327a5dd99f4e71186/candidate.onnx",
+      "relative_path": "resnet_compare_s1_20261013/s7_20261025_latency_geta_FP32_r01/62d395cc16e348db709b2b27280f49aad6ab29a69111c8a327a5dd99f4e71186/candidate.onnx",
+      "bytes": 83765945,
+      "kind": "supplemental_model_or_smoke",
+      "reason": "Exact ResNet candidate, first UniAD smoke frame or required visualisation asset",
+      "sha256": "38f01f97bf8d83154fedffbbd83f212fcb3437bd882b25e763723dfd1e4e7121",
+      "source_mtime_ns": 1792906357402673941
+    },
+    {
+      "source": "/home/jichengzhi/resnet_compare_s1_20261013/s7_20261025_latency_copt_FP32_r01/ada3b15f0bcab63b8d97383235f385fcb30fd952aadb0088e09f548918ce389c/candidate.onnx",
+      "relative_path": "resnet_compare_s1_20261013/s7_20261025_latency_copt_FP32_r01/ada3b15f0bcab63b8d97383235f385fcb30fd952aadb0088e09f548918ce389c/candidate.onnx",
+      "bytes": 48718855,
+      "kind": "supplemental_model_or_smoke",
+      "reason": "Exact ResNet candidate, first UniAD smoke frame or required visualisation asset",
+      "sha256": "55b4b63df303d8702dbe8d0357508266000b50168240098780c9a1009efdf6ad",
+      "source_mtime_ns": 1792906206139780108
+    }
+  ],
+  "verified": true,
+  "verification": "Every archived regular file SHA256 equals the source-side streaming hash; source stat remained stable",
+  "archive_parts": [
+    {
+      "name": "supplemental-assets.tar.gz.part000",
+      "bytes": 171561243,
+      "sha256": "bfcfefa52c06b0805bf62e236bd0a97f8e7b56da07ff0bbc40e30da575de08de"
+    }
+  ],
+  "compressed_bytes": 171561243,
+  "logical_bytes": 245280961,
+  "restore_root": "/home/jichengzhi",
+  "public_download_url": null
+}

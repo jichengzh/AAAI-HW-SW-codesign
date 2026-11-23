@@ -1,0 +1,616 @@
+{
+  "ap_contract": "Orin full_1789; only replace multiscale backbone/resnet",
+  "created_at_utc": "2026-07-24T01:27:54.854519+00:00",
+  "energy_contract": "same latency window; named Orin tegrastats rail or missing_tegrastats_power_rails",
+  "excluded": {
+    "f_cooper": "not present in source sections 11.3 or 14.3",
+    "tune_then_compress": "16/16 policy-transfer failures; no executable config"
+  },
+  "files": {
+    "codriving/016x032x064/config.yaml": {
+      "bytes": 3962,
+      "sha256": "d2bdbf66b4efaf96094761e2586d7c3c8f1f6d1b47c47707cc60e3972655a191"
+    },
+    "codriving/016x032x064/net_epoch_bestval_at9.pth": {
+      "bytes": 2020690,
+      "sha256": "ccbd1c2881f6736e1e4a57e9e873583befbe3a3fdc11f21c2a381a63d4356a8e"
+    },
+    "codriving/016x032x064/resnet_multiscale_16x32x64_final_fp32.onnx": {
+      "bytes": 1792790,
+      "sha256": "2bb0cf60c5d5372e3b8a99443e1692b26b1792d12a4eb6a2aef48d06a273d800"
+    },
+    "codriving/016x032x064/stage3_calib_train_n16_float32.npz": {
+      "bytes": 40193699,
+      "sha256": "983ed5752cd2217d09b66d4acfa2857621f02d95cfdb1dc5f6a61fd5f0c09773"
+    },
+    "codriving/016x032x064/stage3_calib_train_n16_float32_summary.json": {
+      "bytes": 902,
+      "sha256": "2c32e373e0273db1d86346ff6f66cd8dccddfcf1b85f3af9d9f1f509feb4f488"
+    },
+    "codriving/032x064x096/config.yaml": {
+      "bytes": 3962,
+      "sha256": "b991d45e5a65b769077453dd4c7e62cad33d6bfe3c769360003ae3fcb42077dd"
+    },
+    "codriving/032x064x096/net_epoch_bestval_at11.pth": {
+      "bytes": 5192453,
+      "sha256": "92dfb0e71d8b26cc15fbdc65504a6e1896343f9fdbbb48ac69aaee80f4646a50"
+    },
+    "codriving/032x064x096/resnet_multiscale_32x64x96_final_fp32.onnx": {
+      "bytes": 4633328,
+      "sha256": "e6bc4128eee5b32cffb4c0bd5e3c780870b95203e187cb519d43d9febc0e7447"
+    },
+    "codriving/032x064x096/stage3_calib_train_n16_float32.npz": {
+      "bytes": 20839336,
+      "sha256": "39337222472dc7605c996ee3026d9cff725bae50a9a0c77b54fd5f84f97dd897"
+    },
+    "codriving/032x064x096/stage3_calib_train_n16_float32_summary.json": {
+      "bytes": 903,
+      "sha256": "d79e8a94865ab8faa82194ef7b5a3f3cfe2f40b939f205b517ee9abfe16a77a3"
+    },
+    "codriving/032x080x128/config.yaml": {
+      "bytes": 3965,
+      "sha256": "e509c1ae7aa4574e3512111bebbfba2e86ed71524db7056796886a96a2789b92"
+    },
+    "codriving/032x080x128/net_epoch_bestval_at5.pth": {
+      "bytes": 8591045,
+      "sha256": "f73acdf344cc11bfee6019099e6a3407362feb35109a20bf4ad34dc688fedae7"
+    },
+    "codriving/032x080x128/resnet_multiscale_32x80x128_final_fp32.onnx": {
+      "bytes": 7722704,
+      "sha256": "8f67a6f9a0d2e28d61880c09106a2567b4b852ffa6d5f6c1ea8ea754a7bc74a8"
+    },
+    "codriving/032x080x128/stage3_calib_train_n16_float32.npz": {
+      "bytes": 23206681,
+      "sha256": "94e9683b9820f3d89743069b7efe324be640ab736c9282df83baa3415438b5d1"
+    },
+    "codriving/032x080x128/stage3_calib_train_n16_float32_summary.json": {
+      "bytes": 905,
+      "sha256": "638f52e8e20906148a9cad71b7c1220995ad66224e48dfe463db3bca9b385c1c"
+    },
+    "codriving/064x128x256/config.yaml": {
+      "bytes": 3971,
+      "sha256": "7601361830f27eb56d328e9f3fb1e8d66847cbcf2dc47f0c3a52dbab318eddc2"
+    },
+    "codriving/064x128x256/net_epoch29.pth": {
+      "bytes": 30456766,
+      "sha256": "43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4"
+    },
+    "codriving/064x128x256/resnet_multiscale_64x128x256_final_fp32.onnx": {
+      "bytes": 27933507,
+      "sha256": "d0dc94707796d96bdaa81e9ea9857b019997d1826b5b0bf92a7c724518c69cdc"
+    },
+    "codriving/064x128x256/stage3_calib_train_n16_float32.npz": {
+      "bytes": 41407305,
+      "sha256": "569a500c56c9897e103a54a13801980f092a7ceb4cc53fcce5199f38bbf1b862"
+    },
+    "codriving/064x128x256/stage3_calib_train_n16_float32_summary.json": {
+      "bytes": 908,
+      "sha256": "3a6e8c847c7255f42ee3ab8e54a32a1aee39a1d48c1625f3bffd0535ebdc90c7"
+    },
+    "evidence/codriving_16_32_64_evidence.json": {
+      "bytes": 1161,
+      "sha256": "85b7540234e8954f34595d3ed4ca5dffe4e3a845e9b70acc612233cb9c606d19"
+    },
+    "evidence/pyramid_24x128x64_evidence.json": {
+      "bytes": 1207,
+      "sha256": "f47a93979ce6a9aa7501b4c9f06483473e384c2547af4c68c95b4b13d6dc0b13"
+    },
+    "evidence/pyramid_32x48x128_evidence.json": {
+      "bytes": 1212,
+      "sha256": "5dd7f054b90b1c392bd524f7cee140ce5f186a9e6ff57c93edda8848af09ca16"
+    },
+    "evidence/stage6_codriving_paper_evidence_bundle_v1.json": {
+      "bytes": 220470,
+      "sha256": "580178d9a4b574880cd20c96a4c1a0673c8f0e2c647a08d6eabb930c24282560"
+    },
+    "evidence/stage6_paper_evidence_bundle_v1.json": {
+      "bytes": 221340,
+      "sha256": "e80aa812f98304e073d14fe00add306ccfb84056227d4603eb57ccf381bb027e"
+    },
+    "pyramid/016x032x064/config.yaml": {
+      "bytes": 4744,
+      "sha256": "d0d14eebff3046ebec07a72cdbb4b23680d894920daf2a296cb8be0630173d33"
+    },
+    "pyramid/016x032x064/net_epoch_bestval_at31.pth": {
+      "bytes": 8435411,
+      "sha256": "d08fb16e778c6701aef7172e8d9609f1e4d73f20c419ee27bb8f158acc24a279"
+    },
+    "pyramid/016x032x064/pyramid_016x032x064_multiscale.onnx": {
+      "bytes": 832809,
+      "sha256": "8f09b5256f1856cc79ebbebf0d6c26e6dc63fba2ac3994552a690eaacd3be2a5"
+    },
+    "pyramid/016x032x064/spatial_features_train16.npz": {
+      "bytes": 37815355,
+      "sha256": "1907efa51ad800ab7e7d1b3652401f5c085544d57b7d17d11970f4f5854c3ca4"
+    },
+    "pyramid/016x032x064/summary.json": {
+      "bytes": 1783,
+      "sha256": "6fc6fc37fa9661eefaa318ea0f140d53a73b313d3be9870b28a11ea94e9a4788"
+    },
+    "pyramid/024x128x064/config.yaml": {
+      "bytes": 4614,
+      "sha256": "4fc413810b545ba5ed8b26bf35b37c70b1df4bf3ab1985c0cdedaf46967dfd21"
+    },
+    "pyramid/024x128x064/net_epoch_bestval_at1.pth": {
+      "bytes": 10239245,
+      "sha256": "befc76004aac7193785c80e4bc1712072e012104a5ac3cbfb99d61e0f5119fea"
+    },
+    "pyramid/024x128x064/pyramid_024x128x064_multiscale.onnx": {
+      "bytes": 2406134,
+      "sha256": "d40a891bc95905863a3e1f2afc6f2cef051bdcd04cee5a803b8027a768fce157"
+    },
+    "pyramid/024x128x064/spatial_features_train16.npz": {
+      "bytes": 35563589,
+      "sha256": "9072d4f5fb2d7a6acaafde968f95dd1d52fac22bcc79c6cfff19d507d5d1f08c"
+    },
+    "pyramid/024x128x064/summary.json": {
+      "bytes": 1741,
+      "sha256": "0eb3bcc4ac77c64d68c33f52d390ee490b4fcd420bd9913d58010a81adfa1ba9"
+    },
+    "pyramid/032x048x128/config.yaml": {
+      "bytes": 4614,
+      "sha256": "fc9ff8566b280db2cd1b45a8e50a2d3a0bd4de88d8f0632e476066444812ead4"
+    },
+    "pyramid/032x048x128/net_epoch_bestval_at1.pth": {
+      "bytes": 11206221,
+      "sha256": "fecf7a2beec5e14d067f02df6b3cd5bd3e5a476c628a096c5428b3e1c03110ad"
+    },
+    "pyramid/032x048x128/pyramid_032x048x128_multiscale.onnx": {
+      "bytes": 2998754,
+      "sha256": "e989c16b9687ebbdac30413310c3ef3cb330ee77874d7c955b46b2909063d222"
+    },
+    "pyramid/032x048x128/spatial_features_train16.npz": {
+      "bytes": 35452534,
+      "sha256": "8e5e9c486103875ba60cf4faf17fd3fe113b8d920156ba71f6072db9b0a96596"
+    },
+    "pyramid/032x048x128/summary.json": {
+      "bytes": 1755,
+      "sha256": "3e269b2bef00b216163585bf5dc2e57cdda597de7ec9483458473881b10edb4a"
+    },
+    "pyramid/064x128x256/config.yaml": {
+      "bytes": 4598,
+      "sha256": "f55a6ad8cff9fa522ce74fe9ef4d85d682314455278240ce7d5ec998d567f540"
+    },
+    "pyramid/064x128x256/net_epoch_bestval_at23.pth": {
+      "bytes": 22122629,
+      "sha256": "4ccc6fe1f7cc13b5d1294f74014b01e849cc8e90b69cbded14158e1999fa42b2"
+    },
+    "pyramid/064x128x256/pyramid_064x128x256_multiscale.onnx": {
+      "bytes": 12599750,
+      "sha256": "3b125b3c77f7484d8b3a46ae674446f30e663c53fa38431c3f2cb96ae9cbb0ff"
+    }
+  },
+  "latency_contract": {
+    "batch": 2,
+    "iters": 300,
+    "repeat": 5,
+    "scope": "multiscale_backbone_compute_no_data_transfer",
+    "timing": "CUDA_event",
+    "warmup": 20
+  },
+  "rows": [
+    {
+      "arm": "original_default",
+      "checkpoint": "net_epoch_bestval_at23.pth",
+      "config": "config.yaml",
+      "expected_input_shape": [
+        2,
+        64,
+        128,
+        256
+      ],
+      "expected_output_channels": [
+        64,
+        128,
+        256
+      ],
+      "h800_source": {
+        "ap70": 0.6311,
+        "energy_j": 1.1636,
+        "latency_ms": 3.2187
+      },
+      "id": "pyramid:original_default",
+      "model": "pyramid",
+      "onnx": "pyramid_064x128x256_multiscale.onnx",
+      "precision": "fp32",
+      "runtime": "native_pytorch",
+      "source_dir": "pyramid/064x128x256",
+      "source_files": {
+        "checkpoint": "pyramid/064x128x256/net_epoch_bestval_at23.pth",
+        "config": "pyramid/064x128x256/config.yaml",
+        "onnx": "pyramid/064x128x256/pyramid_064x128x256_multiscale.onnx"
+      },
+      "source_sha256": {
+        "checkpoint": "4ccc6fe1f7cc13b5d1294f74014b01e849cc8e90b69cbded14158e1999fa42b2",
+        "config": "f55a6ad8cff9fa522ce74fe9ef4d85d682314455278240ce7d5ec998d567f540",
+        "onnx": "3b125b3c77f7484d8b3a46ae674446f30e663c53fa38431c3f2cb96ae9cbb0ff"
+      },
+      "widths": [
+        64,
+        128,
+        256
+      ]
+    },
+    {
+      "arm": "compression_only",
+      "checkpoint": "net_epoch_bestval_at1.pth",
+      "config": "config.yaml",
+      "expected_input_shape": [
+        2,
+        64,
+        128,
+        256
+      ],
+      "expected_output_channels": [
+        24,
+        128,
+        64
+      ],
+      "h800_source": {
+        "ap70": 0.5377,
+        "energy_j": 0.1318,
+        "latency_ms": 0.5173
+      },
+      "id": "pyramid:compression_only",
+      "model": "pyramid",
+      "onnx": "pyramid_024x128x064_multiscale.onnx",
+      "precision": "fp16",
+      "runtime": "tensorrt",
+      "source_dir": "pyramid/024x128x064",
+      "source_files": {
+        "checkpoint": "pyramid/024x128x064/net_epoch_bestval_at1.pth",
+        "config": "pyramid/024x128x064/config.yaml",
+        "onnx": "pyramid/024x128x064/pyramid_024x128x064_multiscale.onnx"
+      },
+      "source_sha256": {
+        "checkpoint": "befc76004aac7193785c80e4bc1712072e012104a5ac3cbfb99d61e0f5119fea",
+        "config": "4fc413810b545ba5ed8b26bf35b37c70b1df4bf3ab1985c0cdedaf46967dfd21",
+        "onnx": "d40a891bc95905863a3e1f2afc6f2cef051bdcd04cee5a803b8027a768fce157"
+      },
+      "widths": [
+        24,
+        128,
+        64
+      ]
+    },
+    {
+      "arm": "schedule_only",
+      "checkpoint": "net_epoch_bestval_at23.pth",
+      "config": "config.yaml",
+      "expected_input_shape": [
+        2,
+        64,
+        128,
+        256
+      ],
+      "expected_output_channels": [
+        64,
+        128,
+        256
+      ],
+      "h800_source": {
+        "ap70": 0.6314,
+        "energy_j": 0.4305,
+        "latency_ms": 1.1038
+      },
+      "id": "pyramid:schedule_only",
+      "model": "pyramid",
+      "onnx": "pyramid_064x128x256_multiscale.onnx",
+      "precision": "fp32",
+      "runtime": "tensorrt",
+      "source_dir": "pyramid/064x128x256",
+      "source_files": {
+        "checkpoint": "pyramid/064x128x256/net_epoch_bestval_at23.pth",
+        "config": "pyramid/064x128x256/config.yaml",
+        "onnx": "pyramid/064x128x256/pyramid_064x128x256_multiscale.onnx"
+      },
+      "source_sha256": {
+        "checkpoint": "4ccc6fe1f7cc13b5d1294f74014b01e849cc8e90b69cbded14158e1999fa42b2",
+        "config": "f55a6ad8cff9fa522ce74fe9ef4d85d682314455278240ce7d5ec998d567f540",
+        "onnx": "3b125b3c77f7484d8b3a46ae674446f30e663c53fa38431c3f2cb96ae9cbb0ff"
+      },
+      "widths": [
+        64,
+        128,
+        256
+      ]
+    },
+    {
+      "arm": "compress_then_tune",
+      "checkpoint": "net_epoch_bestval_at1.pth",
+      "config": "config.yaml",
+      "expected_input_shape": [
+        2,
+        64,
+        128,
+        256
+      ],
+      "expected_output_channels": [
+        32,
+        48,
+        128
+      ],
+      "h800_source": {
+        "ap70": 0.5332,
+        "energy_j": 0.4677,
+        "latency_ms": 1.6008
+      },
+      "id": "pyramid:compress_then_tune",
+      "model": "pyramid",
+      "onnx": "pyramid_032x048x128_multiscale.onnx",
+      "precision": "fp16",
+      "runtime": "tensorrt",
+      "source_dir": "pyramid/032x048x128",
+      "source_files": {
+        "checkpoint": "pyramid/032x048x128/net_epoch_bestval_at1.pth",
+        "config": "pyramid/032x048x128/config.yaml",
+        "onnx": "pyramid/032x048x128/pyramid_032x048x128_multiscale.onnx"
+      },
+      "source_sha256": {
+        "checkpoint": "fecf7a2beec5e14d067f02df6b3cd5bd3e5a476c628a096c5428b3e1c03110ad",
+        "config": "fc9ff8566b280db2cd1b45a8e50a2d3a0bd4de88d8f0632e476066444812ead4",
+        "onnx": "e989c16b9687ebbdac30413310c3ef3cb330ee77874d7c955b46b2909063d222"
+      },
+      "widths": [
+        32,
+        48,
+        128
+      ]
+    },
+    {
+      "arm": "joint_shcosearch",
+      "checkpoint": "net_epoch_bestval_at31.pth",
+      "config": "config.yaml",
+      "expected_input_shape": [
+        2,
+        64,
+        128,
+        256
+      ],
+      "expected_output_channels": [
+        16,
+        32,
+        64
+      ],
+      "h800_source": {
+        "ap70": 0.6189,
+        "energy_j": 0.1112,
+        "latency_ms": 0.4524
+      },
+      "id": "pyramid:joint_shcosearch",
+      "model": "pyramid",
+      "onnx": "pyramid_016x032x064_multiscale.onnx",
+      "precision": "int8",
+      "runtime": "tensorrt",
+      "source_dir": "pyramid/016x032x064",
+      "source_files": {
+        "checkpoint": "pyramid/016x032x064/net_epoch_bestval_at31.pth",
+        "config": "pyramid/016x032x064/config.yaml",
+        "onnx": "pyramid/016x032x064/pyramid_016x032x064_multiscale.onnx"
+      },
+      "source_sha256": {
+        "checkpoint": "d08fb16e778c6701aef7172e8d9609f1e4d73f20c419ee27bb8f158acc24a279",
+        "config": "d0d14eebff3046ebec07a72cdbb4b23680d894920daf2a296cb8be0630173d33",
+        "onnx": "8f09b5256f1856cc79ebbebf0d6c26e6dc63fba2ac3994552a690eaacd3be2a5"
+      },
+      "widths": [
+        16,
+        32,
+        64
+      ]
+    },
+    {
+      "arm": "original_default",
+      "checkpoint": "net_epoch29.pth",
+      "config": "config.yaml",
+      "expected_input_shape": [
+        2,
+        64,
+        256,
+        512
+      ],
+      "expected_output_channels": [
+        64,
+        128,
+        256
+      ],
+      "h800_source": {
+        "ap70": 0.3975,
+        "energy_j": 0.6999,
+        "latency_ms": 1.85
+      },
+      "id": "codriving:original_default",
+      "model": "codriving",
+      "onnx": "resnet_multiscale_64x128x256_final_fp32.onnx",
+      "precision": "fp32",
+      "runtime": "native_pytorch",
+      "source_dir": "codriving/064x128x256",
+      "source_files": {
+        "checkpoint": "codriving/064x128x256/net_epoch29.pth",
+        "config": "codriving/064x128x256/config.yaml",
+        "onnx": "codriving/064x128x256/resnet_multiscale_64x128x256_final_fp32.onnx"
+      },
+      "source_sha256": {
+        "checkpoint": "43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4",
+        "config": "7601361830f27eb56d328e9f3fb1e8d66847cbcf2dc47f0c3a52dbab318eddc2",
+        "onnx": "d0dc94707796d96bdaa81e9ea9857b019997d1826b5b0bf92a7c724518c69cdc"
+      },
+      "widths": [
+        64,
+        128,
+        256
+      ]
+    },
+    {
+      "arm": "compression_only",
+      "checkpoint": "net_epoch_bestval_at11.pth",
+      "config": "config.yaml",
+      "expected_input_shape": [
+        2,
+        64,
+        256,
+        512
+      ],
+      "expected_output_channels": [
+        32,
+        64,
+        96
+      ],
+      "h800_source": {
+        "ap70": 0.419,
+        "energy_j": 0.1013,
+        "latency_ms": 0.3579
+      },
+      "id": "codriving:compression_only",
+      "model": "codriving",
+      "onnx": "resnet_multiscale_32x64x96_final_fp32.onnx",
+      "precision": "fp16",
+      "runtime": "tensorrt",
+      "source_dir": "codriving/032x064x096",
+      "source_files": {
+        "checkpoint": "codriving/032x064x096/net_epoch_bestval_at11.pth",
+        "config": "codriving/032x064x096/config.yaml",
+        "onnx": "codriving/032x064x096/resnet_multiscale_32x64x96_final_fp32.onnx"
+      },
+      "source_sha256": {
+        "checkpoint": "92dfb0e71d8b26cc15fbdc65504a6e1896343f9fdbbb48ac69aaee80f4646a50",
+        "config": "b991d45e5a65b769077453dd4c7e62cad33d6bfe3c769360003ae3fcb42077dd",
+        "onnx": "e6bc4128eee5b32cffb4c0bd5e3c780870b95203e187cb519d43d9febc0e7447"
+      },
+      "widths": [
+        32,
+        64,
+        96
+      ]
+    },
+    {
+      "arm": "schedule_only",
+      "checkpoint": "net_epoch29.pth",
+      "config": "config.yaml",
+      "expected_input_shape": [
+        2,
+        64,
+        256,
+        512
+      ],
+      "expected_output_channels": [
+        64,
+        128,
+        256
+      ],
+      "h800_source": {
+        "ap70": 0.3973,
+        "energy_j": 0.351,
+        "latency_ms": 0.7686
+      },
+      "id": "codriving:schedule_only",
+      "model": "codriving",
+      "onnx": "resnet_multiscale_64x128x256_final_fp32.onnx",
+      "precision": "fp32",
+      "runtime": "tensorrt",
+      "source_dir": "codriving/064x128x256",
+      "source_files": {
+        "checkpoint": "codriving/064x128x256/net_epoch29.pth",
+        "config": "codriving/064x128x256/config.yaml",
+        "onnx": "codriving/064x128x256/resnet_multiscale_64x128x256_final_fp32.onnx"
+      },
+      "source_sha256": {
+        "checkpoint": "43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4",
+        "config": "7601361830f27eb56d328e9f3fb1e8d66847cbcf2dc47f0c3a52dbab318eddc2",
+        "onnx": "d0dc94707796d96bdaa81e9ea9857b019997d1826b5b0bf92a7c724518c69cdc"
+      },
+      "widths": [
+        64,
+        128,
+        256
+      ]
+    },
+    {
+      "arm": "compress_then_tune",
+      "checkpoint": "net_epoch_bestval_at5.pth",
+      "config": "config.yaml",
+      "expected_input_shape": [
+        2,
+        64,
+        256,
+        512
+      ],
+      "expected_output_channels": [
+        32,
+        80,
+        128
+      ],
+      "h800_source": {
+        "ap70": 0.3984,
+        "energy_j": 0.1391,
+        "latency_ms": 0.3892
+      },
+      "id": "codriving:compress_then_tune",
+      "model": "codriving",
+      "onnx": "resnet_multiscale_32x80x128_final_fp32.onnx",
+      "precision": "fp16",
+      "runtime": "tensorrt",
+      "source_dir": "codriving/032x080x128",
+      "source_files": {
+        "checkpoint": "codriving/032x080x128/net_epoch_bestval_at5.pth",
+        "config": "codriving/032x080x128/config.yaml",
+        "onnx": "codriving/032x080x128/resnet_multiscale_32x80x128_final_fp32.onnx"
+      },
+      "source_sha256": {
+        "checkpoint": "f73acdf344cc11bfee6019099e6a3407362feb35109a20bf4ad34dc688fedae7",
+        "config": "e509c1ae7aa4574e3512111bebbfba2e86ed71524db7056796886a96a2789b92",
+        "onnx": "8f67a6f9a0d2e28d61880c09106a2567b4b852ffa6d5f6c1ea8ea754a7bc74a8"
+      },
+      "widths": [
+        32,
+        80,
+        128
+      ]
+    },
+    {
+      "arm": "joint_shcosearch",
+      "checkpoint": "net_epoch_bestval_at9.pth",
+      "config": "config.yaml",
+      "expected_input_shape": [
+        2,
+        64,
+        256,
+        512
+      ],
+      "expected_output_channels": [
+        16,
+        32,
+        64
+      ],
+      "h800_source": {
+        "ap70": 0.3565,
+        "energy_j": 0.0708,
+        "latency_ms": 0.2976
+      },
+      "id": "codriving:joint_shcosearch",
+      "model": "codriving",
+      "onnx": "resnet_multiscale_16x32x64_final_fp32.onnx",
+      "precision": "int8",
+      "runtime": "tensorrt",
+      "source_dir": "codriving/016x032x064",
+      "source_files": {
+        "checkpoint": "codriving/016x032x064/net_epoch_bestval_at9.pth",
+        "config": "codriving/016x032x064/config.yaml",
+        "onnx": "codriving/016x032x064/resnet_multiscale_16x32x64_final_fp32.onnx"
+      },
+      "source_sha256": {
+        "checkpoint": "ccbd1c2881f6736e1e4a57e9e873583befbe3a3fdc11f21c2a381a63d4356a8e",
+        "config": "d2bdbf66b4efaf96094761e2586d7c3c8f1f6d1b47c47707cc60e3972655a191",
+        "onnx": "2bb0cf60c5d5372e3b8a99443e1692b26b1792d12a4eb6a2aef48d06a273d800"
+      },
+      "widths": [
+        16,
+        32,
+        64
+      ]
+    }
+  ],
+  "schema_version": "lane_c_stage6_five_config_manifest_v1",
+  "scope": "two_models_x_five_executable_arms",
+  "source_root": "/home/jichengzhi/V2X/results/lane_c_orin_stage6_five_config_20260724/source"
+}

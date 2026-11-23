@@ -1,0 +1,19 @@
+{
+  "ap30": 0.4652132472364423,
+  "ap50": 0.3897462054502005,
+  "ap70": 0.2931107929432461,
+  "checkpoint_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/codriving/064x128x256/net_epoch29.pth",
+  "config_path": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/codriving/064x128x256/config.yaml",
+  "dataset_path": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure/val.json",
+  "elapsed_secs": 2345.581377029419,
+  "model_dir": "/home/jichengzhi/lane_c_orin_stage6_five_config_20260724/models/codriving/064x128x256",
+  "pipeline_scope": "codriving_full_detection_native_pytorch_for_ap",
+  "processed_samples": 1789,
+  "schema": "stage6_codriving_native_fp32_ap_v1",
+  "sha256": {
+    "checkpoint": "43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4",
+    "config": "ca5da3f248f8ba686742d2891692e50af02d2a3b440fde31858e1641e303a471",
+    "dataset": "f6805e26aec6af0f994395ad8c74105e65c88770bc7261bd7e995e30d47e2814"
+  },
+  "status": "success"
+}

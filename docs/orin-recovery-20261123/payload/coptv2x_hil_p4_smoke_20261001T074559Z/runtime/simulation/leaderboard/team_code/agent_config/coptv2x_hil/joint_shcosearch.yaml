@@ -1,0 +1,13 @@
+# Runtime overlay; maps to the frozen joint_shcosearch_fp16 authority.
+base_config: simulation/leaderboard/team_code/agent_config/pnp_config_codriving_5_10.yaml
+arm_id: joint_shcosearch
+artifact_id: joint_shcosearch_fp16
+cadence: 2
+profile: 5_10
+simulation:
+  coptv2x_hil:
+    enabled: true
+    arm_id: joint_shcosearch
+    buffer_capacity: 8
+    outbound_capacity: 8
+    inbound_capacity: 8

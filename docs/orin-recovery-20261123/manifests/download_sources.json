@@ -1,0 +1,435 @@
+{
+  "schema_version": 1,
+  "verified_on": "2026-11-23",
+  "purpose": "Orin格式化恢复：官方下载入口与本地实际资产分离",
+  "units": {
+    "GB": "10^9 bytes unless quoted source unit",
+    "GiB": "2^30 bytes",
+    "local_logical_bytes": "sum regular file stat sizes, excludes directory overhead",
+    "local_allocated_bytes": "du -s -B1"
+  },
+  "statuses": {
+    "official_metadata": "从上游原始页面/API读取，未必全量下载",
+    "local_measured": "当前Orin只读实测",
+    "unverified": "未核实，不得作为可下载/完整性保证"
+  },
+  "sources": [
+    {
+      "id": "dair_v2x_c_full_trainval",
+      "status": "official_metadata",
+      "website": "https://thudair.baai.ac.cn/index",
+      "authority": "https://github.com/AIR-THU/DAIR-V2X",
+      "download_page": "https://drive.google.com/drive/folders/1I9Du70tQ-6s0qIXfYsIHd7uBW--BwaFJ",
+      "files": [
+        {
+          "name": "cooperative-vehicle-infrastructure-infrastructure-side-image-deprecated.zip",
+          "bytes": 2702940835,
+          "download_page": "https://drive.google.com/file/d/1YUtOl6U-ia-HcH6VwZHRDXzIja362VXA/view",
+          "sha256": null,
+          "required_for_lidar": false
+        },
+        {
+          "name": "cooperative-vehicle-infrastructure-infrastructure-side-velodyne.z01",
+          "bytes": 5368709120,
+          "download_page": "https://drive.google.com/file/d/1I23V_4fwgc0Hbl7azwlb0IblnaNmw9fw/view",
+          "sha256": null,
+          "required_for_lidar": true
+        },
+        {
+          "name": "cooperative-vehicle-infrastructure-infrastructure-side-velodyne.zip",
+          "bytes": 3505618661,
+          "download_page": "https://drive.google.com/file/d/1dkC1_vJqu7vfyCfzsO3EdIeTZ1ZR81Xf/view",
+          "sha256": null,
+          "required_for_lidar": true
+        },
+        {
+          "name": "cooperative-vehicle-infrastructure-vehicle-side-image.zip",
+          "bytes": 2715899794,
+          "download_page": "https://drive.google.com/file/d/1au6f6W4JeWZ6Sf-eAXQgHol6myYCsoxz/view",
+          "sha256": null,
+          "required_for_lidar": false
+        },
+        {
+          "name": "cooperative-vehicle-infrastructure-vehicle-side-velodyne.z01",
+          "bytes": 5368709120,
+          "download_page": "https://drive.google.com/file/d/1vxSTXLg5f_gllfQY_vEADnCtl12ADe7n/view",
+          "sha256": null,
+          "required_for_lidar": true
+        },
+        {
+          "name": "cooperative-vehicle-infrastructure-vehicle-side-velodyne.z02",
+          "bytes": 5368709120,
+          "download_page": "https://drive.google.com/file/d/18sByFR1W-4edKhRmvZVD7krjZfjbLr2I/view",
+          "sha256": null,
+          "required_for_lidar": true
+        },
+        {
+          "name": "cooperative-vehicle-infrastructure-vehicle-side-velodyne.zip",
+          "bytes": 2077546493,
+          "download_page": "https://drive.google.com/file/d/1ZL9ixo0NfKJAnbKbViJwYyHBZYJr-T7z/view",
+          "sha256": null,
+          "required_for_lidar": true
+        },
+        {
+          "name": "cooperative-vehicle-infrastructure.zip",
+          "bytes": 245642216,
+          "download_page": "https://drive.google.com/file/d/1shLOKhwW1urQUrlqOeUtGkBl5tML_NuL/view",
+          "sha256": null,
+          "required_for_lidar": true
+        }
+      ],
+      "lidar_and_metadata_download_bytes": 21934934730,
+      "archive_scope": "upstream train&val, not local val-only",
+      "uncompressed_bytes": null,
+      "sample_count": null,
+      "authentication": "directory listed anonymously; full large download quota/login not verified",
+      "license": "dataset terms from provider; code Apache-2.0 does not establish data redistribution permission",
+      "target": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full",
+      "extraction": "metadata ZIP + complete split-ZIP volume sets; use 7-Zip from .zip with all .z01/.z02 adjacent"
+    },
+    {
+      "id": "dair_complemented_annotations",
+      "status": "official_metadata",
+      "website": "https://siheng-chen.github.io/dataset/dair-v2x-c-complemented/",
+      "filename": "DAIR-V2X-C_Complemented_Anno.zip",
+      "download_page": "https://drive.google.com/file/d/13g3APNeHBVjPcF-nTuUoNOSGyTzdfnUK/view",
+      "bytes": null,
+      "sha256": null,
+      "authentication": "download page returned sign-in only; binary not verified",
+      "target": "DAIR root vehicle-side/label/lidar and cooperative/label_world; preserve experiment split"
+    },
+    {
+      "id": "dair_current_upstream_split",
+      "status": "official_metadata",
+      "source": "https://raw.githubusercontent.com/AIR-THU/DAIR-V2X/c885c54af0c34bc515fa9ca8b5e8fda76a15462c/data/split_datas/cooperative-split-data.json",
+      "counts": {
+        "train": 4813,
+        "val": 1783,
+        "test": 2688
+      },
+      "warning": "counts differ from local experiment; do not overwrite local split"
+    },
+    {
+      "id": "opv2v",
+      "status": "official_metadata",
+      "website": "https://mobility-lab.seas.ucla.edu/opv2v/",
+      "authority": "https://github.com/DerrickXuNu/OpenCOOD",
+      "download_page": "https://ucla.app.box.com/v/UCLA-MobilityLab-OPV2V",
+      "official_approx_counts": {
+        "scenarios": 73,
+        "frames": "12K",
+        "boxes": "230K"
+      },
+      "files": [
+        {
+          "name": "test-012.zip",
+          "bytes": 21146700611,
+          "download_page": "https://ucla.app.box.com/v/UCLA-MobilityLab-OPV2V/file/1621736219709",
+          "sha256": null
+        },
+        {
+          "name": "test-001.zip",
+          "bytes": 3413572752,
+          "download_page": "https://ucla.app.box.com/v/UCLA-MobilityLab-OPV2V/file/1621653380925",
+          "sha256": null
+        },
+        {
+          "name": "validate-002.zip",
+          "bytes": 39830534538,
+          "download_page": "https://ucla.app.box.com/v/UCLA-MobilityLab-OPV2V/file/1621863671123",
+          "sha256": null
+        },
+        {
+          "name": "train-003.zip",
+          "bytes": 71587932785,
+          "download_page": "https://ucla.app.box.com/v/UCLA-MobilityLab-OPV2V/file/1621828681754",
+          "sha256": null
+        },
+        {
+          "name": "additional-001.zip",
+          "bytes": 2846985146,
+          "download_page": "https://ucla.app.box.com/v/UCLA-MobilityLab-OPV2V/file/1621920078208",
+          "sha256": null
+        }
+      ],
+      "target": "/data/lsw-data/OPV2V/{test,train,validate}",
+      "authentication": "public metadata accessible without login, complete download not tested",
+      "license": "follow dataset provider terms; code MIT is separate",
+      "notes": "Box ZIP packaging changed; inspect internal contents before concatenating chunks; overlap between test-001 and test-012 not verified"
+    },
+    {
+      "id": "fcooper_opencood_pretrained",
+      "status": "official_metadata",
+      "filename": "pointpillar_fcooper.zip",
+      "bytes": 28367476,
+      "download_page": "https://ucla.app.box.com/v/UCLA-MobilityLab-OPV2V/file/1621123814293",
+      "sha256": null,
+      "target": "separate extracted model folder with its config.yaml; adapt paths before use",
+      "authentication": "public file page metadata accessible; binary not downloaded",
+      "compatibility": "OpenCOOD spconv1.2.1, not a substitute for custom HEAL/pruned weights"
+    },
+    {
+      "id": "heal_pyramid_dair_pretrained",
+      "status": "official_metadata",
+      "authority": "https://github.com/yifanlu0227/HEAL#benchmark-checkpoints",
+      "download_url": "https://huggingface.co/yifanlu/HEAL/resolve/main/HEAL_DAIR.zip",
+      "filename": "HEAL_DAIR.zip",
+      "bytes": 695768091,
+      "sha256": "6ddb688355433e59ef9eed7d4f323b44f9bc861300a1f8726f3708a8aa772a28",
+      "checksum_source": "Hugging Face LFS oid from public API",
+      "member_verified_by": "anonymous HTTP Range ZIP central directory",
+      "member": "stage1/Pyramid_DAIR_m1_base_2023_08_14_11_42_29/net_epoch_bestval_at23.pth",
+      "member_bytes": 22122629,
+      "target": "/home/jichengzhi/m4_8_orin/dair_ckpt/Pyramid_DAIR_m1_base_2023_08_14_11_42_29",
+      "authentication": "no gate observed; anonymous Range succeeded",
+      "license": "standalone model license not verified"
+    },
+    {
+      "id": "heal_fcooper_opv2v_pretrained",
+      "status": "official_metadata",
+      "filename": "HeterBaseline_opv2v_lidar_fcooper_2023_08_06_19_53_10.zip",
+      "download_url": "https://huggingface.co/yifanlu/HEAL/resolve/main/HeterBaseline_opv2v_lidar_fcooper_2023_08_06_19_53_10.zip",
+      "bytes": 364092576,
+      "sha256": "2459ec2894376f11d1d7ed9dcd18e348dec3308137b3c8db085310f01bc66658",
+      "target": "separate extracted HEAL model folder; retain matching config",
+      "authentication": "public Hub API accessible",
+      "compatibility": "upstream baseline; does not restore custom pruning/retraining"
+    },
+    {
+      "id": "uniad_base_public",
+      "status": "official_metadata",
+      "authority": "https://github.com/OpenDriveLab/UniAD/releases",
+      "assets": [
+        {
+          "filename": "uniad_base_track_map.pth",
+          "bytes": 869687055,
+          "download_url": "https://github.com/OpenDriveLab/UniAD/releases/download/v1.0/uniad_base_track_map.pth",
+          "sha256": null,
+          "target": "/home/jichengzhi/UniAD/ckpts"
+        },
+        {
+          "filename": "uniad_base_e2e.pth",
+          "bytes": 996345538,
+          "download_url": "https://github.com/OpenDriveLab/UniAD/releases/download/v1.0.1/uniad_base_e2e.pth",
+          "sha256": null,
+          "target": "/home/jichengzhi/UniAD/ckpts"
+        },
+        {
+          "filename": "nuscenes_infos_temporal_train.pkl",
+          "bytes": 1033042168,
+          "download_url": "https://github.com/OpenDriveLab/UniAD/releases/download/v1.0/nuscenes_infos_temporal_train.pkl",
+          "sha256": null,
+          "target": "UniAD/data/infos"
+        },
+        {
+          "filename": "nuscenes_infos_temporal_val.pkl",
+          "bytes": 207319503,
+          "download_url": "https://github.com/OpenDriveLab/UniAD/releases/download/v1.0/nuscenes_infos_temporal_val.pkl",
+          "sha256": null,
+          "target": "UniAD/data/infos"
+        },
+        {
+          "filename": "motion_anchor_infos_mode6.pkl",
+          "bytes": 5109,
+          "download_url": "https://github.com/OpenDriveLab/UniAD/releases/download/v1.0/motion_anchor_infos_mode6.pkl",
+          "sha256": null,
+          "target": "UniAD/data/others"
+        }
+      ],
+      "authentication": "public GitHub Releases",
+      "license": "UniAD repo Apache-2.0 unless otherwise stated",
+      "warning": "R101 base is not NVIDIA R50 tiny; release version/config must match"
+    },
+    {
+      "id": "dl4agx_uniad_tiny_dummy",
+      "status": "official_metadata",
+      "authority": "https://github.com/NVIDIA/DL4AGX/blob/9f7b29104c253d5bc68334e7b83b3eecb72d4572/AV-Solutions/uniad-trt/documents/train_export.md",
+      "download_page": "https://github.com/NVIDIA/DL4AGX/blob/master/AV-Solutions/uniad-trt/onnx/uniad_tiny_dummy.onnx",
+      "filename": "uniad_tiny_dummy.onnx",
+      "bytes": 302602872,
+      "sha256": "3f849b4a45179e31a1537b8bde8a83d643a414b22fa644a775f68c989f700648",
+      "local_pointer_bytes": 134,
+      "warning": "official random weights only; does not reproduce real tiny deployment",
+      "real_tiny_checkpoint_public_url": null,
+      "real_tiny_recovery": "self train or offline backup / owner-provided checkpoint"
+    },
+    {
+      "id": "nuscenes_uniad_inputs",
+      "status": "official_metadata",
+      "website": "https://www.nuscenes.org/nuscenes#download",
+      "instructions": "https://github.com/OpenDriveLab/UniAD/blob/main/docs/DATA_PREP.md",
+      "bytes": null,
+      "authentication": "trainval/test: nuScenes account and dataset terms; mini anonymous HEAD200 verified, terms still apply",
+      "target": "deployment UniAD/data/nuscenes then UniAD/nuscenes_np/uniad_trt_input",
+      "warning": "local 240-frame and calibration exports must be backed up; 69-frame demo differs",
+      "official_scene_counts": {
+        "total": 1000,
+        "train": 700,
+        "val": 150,
+        "test": 150,
+        "trainval": 850,
+        "mini": 10,
+        "mini_train": 8,
+        "mini_val": 2
+      },
+      "scene_count_source": "https://github.com/nutonomy/nuscenes-devkit/blob/master/python-sdk/nuscenes/utils/splits.py",
+      "mini": {
+        "filename": "v1.0-mini.tgz",
+        "download_url": "https://www.nuscenes.org/data/v1.0-mini.tgz",
+        "bytes": 4167696325,
+        "verification": "anonymous HEAD HTTP200 Content-Length, 2026-11-23; no binary download",
+        "sha256": null,
+        "etag": "0e429041111a03d43ec0419e1eb02d5f-497",
+        "etag_note": "multipart ETag is not plain whole-file MD5",
+        "purpose": "10-scene debug subset, not replacement for experiment frame selection"
+      },
+      "trainval_bytes": null,
+      "test_bytes": null,
+      "deployment_only_recovery": "restore saved actual ONNX and selected-frame images/metadata/state tensors/calibration inputs; full train split not required for deployment replay; temporal replay needs matching sequence and history states",
+      "raw_dataset_needed_for": "retraining, raw-data preprocessing regeneration, or full split accuracy evaluation"
+    },
+    {
+      "id": "imagenet2012_validation",
+      "status": "official_metadata",
+      "website": "https://image-net.org/challenges/LSVRC/2012/2012-downloads.php",
+      "access_request": "https://image-net.org/request",
+      "filename": "ILSVRC2012_img_val.tar",
+      "count": 50000,
+      "bytes": null,
+      "approx_size": "6.3GB as stated by Intel official preparation guide, not exact ImageNet HEAD size",
+      "approx_size_source": "https://github.com/intel/ai-reference-models/blob/main/datasets/imagenet/README.md",
+      "count_source": "https://www.tensorflow.org/datasets/catalog/imagenet2012",
+      "md5": "29b22e2961454d5413ddabcf34fc5622",
+      "sha256": null,
+      "checksum_source": "https://github.com/pytorch/vision/blob/main/torchvision/datasets/imagenet.py",
+      "devkit": {
+        "filename": "ILSVRC2012_devkit_t12.tar.gz",
+        "md5": "fa75699e90414af021442c21a62c3abf",
+        "bytes": null
+      },
+      "historical_download_url_unverified": "https://image-net.org/data/ILSVRC/2012/ILSVRC2012_img_val.tar",
+      "authentication": "register and request access using organization email per ImageNet request page; follow data terms",
+      "target_suggested_not_original": "/data/imagenet/val/<WNID>/*.JPEG",
+      "local_status": "full images not confirmed on Orin; restore lawful host streaming or download source"
+    },
+    {
+      "id": "resnet50_imagenet_v1",
+      "status": "official_metadata",
+      "authority": "https://docs.pytorch.org/vision/main/models/generated/torchvision.models.resnet50.html",
+      "download_url": "https://download.pytorch.org/models/resnet50-0676ba61.pth",
+      "filename": "resnet50-0676ba61.pth",
+      "local_bytes": 102530333,
+      "sha256": null,
+      "sha256_prefix": "0676ba61",
+      "target": "/home/jichengzhi/resnet_compare_s1_20261013/orin_validation_20261016",
+      "warning": "custom candidate ONNX needs separate backup"
+    }
+  ],
+  "local_datasets": [
+    {
+      "id": "dair_full_val1789",
+      "status": "local_measured",
+      "path": "/home/jichengzhi/lane_c_orin_backbone_parity_20260723/dair_val_full/cooperative-vehicle-infrastructure",
+      "val_json_count": 1789,
+      "train_json_count": 4811,
+      "pointcloud_files": 3578,
+      "files": 17893,
+      "logical_bytes": 3540316091,
+      "allocated_bytes": 3586179072,
+      "public_subset_archive_url": null
+    },
+    {
+      "id": "dair_smoke60",
+      "status": "local_measured",
+      "path": "/home/jichengzhi/m4_8_orin/dair_val/cooperative-vehicle-infrastructure",
+      "val_json_count": 1789,
+      "actual_pointcloud_files": 120,
+      "actual_pairs": 60,
+      "files": 543,
+      "logical_bytes": 118128808,
+      "warning": "val.json length does not prove complete data; existing HEAL dataset symlink points here"
+    },
+    {
+      "id": "opv2v_full_test2170",
+      "status": "local_measured",
+      "path": "/data/lsw-data/OPV2V/test",
+      "scenarios": 16,
+      "ego_scenario_timestamps": 2170,
+      "pointcloud_files": 5985,
+      "files": 15940,
+      "logical_bytes": 20801228752,
+      "count_method": "fixed first ego agent per scenario timestamp count"
+    },
+    {
+      "id": "opv2v_experiment_export",
+      "status": "local_measured",
+      "path": "/home/jichengzhi/lane_c_orin_fcooper_stage6_five_config_20260724/data/OPV2V/test",
+      "pointcloud_files": 647,
+      "files": 2063,
+      "logical_bytes": 2404350518,
+      "warning": "original.yaml test_dir points here; loader override/length must be checked before claiming2170"
+    }
+  ],
+  "custom_assets_require_backup": [
+    {
+      "id": "pyramid_pruned75",
+      "path": "/home/jichengzhi/heal_research/checkpoints/stage1/Pyramid_DAIR_m1_pruned75_2026_05_10/net_epoch_bestval_at31.pth",
+      "bytes": 8435411,
+      "required_companions": [
+        "config.yaml",
+        "matching model definition"
+      ],
+      "public_download_url": null,
+      "recovery": "offline payload or owner-supplied private/Release asset"
+    },
+    {
+      "id": "uniad_real_deployment_onnx",
+      "directory": "/home/jichengzhi/liruozhan/toOrinV2/onnx",
+      "files": [
+        {
+          "name": "uniad_tiny_imgx0.25_cp.noaten_simp.onnx",
+          "bytes": 333254116
+        },
+        {
+          "name": "uniad_tiny_imgx0.25_cp.noaten.int8.onnx",
+          "bytes": 296859591
+        },
+        {
+          "name": "uniad_tiny_imgx0.25_cp.noaten.int8_qdq.onnx",
+          "bytes": 396898227
+        },
+        {
+          "name": "uniad_tiny_imgx0.25_cp.noaten.int8_qdq_bb.onnx",
+          "bytes": 396282407
+        },
+        {
+          "name": "uniad_tiny_imgx0.25_cp.noaten.int8_qdq_cnn.onnx",
+          "bytes": 396653541
+        },
+        {
+          "name": "uniad_tiny_imgx0.25_cp.noaten.int8_qdq_noRC.onnx",
+          "bytes": 396835474
+        }
+      ],
+      "public_download_url": null,
+      "required_companions": [
+        "calibration data",
+        "input frame exports",
+        "TensorRT plugins",
+        "build scripts"
+      ],
+      "recovery": "offline backup; true tiny .pth if available from training host"
+    },
+    {
+      "id": "other_custom_weights",
+      "models": [
+        "Pyramid other pruning/retraining variants",
+        "CoDriving",
+        "F-Cooper custom pruning/retraining",
+        "ResNet candidate ONNX"
+      ],
+      "public_download_url": null,
+      "recovery": "offline payload and corresponding configs; public baseline is insufficient"
+    }
+  ]
+}

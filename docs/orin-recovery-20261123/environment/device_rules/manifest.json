@@ -1,0 +1,514 @@
+{
+  "captured_utc": "2026-11-23T06:32:55.865465+00:00",
+  "scope": "Only allowlisted local hardware rules and device-related user group names; no passwd/shadow/network/SSH configuration",
+  "user": "jichengzhi",
+  "device_related_groups": [
+    "dialout",
+    "video",
+    "plugdev",
+    "i2c",
+    "gpio"
+  ],
+  "excluded": "BSP-managed 99-tegra-devices.rules and all unrelated rules omitted; reinstall BSP rules through matching Jetson system image/packages.",
+  "rules": [
+    {
+      "filename": "56-orbbec-usb.rules",
+      "source": "/etc/udev/rules.d/56-orbbec-usb.rules",
+      "bytes": 11707,
+      "sha256": "baa9102eee8b84e704d04fd3a3b68b2ce8075d65f2bac4144f591f36a1f7ad32",
+      "vendor_matches": [
+        "/home/jichengzhi/ROS1/wheeltec_robot/src/ros_astra_camera-main/56-orbbec-usb.rules",
+        "/home/jichengzhi/ROS1/vendor/src/ros_astra_camera-main/56-orbbec-usb.rules"
+      ]
+    },
+    {
+      "filename": "camera.rules",
+      "source": "/etc/udev/rules.d/camera.rules",
+      "bytes": 728,
+      "sha256": "4bc44767bfbdfe870f89ae6f8998444e584924de0a33eb42cb49ad56c04d85fd",
+      "vendor_matches": []
+    },
+    {
+      "filename": "wheeltec_controller.rules",
+      "source": "/etc/udev/rules.d/wheeltec_controller.rules",
+      "bytes": 155,
+      "sha256": "7409d01f5646e7dd1f0b70d018b2cc92ea52866a1e5c7edd4f81848ec68dde1d",
+      "vendor_matches": []
+    },
+    {
+      "filename": "wheeltec_controller2.rules",
+      "source": "/etc/udev/rules.d/wheeltec_controller2.rules",
+      "bytes": 160,
+      "sha256": "9cdcbc21d5b87168f9911a21dfb70e5e9cf53ecc8fa01fa1b8ef52b9ba5c433c",
+      "vendor_matches": []
+    },
+    {
+      "filename": "wheeltec_controller3.rules",
+      "source": "/etc/udev/rules.d/wheeltec_controller3.rules",
+      "bytes": 155,
+      "sha256": "c07c159562084020b89fe8a90f5349e38653828aeffd0539dfd2f454b085ea3f",
+      "vendor_matches": []
+    },
+    {
+      "filename": "wheeltec_gnss.rules",
+      "source": "/etc/udev/rules.d/wheeltec_gnss.rules",
+      "bytes": 150,
+      "sha256": "6f7fc482f8686bbb0a3c30926ddd3c0b50e3d8fcd5836055b9a3454bbe78fbec",
+      "vendor_matches": []
+    },
+    {
+      "filename": "wheeltec_imu.rules",
+      "source": "/etc/udev/rules.d/wheeltec_imu.rules",
+      "bytes": 148,
+      "sha256": "628699f60a4d52699ccd3065cbb191e3a5d76eb70682028d9404461f6e05c61c",
+      "vendor_matches": []
+    },
+    {
+      "filename": "wheeltec_imu_343.rules",
+      "source": "/etc/udev/rules.d/wheeltec_imu_343.rules",
+      "bytes": 153,
+      "sha256": "dbc51991bbf6d3992d6975f6f7f9e42b832a6686de1b6aa8cc8a8e68c6fc7410",
+      "vendor_matches": []
+    },
+    {
+      "filename": "wheeltec_imu_ACM.rules",
+      "source": "/etc/udev/rules.d/wheeltec_imu_ACM.rules",
+      "bytes": 148,
+      "sha256": "69ab49fcb1a48407f926e6438eadbeedd1ec0c755e54d9a3c59d5e0bfd1cb05f",
+      "vendor_matches": []
+    },
+    {
+      "filename": "wheeltec_lidar.rules",
+      "source": "/etc/udev/rules.d/wheeltec_lidar.rules",
+      "bytes": 150,
+      "sha256": "9523043e50ce6f0bc046fe73030332d36807c2a07c314366d48ac1ee8e19b44e",
+      "vendor_matches": []
+    },
+    {
+      "filename": "wheeltec_lidar2.rules",
+      "source": "/etc/udev/rules.d/wheeltec_lidar2.rules",
+      "bytes": 155,
+      "sha256": "970616bf8e6d4afa688bde2939e1f819baa35f5ce03d135851f54b54e929c80a",
+      "vendor_matches": []
+    },
+    {
+      "filename": "wheeltec_lidar3.rules",
+      "source": "/etc/udev/rules.d/wheeltec_lidar3.rules",
+      "bytes": 150,
+      "sha256": "5dc73c28d5c35b156c688e5d408fc1fc8bd35aa1a65195f0a27252711eab5b47",
+      "vendor_matches": []
+    },
+    {
+      "filename": "wheeltec_mmwave_radar.rules",
+      "source": "/etc/udev/rules.d/wheeltec_mmwave_radar.rules",
+      "bytes": 157,
+      "sha256": "16a02a29c2e155c9b70e0aec08f1b56bcb5c3e42d849c6c1dcd14b0b3e221be3",
+      "vendor_matches": []
+    },
+    {
+      "filename": "wheeltec_mmwave_radar2.rules",
+      "source": "/etc/udev/rules.d/wheeltec_mmwave_radar2.rules",
+      "bytes": 162,
+      "sha256": "c8ee6884c11c6b06ebaeabdb0dadf1dcf4eeb699dcd63a7064c53f97b3537049",
+      "vendor_matches": []
+    },
+    {
+      "filename": "wheeltec_mmwave_radar3.rules",
+      "source": "/etc/udev/rules.d/wheeltec_mmwave_radar3.rules",
+      "bytes": 157,
+      "sha256": "d4bb75061a8175250fece1ffb14947630b065eca812338b241c382b56e0f20ed",
+      "vendor_matches": []
+    }
+  ],
+  "source_generator_matches": [
+    {
+      "script": "/home/jichengzhi/ROS1/wheeltec_robot/src/ldlidar_ros1/ldlidar_udev.sh",
+      "sha256": "f0fccec7cd0c3e64b78ac2c57aef3c70b6f6aca8e7a5d6350dc9380867bddb99",
+      "matches": [
+        {
+          "installed_filename": "wheeltec_lidar2.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_lidar3.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        }
+      ]
+    },
+    {
+      "script": "/home/jichengzhi/ROS1/wheeltec_robot/src/turn_on_wheeltec_robot/wheeltec_udev.sh",
+      "sha256": "d089f270e9c9c2fe7f0b809b419ee63d3ff858de8a286acd96f2bb0a883df194",
+      "matches": [
+        {
+          "installed_filename": "wheeltec_controller.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_controller2.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_controller3.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_gnss.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_lidar.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_lidar2.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_lidar3.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_mmwave_radar.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_mmwave_radar2.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_mmwave_radar3.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_imu.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_imu_343.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_imu_ACM.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "camera.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">>"
+        },
+        {
+          "installed_filename": "camera.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">>"
+        },
+        {
+          "installed_filename": "camera.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">>"
+        },
+        {
+          "installed_filename": "camera.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">>"
+        },
+        {
+          "installed_filename": "camera.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">>"
+        },
+        {
+          "installed_filename": "camera.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">>"
+        }
+      ]
+    },
+    {
+      "script": "/home/jichengzhi/ROS1/wheeltec_robot/src/turn_on_wheeltec_robot/scripts/wheeltec_udev.sh",
+      "sha256": "948cff4089a413ebc1f56e0dacefcbe42cc99a0e3b1816f456dbd53b812720ad",
+      "matches": [
+        {
+          "installed_filename": "wheeltec_controller.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_controller2.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_controller3.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_lidar.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_lidar2.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_lidar3.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "camera.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">>"
+        },
+        {
+          "installed_filename": "camera.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">>"
+        },
+        {
+          "installed_filename": "camera.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">>"
+        },
+        {
+          "installed_filename": "camera.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">>"
+        }
+      ]
+    },
+    {
+      "script": "/home/jichengzhi/ROS1/vendor/src/ldlidar_ros1/ldlidar_udev.sh",
+      "sha256": "f0fccec7cd0c3e64b78ac2c57aef3c70b6f6aca8e7a5d6350dc9380867bddb99",
+      "matches": [
+        {
+          "installed_filename": "wheeltec_lidar2.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_lidar3.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        }
+      ]
+    },
+    {
+      "script": "/home/jichengzhi/ROS1/vendor/src/hipnuc_imu/wheeltec_udev.sh",
+      "sha256": "35e32d212a8a6694d3647e86f70679896ca8d0d6ed46f183379308d11f894c54",
+      "matches": [
+        {
+          "installed_filename": "wheeltec_imu.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        }
+      ]
+    },
+    {
+      "script": "/home/jichengzhi/ROS1/vendor/src/yesense_imu/wheeltec_udev.sh",
+      "sha256": "35e32d212a8a6694d3647e86f70679896ca8d0d6ed46f183379308d11f894c54",
+      "matches": [
+        {
+          "installed_filename": "wheeltec_imu.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        }
+      ]
+    },
+    {
+      "script": "/home/jichengzhi/ROS1/vendor/src/wheeltec_radar/radar_udev.sh",
+      "sha256": "b638f7c84deaa56502ffb198cb5d37e44ccbec8b0b623f6b34fc649dffb4e289",
+      "matches": [
+        {
+          "installed_filename": "wheeltec_mmwave_radar.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_mmwave_radar2.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_mmwave_radar3.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        }
+      ]
+    },
+    {
+      "script": "/home/jichengzhi/ROS1/vendor/src/turn_on_wheeltec_robot/wheeltec_udev.sh",
+      "sha256": "d089f270e9c9c2fe7f0b809b419ee63d3ff858de8a286acd96f2bb0a883df194",
+      "matches": [
+        {
+          "installed_filename": "wheeltec_controller.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_controller2.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_controller3.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_gnss.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_lidar.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_lidar2.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_lidar3.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_mmwave_radar.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_mmwave_radar2.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_mmwave_radar3.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_imu.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_imu_343.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_imu_ACM.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "camera.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">>"
+        },
+        {
+          "installed_filename": "camera.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">>"
+        },
+        {
+          "installed_filename": "camera.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">>"
+        },
+        {
+          "installed_filename": "camera.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">>"
+        },
+        {
+          "installed_filename": "camera.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">>"
+        },
+        {
+          "installed_filename": "camera.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">>"
+        }
+      ]
+    },
+    {
+      "script": "/home/jichengzhi/ROS1/vendor/src/turn_on_wheeltec_robot/scripts/wheeltec_udev.sh",
+      "sha256": "948cff4089a413ebc1f56e0dacefcbe42cc99a0e3b1816f456dbd53b812720ad",
+      "matches": [
+        {
+          "installed_filename": "wheeltec_controller.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_controller2.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_controller3.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_lidar.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_lidar2.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "wheeltec_lidar3.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">"
+        },
+        {
+          "installed_filename": "camera.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">>"
+        },
+        {
+          "installed_filename": "camera.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">>"
+        },
+        {
+          "installed_filename": "camera.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">>"
+        },
+        {
+          "installed_filename": "camera.rules",
+          "match": "generated line is present in installed rule",
+          "redirect": ">>"
+        }
+      ]
+    }
+  ]
+}
