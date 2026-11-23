@@ -1,0 +1,311 @@
+{
+  "schema_version": "copt.orin.recovery-smoke.v1",
+  "passed": true,
+  "published_engine_commit": "aa3d68132c6c8b2e3bc74ac03162585cb758fae3",
+  "started_utc": "2026-11-23T12:12:13Z",
+  "finished_utc": "2026-11-23T12:12:36Z",
+  "scope": "isolated restored source, checkpoint, input and publicly downloaded frozen engine copies on existing Orin SDK; one real cold inference per arm",
+  "transfer_verified_files": 791,
+  "source_symlinks": 0,
+  "imported_native_modules_from_isolated_copy": 20,
+  "artifact_preflight_arms": 5,
+  "artifact_hash_references": 14,
+  "overall_exit_code": 0,
+  "arms": [
+    {
+      "arm_id": "original_default",
+      "passed": true,
+      "exit_code": 0,
+      "runtime": "native_pytorch",
+      "sample_events": 1,
+      "probe_complete_events": 1,
+      "variant": "optimized",
+      "cold_first_frame": true,
+      "pair_hash_validation": "not_run",
+      "artifact_sha256": {
+        "checkpoint": "43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4",
+        "config": "7601361830f27eb56d328e9f3fb1e8d66847cbcf2dc47f0c3a52dbab318eddc2"
+      },
+      "input_sha256": "d685d156c22e59506a436ed8baccdee5ca093739f1ee94c7da01a89fcd802103",
+      "output_contract": {
+        "res0": {
+          "dtype": "float32",
+          "readonly": true,
+          "shape": [
+            1,
+            64,
+            128,
+            256
+          ]
+        },
+        "res1": {
+          "dtype": "float32",
+          "readonly": true,
+          "shape": [
+            1,
+            128,
+            64,
+            128
+          ]
+        },
+        "res2": {
+          "dtype": "float32",
+          "readonly": true,
+          "shape": [
+            1,
+            256,
+            32,
+            64
+          ]
+        }
+      },
+      "payload_semantics": "codriving_rsu_multiscale_features.v1",
+      "decoded_feature_sha256": "a94c31a0e29ab4ec846c07345eb190ecd9ea464c75662943dd86ff0b3808930b",
+      "wire_bytes": 14684577,
+      "wire_sha256": "4151e9ab5c9fc2f646ae1768280333b69022d02e6368268a590ec985e9105b0f",
+      "raw_jsonl": "original_default.jsonl",
+      "raw_jsonl_sha256": "33691723fc474372acbc113029ceb183b657e0372839e87a4b0ccd684d5b4401"
+    },
+    {
+      "arm_id": "compression_only",
+      "passed": true,
+      "exit_code": 0,
+      "runtime": "tensorrt",
+      "sample_events": 1,
+      "probe_complete_events": 1,
+      "variant": "optimized",
+      "cold_first_frame": true,
+      "pair_hash_validation": "not_run",
+      "artifact_sha256": {
+        "checkpoint": "92dfb0e71d8b26cc15fbdc65504a6e1896343f9fdbbb48ac69aaee80f4646a50",
+        "config": "b991d45e5a65b769077453dd4c7e62cad33d6bfe3c769360003ae3fcb42077dd",
+        "engine": "ac45f2dec35cbef552959724f7e65e79bd223af50c0e31ce432baa06c6512267"
+      },
+      "input_sha256": "d685d156c22e59506a436ed8baccdee5ca093739f1ee94c7da01a89fcd802103",
+      "output_contract": {
+        "res0": {
+          "dtype": "float32",
+          "readonly": true,
+          "shape": [
+            1,
+            32,
+            128,
+            256
+          ]
+        },
+        "res1": {
+          "dtype": "float32",
+          "readonly": true,
+          "shape": [
+            1,
+            64,
+            64,
+            128
+          ]
+        },
+        "res2": {
+          "dtype": "float32",
+          "readonly": true,
+          "shape": [
+            1,
+            96,
+            32,
+            64
+          ]
+        }
+      },
+      "payload_semantics": "codriving_rsu_multiscale_features.v1",
+      "decoded_feature_sha256": "9a678b18204741097e3ac1e77231b9ffb25a70967dfe21d5f7316b42f3767b8c",
+      "wire_bytes": 7082638,
+      "wire_sha256": "64fc718af97a278e387a3eb4963ba58928bdab61e067ca54ae8d6fe0d11068e7",
+      "raw_jsonl": "compression_only.jsonl",
+      "raw_jsonl_sha256": "afe0dd73ad7c8dd87c0cd5fb5fbb70db0188cc6853a7ae0758e46f5bf9e1cec7"
+    },
+    {
+      "arm_id": "schedule_only",
+      "passed": true,
+      "exit_code": 0,
+      "runtime": "tensorrt",
+      "sample_events": 1,
+      "probe_complete_events": 1,
+      "variant": "optimized",
+      "cold_first_frame": true,
+      "pair_hash_validation": "not_run",
+      "artifact_sha256": {
+        "checkpoint": "43f1236acc83a54255a122eee71eabc06f6c5471119300bb78b0343757cd9cd4",
+        "config": "7601361830f27eb56d328e9f3fb1e8d66847cbcf2dc47f0c3a52dbab318eddc2",
+        "engine": "a4a464dc3838f35550313b70e52434ed738d4a71ce1c624c708f5447066fed21"
+      },
+      "input_sha256": "d685d156c22e59506a436ed8baccdee5ca093739f1ee94c7da01a89fcd802103",
+      "output_contract": {
+        "res0": {
+          "dtype": "float32",
+          "readonly": true,
+          "shape": [
+            1,
+            64,
+            128,
+            256
+          ]
+        },
+        "res1": {
+          "dtype": "float32",
+          "readonly": true,
+          "shape": [
+            1,
+            128,
+            64,
+            128
+          ]
+        },
+        "res2": {
+          "dtype": "float32",
+          "readonly": true,
+          "shape": [
+            1,
+            256,
+            32,
+            64
+          ]
+        }
+      },
+      "payload_semantics": "codriving_rsu_multiscale_features.v1",
+      "decoded_feature_sha256": "d189c8cacd4cd2a1933053cc453c6ac68b63f7081b830fd5b5747208a61bbaec",
+      "wire_bytes": 14684780,
+      "wire_sha256": "4d834bddc9e0baaf5d07b4881064d4eeb3ded837b5eafcb979970b3e2a2d7d66",
+      "raw_jsonl": "schedule_only.jsonl",
+      "raw_jsonl_sha256": "083ad658007dfb826c27330b7a1dcb86bcec69db08179cc337852c15d64ad568"
+    },
+    {
+      "arm_id": "compress_then_tune",
+      "passed": true,
+      "exit_code": 0,
+      "runtime": "tensorrt",
+      "sample_events": 1,
+      "probe_complete_events": 1,
+      "variant": "optimized",
+      "cold_first_frame": true,
+      "pair_hash_validation": "not_run",
+      "artifact_sha256": {
+        "checkpoint": "f73acdf344cc11bfee6019099e6a3407362feb35109a20bf4ad34dc688fedae7",
+        "config": "e509c1ae7aa4574e3512111bebbfba2e86ed71524db7056796886a96a2789b92",
+        "engine": "df18a052669a836f5094a95a6d8f13f6eef40d02629611efc7c94ee7796846f5"
+      },
+      "input_sha256": "d685d156c22e59506a436ed8baccdee5ca093739f1ee94c7da01a89fcd802103",
+      "output_contract": {
+        "res0": {
+          "dtype": "float32",
+          "readonly": true,
+          "shape": [
+            1,
+            32,
+            128,
+            256
+          ]
+        },
+        "res1": {
+          "dtype": "float32",
+          "readonly": true,
+          "shape": [
+            1,
+            80,
+            64,
+            128
+          ]
+        },
+        "res2": {
+          "dtype": "float32",
+          "readonly": true,
+          "shape": [
+            1,
+            128,
+            32,
+            64
+          ]
+        }
+      },
+      "payload_semantics": "codriving_rsu_multiscale_features.v1",
+      "decoded_feature_sha256": "2a8db8dc9a96c3750578057d6710e1b9cd881039cdf1f913abd08510a1db0539",
+      "wire_bytes": 7869094,
+      "wire_sha256": "8d713192669a032cdc7d456cd956c524f3b5c7cf8bf68e8b622b47d049225454",
+      "raw_jsonl": "compress_then_tune.jsonl",
+      "raw_jsonl_sha256": "38f0d7a9c5144a9673f2f3a8051b1c5a8279c5a1ce8460c57d685b8c5e1c1e67"
+    },
+    {
+      "arm_id": "joint_shcosearch",
+      "passed": true,
+      "exit_code": 0,
+      "runtime": "tensorrt",
+      "sample_events": 1,
+      "probe_complete_events": 1,
+      "variant": "optimized",
+      "cold_first_frame": true,
+      "pair_hash_validation": "not_run",
+      "artifact_sha256": {
+        "checkpoint": "ccbd1c2881f6736e1e4a57e9e873583befbe3a3fdc11f21c2a381a63d4356a8e",
+        "config": "d2bdbf66b4efaf96094761e2586d7c3c8f1f6d1b47c47707cc60e3972655a191",
+        "engine": "9ab2eb723b90f0e4ee7ae0fb1827bb10f8c69822545db5244bbff1830a01de87"
+      },
+      "input_sha256": "d685d156c22e59506a436ed8baccdee5ca093739f1ee94c7da01a89fcd802103",
+      "output_contract": {
+        "res0": {
+          "dtype": "float32",
+          "readonly": true,
+          "shape": [
+            1,
+            16,
+            128,
+            256
+          ]
+        },
+        "res1": {
+          "dtype": "float32",
+          "readonly": true,
+          "shape": [
+            1,
+            32,
+            64,
+            128
+          ]
+        },
+        "res2": {
+          "dtype": "float32",
+          "readonly": true,
+          "shape": [
+            1,
+            64,
+            32,
+            64
+          ]
+        }
+      },
+      "payload_semantics": "codriving_rsu_multiscale_features.v1",
+      "decoded_feature_sha256": "c78d7b735ed43686763263a764202142b8ff4a3185281f4d8a2453a0e26a3688",
+      "wire_bytes": 3674773,
+      "wire_sha256": "09dde66b1f4ea32e37236c48988acfd6219fb1dddc4454282e2ac7c642374216",
+      "raw_jsonl": "joint_shcosearch.jsonl",
+      "raw_jsonl_sha256": "738648a876e0b8ccbd2d821cb630f3e20d5fda2222537abe815ba5c951187b74"
+    }
+  ],
+  "software_snapshot": "isolation_software.json",
+  "public_download_receipt": "public_engine_downloads_20261123.json",
+  "input_shape": [
+    2,
+    64,
+    256,
+    512
+  ],
+  "input_dtype": "float32",
+  "communication_measured": false,
+  "modeled_communication_ns": 100000000,
+  "fresh_os_install_validated": false,
+  "ros_validated": false,
+  "carla_validated": false,
+  "vehicle_closed_loop_validated": false,
+  "accuracy_or_performance_validated": false,
+  "warnings": [
+    "All five runs emitted the existing Torch read-only NumPy conversion UserWarning; no exceptions occurred. Original payload source was not modified."
+  ],
+  "wire_files_published": false,
+  "note": "Wire bytes remain in the private isolated Orin test directory; SHA256 was independently re-read over SSH. Finite, shape, identity and decoded feature hash checks execute inside serial_probe before probe_complete. Only optimized was run; baseline/optimized pair comparison was not run."
+}

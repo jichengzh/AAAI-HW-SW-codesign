@@ -1,0 +1,42 @@
+{
+  "schema_version": "copt.public-download-verification.v1",
+  "verified_utc": "2026-11-23T12:08:07.768624+00:00",
+  "repository": "https://github.com/jichengzh/AAAI-HW-SW-codesign",
+  "branch": "orin\u6062\u590dCoptV2X\u90e8\u7f72\u5206\u652f",
+  "commit": "aa3d68132c6c8b2e3bc74ac03162585cb758fae3",
+  "files": [
+    {
+      "arm_id": "compress_then_tune",
+      "url": "https://raw.githubusercontent.com/jichengzh/AAAI-HW-SW-codesign/aa3d68132c6c8b2e3bc74ac03162585cb758fae3/docs/orin-recovery-20261123/engine_payload/lane_c_orin_stage6_five_config_20260724/codriving/compress_then_tune/backbone.engine",
+      "relative_path": "lane_c_orin_stage6_five_config_20260724/codriving/compress_then_tune/backbone.engine",
+      "bytes": 4220604,
+      "sha256": "df18a052669a836f5094a95a6d8f13f6eef40d02629611efc7c94ee7796846f5",
+      "verified": true
+    },
+    {
+      "arm_id": "compression_only",
+      "url": "https://raw.githubusercontent.com/jichengzh/AAAI-HW-SW-codesign/aa3d68132c6c8b2e3bc74ac03162585cb758fae3/docs/orin-recovery-20261123/engine_payload/lane_c_orin_stage6_five_config_20260724/codriving/compression_only/backbone.engine",
+      "relative_path": "lane_c_orin_stage6_five_config_20260724/codriving/compression_only/backbone.engine",
+      "bytes": 2694290,
+      "sha256": "ac45f2dec35cbef552959724f7e65e79bd223af50c0e31ce432baa06c6512267",
+      "verified": true
+    },
+    {
+      "arm_id": "joint_shcosearch",
+      "url": "https://raw.githubusercontent.com/jichengzh/AAAI-HW-SW-codesign/aa3d68132c6c8b2e3bc74ac03162585cb758fae3/docs/orin-recovery-20261123/engine_payload/lane_c_orin_stage6_five_config_20260724/codriving/joint_shcosearch_fp16/backbone.engine",
+      "relative_path": "lane_c_orin_stage6_five_config_20260724/codriving/joint_shcosearch_fp16/backbone.engine",
+      "bytes": 1177877,
+      "sha256": "9ab2eb723b90f0e4ee7ae0fb1827bb10f8c69822545db5244bbff1830a01de87",
+      "verified": true
+    },
+    {
+      "arm_id": "schedule_only",
+      "url": "https://raw.githubusercontent.com/jichengzh/AAAI-HW-SW-codesign/aa3d68132c6c8b2e3bc74ac03162585cb758fae3/docs/orin-recovery-20261123/engine_payload/lane_c_orin_stage6_five_config_20260724/codriving/schedule_only/backbone.engine",
+      "relative_path": "lane_c_orin_stage6_five_config_20260724/codriving/schedule_only/backbone.engine",
+      "bytes": 48406458,
+      "sha256": "a4a464dc3838f35550313b70e52434ed738d4a71ce1c624c708f5447066fed21",
+      "verified": true
+    }
+  ],
+  "verified": true
+}

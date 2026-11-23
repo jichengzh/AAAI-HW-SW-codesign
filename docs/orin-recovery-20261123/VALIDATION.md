@@ -12,13 +12,13 @@
 | DAIR split/校准/标签 | 14315 | 116,821,737 | 37,097,047 |
 | ROS2 Docker共享层归档 | 3个镜像 | 共享层不重复相加 | 254,241,601 |
 
-离线归档共 **1,718,109,787 B（1.600 GiB）**。逐分卷与逐文件SHA256、原安装相对路径见各manifest；总表见 `manifests/backup_summary.json`。
+原6份离线归档/分卷共 **1,718,109,787 B（1.600 GiB）**。逐分卷与逐文件SHA256、原安装相对路径见各manifest；总表见 `manifests/backup_summary.json`。
 
 
 ## 已完成的检查
 
 - 7,176 份原始源码/配置，73,192,234 B；从Orin逐文件计算SHA256，并在当前主机重新计算比对，全部一致。
-- 公开源码为73,192,275 B；3个文件的5处密码式SSH/sudo命令已替换，公开哈希与变化位置已记录；这3个原文件的摘要/大小只留私有备份。私有原始树不上传。
+- 公开源码为73,192,275 B；3个文件的5处密码式SSH/sudo命令及6份脚本的固定GPU分配说明已处理，公开哈希与变化位置已记录；这9个原文件的摘要/大小只留私有备份。私有原始树不上传。
 - 111份原始关键结果，4,852,498 B；全部与原端SHA256一致，未改写实验字段。
 - FCooper8份定制ONNX/checkpoint，63,156,308 B；压缩包36,717,260 B。远端流式哈希、本地解包流哈希一致；按恢复文档实测临时解包，8文件路径/内容再次一致。
 - FCooper归档内模型的10项五臂引用哈希与正式canonical_manifest完全一致；3个ResNet候选与原目标accuracy链接指向文件哈希一致。
@@ -29,7 +29,7 @@
 - 全部6份离线归档/分卷的SHA256再次核验通过；主包XZ完整性检查通过，并实际解出pruned75 checkpoint，路径/大小/SHA256一致。
 - 早期工具曾通过7,293项文件核验；本次工具默认模式核验7,291项（含4个冻结engine），相关106项回归测试通过。删除主manifest而保留补充manifest、缺失/损坏engine和checkpoint别名均有失败测试。
 - 恢复文档Bash片段通过 `bash -n`；公开树未纳入数据集、大缓存或大于100MiB的Git普通文件。公开内容做过私钥/token/URL凭据/密码命令等静态模式检查；该检查不构成穷尽的安全证明。
-- 只读校验工具验证了正常文件，并确认可拒绝损坏哈希、大小不符、路径越界、缺失和软链接文件。没有执行payload中的程序。
+- 只读校验工具验证了正常文件，并确认可拒绝损坏哈希、大小不符、路径越界、缺失和软链接文件。该工具本身不执行payload；后续实际推理见下节独立记录。
 
 ## 复核命令
 
@@ -64,5 +64,26 @@ python3 -B /home/jichengzhi/orin-recovery/github/tools/verify_recovery.py \
 - 4份原始engine，共56,499,229 B，已从私有逐文件校验补包提取到本仓库 `engine_payload/`；全部SHA256匹配冻结registry。逐文件下载路径见 [engine manifest](manifests/copt_engine_backup_manifest.json)。
 - 另在原盘之外保存独立压缩副本 `copt-frozen-engines-20261123.tar.gz`，48,338,884 B，SHA256=`1764bc848a9b2f59442745f0cbcce1113d4448194b77e6918055817d46b7dbe2`。此压缩副本不重复纳入Git。
 - 恢复说明已补入4个models→source checkpoint路径映射，并要求显式Stage6 artifact root。旧默认路径不能代表本备份的实际安装位置。
-- 此版本提交时，GitHub发布后的重新下载及Orin真实单帧测试尚待执行；完成后的独立回执将记录实际提交、下载SHA256与每臂退出状态。不得把本段的文件一致性检查解读为已运行推理。
+- 已发布commit `aa3d68132c6c8b2e3bc74ac03162585cb758fae3`，随后从该不可变commit的公开raw URL实际重新下载4份engine，56,499,229 B，大小及SHA256全部一致。见 [公开下载回执](validation/public_engine_downloads_20261123.json)。
 - 当前仅证明现有SDK环境的材料可验收。新JetPack安装、重新编译、ROS往返、外部HIL及车辆闭环仍需另行验收；其他约1.60GiB离线资产仍不在Git仓库。
+
+
+## 上传后Orin独立恢复副本真实单帧复验
+
+2026-11-23 12:12:13–12:12:36 UTC（北京时间20:12），在Orin新建独立 `/tmp` 目录执行。runtime/native来自恢复包，4份checkpoint与单帧输入从已备份归档选择性提取，4份engine使用**上传后GitHub重新下载**的字节，未借用原部署源码、权重或输入。传输791份文件逐项SHA256一致、0软链接；20个原生模型模块导入路径均来自临时副本。
+
+| 配置 | 实际backend | 推理样本数 | 退出码 | 结果 |
+|---|---|---:|---:|---|
+| original_default | native_pytorch | 1 | 0 | PASS |
+| compression_only | tensorrt | 1 | 0 | PASS |
+| schedule_only | tensorrt | 1 | 0 | PASS |
+| compress_then_tune | tensorrt | 1 | 0 | PASS |
+| joint_shcosearch | tensorrt | 1 | 0 | PASS |
+
+- 源码自己的preflight通过5臂、14项冻结资产hash；实际probe每臂仅1个sample、1个probe_complete。输入float32 `[2,64,256,512]` 的SHA256为 `d685d156c22e59506a436ed8baccdee5ca093739f1ee94c7da01a89fcd802103`。
+- 实际执行模型、协议编码/解码、RSU-only多尺度feature合同、shape/float32/finite/身份及解码feature hash检查；wire大小/SHA256另在远端重新计算核对。没有将仅存在wire文件视为通过。
+- 逐臂未经改写的原始JSONL、公开回执、依赖及隔离信息见 [validation/](validation/README.md)；完整wire与stderr留私有验收目录，不上传大输出。
+- 使用既有L4T35.6.5、Python3.8.19、Torch1.12.0a0+2c916ef.nv22.3/CUDA11.4、TensorRT8.5.2.2、NumPy1.22.4；这证明独立恢复材料在**原机现有软件栈**上可以加载和执行。未测试新系统安装/编译。
+- 每臂是冷启动首帧，warm sample=0；仅optimized，`pair_hash_validation=not_run`。通信100ms是模型项，`communication_measured=false`、`is_hil=false`。不据此报告吞吐、网络时延、AP准确率或闭环驾驶性能。
+- 五次运行均出现既有Torch“只读NumPy转换”UserWarning；无异常，未改动冻结源码压制警告。ROS、CARLA、外部ACK、车辆与约200GB数据没有启动或恢复。
+- 此次发布前本地全量测试 **1,042 passed**；仓库+原离线归档的只读工具 **7,297项通过**；后续GitHub CI与fresh OS验收仍分别记录。
