@@ -1,6 +1,6 @@
 # 源码恢复与构建入口
 
-`payload/` 以原 `/home/jichengzhi/` 为根，保存部署代码、模型定义、配置、导出/构建脚本和原评测 split。逐文件公开副本SHA256、原权限与排除规则见 [源码清单](manifests/source_capture_manifest.json)。原结果单独放 `key_results/`，不覆盖源码树。
+`payload/` 以原 `/home/jichengzhi/` 为根，保存部署代码、模型定义、配置、导出/构建脚本和原评测 split。逐文件公开副本SHA256、原权限与排除规则见 [源码清单](manifests/source_capture_manifest.json)。原结果单独放 `key_results/`，不覆盖源码树。4份冻结Copt engine单独放 `engine_payload/`，按同样的原home相对布局复制；原离线包中的4个checkpoint需从 `models/codriving/` 补到 `source/codriving/`，精确命令见 [COPT_ENGINE_RESTORE](COPT_ENGINE_RESTORE.md)，并须在 `--home` 核验前完成。
 
 ## 源码复制与凭据处理
 
@@ -63,7 +63,7 @@ ldd build/uniad_udp
 
 离线包保留一个P4预录BEV输入（float32，shape `[2,64,256,512]`，64MiB；实读NPY头见 `manifests/smoke_input_shape.json`）；另外保留UniAD第0帧的7份metadata、6张相机图和原info文件，避免恢复后没有任何可用输入。完整视频、所有帧、CARLA场景和139GiB BEV缓存不保留。UniAD单帧需仅取info首行（保留行尾分号）与第0帧metadata，在 `enqueueV2` 工作目录解析相机相对路径；只做离线数值/输出验收，不启动UDP底盘闭环。可视化字体在离线包中；也可按源码支持的 `UNIAD_SKIP_VIS=1` 跳过可视化。
 
-ROS1恢复 `/opt/ros/noetic` 后在 `ROS1/wheeltec_robot` 重建catkin。DITL/Foxy按保存的Docker镜像与挂载配置恢复。Pyramid/CoDriving/FCooper/ResNet按对应模型结构、config、ONNX、原shape/精度重建TensorRT engine；完整AP需要另取完整评测数据。
+ROS1恢复 `/opt/ros/noetic` 后在 `ROS1/wheeltec_robot` 重建catkin。DITL/Foxy按保存的Docker镜像与挂载配置恢复。Pyramid/FCooper/ResNet等按对应模型结构、config、ONNX、原shape/精度重建TensorRT engine；Copt冻结CoDriving服务按新增engine清单恢复原字节，显式使用Stage6 artifact_root，不能以不同SHA的重建文件替代。完整AP需要另取完整评测数据。
 
 ## 仍需外部材料
 

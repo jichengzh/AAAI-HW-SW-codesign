@@ -42,4 +42,44 @@ docker images --format '{{.Repository}}:{{.Tag}} {{.ID}} {{.Size}}'
 
 `/opt/ros/foxy`、`/opt/ros2-tracing-overlay`、`/workspace` 是容器内路径。原Dockerfile和tracing源码包可用于重建增量层，基础镜像仍需上述离线包；加载后再按原脚本核对挂载/网络/trace权限。本清单不自动运行HIL或底盘节点。
 
-原系统装有 `nvidia-container-runtime=3.9.0-1`、`nvidia-container-toolkit=1.11.0~rc.1-1`、`nvidia-docker2=2.11.0-1`，但本次 `docker info` 仅发现runc相关runtime，未发现已注册nvidia runtime。因此不能把这些包存在视为GPU容器可用；Foxy桥接/tracing与宿主TRT worker分开恢复。若以后需要GPU容器，按匹配JetPack的 [NVIDIA容器安装说明](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) 单独配置和验收，不能以ROS2镜像成功load代替GPU检查。
+原系统装有 `nvidia-container-runtime=3.9.0-1`、`nvidia-container-toolkit=1.11.0~rc.1-1`、`nvidia-docker2=2.11.0-1`；快照 `docker_runtime_snapshot.json` 的 `Runtimes` 明确包含 `nvidia`（path=`nvidia-container-runtime`），`DefaultRuntime` 为 `runc`。此前“未发现已注册nvidia runtime”的描述有误。注册runtime和安装包存在都不能证明GPU容器实际可运行；Foxy桥接/tracing与宿主TRT worker分开恢复，宿主TRT不需要GPU容器。若以后需要GPU容器，按匹配JetPack的 [NVIDIA容器安装说明](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) 单独配置和验收，不能以ROS2镜像成功load代替GPU检查。
+
+
+## 仅在容器名不存在时重建空闲骨架
+
+源码 `coptv2x_hil_episode_services.py` 使用 `docker exec`，不会自动创建默认容器。新系统加载镜像后，可按原inspect恢复下面的骨架：选择的runtime挂到 `/work`，独立状态目录挂到 `/state`，host网络、runc。命令只在容器名不存在时创建；若已有同名容器，检查其挂载、状态和配置，不自动删除或覆盖。
+
+```bash
+export R=/home/jichengzhi/coptv2x_hil_pipeline_20261010/runtime
+export OLD=/home/jichengzhi/coptv2x_hil_p4_smoke_20261001T074559Z
+mkdir -p "$OLD/runtimestate"
+if docker container inspect coptv2x-hil-p4-smoke-ros >/dev/null 2>&1; then
+  docker container inspect coptv2x-hil-p4-smoke-ros
+else
+  docker run -d --name coptv2x-hil-p4-smoke-ros \
+    --runtime runc --network host \
+    --mount "type=bind,src=$R,dst=/work" \
+    --mount "type=bind,src=$OLD/runtimestate,dst=/state" \
+    ditl/ros-foxy-tracing-enabled:arm64 bash -lc 'sleep infinity'
+fi
+docker inspect --format '{{.State.Status}} {{.HostConfig.Runtime}} {{.HostConfig.NetworkMode}} {{json .Mounts}}' \
+  coptv2x-hil-p4-smoke-ros
+```
+
+已有容器若为exited，先核对上述配置，再手动 `docker start coptv2x-hil-p4-smoke-ros`。该命令仅恢复空闲容器，不启动底盘或闭环。实际episode服务在每次 `docker exec` 时 `source /opt/ros/foxy/setup.bash`，并传入 `ROS_DOMAIN_ID=71` 和 `/work` 的PYTHONPATH；只设置容器名字不足以启动worker/publisher/proxy或完成最终ACK。
+
+## 后续单帧ROS往返检查
+
+先完成 [Copt宿主单帧真实推理](../COPT_ENGINE_RESTORE.md)，沿用其中 `PROOF` 和 `ARM`。wire位于宿主独立runtimestate，映射为 `/state/<新目录名>/<arm>.wire`。以下命令实际发布并接收容器内ROS话题，需已有运行中的正确骨架；应单独记录结果，不将它当作新系统安装、外部HIL或底盘闭环已验收：
+
+```bash
+export PROOF ARM
+PROOF_NAME=$(basename "$PROOF")
+docker exec -e ROS_DOMAIN_ID=71 \
+  -e PYTHONPATH=/work:/work/simulation/leaderboard/team_code/closedloop \
+  -e WIRE="/state/$PROOF_NAME/$ARM.wire" \
+  coptv2x-hil-p4-smoke-ros bash -lc \
+  'source /opt/ros/foxy/setup.bash && exec python3 /work/scripts/coptv2x_hil_serial_ros_smoke.py --wire "$WIRE" --config-dir /work/simulation/leaderboard/team_code/agent_config/coptv2x_hil'
+```
+
+此为后续可执行的验收步骤；是否已经运行及通过以 [VALIDATION](../VALIDATION.md) 的实际回执为准。完整HIL还需恢复宿主worker、容器publisher/proxy、反向SSH与外部最终ACK，以及原H800/CARLA输入。加载镜像或单个ROS话题成功均不能推出完整链路已恢复。

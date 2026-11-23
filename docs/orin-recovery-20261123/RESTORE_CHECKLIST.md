@@ -5,7 +5,7 @@
 ## 1. 格式化前确认材料可取
 
 - [ ] `github/` 已完整保存到另一台机器/存储介质，源码和结果的 SHA256 核对通过。
-- [ ] 与 `github/` 同级的 `offline_assets/critical-assets.tar.xz.part000` 等**全部连续分卷**已保存，并按最终资产清单核对大小与哈希。Git 仓库本身不包含这些大文件。
+- [ ] 与 `github/` 同级的 `offline_assets/critical-assets.tar.xz.part000` 等**全部连续分卷**已保存，并按最终资产清单核对大小与哈希。Git 仓库本身不包含这些离线包；本次4份冻结Copt engine另在 `engine_payload/` 随Git保存。
 - [ ] 如需 ROS2 tracing，另有 `offline_assets/ros2-foxy-images.tar.gz`；Docker 镜像不由普通源码目录恢复。
 - [ ] 已阅读 [数据与权重来源](DATASETS_AND_WEIGHTS.md) 的自定义模型缺口。基础公开 checkpoint、dummy ONNX 不能替代离线定制权重与真实 tiny ONNX。
 - [ ] `key_results/` 和结果 manifest 已保存。保留历史结果只证明当时相应范围的记录存在，不表示新系统已通过测试。
@@ -74,8 +74,24 @@ for name in fcooper-assets supplemental-assets dataset-metadata; do
  cat "$OFFLINE"/"$name".tar.gz.part[0-9][0-9][0-9] \
   | tar -xz --strip-components=1 --exclude=__ASSET_MANIFEST__.json -C /home/jichengzhi
 done
+
+# 补回随Git保存的4个冻结Copt engine，保持原home相对布局。
+rsync -a "$RECOVERY_REPO/engine_payload/" /home/jichengzhi/
+
+# 离线包的checkpoint在models/；冻结registry要求source/别名。
+export STAGE6=/home/jichengzhi/lane_c_orin_stage6_five_config_20260724
+for pair in \
+  016x032x064/net_epoch_bestval_at9.pth \
+  032x064x096/net_epoch_bestval_at11.pth \
+  032x080x128/net_epoch_bestval_at5.pth \
+  064x128x256/net_epoch29.pth; do
+ mkdir -p "$STAGE6/source/codriving/${pair%/*}"
+ cp -n "$STAGE6/models/codriving/$pair" "$STAGE6/source/codriving/$pair"
+done
 python3 "$RECOVERY_REPO/tools/verify_recovery.py" --repo "$RECOVERY_REPO" --home /home/jichengzhi
 ```
+
+详细冻结engine清单、显式Stage6根及源码自带5臂14哈希检查见 [COPT_ENGINE_RESTORE](COPT_ENGINE_RESTORE.md)。默认校验包含仓库内4个engine；`--home`额外核对恢复位置的4个engine与4个checkpoint别名。`cp -n`不会覆盖已有目标；若核验不符，先检查并另存已有文件再修复。源码以公开副本哈希验收，9份隐私处理文件的原摘要不在公开清单中。
 
 - [ ] 按资产 manifest 对恢复到 `/home/jichengzhi/` 的文件重新核对 SHA256，尤其自定义 ONNX、checkpoint、engine、校准输入与 NVIDIA Torch wheel。
 - [ ] 按 `manifests/source_capture_manifest.json` 核对源码、原 Git commit、补丁与软链接。`rsync -a` 只能恢复 payload 实际收录的链接，链接目标的数据/外部目录仍可能缺失。
@@ -125,7 +141,7 @@ source devel/setup.bash
 
 UniAD C++：在 `/home/jichengzhi/liruozhan/toOrinV2/DL4AGX_min/uniad-trt/inference_app/enqueueV2` 使用备份源码及其 `CMakeLists.txt` 重建 `uniad_udp` 和 `libuniad_plugin.so`。先检查源码要求的 CUDA/TRT/OpenCV路径和构建选项，再执行项目构建命令；**不要把原 build 目录或另一个 TensorRT 大版本编出的插件当作已恢复产物**。引擎发生版本不兼容时从保存的 ONNX 重新构建，按原 shape、精度、plugin 和校准设置执行，不能简单用通用 trtexec 命令替代原流程。
 
-Pyramid / CoDriving / FCooper / ResNet：按各目录保存的模型定义、配置、adapter 与构建命令恢复；优先使用已保存自定义 ONNX 重建对应引擎。上游公开基础权重不等同于原剪枝宽度/获胜点。
+Pyramid / CoDriving / FCooper / ResNet：按各目录保存的模型定义、配置、adapter 与构建命令恢复；Copt冻结registry的4个engine应从 `engine_payload/` 恢复并按SHA核验；其他未冻结引擎按已保存自定义ONNX重建。冻结backend会拒绝同名但SHA不同的重建engine，重建应作为新部署身份另行验收。上游公开基础权重不等同于原剪枝宽度/获胜点。
 
 ## 6. ROS2 tracing按需恢复
 
@@ -138,7 +154,7 @@ gzip -dc "$OFFLINE/ros2-foxy-images.tar.gz" | docker load
 docker images --format '{{.Repository}}:{{.Tag}} {{.ID}} {{.Size}}'
 ```
 
-期望历史tag包括 `ditl/ros-foxy:arm64-exact`、`ditl/ros-foxy-tracing:arm64`、`ditl/ros-foxy-tracing-enabled:arm64`，以实际导出清单为准。`/opt/ros/foxy`、`/opt/ros2-tracing-overlay`、`/workspace` 是容器内路径，不在宿主手工创建空目录冒充安装。先核对原 Dockerfile、运行命令中的挂载、网络和tracing设置；本检查单不自动启动旧trace/HIL脚本。
+期望历史tag包括 `ditl/ros-foxy:arm64-exact`、`ditl/ros-foxy-tracing:arm64`、`ditl/ros-foxy-tracing-enabled:arm64`，以实际导出清单为准。`/opt/ros/foxy`、`/opt/ros2-tracing-overlay`、`/workspace` 是容器内路径，不在宿主手工创建空目录冒充安装。按Docker文档创建缺失的容器骨架并核对 `/work`、`/state`、host网络与ROS_DOMAIN_ID=71；该骨架只保持空闲bash，不启动旧trace/HIL或底盘。
 
 ## 7. 只读检查通过，再补数据与做功能验收
 
@@ -171,7 +187,10 @@ python3 -B "$RECOVERY_REPO/tools/verify_recovery.py" --repo "$RECOVERY_REPO" --h
 - [ ] OPV2V完整评测核对实际loader2170条，不以实验内小子集替代 `/data/lsw-data/OPV2V/test`。
 - [ ] ImageNet全量50000张若不在本机，从合法来源重下或重新连接原host；stream completion不是准确率。
 - [ ] UniAD输入帧及图片相对路径需按需恢复；单个预录BEV输入只用于相应离线smoke，不代表已恢复整个CARLA/HIL场景缓存。
+- [ ] Copt最小验收先按 [冻结engine恢复说明](COPT_ENGINE_RESTORE.md) 调用源码只读preflight，再用已保存 `preflight.npy` 制作新单帧manifest；真实推理命令和输出必须在新目录记录。ROS往返、最终ACK与完整HIL另外验收。
 - [ ] 先手动执行项目离线小输入验收，分别记录模块导入、算子、模型输出、数值/精度、shape和动态库问题；新结果写新目录。
 - [ ] 最后才按小车/HIL项目流程连接真实设备。旧 `uniad_closedloop.sh` 会发布控制并启动底盘，不应拿它做安装检测。
 
 历史关键结果保留在仓库 `key_results/`，读 [结果边界说明](key_results/README.md) 后引用。恢复完成须有**新系统的新验收记录**；原 `route_timeout/FailedDriving`、静态重放、CPUExecutionProvider结果，不能改写成GPU或闭环性能成功。
+
+可选UniAD/ROS1链仍需单独解决默认121帧输入、Astra SDK/libuvc、底盘额外apt依赖与PL/torchmetrics API兼容问题；本次4个Copt engine修复未纳入这些材料，不表示全栈已恢复。156MiB审计补包仍仅私有保存。

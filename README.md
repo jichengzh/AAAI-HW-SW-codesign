@@ -1,6 +1,6 @@
 # GEAR Co-design reproducibility package
 
-> **Orin recovery branch:** Start with the [Orin recovery guide](docs/ORIN_RECOVERY.md) for the device source/config snapshot, key results, installation paths and dataset/model download catalog. This recovery snapshot is separate from the CPU smoke artifact described below; large offline archives remain external.
+> **Orin recovery branch:** Start with the [Orin recovery guide](docs/ORIN_RECOVERY.md) for the device source/config snapshot, key results, installation paths and dataset/model download catalog. The snapshot now includes four frozen Copt TensorRT engines in ordinary Git; see the [engine restore and validation steps](docs/orin-recovery-20261123/COPT_ENGINE_RESTORE.md). The original large offline archives remain external, and new-system, ROS and HIL validation remain separate from the CPU smoke artifact below.
 
 This repository is a scoped reproducibility artifact for the submission. It
 provides a deterministic CPU-only smoke workflow, a small verified cost-model

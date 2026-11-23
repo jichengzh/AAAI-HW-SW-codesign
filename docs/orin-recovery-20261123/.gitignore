@@ -32,3 +32,6 @@ devel/
 id_rsa*
 id_ed25519*
 # Source payload may contain vendored license notices: retain those notices.
+
+# Four user-authorized frozen Copt engines are deliberately versioned (each <100MiB).
+!engine_payload/**/backbone.engine

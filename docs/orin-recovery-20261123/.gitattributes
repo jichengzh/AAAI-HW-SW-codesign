@@ -1,2 +1,5 @@
 # Preserve original evidence/source bytes for SHA256 across operating systems.
 * -text
+
+# Preserve uploaded TensorRT engine bytes and avoid binary diffs.
+engine_payload/**/*.engine binary
