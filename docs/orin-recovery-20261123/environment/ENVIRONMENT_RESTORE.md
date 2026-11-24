@@ -34,8 +34,8 @@ sudo apt-get install cuda-toolkit-11-4=11.4.19-1 \
   libnvonnxparsers8=8.5.2-1+cuda11.4 libnvonnxparsers-dev=8.5.2-1+cuda11.4 \
   python3-libnvinfer=8.5.2-1+cuda11.4 libnvinfer-bin=8.5.2-1+cuda11.4
 sudo apt-get install build-essential cmake git curl wget pkg-config \
-  python3-dev python3-pip python3-venv libopenblas-dev libopenmpi-dev openmpi-bin \
-  libjpeg-dev zlib1g-dev libeigen3-dev libgoogle-glog-dev
+  python3-dev python3-pip python3-venv python3-tk libopenblas-dev libopenmpi-dev openmpi-bin \
+  libjpeg-dev zlib1g-dev libeigen3-dev libgoogle-glog-dev libuvc-dev
 export CUDA_HOME=/usr/local/cuda-11.4
 export PATH="$CUDA_HOME/bin:$PATH"
 export LD_LIBRARY_PATH="$CUDA_HOME/lib64:/usr/lib/aarch64-linux-gnu:${LD_LIBRARY_PATH:-}"
@@ -58,6 +58,7 @@ printf '%s\n' 'deb [arch=arm64 signed-by=/usr/share/keyrings/ros-archive-keyring
 sudo apt-get update
 sudo apt-get install ros-noetic-ros-base ros-noetic-geometry-msgs ros-noetic-nav-msgs \
   ros-noetic-std-msgs ros-noetic-std-srvs python3-catkin-tools python3-rosdep \
+  ros-noetic-robot-pose-ekf ros-noetic-joint-state-publisher ros-noetic-robot-state-publisher \
   python3-rospkg python3-empy python3-serial
 source /opt/ros/noetic/setup.bash
 # 将备份的已修复src放回原目录；不要复制旧build/devel作为重建结果。
@@ -69,9 +70,22 @@ catkin_make -DPYTHON_EXECUTABLE=/usr/bin/python3 -j2
 source devel/setup.bash
 rosversion -d
 rospack find uniad_bridge
+for package in robot_pose_ekf joint_state_publisher robot_state_publisher; do
+  rospack find "$package"
+done
 ```
 
 完整小车工作区还含雷达、相机、导航厂商包，应使用备份的**已裁剪/修复 src**和对应项目手册；`rosdep` 可能因 EOL/厂商包缺项失败，应逐项查明，不以 `-r` 的继续执行视为全部成功。全套已装 ROS 包及构建号在 `dpkg_versions.tsv`，无需为最小桥接链复制原来所有桌面组件。
+
+Astra相机的CMake通过 `pkg-config` 查找 `libuvc`，故上面显式安装 `libuvc-dev`。私有 `restore-audit-supplement.tar.gz.part000` 保存了 `ROS1/wheeltec_robot/src/ros_astra_camera-main/include/openni2_redist/arm64/` 下的 `libOpenNI2.so`、`OpenNI2/Drivers/libOniFile.so` 和 `liborbbec.so`。先按 [恢复检查单](../RESTORE_CHECKLIST.md) 第3节解包并通过 `--home` 校验，再运行catkin构建；只复制文本源码无法补出这些厂商库。编译前可只读检查：
+
+```bash
+pkg-config --modversion libuvc
+ASTRA=/home/jichengzhi/ROS1/wheeltec_robot/src/ros_astra_camera-main/include/openni2_redist/arm64
+test -f "$ASTRA/libOpenNI2.so"
+test -f "$ASTRA/OpenNI2/Drivers/libOniFile.so"
+test -f "$ASTRA/OpenNI2/Drivers/liborbbec.so"
+```
 
 C++ 应用先在原 `.../DL4AGX_min/uniad-trt/inference_app/enqueueV2` 重建，使用配套源文件/CMake。引擎与插件、输入 `info.txt` 中相对图片路径必须同时到位；运行脚本硬编码该路径。具体资产及 CMake 见代码/资产恢复清单。引擎/插件跨 TensorRT 版本要重新构建并验收，不能只改文件名。
 
@@ -91,6 +105,8 @@ C++ 应用先在原 `.../DL4AGX_min/uniad-trt/inference_app/enqueueV2` 重建，
 
 下列 `WHEEL_ROOT` 为恢复到 Orin 的离线安装资产目录；按实际备份目录设定。本清单不存 200GB 缓存，也不要求复制虚拟环境。`RECOVERY_ENV` 指本目录克隆/复制后的绝对路径。
 
+公开apt/pip/conda依赖允许联网按固定版本重新安装，无需另存完整离线闭包。`python3-tk` 为系统Python及其venv提供Tk支持；原conda清单已含 `tk=8.6.13`，分别在各自解释器检查，不向conda环境注入系统Tk库。
+
 ```bash
 export RECOVERY_ENV="${RECOVERY_ENV:-/home/jichengzhi/orin-recovery/github/environment}"
 export WHEEL_ROOT="${WHEEL_ROOT:-/home/jichengzhi}"
@@ -98,6 +114,7 @@ export TORCH112_WHEEL="$WHEEL_ROOT/torch-1.12.0a0+2c916ef.nv22.3-cp38-cp38-linux
 test -f "$TORCH112_WHEEL"
 /usr/bin/python3 -m venv --system-site-packages /home/jichengzhi/uniad_venv
 P=/home/jichengzhi/uniad_venv/bin/python
+"$P" -B -c 'import tkinter; print(tkinter.TkVersion)'
 "$P" -m pip install 'pip==24.3.1' 'setuptools==75.3.0' wheel
 "$P" -m pip install --no-cache-dir "$TORCH112_WHEEL"
 "$P" -m pip install --no-cache-dir -r "$RECOVERY_ENV/requirements_uniad_venv_runtime.txt"
@@ -156,6 +173,7 @@ C=/home/jichengzhi/miniforge3/bin/conda
 "$C" create -y -p /home/jichengzhi/miniforge3/envs/uniad -c conda-forge \
  --file "$RECOVERY_ENV/conda_uniad_specs.txt"
 P=/home/jichengzhi/miniforge3/envs/uniad/bin/python
+"$P" -B -c 'import tkinter; print(tkinter.TkVersion)'
 "$P" -m pip install --no-cache-dir "$TORCH112_WHEEL"
 "$P" -m pip install --no-cache-dir -r "$RECOVERY_ENV/requirements_miniforge_uniad_runtime.txt"
 # 在此环境按前述步骤重编torchvision。

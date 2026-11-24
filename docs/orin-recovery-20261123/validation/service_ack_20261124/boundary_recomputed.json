@@ -1,0 +1,26 @@
+{
+  "records": {
+    "publisher_tcp_ingress": {
+      "wire_bytes": 3675010,
+      "wire_sha256": "da82822936781e696b0b72dfd762c65f5c7d0a80e16a4940f7df0f6c47725d57",
+      "canonical_digest": "c78d7b735ed43686763263a764202142b8ff4a3185281f4d8a2453a0e26a3688",
+      "request_id": "recovery-final-ack-20261124-a2:0",
+      "decode_passed": true
+    },
+    "proxy_ros_ingress": {
+      "wire_bytes": 3675010,
+      "wire_sha256": "da82822936781e696b0b72dfd762c65f5c7d0a80e16a4940f7df0f6c47725d57",
+      "canonical_digest": "c78d7b735ed43686763263a764202142b8ff4a3185281f4d8a2453a0e26a3688",
+      "request_id": "recovery-final-ack-20261124-a2:0",
+      "decode_passed": true
+    },
+    "host_received": {
+      "wire_bytes": 3675010,
+      "wire_sha256": "da82822936781e696b0b72dfd762c65f5c7d0a80e16a4940f7df0f6c47725d57",
+      "canonical_digest": "c78d7b735ed43686763263a764202142b8ff4a3185281f4d8a2453a0e26a3688",
+      "request_id": "recovery-final-ack-20261124-a2:0",
+      "decode_passed": true
+    }
+  },
+  "original_recorder_diagnostic_error": "private record() unpacked 2 values while production decode_wire_bytes returns 3; raw logs preserved; this file recomputes actual saved bytes"
+}

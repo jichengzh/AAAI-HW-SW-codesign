@@ -1,0 +1,67 @@
+{
+  "accepted": true,
+  "trigger_identity": {
+    "schema_version": "coptv2x.hil-trigger.v1",
+    "run_id": "recovery-supervised-ack-20261124-s3",
+    "route_id": "Town05-route-2",
+    "scenario_id": "scenario1",
+    "sample_id": "carla-frame-1",
+    "sequence_no": 0,
+    "source_frame": 1,
+    "source_sim_time_ns": 50000000,
+    "arm_id": "joint_shcosearch"
+  },
+  "payload_sha256": "c78d7b735ed43686763263a764202142b8ff4a3185281f4d8a2453a0e26a3688",
+  "artifact_identity": {
+    "arm_id": "joint_shcosearch",
+    "artifact_sha256": {
+      "checkpoint": "ccbd1c2881f6736e1e4a57e9e873583befbe3a3fdc11f21c2a381a63d4356a8e",
+      "config": "d2bdbf66b4efaf96094761e2586d7c3c8f1f6d1b47c47707cc60e3972655a191",
+      "engine": "9ab2eb723b90f0e4ee7ae0fb1827bb10f8c69822545db5244bbff1830a01de87"
+    },
+    "checkpoint": "source/codriving/016x032x064/net_epoch_bestval_at9.pth",
+    "config": "source/codriving/016x032x064/config.yaml",
+    "engine": "codriving/joint_shcosearch_fp16/backbone.engine",
+    "model": "codriving",
+    "precision": "fp16",
+    "runtime": "tensorrt",
+    "widths": [
+      16,
+      32,
+      64
+    ]
+  },
+  "payload_semantics": "codriving_rsu_multiscale_features.v1",
+  "output_contract": {
+    "res0": {
+      "shape": [
+        1,
+        16,
+        128,
+        256
+      ],
+      "dtype": "float32"
+    },
+    "res1": {
+      "shape": [
+        1,
+        32,
+        64,
+        128
+      ],
+      "dtype": "float32"
+    },
+    "res2": {
+      "shape": [
+        1,
+        64,
+        32,
+        64
+      ],
+      "dtype": "float32"
+    }
+  },
+  "receiver": "local_protocol_consumer_not_CARLA",
+  "validated_time_ns": 1795507393885250892,
+  "ack_emitter": "production_ReverseSshRosProxyTransport_after_validated_handler_returns"
+}

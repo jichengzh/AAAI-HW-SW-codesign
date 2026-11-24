@@ -45,32 +45,36 @@ docker images --format '{{.Repository}}:{{.Tag}} {{.ID}} {{.Size}}'
 原系统装有 `nvidia-container-runtime=3.9.0-1`、`nvidia-container-toolkit=1.11.0~rc.1-1`、`nvidia-docker2=2.11.0-1`；快照 `docker_runtime_snapshot.json` 的 `Runtimes` 明确包含 `nvidia`（path=`nvidia-container-runtime`），`DefaultRuntime` 为 `runc`。此前“未发现已注册nvidia runtime”的描述有误。注册runtime和安装包存在都不能证明GPU容器实际可运行；Foxy桥接/tracing与宿主TRT worker分开恢复，宿主TRT不需要GPU容器。若以后需要GPU容器，按匹配JetPack的 [NVIDIA容器安装说明](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) 单独配置和验收，不能以ROS2镜像成功load代替GPU检查。
 
 
-## 仅在容器名不存在时重建空闲骨架
+## 服务启动入口与挂载闭合
 
-源码 `coptv2x_hil_episode_services.py` 使用 `docker exec`，不会自动创建默认容器。新系统加载镜像后，可按原inspect恢复下面的骨架：选择的runtime挂到 `/work`，独立状态目录挂到 `/state`，host网络、runc。命令只在容器名不存在时创建；若已有同名容器，检查其挂载、状态和配置，不自动删除或覆盖。
+完整worker/publisher/proxy启动、SSH转发、context、ready及最终ACK命令见 [COPT_SERVICE_RESTORE](../COPT_SERVICE_RESTORE.md)。该流程使用新命名容器、独立attempt状态和62610–62613端口，显式指定全部业务路径；不启动、删除或覆盖旧命名容器。旧容器为exited不构成恢复障碍。
+
+路径固定为：pipeline runtime挂 `/work`，P4的独立runtimestate挂 `/state`。宿主worker显式读取P4的input/native和Stage6模型，`--host-state-root P4/runtimestate/p4-recovery`对应 `--container-state-root /state/p4-recovery`。不能由pipeline runtime父目录推断这些路径。容器仅以runc/host网络保持 `bash -lc 'sleep infinity'`；实际服务由episode启动器执行docker exec，并source Foxy、设置ROS_DOMAIN_ID=71及PYTHONPATH。
+
+## 仅用于离线wire的独立Foxy骨架
+
+若只检查已有单帧wire，可使用下列新容器；完整服务流程会自行创建另一个新容器，无须先做本节。遇到同名容器时先inspect并另选新名，不自动删除或覆盖：
 
 ```bash
 export R=/home/jichengzhi/coptv2x_hil_pipeline_20261010/runtime
 export OLD=/home/jichengzhi/coptv2x_hil_p4_smoke_20261001T074559Z
+export CONTAINER=coptv2x-recovery-20261124-wire
 mkdir -p "$OLD/runtimestate"
-if docker container inspect coptv2x-hil-p4-smoke-ros >/dev/null 2>&1; then
-  docker container inspect coptv2x-hil-p4-smoke-ros
-else
-  docker run -d --name coptv2x-hil-p4-smoke-ros \
-    --runtime runc --network host \
-    --mount "type=bind,src=$R,dst=/work" \
-    --mount "type=bind,src=$OLD/runtimestate,dst=/state" \
-    ditl/ros-foxy-tracing-enabled:arm64 bash -lc 'sleep infinity'
+if docker container inspect "$CONTAINER" >/dev/null 2>&1; then
+  echo "容器名称已存在：请inspect后另选新名" >&2
+  exit 1
 fi
+docker run -d --name "$CONTAINER" --runtime runc --network host \
+  --mount "type=bind,src=$R,dst=/work" \
+  --mount "type=bind,src=$OLD/runtimestate,dst=/state" \
+  ditl/ros-foxy-tracing-enabled:arm64 bash -lc 'sleep infinity'
 docker inspect --format '{{.State.Status}} {{.HostConfig.Runtime}} {{.HostConfig.NetworkMode}} {{json .Mounts}}' \
-  coptv2x-hil-p4-smoke-ros
+  "$CONTAINER"
 ```
 
-已有容器若为exited，先核对上述配置，再手动 `docker start coptv2x-hil-p4-smoke-ros`。该命令仅恢复空闲容器，不启动底盘或闭环。实际episode服务在每次 `docker exec` 时 `source /opt/ros/foxy/setup.bash`，并传入 `ROS_DOMAIN_ID=71` 和 `/work` 的PYTHONPATH；只设置容器名字不足以启动worker/publisher/proxy或完成最终ACK。
+## 单帧wire的ROS往返检查
 
-## 后续单帧ROS往返检查
-
-先完成 [Copt宿主单帧真实推理](../COPT_ENGINE_RESTORE.md)，沿用其中 `PROOF` 和 `ARM`。wire位于宿主独立runtimestate，映射为 `/state/<新目录名>/<arm>.wire`。以下命令实际发布并接收容器内ROS话题，需已有运行中的正确骨架；应单独记录结果，不将它当作新系统安装、外部HIL或底盘闭环已验收：
+先完成 [Copt宿主单帧真实推理](../COPT_ENGINE_RESTORE.md)，沿用其中PROOF和ARM。wire映射为 `/state/<新目录名>/<arm>.wire`。以下实际发布并接收ROS话题；使用独立的smoke话题，不启动完整worker/publisher/proxy、底盘或闭环：
 
 ```bash
 export PROOF ARM
@@ -78,8 +82,9 @@ PROOF_NAME=$(basename "$PROOF")
 docker exec -e ROS_DOMAIN_ID=71 \
   -e PYTHONPATH=/work:/work/simulation/leaderboard/team_code/closedloop \
   -e WIRE="/state/$PROOF_NAME/$ARM.wire" \
-  coptv2x-hil-p4-smoke-ros bash -lc \
-  'source /opt/ros/foxy/setup.bash && exec python3 /work/scripts/coptv2x_hil_serial_ros_smoke.py --wire "$WIRE" --config-dir /work/simulation/leaderboard/team_code/agent_config/coptv2x_hil'
+  "$CONTAINER" bash -lc \
+  'source /opt/ros/foxy/setup.bash && exec python3 /work/scripts/coptv2x_hil_serial_ros_smoke.py --wire "$WIRE" --config-dir /work/simulation/leaderboard/team_code/agent_config/coptv2x_hil --topic /coptv2x/recovery_20261124/wire_smoke'
+docker stop "$CONTAINER"
 ```
 
-此为后续可执行的验收步骤；是否已经运行及通过以 [VALIDATION](../VALIDATION.md) 的实际回执为准。完整HIL还需恢复宿主worker、容器publisher/proxy、反向SSH与外部最终ACK，以及原H800/CARLA输入。加载镜像或单个ROS话题成功均不能推出完整链路已恢复。
+wire往返和完整服务最终ACK是不同范围，实际测试设置与回执见 [VALIDATION](../VALIDATION.md)。完整部署使用源码配套的域71和trigger/result/trace/ack默认话题；隔离审计若给全套节点显式换域及话题，回执须披露该差异，不能只改一个节点。H800/CARLA外部最终消费、新系统安装和车辆闭环仍另行验收。

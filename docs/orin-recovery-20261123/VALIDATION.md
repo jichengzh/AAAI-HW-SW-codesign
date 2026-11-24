@@ -18,7 +18,7 @@
 ## 已完成的检查
 
 - 7,176 份原始源码/配置，73,192,234 B；从Orin逐文件计算SHA256，并在当前主机重新计算比对，全部一致。
-- 公开源码为73,192,275 B；3个文件的5处密码式SSH/sudo命令及6份脚本的固定GPU分配说明已处理，公开哈希与变化位置已记录；这9个原文件的摘要/大小只留私有备份。私有原始树不上传。
+- 2026-11-23隐私处理后的公开源码为73,192,275 B（2026-11-24服务修复后为73,195,374 B，published哈希为当前验收依据）；3个文件的5处密码式SSH/sudo命令及6份脚本的固定GPU分配说明已处理，公开哈希与变化位置已记录；这9个原文件的摘要/大小只留私有备份。私有原始树不上传。
 - 111份原始关键结果，4,852,498 B；全部与原端SHA256一致，未改写实验字段。
 - FCooper8份定制ONNX/checkpoint，63,156,308 B；压缩包36,717,260 B。远端流式哈希、本地解包流哈希一致；按恢复文档实测临时解包，8文件路径/内容再次一致。
 - FCooper归档内模型的10项五臂引用哈希与正式canonical_manifest完全一致；3个ResNet候选与原目标accuracy链接指向文件哈希一致。
@@ -87,3 +87,43 @@ python3 -B /home/jichengzhi/orin-recovery/github/tools/verify_recovery.py \
 - 每臂是冷启动首帧，warm sample=0；仅optimized，`pair_hash_validation=not_run`。通信100ms是模型项，`communication_measured=false`、`is_hil=false`。不据此报告吞吐、网络时延、AP准确率或闭环驾驶性能。
 - 五次运行均出现既有Torch“只读NumPy转换”UserWarning；无异常，未改动冻结源码压制警告。ROS、CARLA、外部ACK、车辆与约200GB数据没有启动或恢复。
 - 此次发布前本地全量测试 **1,042 passed**；仓库+原离线归档的只读工具 **7,297项通过**；后续GitHub CI与fresh OS验收仍分别记录。
+
+
+## 2026-11-24恢复流程完善与实际验收
+
+软件采用固定版本适配说明联网重装；无需另存完整公开依赖闭包。版本下载/安装和新系统功能验收仍是不同步骤。
+
+### 已完成的修复
+
+- 公开 `restore_audit_assets_manifest.json` 纳入1581份审计补包文件；`--offline`强制验该归档，`--home`强制验其恢复位置。统一解包包含UniAD默认121帧、847份bin、726张图和Astra三库。
+- 安装说明补齐 `libuvc-dev`、三个底盘ROS包和系统/venv的 `python3-tk`；conda沿用自己的tk。增加包发现、SDK路径与输出文件验收要求。
+- Copt使用显式P4 input/native/state与pipeline runtime，以及匹配的容器/work、/state。新增 [完整服务说明](COPT_SERVICE_RESTORE.md)，不依赖不适用的父目录默认值。
+- 修复两份服务脚本的有限任务生命周期：worker正常退出后等待publisher真实ACK并以0退出，随后成功清理才写completed.json；非零、缺就绪、proxy退出、排空超时和中途停止均不会误报完成。source manifest保留原采集SHA并更新公开修复SHA；原版仍在私有采集树。
+- ZeroTier、SSH私钥/认证/host keys和shell设置共25文件已在独立服务器的仓库外私有备份，0700/0600；实际试还原并重算SHA通过。Git只发布 [状态](validation/private_configuration_backup_20261124.json) 和 [恢复方法](environment/PRIVATE_NETWORK_RESTORE.md)。ZeroTier原状态文件归zerotier-one账号，恢复时按新安装包生成状态文件的实际owner处理，不照抄旧UID或无条件改root。
+
+### 从空目录实际还原
+
+在服务器全新临时home实际还原23,480个普通文件，4,329,722,681 B；仓库加七份所需归档/分卷核验 **7,298项通过**，恢复位置核验 **30,759项通过**。实际移除Astra库、破坏一张图时均按预期失败，恢复后再次30,759项通过。121帧info、全部metadata与工作目录下726张图片相对引用均验证。临时4.3GB副本已清理。
+
+[还原回执](validation/replay_final_receipt_20261124.json)和[归档/路径回执](validation/replay_prepare_receipt_20261124.json)固定了实际source/checker/manifest摘要；其中HEAD为发布前工作树的基线，包含两份已明确记录的恢复修复，不能解释为未修改旧commit的测试。该项仅执行文件还原，不安装或运行payload。
+
+### 真实ROS与最终ACK
+
+在原Orin既有SDK、独立容器/state/端口中执行：
+
+| 验收 | 结果 |
+|---|---|
+| ROS单帧payload往返 | 1次通过 |
+| 组件链（worker→publisher→ROS proxy→SSH→真实接收端→ACK） | 首次失败、第二次通过 |
+| 修复后的完整监督流程，真实1帧/1触发 | 连续3次通过 |
+| 后两次完整监督重复 | 无消费者capture monkeypatch，生产路径及哈希校验不变 |
+
+三次完整流程均实际核对trigger、冻结身份、shape/finite与payload SHA后，由生产transport发送ACK；ROS ACK和ACK后trace被实际观察，supervisor/consumer退出0，completed.mode=publisher_ack、stopped.cleaned=true，无failure.json。原始ACK/trace、consumer、worker/proxy与完成日志见 [实际回执](validation/service_revalidation_20261124.json) 和 [逐文件证据摘要](validation/service_ack_20261124/evidence_manifest.json)。新测试容器全部停删，原业务容器保持原停止状态。
+
+**首轮异常没有隐去：** 初次组件测试收到的wire有连续16字节完整性差异，生产decoder拒绝校验，未产生最终ACK，publisher失败退出。跨环境复算排除了简单NumPy摘要差异，但缺少该次各边界快照，根因仍未定位。后续组件成功和3次完整监督成功不能证明已修复这个偶发损坏原因；原失败日志和wire SHA保留在同一回执。所有成功判据均保留严格校验，没有跳过坏数据或把ready当ACK。
+
+消费端是本地主机的真实协议验证程序，**不是CARLA驾驶agent**。实际测试为隔离ROS domain173和独立话题，默认业务domain71没有在本轮验收。新系统安装、ROS1/底盘、外部H800/CARLA驾驶和性能仍未验收，不据本次结果作这些结论。
+
+### 回归与覆盖
+
+补包回归72项、服务有限完成回归10项及既有相关回归通过；122项恢复/身份/handoff组合通过。定向子进程覆盖100项测试通过，三个改动文件总statement覆盖 **82.57%**；单个Orin监督文件71.57%，新增完成helper合计87.5%，不宣称每个文件都达80%。详见 [覆盖记录](validation/recovery_code_coverage_20261124.json)。完整仓库测试由最终推送前钩子执行，不能以定向测试代替。

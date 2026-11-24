@@ -5,7 +5,7 @@
   "origin": "Orin ubuntu / /home/jichengzhi",
   "source_files": 7176,
   "source_original_bytes": 73192234,
-  "source_published_bytes": 73192275,
+  "source_published_bytes": 73195374,
   "key_result_files": 111,
   "key_result_bytes": 4852498,
   "selected_asset_files": 14703,
@@ -46,5 +46,27 @@
   "system_reinstallation_tested": false,
   "public_upload_performed": false,
   "public_download_urls_for_custom_assets": null,
-  "publication_note": "Published metadata for 3 credential-bearing files and 6 GPU allocation prose files was redacted; original backup retained privately."
+  "publication_note": "Published metadata for 3 credential-bearing files and 6 GPU allocation prose files was redacted; original backup retained privately.",
+  "recovery_completion_20261124": {
+    "audit_supplement_manifest": "restore_audit_assets_manifest.json",
+    "audit_supplement_archive_bytes": 164068096,
+    "audit_supplement_files": 1581,
+    "audit_supplement_private_archive": true,
+    "network_configuration_status": "../validation/private_configuration_backup_20261124.json",
+    "software_reinstallation": "Online fixed-version reinstall is supported; full dependency mirror is not required. Fresh OS validation is separate.",
+    "source_behavior_fixes": [
+      {
+        "relative_path": "coptv2x_hil_pipeline_20261010/runtime/scripts/coptv2x_hil_episode_services.py",
+        "original_sha256": "d0a3c9752e87f699b8919648544eabeca55d9e4949211a5351244495355e4dc4",
+        "published_sha256": "8b2a0ba68caf85233acad6048a9089fae61b44bcbac661f5a41ca6c6004c2b30",
+        "reason": "Do not terminate publisher/proxy when finite worker exits normally before final ACK; declare completion only after publisher acknowledgement and clean shutdown."
+      },
+      {
+        "relative_path": "coptv2x_hil_pipeline_20261010/runtime/scripts/coptv2x_hil_orin_services.py",
+        "original_sha256": "31689081c42e03c493fec4824fc87e1aef236c197d1908ad4ee2d0522475770a",
+        "published_sha256": "488cca9f1e064174f4b16ed85601c99bd6fcf3134ae3c3bb518b104aa3dd6c84",
+        "reason": "Do not terminate publisher/proxy when finite worker exits normally before final ACK; declare completion only after publisher acknowledgement and clean shutdown."
+      }
+    ]
+  }
 }

@@ -5,6 +5,7 @@ import argparse
 import base64
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import shlex
@@ -36,6 +37,10 @@ def remote_command(args, command):
 
 
 def service_configuration(args, context):
+    drain_timeout = getattr(args, "completion_drain_timeout_s", 135)
+    if (type(drain_timeout) not in (int, float) or not math.isfinite(drain_timeout)
+            or drain_timeout <= 0):
+        raise ValueError("completion drain timeout must be finite and positive")
     depth = getattr(args, "pipeline_depth", 0)
     if type(depth) is not int or depth not in (0, 2):
         raise ValueError("pipeline depth must be 0 or 2")
@@ -51,6 +56,8 @@ def service_configuration(args, context):
             raise ValueError("runtime warmup count must be a non-negative integer")
         if not context.get("arm_id"):
             raise ValueError("serial startup requires the episode arm_id")
+    if type(args.result_count) is not int or args.result_count <= 0:
+        raise ValueError("result count must be a positive integer")
     runtime = args.runtime.rstrip("/")
     oldroot = str(Path(runtime).parent)
     data_root = getattr(args, "data_root", None) or oldroot + "/input"
@@ -108,6 +115,8 @@ def service_configuration(args, context):
         proxy.extend(["--worker-pipeline-depth", str(depth)])
     services.append(docker_service("proxy", proxy))
     return {"state_dir": host_state, "ready_timeout_s": args.ready_timeout_s,
+            "completion_policy": {"mode": "publisher_ack", "worker": "worker",
+                                  "publisher": "publisher", "drain_timeout_s": drain_timeout},
             "episode": context, "services": services}
 
 
@@ -140,6 +149,8 @@ def main(argv=None):
     parser.add_argument("--result-port", type=int, default=55022)
     parser.add_argument("--result-count", type=int, default=2225)
     parser.add_argument("--ready-timeout-s", type=float, default=180)
+    parser.add_argument("--completion-drain-timeout-s", type=float, default=135,
+                        help="maximum drain after worker or ACK publisher exits; not episode duration")
     args = parser.parse_args(argv)
     for port in (args.forward_port, args.worker_port, args.result_port):
         if not 1 <= port <= 65535:

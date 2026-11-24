@@ -1,0 +1,110 @@
+{
+  "started_utc": "2026-11-24T07:54:41.203875+00:00",
+  "temporary_root": "/tmp/orin-full-recovery-apcp378v",
+  "temporary_home": "/tmp/orin-full-recovery-apcp378v/home",
+  "public_repo": "/home/jichengzhi/.cache/codex-checkouts/AAAI-HW-SW-codesign-orin-recovery-20261123/docs/orin-recovery-20261123",
+  "offline_root": "/home/jichengzhi/V2X/docs/orin-recovery-20261123/offline_assets",
+  "archive_parts": [
+    {
+      "name": "critical-assets.tar.xz.part000",
+      "bytes": 1073741824,
+      "sha256": "17329dae2f089d707101d7279706d2a11a0eaabe8fcb090246b8c80a5a8783af",
+      "verified": true
+    },
+    {
+      "name": "critical-assets.tar.xz.part001",
+      "bytes": 144750812,
+      "sha256": "82c46097f6e1dd5af378dc315660212cb6aef397f735cc9d861c87f8da02cb7c",
+      "verified": true
+    },
+    {
+      "name": "fcooper-assets.tar.gz.part000",
+      "bytes": 36717260,
+      "sha256": "abc47e11fa39f49f5e1dbf1a8e9e9cf3047b5dd32d7874eea3892faa9e39f0ab",
+      "verified": true
+    },
+    {
+      "name": "supplemental-assets.tar.gz.part000",
+      "bytes": 171561243,
+      "sha256": "bfcfefa52c06b0805bf62e236bd0a97f8e7b56da07ff0bbc40e30da575de08de",
+      "verified": true
+    },
+    {
+      "name": "dataset-metadata.tar.gz.part000",
+      "bytes": 37097047,
+      "sha256": "3aa5f85385870fc09ca3c8055348c08266faeefd03f8fecd44a928fd13762294",
+      "verified": true
+    },
+    {
+      "name": "restore-audit-supplement.tar.gz.part000",
+      "bytes": 164068096,
+      "sha256": "faf78a837c4527d368e9529d162059ac309a1ad273a1236012cb6f447b3bd8de",
+      "verified": true
+    }
+  ],
+  "archive_paths": [
+    {
+      "manifest": "offline_assets_manifest.json",
+      "members": 363,
+      "archive_roots": [
+        "__ASSET_MANIFEST__.json",
+        "files"
+      ],
+      "safe_relative_paths": true,
+      "restored_destinations_match_manifest": true,
+      "compression_stream_valid": true
+    },
+    {
+      "manifest": "fcooper_assets_manifest.json",
+      "members": 9,
+      "archive_roots": [
+        "__ASSET_MANIFEST__.json",
+        "files"
+      ],
+      "safe_relative_paths": true,
+      "restored_destinations_match_manifest": true,
+      "compression_stream_valid": true
+    },
+    {
+      "manifest": "supplemental_assets_manifest.json",
+      "members": 19,
+      "archive_roots": [
+        "__ASSET_MANIFEST__.json",
+        "files"
+      ],
+      "safe_relative_paths": true,
+      "restored_destinations_match_manifest": true,
+      "compression_stream_valid": true
+    },
+    {
+      "manifest": "dataset_metadata_assets_manifest.json",
+      "members": 14316,
+      "archive_roots": [
+        "__ASSET_MANIFEST__.json",
+        "files"
+      ],
+      "safe_relative_paths": true,
+      "restored_destinations_match_manifest": true,
+      "compression_stream_valid": true
+    },
+    {
+      "manifest": "restore_audit_assets_manifest.json",
+      "members": 1582,
+      "archive_roots": [
+        "__ASSET_MANIFEST__.json",
+        "files"
+      ],
+      "safe_relative_paths": true,
+      "restored_destinations_match_manifest": true,
+      "compression_stream_valid": true
+    }
+  ],
+  "payload_executed": false,
+  "ros_or_device_started": false,
+  "packages_installed": false,
+  "checkpoint_aliases_restored": 4,
+  "material_restore_complete": true,
+  "restored_regular_file_count": 23480,
+  "restored_regular_bytes": 4329722681,
+  "prepared_utc": "2026-11-24T07:57:05.988844+00:00"
+}

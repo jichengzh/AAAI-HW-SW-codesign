@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "supervisor_exit": 0,
+  "result_count": 1,
+  "actual_triggers": 1,
+  "actual_ros_ack": true,
+  "post_ack_trace": true,
+  "is_carla": false
+}

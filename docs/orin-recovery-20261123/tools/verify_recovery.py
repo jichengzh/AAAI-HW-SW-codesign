@@ -107,7 +107,8 @@ def main():
         count += 1
     manifests = [args.repo / 'manifests' / name for name in (
         'offline_assets_manifest.json', 'fcooper_assets_manifest.json',
-        'supplemental_assets_manifest.json', 'dataset_metadata_assets_manifest.json')]
+        'supplemental_assets_manifest.json', 'dataset_metadata_assets_manifest.json',
+        'restore_audit_assets_manifest.json')]
 
     if args.offline or args.home:
         missing = [path.name for path in manifests if not path.is_file()]

@@ -1,0 +1,23 @@
+{
+  "date": "2026-11-24",
+  "backup_verified": true,
+  "restore_to_temporary_directory_verified": true,
+  "file_count": 25,
+  "compressed_bytes": 32960,
+  "archive_count": 2,
+  "directory_mode": "0700",
+  "file_mode": "0600",
+  "stored_outside_git": true,
+  "contains_private_identity_material": true,
+  "private_files_published": false,
+  "configuration_types": [
+    "ZeroTier node identity and network membership",
+    "SSH user configuration, authorized keys and private keys",
+    "SSH daemon configuration and host keys",
+    "Shell startup files"
+  ],
+  "backup_host": "bm-2s55he",
+  "private_backup_directory": "/home/jichengzhi/.local/share/orin-recovery-private/20261124",
+  "hashes_and_detailed_manifest_kept_private": true,
+  "original_services_modified": false
+}

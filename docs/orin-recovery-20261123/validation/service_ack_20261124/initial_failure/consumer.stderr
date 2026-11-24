@@ -1,0 +1,8 @@
+CoptV2X HIL result transport closed: ProtocolError: canonical feature payload sha256 mismatch
+Traceback (most recent call last):
+  File "/home/jichengzhi/V2X/docs/orin-recovery-20261123/work/recovery_completion_20261124/validated_host_consumer.py", line 73, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/home/jichengzhi/V2X/docs/orin-recovery-20261123/work/recovery_completion_20261124/validated_host_consumer.py", line 61, in main
+    raise TimeoutError('no validated real feature payload arrived')
+TimeoutError: no validated real feature payload arrived

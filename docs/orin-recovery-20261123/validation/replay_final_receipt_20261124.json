@@ -1,0 +1,84 @@
+{
+  "started_utc": "2026-11-24T07:57:18.224425+00:00",
+  "temporary_root": "/tmp/orin-full-recovery-apcp378v",
+  "temporary_home": "/tmp/orin-full-recovery-apcp378v/home",
+  "public_repo": "/home/jichengzhi/.cache/codex-checkouts/AAAI-HW-SW-codesign-orin-recovery-20261123/docs/orin-recovery-20261123",
+  "payload_executed": false,
+  "packages_installed": false,
+  "ros_or_device_started": false,
+  "checks": [
+    {
+      "name": "published_and_offline_integrity",
+      "exit_code": 0,
+      "elapsed_seconds": 2.786,
+      "stdout": "PASS: 7298 files verified; payload was not executed.",
+      "stderr": "",
+      "verified_file_checks": 7298
+    },
+    {
+      "name": "empty_home_restore_integrity",
+      "exit_code": 0,
+      "elapsed_seconds": 7.208,
+      "stdout": "PASS: 30759 files verified; payload was not executed.",
+      "stderr": "",
+      "verified_file_checks": 30759
+    },
+    {
+      "name": "reject_missing_astra_sdk",
+      "exit_code": 1,
+      "elapsed_seconds": 7.403,
+      "stdout": "",
+      "stderr": "FAIL: Missing regular file: /tmp/orin-full-recovery-apcp378v/home/ROS1/wheeltec_robot/src/ros_astra_camera-main/include/openni2_redist/arm64/libOpenNI2.so"
+    },
+    {
+      "name": "reject_corrupt_camera_image",
+      "exit_code": 1,
+      "elapsed_seconds": 6.996,
+      "stdout": "",
+      "stderr": "FAIL: Size/SHA256 mismatch: /tmp/orin-full-recovery-apcp378v/home/liruozhan/toOrinV2/DL4AGX_min/uniad-trt/inference_app/enqueueV2/data/nuscenes/samples/CAM_FRONT/n015-2018-07-11-11-54-16+0800__CAM_FRONT__1531281613762460.jpg"
+    },
+    {
+      "name": "restored_after_fault_injection",
+      "exit_code": 0,
+      "elapsed_seconds": 7.03,
+      "stdout": "PASS: 30759 files verified; payload was not executed.",
+      "stderr": "",
+      "verified_file_checks": 30759
+    }
+  ],
+  "source_manifest_sha256": "a7e8548bcdba7185c68ccc7ad8b724ba6318c0422b63280345d4cee07afed970",
+  "checker_sha256": "c216ee3e412ed6190b74ba933e050766b2d71eb0a83230e3957e8fe62108005e",
+  "audit_asset_manifest_sha256": "441de3cdb1a7ab2a1cd2fdb3150f6b1558e17450ef088eab21b461bc36375bd6",
+  "git_head": "e896723c65624ec983154504f4ae65ff2b0a2c88",
+  "latest_pipeline_services": [
+    {
+      "relative_path": "coptv2x_hil_pipeline_20261010/runtime/scripts/coptv2x_hil_episode_services.py",
+      "published_sha256": "8b2a0ba68caf85233acad6048a9089fae61b44bcbac661f5a41ca6c6004c2b30",
+      "restored_sha256": "8b2a0ba68caf85233acad6048a9089fae61b44bcbac661f5a41ca6c6004c2b30",
+      "bytes": 11574
+    },
+    {
+      "relative_path": "coptv2x_hil_pipeline_20261010/runtime/scripts/coptv2x_hil_orin_services.py",
+      "published_sha256": "488cca9f1e064174f4b16ed85601c99bd6fcf3134ae3c3bb518b104aa3dd6c84",
+      "restored_sha256": "488cca9f1e064174f4b16ed85601c99bd6fcf3134ae3c3bb518b104aa3dd6c84",
+      "bytes": 9857
+    }
+  ],
+  "uniad_default_input": {
+    "info_frames": 121,
+    "metadata_bins": 847,
+    "distinct_images": 726,
+    "working_directory": "/tmp/orin-full-recovery-apcp378v/home/liruozhan/toOrinV2/DL4AGX_min/uniad-trt/inference_app/enqueueV2",
+    "all_image_paths_inside_temporary_home": true,
+    "astra_libraries_sha256_verified": 3
+  },
+  "fault_injection_restored": true,
+  "restored_regular_file_count": 23480,
+  "restored_regular_bytes": 4329722681,
+  "all_requested_checks_passed": true,
+  "material_restore_verified_only": true,
+  "fresh_os_build_inference_device_verification": false,
+  "completed_utc": "2026-11-24T07:57:50.495520+00:00",
+  "temporary_root_removed": true,
+  "cleanup_completed_utc": "2026-11-24T07:57:52.382730+00:00"
+}

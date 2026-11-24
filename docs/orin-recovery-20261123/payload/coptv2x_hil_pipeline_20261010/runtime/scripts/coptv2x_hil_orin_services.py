@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import signal
@@ -64,13 +65,48 @@ def stop_services(config):
             kill_record(owner_path)
 
 
+def completion_policy(config):
+    """Opt in finite workers; publisher exit zero means its ACK gate finished."""
+    policy = config.get("completion_policy")
+    if policy is None:
+        return None
+    if not isinstance(policy, dict) or policy.get("mode") != "publisher_ack":
+        raise ValueError("unsupported completion policy")
+    names = [service["name"] for service in config["services"]]
+    worker, publisher = policy.get("worker"), policy.get("publisher")
+    if (not isinstance(worker, str) or not isinstance(publisher, str)
+            or worker == publisher or names.count(worker) != 1 or names.count(publisher) != 1):
+        raise ValueError("completion policy requires distinct owned worker and publisher")
+    timeout = policy.get("drain_timeout_s")
+    if (type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0):
+        raise ValueError("completion drain timeout must be finite and positive")
+    return dict(policy)
+
+
+def completed_services(children, policy):
+    finite = (policy["worker"], policy["publisher"]) if policy else ()
+    completed = []
+    for service, child in children:
+        status = child.poll()
+        if status is None:
+            continue
+        ready = service.get("ready_file")
+        if (status != 0 or service["name"] not in finite
+                or (ready and not Path(ready).is_file())):
+            raise RuntimeError("%s exited with status %s" % (service["name"], status))
+        completed.append(service["name"])
+    return completed
+
+
 def serve(config):
+    policy = completion_policy(config)
     state = Path(config["state_dir"])
     state.mkdir(parents=True, exist_ok=True)
     children = []
     handles = []
     stopped = [False]
     previous = {}
+    completed = False
     for signum in (signal.SIGTERM, signal.SIGINT):
         previous[signum] = signal.signal(signum, lambda *_: stopped.__setitem__(0, True))
     record_process(state / "supervisor.owner.json", os.getpid())
@@ -88,9 +124,7 @@ def serve(config):
                 record_process(state / (service["name"] + ".owner.json"), child.pid)
         deadline = time.monotonic() + config.get("ready_timeout_s", 180)
         while not stopped[0]:
-            for service, child in children:
-                if child.poll() is not None:
-                    raise RuntimeError("%s exited with status %s" % (service["name"], child.returncode))
+            completed_services(children, policy)
             ready = all(not service.get("ready_file") or Path(service["ready_file"]).is_file()
                         for service, _ in children)
             if ready:
@@ -99,10 +133,17 @@ def serve(config):
             if time.monotonic() >= deadline:
                 raise RuntimeError("service startup readiness deadline exceeded")
             time.sleep(0.1)
+        drain_deadline = None
         while not stopped[0]:
-            for service, child in children:
-                if child.poll() is not None:
-                    raise RuntimeError("%s stopped during episode with status %s" % (service["name"], child.returncode))
+            finished = completed_services(children, policy)
+            if policy and len(finished) == 2:
+                completed = True
+                break
+            if policy and finished:
+                if drain_deadline is None:
+                    drain_deadline = time.monotonic() + policy["drain_timeout_s"]
+                if time.monotonic() >= drain_deadline:
+                    raise RuntimeError("finite service completion deadline exceeded")
             time.sleep(0.2)
     except Exception as error:
         write_json(state / "failure.json", {"error": str(error)})
@@ -129,6 +170,12 @@ def serve(config):
         write_json(state / "stopped.json", {"cleaned": cleanup_error is None, "error": cleanup_error})
         for signum, handler in previous.items():
             signal.signal(signum, handler)
+    if completed:
+        if cleanup_error:
+            write_json(state / "failure.json", {"error": cleanup_error})
+            raise RuntimeError("service completion cleanup failed: %s" % cleanup_error)
+        write_json(state / "completed.json", {"completed": True, "mode": "publisher_ack",
+                                             "services": [policy["worker"], policy["publisher"]]})
 
 
 def start(config, config_path):
@@ -142,10 +189,13 @@ def start(config, config_path):
                                  stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
     deadline = time.monotonic() + config.get("ready_timeout_s", 180) + 5
     while time.monotonic() < deadline:
-        if (state / "failure.json").exists() or child.poll() is not None:
+        if (state / "failure.json").exists():
             raise RuntimeError("episode service startup failed; inspect supervisor and service logs")
         if (state / "ready.json").exists():
-            return
+            if child.poll() is None or (state / "completed.json").exists():
+                return
+        if child.poll() is not None:
+            raise RuntimeError("episode service startup failed; inspect supervisor and service logs")
         time.sleep(0.1)
     kill_record(state / "supervisor.owner.json")
     raise RuntimeError("episode services did not report readiness")

@@ -1,0 +1,152 @@
+{
+  "schema_version": "copt.service-restore-real-validation.v1",
+  "serial_ros_roundtrip": {
+    "passed": true,
+    "exit_code": 0,
+    "topic": "/coptv2x/recovery_20261124/roundtrip",
+    "payload_sha256": "c78d7b735ed43686763263a764202142b8ff4a3185281f4d8a2453a0e26a3688"
+  },
+  "components_attempts": [
+    {
+      "attempt": 1,
+      "passed": false,
+      "failure": "production decoder rejected canonical payload checksum; no validated callback or final ACK",
+      "publisher_exit": 1,
+      "bad_wire_sha256": "6183157dd4508f74d98091323b2419c9fda8d3b002b501d5176061ea38dfa8c1",
+      "root_cause": "unresolved transient integrity anomaly; not attributed to NumPy/DDS/SSH or fixed by retry"
+    },
+    {
+      "attempt": 2,
+      "passed": true,
+      "publisher_exit": 0,
+      "worker_exit": 0,
+      "actual_ack": true,
+      "post_ack_trace": true,
+      "boundary_records": {
+        "publisher_tcp_ingress": {
+          "wire_bytes": 3675010,
+          "wire_sha256": "da82822936781e696b0b72dfd762c65f5c7d0a80e16a4940f7df0f6c47725d57",
+          "canonical_digest": "c78d7b735ed43686763263a764202142b8ff4a3185281f4d8a2453a0e26a3688",
+          "request_id": "recovery-final-ack-20261124-a2:0",
+          "decode_passed": true
+        },
+        "proxy_ros_ingress": {
+          "wire_bytes": 3675010,
+          "wire_sha256": "da82822936781e696b0b72dfd762c65f5c7d0a80e16a4940f7df0f6c47725d57",
+          "canonical_digest": "c78d7b735ed43686763263a764202142b8ff4a3185281f4d8a2453a0e26a3688",
+          "request_id": "recovery-final-ack-20261124-a2:0",
+          "decode_passed": true
+        },
+        "host_received": {
+          "wire_bytes": 3675010,
+          "wire_sha256": "da82822936781e696b0b72dfd762c65f5c7d0a80e16a4940f7df0f6c47725d57",
+          "canonical_digest": "c78d7b735ed43686763263a764202142b8ff4a3185281f4d8a2453a0e26a3688",
+          "request_id": "recovery-final-ack-20261124-a2:0",
+          "decode_passed": true
+        }
+      }
+    }
+  ],
+  "supervised_attempts": [
+    {
+      "attempt": 1,
+      "passed": true,
+      "result_count": 1,
+      "actual_trigger_count": 1,
+      "actual_worker_results": 1,
+      "supervisor_exit": 0,
+      "consumer_exit": 0,
+      "completed_mode": "publisher_ack",
+      "cleaned": true,
+      "failure_json_present": false,
+      "request_id": "recovery-supervised-ack-20261124-s1:0",
+      "payload_sha256": "c78d7b735ed43686763263a764202142b8ff4a3185281f4d8a2453a0e26a3688",
+      "consumer_capture_monkeypatch": true,
+      "producer_or_ros_monkeypatch": false,
+      "evidence_directory": "service_ack_20261124/supervised1",
+      "ack_observed": true,
+      "post_ack_trace_observed": true,
+      "trace_cli_string_truncation": true,
+      "wire_bytes": 3675025,
+      "wire_sha256": "a45dd5f39b225ceb1d2032ad91f02f66603057667f79133568656c9a0b879569"
+    },
+    {
+      "attempt": 2,
+      "passed": true,
+      "result_count": 1,
+      "actual_trigger_count": 1,
+      "actual_worker_results": 1,
+      "supervisor_exit": 0,
+      "consumer_exit": 0,
+      "completed_mode": "publisher_ack",
+      "cleaned": true,
+      "failure_json_present": false,
+      "request_id": "recovery-supervised-ack-20261124-s2:0",
+      "payload_sha256": "c78d7b735ed43686763263a764202142b8ff4a3185281f4d8a2453a0e26a3688",
+      "consumer_capture_monkeypatch": false,
+      "producer_or_ros_monkeypatch": false,
+      "evidence_directory": "service_ack_20261124/supervised2",
+      "ack_observed": true,
+      "post_ack_trace_observed": true,
+      "trace_cli_string_truncation": true
+    },
+    {
+      "attempt": 3,
+      "passed": true,
+      "result_count": 1,
+      "actual_trigger_count": 1,
+      "actual_worker_results": 1,
+      "supervisor_exit": 0,
+      "consumer_exit": 0,
+      "completed_mode": "publisher_ack",
+      "cleaned": true,
+      "failure_json_present": false,
+      "request_id": "recovery-supervised-ack-20261124-s3:0",
+      "payload_sha256": "c78d7b735ed43686763263a764202142b8ff4a3185281f4d8a2453a0e26a3688",
+      "consumer_capture_monkeypatch": false,
+      "producer_or_ros_monkeypatch": false,
+      "evidence_directory": "service_ack_20261124/supervised3",
+      "ack_observed": true,
+      "post_ack_trace_observed": true,
+      "trace_cli_string_truncation": true
+    }
+  ],
+  "counts": {
+    "ack_chain_failures": 1,
+    "later_ack_chain_successes": 4,
+    "supervised_successes": 3,
+    "pure_production_path_repeats": 2
+  },
+  "tdd_validation_tests": 5,
+  "host_receiver": {
+    "kind": "local real protocol consumer, not CARLA agent",
+    "python": "3.13.12 | packaged by Anaconda, Inc. | (main, Feb 24 2026, 16:13:31) [GCC 14.3.0]",
+    "numpy": "2.4.6",
+    "yaml": "6.0.3"
+  },
+  "ros_domain_id": 173,
+  "production_default_ros_domain_71_tested": false,
+  "scope": {
+    "fresh_os_install": false,
+    "carla": false,
+    "driving": false,
+    "ros1_or_chassis": false,
+    "performance": false,
+    "existing_SDK_used": true
+  },
+  "source_patch_sha256": {
+    "coptv2x_hil_orin_services.py": "488cca9f1e064174f4b16ed85601c99bd6fcf3134ae3c3bb518b104aa3dd6c84",
+    "coptv2x_hil_episode_services.py": "8b2a0ba68caf85233acad6048a9089fae61b44bcbac661f5a41ca6c6004c2b30"
+  },
+  "cleanup": {
+    "remaining_own_test_containers": [],
+    "original_business_container_state": "exited",
+    "original_restart_policy": "no"
+  },
+  "tdd_final_exit_code": 0,
+  "supervised_acceptance_passed": true,
+  "all_observed_attempts_passed": false,
+  "initial_integrity_anomaly_resolved": false,
+  "raw_evidence_manifest": "service_ack_20261124/evidence_manifest.json",
+  "raw_evidence_note": "Files copied byte-for-byte from private raw evidence; ROS trace CLI text is truncated, but request_id and actual ACK are visible. Initial failed wire remains private, SHA recorded above. Receiver is local validation software, not CARLA."
+}

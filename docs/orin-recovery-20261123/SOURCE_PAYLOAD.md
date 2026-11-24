@@ -2,6 +2,8 @@
 
 `payload/` 以原 `/home/jichengzhi/` 为根，保存部署代码、模型定义、配置、导出/构建脚本和原评测 split。逐文件公开副本SHA256、原权限与排除规则见 [源码清单](manifests/source_capture_manifest.json)。原结果单独放 `key_results/`，不覆盖源码树。4份冻结Copt engine单独放 `engine_payload/`，按同样的原home相对布局复制；原离线包中的4个checkpoint需从 `models/codriving/` 补到 `source/codriving/`，精确命令见 [COPT_ENGINE_RESTORE](COPT_ENGINE_RESTORE.md)，并须在 `--home` 核验前完成。
 
+UniAD默认121帧输入及Astra arm64 SDK由私有 `offline_assets/restore-audit-supplement.tar.gz.part000` 补齐；公开 [审计补包清单](manifests/restore_audit_assets_manifest.json) 只保存1581个文件的相对路径、大小、SHA256与种类及归档哈希，不含归档实体。按 [恢复检查单](RESTORE_CHECKLIST.md) 第3节校验并解包到原home布局。`--offline` 必须检查该归档，`--home` 必须检查补包中全部文件；默认仓库检查无需私有归档。
+
 ## 源码复制与凭据处理
 
 ```bash
@@ -61,7 +63,9 @@ ldd build/uniad_udp
 
 ## 最小输入与完整实验的区别
 
-离线包保留一个P4预录BEV输入（float32，shape `[2,64,256,512]`，64MiB；实读NPY头见 `manifests/smoke_input_shape.json`）；另外保留UniAD第0帧的7份metadata、6张相机图和原info文件，避免恢复后没有任何可用输入。完整视频、所有帧、CARLA场景和139GiB BEV缓存不保留。UniAD单帧需仅取info首行（保留行尾分号）与第0帧metadata，在 `enqueueV2` 工作目录解析相机相对路径；只做离线数值/输出验收，不启动UDP底盘闭环。可视化字体在离线包中；也可按源码支持的 `UNIAD_SKIP_VIS=1` 跳过可视化。
+离线包保留一个P4预录BEV输入（float32，shape `[2,64,256,512]`，64MiB；实读NPY头见 `manifests/smoke_input_shape.json`）。原单帧补包保存UniAD第0帧的7份metadata、6张相机图与原info文件；新增审计补包另保存默认 `uniad_trt_input_119plus/info.txt` 的121行、7类共847份metadata，以及其引用的726张六相机图片。图片恢复到 `DL4AGX_min/uniad-trt/inference_app/enqueueV2/data/nuscenes/samples/`，保留info中的相对路径，从 `enqueueV2` 工作目录解析。该121帧集合不代表完整nuScenes、CARLA场景或139GiB BEV缓存已备份。
+
+UniAD单帧仍可只取原info首行（保留行尾分号）与第0帧metadata，按下节命令建立独立smoke入口；只做离线数值/输出验收，不启动UDP底盘闭环。可视化字体在离线包中；也可按源码支持的 `UNIAD_SKIP_VIS=1` 跳过可视化。默认121帧的逐文件完整性由 `--home` 核验，不要用第0帧smoke替代它。
 
 ROS1恢复 `/opt/ros/noetic` 后在 `ROS1/wheeltec_robot` 重建catkin。DITL/Foxy按保存的Docker镜像与挂载配置恢复。Pyramid/FCooper/ResNet等按对应模型结构、config、ONNX、原shape/精度重建TensorRT engine；Copt冻结CoDriving服务按新增engine清单恢复原字节，显式使用Stage6 artifact_root，不能以不同SHA的重建文件替代。完整AP需要另取完整评测数据。
 
@@ -82,7 +86,7 @@ mkdir -p "$FD"
 rsync -a "$FC/" "$FD/"
 ```
 
-UniAD单帧info仅包含第0帧，metadata仍用原输入目录；不要直接对原39行info运行39帧，后续图片没有保留：
+以下显式构造UniAD第0帧smoke入口，不修改原info。原 `uniad_trt_input/` 与默认121帧的 `uniad_trt_input_119plus/` 是不同输入入口，info和metadata必须成套使用：
 
 ```bash
 U=/home/jichengzhi/liruozhan/toOrinV2
@@ -92,10 +96,18 @@ for d in timestamp l2g_r_mat l2g_t command img_metas_can_bus img_metas_lidar2img
  mkdir -p "$U/uniad_trt_input_smoke/$d"
  cp "$U/uniad_trt_input/$d/0.bin" "$U/uniad_trt_input_smoke/$d/0.bin"
 done
+
+# 默认121帧材料由审计补包提供；这里只读核对info行数，不运行模型。
+test "$(grep -c '[^[:space:]]' "$U/uniad_trt_input_119plus/info.txt")" -eq 121
 ```
 
-运行前仍须按 `uniad`/`uniad_udp` 源码的实际参数格式检查engine/plugin和输出目录。本清单仅准备输入，没有代你执行推理或向车辆发送控制。
+运行前仍须按 `uniad`/`uniad_udp` 源码的实际参数格式检查engine/plugin，先显式建立所选OUTPUT目录（默认脚本使用 `output_udp`）；应用只创建dump子目录，不能依赖exit0判断数值输出存在。离线验收必须核对新生成的数值文件、帧数和错误日志。本清单仅准备输入，没有代你执行推理或向车辆发送控制。
 
 发布隐私处理：3个曾含密码命令的原文件摘要/大小只留在私有备份，不在公开清单中提供；其脱敏公开副本的SHA256与大小完整保留，恢复校验仍可执行。
 
 仓库发布规则额外移除6个历史脚本中的固定GPU分配说明/诊断文字；AST验证确认除了字符串内容外结构完全相同。对应原文件摘要/大小仅留私有，公开副本哈希已更新。恢复后应按本机设备配置选择GPU。
+
+
+## 2026-11-24服务恢复修复
+
+pipeline runtime的 `scripts/coptv2x_hil_orin_services.py` 与 `coptv2x_hil_episode_services.py` 为有限任务补入显式publisher_ack完成策略：worker正常退出后不提前清理，等待publisher完成真实ACK并正常退出，再记录completed。原始采集文件仍保存在私有备份，source manifest分别保留原SHA与公开修复SHA；恢复到home以published哈希验收。旧无该策略配置的监督语义保持原样，非零退出与超时仍失败。新测试和实际回执见 [服务恢复](COPT_SERVICE_RESTORE.md) 及 [验收记录](VALIDATION.md)。

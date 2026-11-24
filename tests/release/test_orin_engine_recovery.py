@@ -15,7 +15,8 @@ CHECKER = (Path(__file__).resolve().parents[2] /
 LANE = 'lane_c_orin_stage6_five_config_20260724'
 WIDTHS = ('016x032x064', '032x064x096', '032x080x128', '064x128x256')
 ASSET_MANIFESTS = ('offline_assets_manifest.json', 'fcooper_assets_manifest.json',
-                   'supplemental_assets_manifest.json', 'dataset_metadata_assets_manifest.json')
+                   'supplemental_assets_manifest.json', 'dataset_metadata_assets_manifest.json',
+                   'restore_audit_assets_manifest.json')
 
 
 def write_json(path, value):

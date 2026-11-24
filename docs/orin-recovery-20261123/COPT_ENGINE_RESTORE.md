@@ -107,6 +107,6 @@ set -o pipefail
 
 ## Foxy与完整部署的后续门槛
 
-容器的镜像加载、可恢复骨架及ROS命令见 [DOCKER_RESTORE](environment/DOCKER_RESTORE.md)。宿主TRT推理不依赖GPU容器；Foxy容器负责ROS通信。单帧wire通过后，可用源码 `coptv2x_hil_serial_ros_smoke.py --wire`独立检验ROS往返；它仍不能替代worker/publisher/proxy、反向SSH与外部最终ACK。完整HIL还需要原H800/CARLA和新输入流。
+容器镜像与独立wire检查见 [DOCKER_RESTORE](environment/DOCKER_RESTORE.md)；pipeline/P4路径衔接、显式episode服务启动、ready与最终ACK验收见 [COPT_SERVICE_RESTORE](COPT_SERVICE_RESTORE.md)。宿主TRT推理不依赖GPU容器；Foxy容器负责ROS通信。单帧wire通过后，可用源码 `coptv2x_hil_serial_ros_smoke.py --wire`独立检验ROS往返；它仍不能替代worker/publisher/proxy、反向SSH与外部最终ACK。完整HIL还需要原H800/CARLA和新输入流。
 
 本次修复范围不包括可选UniAD/ROS1链的121帧默认输入、Astra SDK/libuvc、底盘额外apt包或PL/torchmetrics API冲突。空目录文件恢复、同栈原机测试、新系统安装、ROS往返与真实闭环是不同验收范围，逐项状态以 [VALIDATION](VALIDATION.md) 为准。匿名制品allowlist不因本恢复目录而扩大。

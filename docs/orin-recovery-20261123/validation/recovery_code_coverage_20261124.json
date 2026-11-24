@@ -1,0 +1,31 @@
+{
+  "targeted_tests_passed": 100,
+  "statements": 459,
+  "covered_statements": 379,
+  "statement_coverage_percent": 82.57,
+  "source_files": {
+    "tools/verify_recovery.py": {
+      "covered": 116,
+      "total": 124,
+      "percent": 93.55
+    },
+    "pipeline/scripts/coptv2x_hil_episode_services.py": {
+      "covered": 122,
+      "total": 138,
+      "percent": 88.41
+    },
+    "pipeline/scripts/coptv2x_hil_orin_services.py": {
+      "covered": 141,
+      "total": 197,
+      "percent": 71.57
+    }
+  },
+  "new_completion_helpers": {
+    "covered": 21,
+    "total": 24,
+    "percent": 87.5
+  },
+  "subprocess_coverage_enabled": true,
+  "all_individual_files_above_80_percent": false,
+  "note": "Orin supervisor whole-file coverage includes pre-existing start/stop, Docker cleanup and kill-escalation branches not exercised by this targeted run. No tests or implementation were changed merely to increase coverage."
+}

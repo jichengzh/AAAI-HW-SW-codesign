@@ -21600,8 +21600,9 @@
       "sha256": "d0a3c9752e87f699b8919648544eabeca55d9e4949211a5351244495355e4dc4",
       "mode": "0o664",
       "published_relative_path": "payload/coptv2x_hil_pipeline_20261010/runtime/scripts/coptv2x_hil_episode_services.py",
-      "published_sha256": "d0a3c9752e87f699b8919648544eabeca55d9e4949211a5351244495355e4dc4",
-      "published_bytes": 10796
+      "published_sha256": "8b2a0ba68caf85233acad6048a9089fae61b44bcbac661f5a41ca6c6004c2b30",
+      "published_bytes": 11574,
+      "recovery_behavior_fix": "2026-11-24 finite worker/publisher ACK completion; original capture remains in private backup"
     },
     {
       "source": "/home/jichengzhi/coptv2x_hil_pipeline_20261010/runtime/scripts/coptv2x_hil_manifest.py",
@@ -21620,8 +21621,9 @@
       "sha256": "31689081c42e03c493fec4824fc87e1aef236c197d1908ad4ee2d0522475770a",
       "mode": "0o664",
       "published_relative_path": "payload/coptv2x_hil_pipeline_20261010/runtime/scripts/coptv2x_hil_orin_services.py",
-      "published_sha256": "31689081c42e03c493fec4824fc87e1aef236c197d1908ad4ee2d0522475770a",
-      "published_bytes": 7536
+      "published_sha256": "488cca9f1e064174f4b16ed85601c99bd6fcf3134ae3c3bb518b104aa3dd6c84",
+      "published_bytes": 9857,
+      "recovery_behavior_fix": "2026-11-24 finite worker/publisher ACK completion; original capture remains in private backup"
     },
     {
       "source": "/home/jichengzhi/coptv2x_hil_pipeline_20261010/runtime/scripts/coptv2x_hil_orin_smoke.py",
@@ -72771,5 +72773,20 @@
       "size"
     ],
     "reason": "Original integrity metadata for credential-bearing files and GPU-allocation prose remains private; published file hashes and sizes are retained."
-  }
+  },
+  "recovery_behavior_fixes": [
+    {
+      "relative_path": "coptv2x_hil_pipeline_20261010/runtime/scripts/coptv2x_hil_episode_services.py",
+      "original_sha256": "d0a3c9752e87f699b8919648544eabeca55d9e4949211a5351244495355e4dc4",
+      "published_sha256": "8b2a0ba68caf85233acad6048a9089fae61b44bcbac661f5a41ca6c6004c2b30",
+      "reason": "Do not terminate publisher/proxy when finite worker exits normally before final ACK; declare completion only after publisher acknowledgement and clean shutdown."
+    },
+    {
+      "relative_path": "coptv2x_hil_pipeline_20261010/runtime/scripts/coptv2x_hil_orin_services.py",
+      "original_sha256": "31689081c42e03c493fec4824fc87e1aef236c197d1908ad4ee2d0522475770a",
+      "published_sha256": "488cca9f1e064174f4b16ed85601c99bd6fcf3134ae3c3bb518b104aa3dd6c84",
+      "reason": "Do not terminate publisher/proxy when finite worker exits normally before final ACK; declare completion only after publisher acknowledgement and clean shutdown."
+    }
+  ],
+  "published_total_bytes": 73195374
 }
