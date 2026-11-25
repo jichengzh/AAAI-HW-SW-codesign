@@ -70,3 +70,5 @@ orin-recovery-20261123/
 这是“可审查的恢复资料与精选资产”，不是整盘镜像。恢复命令需要在新系统执行并验收，尚未证明重装后的推理成功；文件恢复、源码14项冻结哈希、实际单帧推理及ROS/HIL状态分别记录于VALIDATION，不互相替代。公开 UniAD tiny dummy 是随机权重，不能替代离线包中的真实自定义模型。P4 的 P4_PASS 只代表联调验收，五臂均 route_timeout；CPU ORT、静态重放和GPU/TRT结果在关键结果导航中分别标明。缺失的50000样本准确率汇总、原训练host、完整输入流等不能由完成标记推导出来。
 
 所有公开文件的总校验表为 `SHA256SUMS`；上传前或重新克隆后，在本恢复包目录运行 `sha256sum -c SHA256SUMS`。
+
+维护校验表时，以 `git ls-files -z -- docs/orin-recovery-20261123/` 列出的Git跟踪文件为全集，排除 `SHA256SUMS` 自身后，逐文件按包内相对路径记录SHA256；新增公开文件须先加入Git索引。不要通过递归扫描工作目录生成清单，因为测试产生的ignored `__pycache__`/`.pyc` 不随Git发布。维护回归检查为仓库根目录的 `python -m pytest -q tests/release/test_orin_checksum_publication.py`，同时核对跟踪文件集合、缓存排除和实际字节哈希；无Git元数据的源码ZIP跳过该发布审计，仍可运行 `sha256sum -c SHA256SUMS`。
